@@ -102,6 +102,9 @@ mini-agent-web/
 │   ├── 04_steering_and_interrupt.py   # 运行时动态转向与协作取消
 │   └── 05_workflows_and_inspection.py # WorldState 快照与只读 Plan Mode
 │
+├── tests/                     # 自动化集成与单元测试套件
+│   └── test_sdk_apis.py       # pytest-asyncio 全量 API 协议测试
+│
 ├── docs/                      # 核心文档与架构记录
 │   ├── README.md                              # 文档导航中心
 │   ├── python-sdk-guide.md                    # 官方开发者指南
@@ -127,12 +130,66 @@ mini-agent-web/
 
 ---
 
-## 📦 依赖组与开发命令
+## 🛠️ 开发者指南与测试 (Development & Testing)
 
-| 场景 | 命令 |
-| :--- | :--- |
-| **安装基础 SDK 环境** | `uv sync` |
-| **安装 Web 开发依赖** (FastAPI / WebSockets) | `uv sync --extra web` |
-| **安装 TUI 终端依赖** (Rich) | `uv sync --extra tui` |
-| **安装代码检查与测试依赖** (Pytest / Ruff) | `uv sync --extra dev` |
-| **代码格式与类型检查** | `uv run ruff check .` |
+### 1. 安装全量开发环境
+
+```bash
+# 安装包含 dev (Pytest/Ruff), web (FastAPI), tui (Rich) 在内的所有开发依赖
+uv sync --all-extras
+```
+
+### 2. 运行 Pytest 自动化测试套件
+
+本项目在 `tests/` 目录下提供了基于 `pytest-asyncio` 的全套 API 自动化集成测试套件（覆盖 Thread 分支管理、Plan Mode、Multi-Milestone Goal 工作流、WorldState 环境快照与 MCP 服务交互）：
+
+```bash
+# 运行全量单元与集成测试
+uv run pytest
+
+# 详细输出模式 (Verbose)
+uv run pytest tests/ -v
+
+# 打印实时调试日志与标准输出
+uv run pytest tests/ -s -vv
+
+# 运行特定测试文件
+uv run pytest tests/test_sdk_apis.py
+```
+
+### 3. 代码质量与规范检查
+
+在提交代码前，请确保通过 Ruff 静态检查与格式化：
+
+```bash
+# 代码规范与 Lint 检查
+uv run ruff check .
+
+# 自动修复可修复的 Lint 错误
+uv run ruff check . --fix
+
+# 代码自动格式化
+uv run ruff format .
+```
+
+### 4. SDK 独立构建与打包
+
+`sdk/python` 是一个独立的 Hatchling 包，支持单独构建 wheel / sdist 发布包：
+
+```bash
+# 构建 mini-agent SDK 安装包
+uv build --package mini-agent
+```
+
+---
+
+## 📦 依赖组与开发常用命令速查
+
+| 场景 / 操作 | 对应命令 | 说明 |
+| :--- | :--- | :--- |
+| **基础环境同步** | `uv sync` | 安装 SDK 基础依赖 |
+| **全量开发环境** | `uv sync --all-extras` | 安装 web + tui + dev 全套工具链 |
+| **运行单元测试** | `uv run pytest tests/ -v` | 执行自动化测试套件 |
+| **代码格式与 Lint** | `uv run ruff check .` | 静态检查代码质量 |
+| **执行 Cookbook 示例**| `uv run python cookbook/python-demo/01_basic_turn.py` | 运行实战演示 |
+| **SDK 独立构建** | `uv build --package mini-agent` | 生成 wheel 与 tar.gz |

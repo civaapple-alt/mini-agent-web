@@ -46,3 +46,7 @@ if __name__ == "__main__":
 * **Security & Approval Interceptor**: Native support for `approval/request` and `approval/respond` protocol.
 * **Steering & Interrupt**: Mid-turn instruction injection (`turn/steer`) and cooperative cancellation (`turn/interrupt`).
 * **Zero Required Dependencies**: Runs entirely on Python 3.10+ Standard Library (`asyncio`, `json`, `subprocess`).
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.

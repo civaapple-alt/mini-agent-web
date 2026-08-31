@@ -23,8 +23,11 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/civaapple-alt/mini-agent-harness"
-Repository = "https://github.com/civaapple-alt/mini-agent-harness"
+Homepage = "https://github.com/civaapple-alt/mini-agent-web"
+Repository = "https://github.com/civaapple-alt/mini-agent-web"
+Issues = "https://github.com/civaapple-alt/mini-agent-web/issues"
+Documentation = "https://github.com/civaapple-alt/mini-agent-web/tree/main/docs"
+Harness = "https://github.com/civaapple-alt/mini-agent-harness"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mini_agent"]

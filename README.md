@@ -1,5 +1,10 @@
 # Mini Agent Web & Python SDK Workspace
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python: 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+
 `mini-agent-web` 是连接现代 Web 前端与 [Mini Agent Harness](https://github.com/civaapple-alt/mini-agent-harness) 的官方 Python SDK、实战示例与应用开发工作区。
 
 它通过 Stdio JSON-RPC 2.0 协议与 `mini-agent-app-server` 高效通信，为 Python 开发者提供异步 Client SDK、全套实战 Cookbook 以及未来 Web / TUI 应用扩展底座。
@@ -219,3 +224,9 @@ uv build --package mini-agent
 | **代码格式与 Lint** | `uv run ruff check .` | 静态检查代码质量 |
 | **执行 Cookbook 示例**| `uv run python cookbook/python-demo/01_basic_turn.py` | 运行实战演示 |
 | **SDK 独立构建** | `uv build --package mini-agent` | 生成 wheel 与 tar.gz |
+
+---
+
+## 📄 开源协议 (License)
+
+本项目基于 [MIT 许可证](LICENSE) 开源。欢迎社区开发者贡献与二次开发！

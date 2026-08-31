@@ -1,12 +1,22 @@
 [project]
 name = "mini-agent-web"
 version = "0.5.0"
-description = "Web interface and Python SDK for Mini Agent Harness"
+description = "Web interface, Cookbook, and Python SDK Workspace for Mini Agent Harness"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Mini Agent Team" }]
+keywords = ["mini-agent", "ai-agents", "llm-harness", "jsonrpc", "python-sdk"]
 dependencies = [
     "mini-agent",
 ]
+
+[project.urls]
+Homepage = "https://github.com/civaapple-alt/mini-agent-web"
+Repository = "https://github.com/civaapple-alt/mini-agent-web"
+Issues = "https://github.com/civaapple-alt/mini-agent-web/issues"
+Documentation = "https://github.com/civaapple-alt/mini-agent-web/tree/main/docs"
+Harness = "https://github.com/civaapple-alt/mini-agent-harness"
 
 [tool.uv.sources]
 mini-agent = { workspace = true }

@@ -43,3 +43,7 @@ venv.bak/
 .idea/
 *.swp
 *.swo
+
+# Execution Logs
+logs/
+*.log

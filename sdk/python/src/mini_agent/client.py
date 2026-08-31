@@ -25,6 +25,69 @@ from mini_agent.types import ThreadCheckpoint, TurnReadResult, TurnSubmissionRes
 logger = logging.getLogger("mini_agent")
 
 
+def setup_logging(
+    log_dir: str | None = "logs",
+    log_file: str | None = None,
+    level: int | str = logging.DEBUG,
+    console: bool = False,
+    format_str: str | None = None,
+) -> logging.FileHandler | None:
+    """
+    Configure detailed file (and optional console) logging for mini-agent.
+
+    :param log_dir: Target directory for log files (default: 'logs').
+    :param log_file: Specific log filename (default: '{log_dir}/mini-agent.log').
+    :param level: Logging level (default: logging.DEBUG).
+    :param console: Whether to also attach a console stream handler.
+    :param format_str: Custom logging format string.
+    :return: The FileHandler instance, or None if no file target specified.
+    """
+    if isinstance(level, str):
+        level = getattr(logging, level.upper(), logging.DEBUG)
+
+    target_file: str | None = None
+    if log_file:
+        target_file = log_file
+        target_dir = os.path.dirname(target_file)
+        if target_dir:
+            os.makedirs(target_dir, exist_ok=True)
+    elif log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+        target_file = os.path.join(log_dir, "mini-agent.log")
+
+    fmt = format_str or "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
+    formatter = logging.Formatter(fmt)
+
+    # Configure the mini_agent logger level
+    logger.setLevel(level)
+
+    handler = None
+    if target_file:
+        abs_target = os.path.abspath(target_file)
+        for h in logger.handlers:
+            if isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", None) == abs_target:
+                handler = h
+                break
+        if handler is None:
+            handler = logging.FileHandler(target_file, encoding="utf-8")
+            handler.setLevel(level)
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+
+    if console:
+        has_console = any(
+            isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+            for h in logger.handlers
+        )
+        if not has_console:
+            ch = logging.StreamHandler(sys.stderr)
+            ch.setLevel(level)
+            ch.setFormatter(formatter)
+            logger.addHandler(ch)
+
+    return handler
+
+
 def _ensure_utf8_console() -> None:
     """Safely configure stdout/stderr for UTF-8 on Windows consoles."""
     if sys.platform == "win32":
@@ -76,6 +139,9 @@ class MiniAgentClient:
         cwd: str | None = None,
         env: dict[str, str] | None = None,
         approval_handler: Callable[[str, str], Coroutine[Any, Any, bool]] | None = None,
+        log_dir: str | None = None,
+        log_file: str | None = None,
+        log_level: str | int | None = None,
     ):
         """
         Initialize the MiniAgentClient.
@@ -85,6 +151,9 @@ class MiniAgentClient:
         :param env: Additional environment variables.
         :param approval_handler: Async callback `async def handler(request_id: str, action: str) -> bool`
                                  for handling sensitive tool approvals. Defaults to auto-approve.
+        :param log_dir: Target directory for execution logs (e.g. 'logs').
+        :param log_file: Specific log file path (e.g. 'logs/01_basic_turn.log').
+        :param log_level: Logging level ('DEBUG', 'INFO', logging.DEBUG, etc.).
         """
         _ensure_utf8_console()
         self.executable = executable
@@ -93,6 +162,13 @@ class MiniAgentClient:
         # Priority: explicit env arg > process os.environ > .env file
         self.env = {**file_env, **os.environ, **(env or {})}
         self.approval_handler = approval_handler or self._default_auto_approve
+
+        # Configure file logging if log_dir, log_file or env specified
+        eff_dir = log_dir or self.env.get("MINI_AGENT_LOG_DIR")
+        eff_file = log_file or self.env.get("MINI_AGENT_LOG_FILE")
+        eff_level = log_level or self.env.get("MINI_AGENT_LOG_LEVEL", "DEBUG")
+        if eff_dir or eff_file:
+            setup_logging(log_dir=eff_dir, log_file=eff_file, level=eff_level)
 
         self._proc: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task[None] | None = None

@@ -2,7 +2,7 @@
 Mini Agent Official Python SDK
 """
 
-from mini_agent.client import AsyncMiniAgentClient, MiniAgentClient
+from mini_agent.client import AsyncMiniAgentClient, MiniAgentClient, setup_logging
 from mini_agent.errors import (
     AppServerError,
     MiniAgentError,
@@ -67,4 +67,5 @@ __all__ = [
     "TurnSubmissionResult",
     "TurnTimeoutError",
     "parse_event",
+    "setup_logging",
 ]

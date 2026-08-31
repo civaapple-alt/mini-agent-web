@@ -13,7 +13,7 @@ from mini_agent import MiniAgentClient
 async def main():
     print("=== Demo 02: Deep Event Stream Inspection ===", flush=True)
 
-    async with MiniAgentClient() as client:
+    async with MiniAgentClient(log_dir="logs") as client:
         await client.initialize(profile="interactive")
         await client.start_thread()
 

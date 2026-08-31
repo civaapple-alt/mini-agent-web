@@ -12,7 +12,7 @@ from mini_agent import MiniAgentClient
 async def main():
     print("=== Demo 04: Steering and Cooperative Interruption ===", flush=True)
 
-    async with MiniAgentClient() as client:
+    async with MiniAgentClient(log_dir="logs") as client:
         await client.initialize(profile="interactive")
         await client.start_thread()
 

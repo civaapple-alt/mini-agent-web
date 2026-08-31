@@ -13,7 +13,7 @@ from mini_agent import AppServerError, MiniAgentClient
 async def main():
     print("=== Demo 05: Workflows and Management APIs ===", flush=True)
 
-    async with MiniAgentClient() as client:
+    async with MiniAgentClient(log_dir="logs") as client:
         # 1. Initialize
         init_res = await client.initialize(profile="interactive")
         print(

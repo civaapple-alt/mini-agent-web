@@ -34,8 +34,11 @@ async def interactive_approval_handler(request_id: str, action: str) -> bool:
 async def main():
     print("=== Demo 03: Sensitive Tool Approvals ===", flush=True)
 
-    # Initialize client with our custom approval handler
-    async with MiniAgentClient(approval_handler=interactive_approval_handler) as client:
+    # Initialize client with our custom approval handler and log_dir='logs'
+    async with MiniAgentClient(
+        approval_handler=interactive_approval_handler,
+        log_dir="logs",
+    ) as client:
         await client.initialize(profile="interactive")
         await client.start_thread()
 

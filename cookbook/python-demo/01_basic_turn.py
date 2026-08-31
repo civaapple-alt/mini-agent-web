@@ -11,8 +11,8 @@ from mini_agent import MiniAgentClient
 async def main():
     print("=== Demo 01: Basic Turn Execution ===", flush=True)
 
-    # 1. Start client (automatically finds mini-agent-app-server on PATH)
-    async with MiniAgentClient() as client:
+    # 1. Start client with detailed logging enabled into logs/ directory
+    async with MiniAgentClient(log_dir="logs") as client:
         # 2. Negotiate protocol and initialize
         init_result = await client.initialize(
             profile="interactive",

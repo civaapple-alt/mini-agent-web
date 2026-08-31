@@ -108,7 +108,11 @@ class TurnSubmissionResult:
         turn_id = (
             val.get("turn_id")
             or val.get("turnId")
-            or (val.get("turn_id", {}).get("0") if isinstance(val.get("turn_id"), dict) else None)
+            or (
+                val.get("turn_id", {}).get("0")
+                if isinstance(val.get("turn_id"), dict)
+                else None
+            )
         )
         return cls(
             status=val.get("status", "started"),
@@ -162,8 +166,10 @@ class ThreadCheckpoint:
         return cls(
             thread_id=val.get("thread_id") or val.get("threadId", "default"),
             status=val.get("status", "idle"),
-            next_turn_number=val.get("next_turn_number") or val.get("nextTurnNumber", 1),
-            messages=val.get("session", {}).get("messages", []) or val.get("messages", []),
+            next_turn_number=val.get("next_turn_number")
+            or val.get("nextTurnNumber", 1),
+            messages=val.get("session", {}).get("messages", [])
+            or val.get("messages", []),
             raw=data,
         )
 
@@ -180,7 +186,11 @@ class ThreadListResult:
     def from_dict(cls, data: dict[str, Any]) -> ThreadListResult:
         val = data.get("value", data) if isinstance(data, dict) else data
         threads = val.get("data", []) if isinstance(val, dict) else []
-        cursor = val.get("nextCursor") or val.get("next_cursor") if isinstance(val, dict) else None
+        cursor = (
+            val.get("nextCursor") or val.get("next_cursor")
+            if isinstance(val, dict)
+            else None
+        )
         return cls(data=threads, next_cursor=cursor, raw=data)
 
 
@@ -235,14 +245,19 @@ class WorkflowGoalState:
         return cls(
             goal_id=val.get("goalId") or val.get("goal_id", ""),
             status=val.get("status", "running"),
-            current_milestone=val.get("currentMilestone") or val.get("current_milestone", 0),
-            total_milestones=val.get("totalMilestones") or val.get("total_milestones", 0),
+            current_milestone=val.get("currentMilestone")
+            or val.get("current_milestone", 0),
+            total_milestones=val.get("totalMilestones")
+            or val.get("total_milestones", 0),
             loop_count=val.get("loopCount") or val.get("loop_count", 0),
             max_loops=val.get("maxLoops") or val.get("max_loops", 0),
-            milestone_step_budget=val.get("milestoneStepBudget") or val.get("milestone_step_budget", 0),
-            milestone_timeout_secs=val.get("milestoneTimeoutSecs") or val.get("milestone_timeout_secs", 0),
+            milestone_step_budget=val.get("milestoneStepBudget")
+            or val.get("milestone_step_budget", 0),
+            milestone_timeout_secs=val.get("milestoneTimeoutSecs")
+            or val.get("milestone_timeout_secs", 0),
             verifier_model=val.get("verifierModel") or val.get("verifier_model"),
-            last_verifier_score=val.get("lastVerifierScore") or val.get("last_verifier_score"),
+            last_verifier_score=val.get("lastVerifierScore")
+            or val.get("last_verifier_score"),
             updated_at_ms=val.get("updatedAtMs") or val.get("updated_at_ms", 0),
             raw=data,
         )
@@ -262,7 +277,9 @@ class WorkflowState:
         goal_data = val.get("goal") if isinstance(val, dict) else None
         goal = WorkflowGoalState.from_dict(goal_data) if goal_data else None
         return cls(
-            plan_active=val.get("planActive") or val.get("plan_active", False) if isinstance(val, dict) else False,
+            plan_active=val.get("planActive") or val.get("plan_active", False)
+            if isinstance(val, dict)
+            else False,
             goal=goal,
             raw=data,
         )
@@ -380,10 +397,20 @@ class McpStatusResult:
     def from_dict(cls, data: dict[str, Any]) -> McpStatusResult:
         val = data.get("value", data) if isinstance(data, dict) else data
         return cls(
-            enabled_servers=val.get("enabledServers") or val.get("enabled_servers", []) if isinstance(val, dict) else [],
-            inactive_servers=val.get("inactiveServers") or val.get("inactive_servers", []) if isinstance(val, dict) else [],
-            tool_count=val.get("toolCount") or val.get("tool_count", 0) if isinstance(val, dict) else 0,
-            retry_available=val.get("retryAvailable") or val.get("retry_available", False) if isinstance(val, dict) else False,
+            enabled_servers=val.get("enabledServers") or val.get("enabled_servers", [])
+            if isinstance(val, dict)
+            else [],
+            inactive_servers=val.get("inactiveServers")
+            or val.get("inactive_servers", [])
+            if isinstance(val, dict)
+            else [],
+            tool_count=val.get("toolCount") or val.get("tool_count", 0)
+            if isinstance(val, dict)
+            else 0,
+            retry_available=val.get("retryAvailable")
+            or val.get("retry_available", False)
+            if isinstance(val, dict)
+            else False,
             raw=data,
         )
 
@@ -402,9 +429,16 @@ class McpRetryResult:
     def from_dict(cls, data: dict[str, Any]) -> McpRetryResult:
         val = data.get("value", data) if isinstance(data, dict) else data
         return cls(
-            enabled_servers=val.get("enabledServers") or val.get("enabled_servers", []) if isinstance(val, dict) else [],
-            inactive_servers=val.get("inactiveServers") or val.get("inactive_servers", []) if isinstance(val, dict) else [],
+            enabled_servers=val.get("enabledServers") or val.get("enabled_servers", [])
+            if isinstance(val, dict)
+            else [],
+            inactive_servers=val.get("inactiveServers")
+            or val.get("inactive_servers", [])
+            if isinstance(val, dict)
+            else [],
             diagnostics=val.get("diagnostics", []) if isinstance(val, dict) else [],
-            tool_count=val.get("toolCount") or val.get("tool_count", 0) if isinstance(val, dict) else 0,
+            tool_count=val.get("toolCount") or val.get("tool_count", 0)
+            if isinstance(val, dict)
+            else 0,
             raw=data,
         )

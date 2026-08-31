@@ -91,7 +91,10 @@ def setup_logging(
     if target_file:
         abs_target = os.path.abspath(target_file)
         for h in list(logger.handlers):
-            if isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", None) == abs_target:
+            if (
+                isinstance(h, logging.FileHandler)
+                and getattr(h, "baseFilename", None) == abs_target
+            ):
                 if mode == "w":
                     logger.removeHandler(h)
                     h.close()
@@ -106,7 +109,8 @@ def setup_logging(
 
     if console:
         has_console = any(
-            isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+            isinstance(h, logging.StreamHandler)
+            and not isinstance(h, logging.FileHandler)
             for h in logger.handlers
         )
         if not has_console:
@@ -281,7 +285,9 @@ class MiniAgentClient:
     # JSON-RPC Low-level Communication
     # -------------------------------------------------------------------------
 
-    async def _send_request(self, method: str, params: dict[str, Any] | None = None) -> Any:
+    async def _send_request(
+        self, method: str, params: dict[str, Any] | None = None
+    ) -> Any:
         """Send a JSON-RPC request and wait for correlated response."""
         if not self._proc or not self._proc.stdin or self._proc.returncode is not None:
             raise ServerProcessError("App Server process is not running")
@@ -307,7 +313,9 @@ class MiniAgentClient:
 
         return await future
 
-    async def _send_notification(self, method: str, params: dict[str, Any] | None = None) -> None:
+    async def _send_notification(
+        self, method: str, params: dict[str, Any] | None = None
+    ) -> None:
         """Send a JSON-RPC notification (no response expected)."""
         if not self._proc or not self._proc.stdin or self._proc.returncode is not None:
             raise ServerProcessError("App Server process is not running")
@@ -497,7 +505,9 @@ class MiniAgentClient:
         checkpoint: ThreadCheckpoint | dict[str, Any],
     ) -> ThreadResumeResult:
         """Resume a thread from a serialized checkpoint."""
-        cp_dict = checkpoint.raw if isinstance(checkpoint, ThreadCheckpoint) else checkpoint
+        cp_dict = (
+            checkpoint.raw if isinstance(checkpoint, ThreadCheckpoint) else checkpoint
+        )
         res = await self._send_request(
             "thread/resume",
             {
@@ -607,7 +617,9 @@ class MiniAgentClient:
         self._event_queues.append(queue)
 
         try:
-            start_resp = await self.start_turn(prompt, mode=mode, thread_id=target_thread)
+            start_resp = await self.start_turn(
+                prompt, mode=mode, thread_id=target_thread
+            )
             yield {"type": "_turn_submission", "data": start_resp}
 
             while True:
@@ -683,7 +695,11 @@ class MiniAgentClient:
         """Advance the goal workflow with an optional verifier verdict."""
         params: dict[str, Any] = {}
         if verdict is not None:
-            params["verdict"] = verdict.to_dict() if isinstance(verdict, WorkflowVerifierVerdict) else verdict
+            params["verdict"] = (
+                verdict.to_dict()
+                if isinstance(verdict, WorkflowVerifierVerdict)
+                else verdict
+            )
         res = await self._send_request("workflow/goal/advance", params)
         return WorkflowGoalState.from_dict(res)
 

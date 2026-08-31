@@ -19,7 +19,9 @@ async def main():
         # ---------------------------------------------------------------------
         # Part 1: Mid-Turn Steering
         # ---------------------------------------------------------------------
-        prompt1 = "Write a comprehensive 1000-word tutorial on Python asyncio concurrency."
+        prompt1 = (
+            "Write a comprehensive 1000-word tutorial on Python asyncio concurrency."
+        )
         print("\n--- Part 1: Steering Active Turn ---")
         print(f"[Initial Prompt]: {prompt1}\n", flush=True)
 
@@ -34,7 +36,9 @@ async def main():
         steer_text = "Stop writing the full tutorial. Just give me a 3-bullet-point executive summary instead."
         print(f"\n[Steering Instruction Injected]: {steer_text}", flush=True)
         steer_resp = await client.steer_turn(turn_id1, steer_text)
-        print(f"[Steer Acknowledged]: actionId={steer_resp.get('actionId')}\n", flush=True)
+        print(
+            f"[Steer Acknowledged]: actionId={steer_resp.get('actionId')}\n", flush=True
+        )
 
         # Wait until turn settles and read result
         print("[Waiting for steered turn to settle...]", flush=True)

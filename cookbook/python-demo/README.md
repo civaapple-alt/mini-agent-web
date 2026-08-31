@@ -35,6 +35,7 @@ uv run python cookbook/python-demo/01_basic_turn.py
 import asyncio
 from mini_agent import MiniAgentClient
 
+
 async def main():
     async with MiniAgentClient() as client:
         # 1. 协商协议与初始化
@@ -47,6 +48,7 @@ async def main():
                 event = item["event"]
                 if event.get("type") == "assistant_text_delta":
                     print(event.get("delta", ""), end="", flush=True)
+
 
 asyncio.run(main())
 ```
@@ -95,13 +97,14 @@ from mini_agent import MiniAgentClient
 
 app = FastAPI()
 
+
 @app.websocket("/ws/agent")
 async def agent_endpoint(websocket: WebSocket):
     await websocket.accept()
     async with MiniAgentClient() as client:
         await client.initialize()
         await client.start_thread()
-        
+
         while True:
             prompt = await websocket.receive_text()
             async for item in client.stream_turn(prompt):

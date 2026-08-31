@@ -62,18 +62,22 @@ uv run python cookbook/python-demo/01_basic_turn.py
 import asyncio
 from mini_agent import MiniAgentClient
 
+
 async def main():
     # 自动加载 .env，自动将执行日志写入 logs/
     async with MiniAgentClient(log_dir="logs") as client:
         await client.initialize(profile="interactive")
         await client.start_thread()
-        
+
         # 实时推流 token 与工具调用事件
-        async for event in client.stream_turn("请列出当前目录下的所有文件并给出简短总结"):
+        async for event in client.stream_turn(
+            "请列出当前目录下的所有文件并给出简短总结"
+        ):
             if event["type"] == "event":
                 typed = event["typed_event"]
                 if typed.event_type == "assistant_text_delta":
                     print(typed.delta, end="", flush=True)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

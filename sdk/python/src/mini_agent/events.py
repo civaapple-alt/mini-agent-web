@@ -83,9 +83,7 @@ class ModelRespondedEvent:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ModelRespondedEvent:
-        tool_calls = [
-            ToolCall.from_dict(t) for t in data.get("tool_calls", [])
-        ]
+        tool_calls = [ToolCall.from_dict(t) for t in data.get("tool_calls", [])]
         return cls(
             reasoning=data.get("reasoning", ""),
             text=data.get("text", ""),

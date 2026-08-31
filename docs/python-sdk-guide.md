@@ -19,15 +19,17 @@ uv sync
 import asyncio
 from mini_agent import MiniAgentClient
 
+
 async def main():
     async with MiniAgentClient() as client:
         await client.initialize(profile="interactive")
         await client.start_thread()
-        
+
         async for event in client.stream_turn("List files in current directory"):
             if event["type"] == "event":
                 typed = event["typed_event"]
                 print(f"[{typed.event_type}]: {typed}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -69,8 +71,8 @@ if __name__ == "__main__":
 from mini_agent import MiniAgentClient
 
 client = MiniAgentClient(
-    binary_path=None,       # Auto-discovers mini-agent-app-server.exe on PATH
-    log_dir="logs",         # Auto-records detailed session logs
+    binary_path=None,  # Auto-discovers mini-agent-app-server.exe on PATH
+    log_dir="logs",  # Auto-records detailed session logs
     approval_handler=None,  # Custom async approval callback
 )
 ```
@@ -112,10 +114,13 @@ async for envelope in client.stream_turn("Explain quantum computing"):
 Sensitive actions (shell execution, workspace file modification, web fetching) trigger an `approval/request` notification from the backend. You can intercept these programmatically:
 
 ```python
-async def custom_approver(request_id: str, action: str, thread_id: str, turn_id: str | None) -> bool:
+async def custom_approver(
+    request_id: str, action: str, thread_id: str, turn_id: str | None
+) -> bool:
     print(f"[SECURITY ALERT] Request: {action}")
     # Prompt user or verify against whitelist
     return True
+
 
 client = MiniAgentClient(approval_handler=custom_approver)
 ```
@@ -151,7 +156,9 @@ assert result.status == "cancelled"
 world_state = await client.get_world_state()
 
 # Enter read-only exploration mode
-await client.set_plan_mode(active=True, prompt="Analyze codebase without modifying files")
+await client.set_plan_mode(
+    active=True, prompt="Analyze codebase without modifying files"
+)
 
 # Read settled thread checkpoint
 checkpoint = await client.read_thread()
@@ -164,7 +171,9 @@ print(f"Messages count: {len(checkpoint.messages)}")
 threads = await client.list_threads()
 
 # Fork thread state into an experimental branch
-forked = await client.fork_thread(source_thread_id="default", new_thread_id="feature-experiment")
+forked = await client.fork_thread(
+    source_thread_id="default", new_thread_id="feature-experiment"
+)
 
 # Resume thread from checkpoint
 resumed = await client.resume_thread(thread_id="restored-thread", checkpoint=checkpoint)
@@ -174,7 +183,9 @@ resumed = await client.resume_thread(thread_id="restored-thread", checkpoint=che
 ```python
 # Start a multi-stage goal workflow
 goal = await client.start_goal("Implement High-Performance Caching Layer")
-print(f"Goal ID: {goal.goal_id}, Status: {goal.status}, Milestone: {goal.current_milestone}/{goal.total_milestones}")
+print(
+    f"Goal ID: {goal.goal_id}, Status: {goal.status}, Milestone: {goal.current_milestone}/{goal.total_milestones}"
+)
 
 # Fetch milestone verification criteria
 criteria = await client.get_goal_criteria()

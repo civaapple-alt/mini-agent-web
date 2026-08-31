@@ -42,7 +42,9 @@ async def main():
         await client.initialize(profile="interactive")
         await client.start_thread()
 
-        prompt = "Please run a shell command to check current git status and list files."
+        prompt = (
+            "Please run a shell command to check current git status and list files."
+        )
         print(f"[Prompt]: {prompt}\n", flush=True)
 
         async for item in client.stream_turn(prompt):
@@ -55,13 +57,18 @@ async def main():
 
                 elif event_type == "tool_started":
                     call = event.get("call", {})
-                    print(f"\n[Tool Started]: {call.get('name')}({call.get('arguments')})", flush=True)
+                    print(
+                        f"\n[Tool Started]: {call.get('name')}({call.get('arguments')})",
+                        flush=True,
+                    )
 
                 elif event_type == "tool_finished":
                     print(f"[Tool Finished]: {event.get('name')}", flush=True)
 
                 elif event_type == "turn_finished":
-                    print(f"\n\n[Turn Finished Status]: {event.get('status')}", flush=True)
+                    print(
+                        f"\n\n[Turn Finished Status]: {event.get('status')}", flush=True
+                    )
 
 
 if __name__ == "__main__":

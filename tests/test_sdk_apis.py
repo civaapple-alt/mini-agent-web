@@ -64,7 +64,9 @@ async def test_advanced_thread_and_workflow_apis():
         refresh_res = await client.refresh_world()
         assert hasattr(refresh_res, "changed")
 
-        exec_res = await client.set_world_execution(approval="interactive", copilot=False)
+        exec_res = await client.set_world_execution(
+            approval="interactive", copilot=False
+        )
         assert hasattr(exec_res, "changed")
 
         mcp_res = await client.get_mcp_status()

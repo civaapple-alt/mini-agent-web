@@ -18,7 +18,9 @@ async def main():
             profile="interactive",
             client_name="python-basic-demo",
         )
-        print(f"[OK] Initialized with profile: {init_result.get('profile')}", flush=True)
+        print(
+            f"[OK] Initialized with profile: {init_result.get('profile')}", flush=True
+        )
 
         # 3. Start default execution thread
         thread_id = await client.start_thread()
@@ -34,7 +36,9 @@ async def main():
         async for item in client.stream_turn(prompt):
             if item["type"] == "_turn_submission":
                 sub = item.get("data")
-                turn_id = getattr(sub, "turn_id", None) or (sub.get("turn_id") if isinstance(sub, dict) else "started")
+                turn_id = getattr(sub, "turn_id", None) or (
+                    sub.get("turn_id") if isinstance(sub, dict) else "started"
+                )
                 print(f"[Turn Started] Turn ID: {turn_id}", flush=True)
 
             elif item["type"] == "event":
@@ -58,12 +62,18 @@ async def main():
                 # Tool started
                 elif event_type == "tool_started":
                     call = event.get("call", {})
-                    print(f"\n -> [Tool Calling]: {call.get('name')}({call.get('arguments')})", flush=True)
+                    print(
+                        f"\n -> [Tool Calling]: {call.get('name')}({call.get('arguments')})",
+                        flush=True,
+                    )
 
                 # Tool finished
                 elif event_type == "tool_finished":
                     status = "ERROR" if event.get("is_error") else "OK"
-                    print(f" <- [Tool Finished] [{status}]: {event.get('name')}", flush=True)
+                    print(
+                        f" <- [Tool Finished] [{status}]: {event.get('name')}",
+                        flush=True,
+                    )
 
                 # Turn completed
                 elif event_type == "turn_finished":

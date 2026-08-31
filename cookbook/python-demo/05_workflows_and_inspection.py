@@ -30,7 +30,10 @@ async def main():
         print(f"Forked Thread : {fork_res.thread_id}", flush=True)
 
         checkpoint = await client.read_thread("main-thread")
-        print(f"Main Status   : {checkpoint.status}, Next Turn: {checkpoint.next_turn_number}", flush=True)
+        print(
+            f"Main Status   : {checkpoint.status}, Next Turn: {checkpoint.next_turn_number}",
+            flush=True,
+        )
 
         closed = await client.close_thread("experiment-branch")
         print(f"Closed Branch : {closed}", flush=True)
@@ -39,8 +42,14 @@ async def main():
         print("\n--- 2. World State & Governance ---", flush=True)
         try:
             world = await client.get_world_state()
-            print(f"OS/Arch Shell : {world.status.get('os')} {world.status.get('arch')} ({world.status.get('shell')})", flush=True)
-            print(f"Commands Avail: {len(world.status.get('available_commands', []))} tools detected", flush=True)
+            print(
+                f"OS/Arch Shell : {world.status.get('os')} {world.status.get('arch')} ({world.status.get('shell')})",
+                flush=True,
+            )
+            print(
+                f"Commands Avail: {len(world.status.get('available_commands', []))} tools detected",
+                flush=True,
+            )
         except AppServerError as err:
             print(f"(world/state error: {err})", flush=True)
 
@@ -67,13 +76,21 @@ async def main():
         # 6. Multi-Milestone Goal Workflow
         print("\n--- 5. Multi-Milestone Goal Workflow ---", flush=True)
         try:
-            goal_res = await client.start_goal("Implement High-Performance Caching Layer")
+            goal_res = await client.start_goal(
+                "Implement High-Performance Caching Layer"
+            )
             print(f"Goal ID       : {goal_res.goal_id}", flush=True)
             print(f"Goal Status   : {goal_res.status}", flush=True)
-            print(f"Milestones    : {goal_res.current_milestone}/{goal_res.total_milestones}", flush=True)
+            print(
+                f"Milestones    : {goal_res.current_milestone}/{goal_res.total_milestones}",
+                flush=True,
+            )
 
             criteria = await client.get_goal_criteria()
-            print(f"Criteria Lines: {len(criteria.splitlines())} lines retrieved", flush=True)
+            print(
+                f"Criteria Lines: {len(criteria.splitlines())} lines retrieved",
+                flush=True,
+            )
 
             paused = await client.pause_goal()
             print(f"Paused Goal   : {paused.status}", flush=True)

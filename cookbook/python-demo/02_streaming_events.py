@@ -35,7 +35,10 @@ async def main():
                 if current_stream_mode is not None:
                     print("\n", flush=True)
                     current_stream_mode = None
-                print(f"\n[Seq #{seq:02d}] [Model Step {event.get('step')} Started]", flush=True)
+                print(
+                    f"\n[Seq #{seq:02d}] [Model Step {event.get('step')} Started]",
+                    flush=True,
+                )
 
             # 2. Streaming reasoning tokens
             elif event_type == "assistant_reasoning_delta":
@@ -60,7 +63,9 @@ async def main():
                 usage = event.get("usage")
                 if usage:
                     inp = usage.get("input_tokens", usage.get("prompt_tokens", 0))
-                    cached = usage.get("cached_input_tokens", usage.get("cache_read_tokens", 0))
+                    cached = usage.get(
+                        "cached_input_tokens", usage.get("cache_read_tokens", 0)
+                    )
                     out = usage.get("output_tokens", usage.get("completion_tokens", 0))
                     tot = usage.get("total_tokens", inp + out)
                     print(
@@ -80,10 +85,17 @@ async def main():
                     current_stream_mode = None
                 call = event.get("call", {})
                 args = call.get("arguments", "")
-                args_str = json.dumps(args, ensure_ascii=False) if isinstance(args, (dict, list)) else str(args)
+                args_str = (
+                    json.dumps(args, ensure_ascii=False)
+                    if isinstance(args, (dict, list))
+                    else str(args)
+                )
                 if len(args_str) > 100:
                     args_str = args_str[:100] + "..."
-                print(f"[Seq #{seq:02d}] [Tool Started]: {call.get('name')}({args_str})", flush=True)
+                print(
+                    f"[Seq #{seq:02d}] [Tool Started]: {call.get('name')}({args_str})",
+                    flush=True,
+                )
 
             # 6. Tool finished
             elif event_type == "tool_finished":
@@ -105,13 +117,19 @@ async def main():
                 if current_stream_mode is not None:
                     print("\n", flush=True)
                     current_stream_mode = None
-                print(f"\n[Seq #{seq:02d}] [Turn Finished]: status={event.get('status')}", flush=True)
+                print(
+                    f"\n[Seq #{seq:02d}] [Turn Finished]: status={event.get('status')}",
+                    flush=True,
+                )
 
             elif event_type == "run_failed":
                 if current_stream_mode is not None:
                     print("\n", flush=True)
                     current_stream_mode = None
-                print(f"\n[Seq #{seq:02d}] [Run Failed]: reason={event.get('reason')}", flush=True)
+                print(
+                    f"\n[Seq #{seq:02d}] [Run Failed]: reason={event.get('reason')}",
+                    flush=True,
+                )
 
 
 if __name__ == "__main__":

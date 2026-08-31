@@ -20,6 +20,7 @@ uv sync
 import asyncio
 from mini_agent import MiniAgentClient
 
+
 async def main():
     async with MiniAgentClient() as client:
         # 1. Initialize and start thread
@@ -32,6 +33,7 @@ async def main():
                 event = item["event"]
                 if event.get("type") == "assistant_text_delta":
                     print(event.get("delta", ""), end="", flush=True)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

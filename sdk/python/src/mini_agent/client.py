@@ -55,7 +55,14 @@ def setup_logging(
             os.makedirs(target_dir, exist_ok=True)
     elif log_dir:
         os.makedirs(log_dir, exist_ok=True)
-        target_file = os.path.join(log_dir, "mini-agent.log")
+        # Automatically derive script-specific log name (e.g. 01_basic_turn.log)
+        script_name = "mini-agent"
+        if sys.argv and sys.argv[0]:
+            base = os.path.basename(sys.argv[0])
+            name, _ = os.path.splitext(base)
+            if name and name not in ("-c", "<stdin>", "__main__", "pytest", "python"):
+                script_name = name
+        target_file = os.path.join(log_dir, f"{script_name}.log")
 
     fmt = format_str or "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
     formatter = logging.Formatter(fmt)

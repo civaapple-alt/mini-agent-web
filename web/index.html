@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full bg-gray-950 text-gray-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mini Agent Studio</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              500: '#0ea5e9',
+              600: '#0284c7',
+              700: '#0369a1',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Marked Markdown Parser -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Highlight.js for Code Highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="h-full flex flex-col font-sans antialiased select-none bg-gray-950">
+
+  <!-- Top Navigation Header -->
+  <header class="h-14 border-b border-gray-800 bg-gray-900/80 backdrop-blur px-4 flex items-center justify-between shrink-0 z-20">
+    <div class="flex items-center space-x-3">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20 font-bold text-white text-sm">
+        MA
+      </div>
+      <div>
+        <h1 class="text-sm font-semibold text-white flex items-center gap-2">
+          Mini Agent Studio
+          <span class="text-xs px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800 font-mono">v0.5.0</span>
+        </h1>
+      </div>
+    </div>
+
+    <!-- Center Badges -->
+    <div class="hidden md:flex items-center space-x-3 text-xs">
+      <div id="threadBadge" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-800 border border-gray-700 text-gray-300">
+        <i data-lucide="git-branch" class="w-3.5 h-3.5 text-sky-400"></i>
+        <span>Thread: <span id="currentThreadLabel" class="font-mono text-white">default</span></span>
+      </div>
+      <div id="planModeBadge" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-950/60 border border-amber-800/60 text-amber-300 hidden">
+        <i data-lucide="shield-alert" class="w-3.5 h-3.5 text-amber-400"></i>
+        <span>Plan Mode Active</span>
+      </div>
+    </div>
+
+    <!-- Right Controls -->
+    <div class="flex items-center space-x-2">
+      <button id="btnTogglePlan" class="px-2.5 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-xs text-gray-300 flex items-center gap-1.5 transition">
+        <i data-lucide="compass" class="w-3.5 h-3.5"></i>
+        <span>Plan Mode</span>
+      </button>
+      <button id="btnOpenWorld" class="px-2.5 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-xs text-gray-300 flex items-center gap-1.5 transition">
+        <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
+        <span>World & Tools</span>
+      </button>
+      <div id="wsStatusDot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-4 ring-emerald-500/20" title="WebSocket Connected"></div>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <div class="flex-1 flex overflow-hidden relative">
+
+    <!-- Left Sidebar: Conversations & Branches -->
+    <aside id="sidebar" class="w-64 border-r border-gray-800 bg-gray-900/50 flex flex-col shrink-0">
+      <div class="p-3 border-b border-gray-800">
+        <button id="btnNewThread" class="w-full py-2 px-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs flex items-center justify-center gap-2 shadow-sm transition">
+          <i data-lucide="plus" class="w-4 h-4"></i>
+          <span>新对话 (New Thread)</span>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-2 space-y-1" id="threadsList">
+        <!-- Dynamically rendered thread items -->
+      </div>
+
+      <div class="p-3 border-t border-gray-800 text-[11px] text-gray-500 flex justify-between items-center">
+        <span>App Server: Connected</span>
+        <button id="btnRefreshThreads" class="hover:text-gray-300" title="刷新会话">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Center Chat Container -->
+    <main class="flex-1 flex flex-col bg-gray-950 overflow-hidden relative">
+      
+      <!-- Messages Scroll Area -->
+      <div id="messagesContainer" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 max-w-4xl mx-auto w-full">
+        <!-- Welcome banner -->
+        <div id="welcomeBanner" class="text-center py-12 px-4 space-y-4">
+          <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center mx-auto shadow-xl shadow-sky-500/10 text-white">
+            <i data-lucide="bot" class="w-6 h-6"></i>
+          </div>
+          <h2 class="text-xl font-bold text-white">Mini Agent 交互控制台</h2>
+          <p class="text-sm text-gray-400 max-w-md mx-auto">
+            连接底层 Mini Agent Harness 与 Rust App Server，支持多轮交互、思维链 (Thinking) 流式呈现、工具执行卡片与安全权限审批。
+          </p>
+          <div class="flex flex-wrap justify-center gap-2 pt-4">
+            <button class="quick-prompt px-3 py-1.5 rounded-lg bg-gray-900 border border-gray-800 hover:border-gray-700 text-xs text-gray-300 transition">
+              🔍 检查工作区文件与结构
+            </button>
+            <button class="quick-prompt px-3 py-1.5 rounded-lg bg-gray-900 border border-gray-800 hover:border-gray-700 text-xs text-gray-300 transition">
+              📋 开启只读 Plan Mode 探索架构
+            </button>
+            <button class="quick-prompt px-3 py-1.5 rounded-lg bg-gray-900 border border-gray-800 hover:border-gray-700 text-xs text-gray-300 transition">
+              🎯 启动多阶段 Goal 目标工作流
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pending Security Approval Banner -->
+      <div id="approvalBanner" class="mx-4 md:mx-auto max-w-4xl w-full mb-3 p-4 rounded-xl bg-amber-950/70 border border-amber-700/80 shadow-2xl backdrop-blur hidden">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex gap-3">
+            <div class="p-2 rounded-lg bg-amber-900/60 text-amber-400 shrink-0">
+              <i data-lucide="shield-alert" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h4 class="text-sm font-semibold text-amber-200 flex items-center gap-2">
+                需要安全审批授权 (Security Approval Required)
+                <span id="approvalRequestId" class="font-mono text-xs text-amber-400"></span>
+              </h4>
+              <p id="approvalDetails" class="text-xs text-amber-300/90 mt-1 font-mono break-all"></p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button id="btnDenyApproval" class="px-3 py-1.5 rounded-lg bg-rose-900/60 hover:bg-rose-800 text-rose-200 border border-rose-700/60 text-xs font-medium transition flex items-center gap-1">
+              <i data-lucide="x" class="w-3.5 h-3.5"></i>
+              <span>拒绝 (Deny)</span>
+            </button>
+            <button id="btnApproveApproval" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow transition flex items-center gap-1">
+              <i data-lucide="check" class="w-3.5 h-3.5"></i>
+              <span>允许执行 (Allow)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dynamic Steer Floating Bar -->
+      <div id="steerBar" class="mx-4 md:mx-auto max-w-4xl w-full mb-2 px-3 py-2 rounded-lg bg-indigo-950/60 border border-indigo-800/60 flex items-center justify-between text-xs text-indigo-300 hidden">
+        <span class="flex items-center gap-1.5">
+          <i data-lucide="navigation" class="w-3.5 h-3.5 text-indigo-400 animate-pulse"></i>
+          <span>Agent 正在执行... 您可以在下方输入指令实时纠偏 (Steer)</span>
+        </span>
+        <button id="btnInterruptCurrent" class="px-2 py-0.5 rounded bg-rose-950 text-rose-400 border border-rose-800 hover:bg-rose-900 font-medium transition">
+          中断当前轮次
+        </button>
+      </div>
+
+      <!-- Bottom Chat Input Bar -->
+      <div class="border-t border-gray-800 bg-gray-900/90 backdrop-blur p-3 md:p-4">
+        <div class="max-w-4xl mx-auto flex items-end gap-2">
+          <div class="flex-1 rounded-xl bg-gray-950 border border-gray-800 focus-within:border-sky-500 transition-all p-2 flex flex-col">
+            <textarea
+              id="promptInput"
+              rows="2"
+              placeholder="输入任务或问题... (Enter 发送, Shift+Enter 换行)"
+              class="w-full bg-transparent text-sm text-gray-100 placeholder-gray-500 focus:outline-none resize-none px-1"
+            ></textarea>
+          </div>
+
+          <div class="flex gap-2 shrink-0">
+            <button
+              id="btnSend"
+              class="h-11 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-lg shadow-sky-600/20 transition disabled:opacity-50"
+            >
+              <i data-lucide="send" class="w-4 h-4"></i>
+              <span class="hidden sm:inline">发送</span>
+            </button>
+            <button
+              id="btnInterrupt"
+              class="h-11 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-lg shadow-rose-600/20 transition hidden"
+            >
+              <i data-lucide="square" class="w-4 h-4"></i>
+              <span class="hidden sm:inline">停止</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Right Drawer: WorldState & MCP Status -->
+    <aside id="worldDrawer" class="w-80 border-l border-gray-800 bg-gray-900/95 flex flex-col shrink-0 fixed right-0 top-14 bottom-0 z-30 transform translate-x-full transition-transform duration-200">
+      <div class="p-4 border-b border-gray-800 flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+          <i data-lucide="server" class="w-4 h-4 text-sky-400"></i>
+          <span>环境状态与工具集</span>
+        </h3>
+        <button id="btnCloseWorld" class="text-gray-400 hover:text-white">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-4 space-y-6 text-xs text-gray-300">
+        <!-- Environment block -->
+        <div>
+          <h4 class="font-semibold text-gray-400 uppercase tracking-wider mb-2">系统环境 (Environment)</h4>
+          <div id="envContent" class="space-y-1.5 bg-gray-950 p-3 rounded-lg border border-gray-800 font-mono text-[11px]">
+            <div>加载中...</div>
+          </div>
+        </div>
+
+        <!-- Available Tools -->
+        <div>
+          <h4 class="font-semibold text-gray-400 uppercase tracking-wider mb-2">可用工具链 (Detected Tools)</h4>
+          <div id="toolsContent" class="flex flex-wrap gap-1.5">
+            <!-- Badges -->
+          </div>
+        </div>
+
+        <!-- MCP Servers -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <h4 class="font-semibold text-gray-400 uppercase tracking-wider">MCP 服务器状态</h4>
+            <button id="btnRetryMcp" class="text-[11px] text-sky-400 hover:underline flex items-center gap-1">
+              <i data-lucide="rotate-cw" class="w-3 h-3"></i> 重试
+            </button>
+          </div>
+          <div id="mcpContent" class="bg-gray-950 p-3 rounded-lg border border-gray-800 font-mono text-[11px]">
+            <div>无已连接的 MCP 服务器</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- App Main Logic -->
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -25,6 +25,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `03_approval_handling.py`: Sensitive tool interception and terminal-based interactive approval callback.
   - `04_steering_and_interrupt.py`: Real-time instruction steering mid-flight and cooperative turn interruption.
   - `05_workflows_and_inspection.py`: WorldState system inspection, read-only Plan Mode, and settled thread checkpoints.
+- **FastAPI Web API Gateway (`server/`)**:
+  - Asynchronous gateway providing RESTful endpoints, SSE event streams (`/api/agent/stream`), and bidirectional WebSocket (`/ws/agent`).
+  - Integrated `SessionManager` handling background `MiniAgentClient` lifecycles and broadcast channels.
+  - Bidirectional security approval handshake enabling human-in-the-loop authorization over Web UI.
+  - Endpoints covering Thread lifecycle, WorldState detection, MCP tool status/retry, Plan Mode, and Goal workflows.
+- **Modern Web Studio Frontend (`web/`)**:
+  - Single-page responsive web app styled in Cursor / ChatGPT / Claude aesthetics.
+  - Real-time Markdown rendering, code block syntax highlighting, and copy buttons.
+  - Streaming Thinking accordion displaying model reasoning process and elapsed time.
+  - Dynamic Tool Execution cards (status badges, arguments, expandable output logs).
+  - Prominent interactive Security Approval dialogs for sensitive tool calls.
+  - Live Steering prompt injection and Interrupt buttons.
+  - Thread history sidebar with branch forking and WorldState drawer.
+- **Terminal User Interface (`tui/`)**:
+  - Rich-based interactive CLI terminal application (`tui_app.py`).
+  - Terminal-based streaming Markdown, Thinking panels, and approval prompts.
 - **Comprehensive Documentation (`docs/`)**:
   - `docs/python-sdk-guide.md`: Official developer guide and usage manual.
   - `docs/sdk-maturity-and-protocol-coverage.md`: SDK maturity radar and JSON-RPC 2.0 protocol coverage matrix.

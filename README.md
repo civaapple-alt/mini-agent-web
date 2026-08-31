@@ -112,6 +112,32 @@ if __name__ == "__main__":
 
 ---
 
+## 🖥️ 启动 Web Studio 前端界面与 API 网关
+
+只需一条命令即可启动 FastAPI 网关并在浏览器中体验类似 Cursor / ChatGPT 的现代化交互界面：
+
+```bash
+# 启动 Web Studio (默认运行在 http://localhost:8000)
+uv run mini-agent-web
+
+# 或者使用 uvicorn 启动
+uv run uvicorn server.app:app --host 0.0.0.0 --port 8000
+```
+> 打开浏览器访问 `http://localhost:8000` 即可进入 Web Studio 交互控制台；API 交互文档见 `http://localhost:8000/docs`。
+
+---
+
+## 📟 启动终端交互界面 (Terminal TUI)
+
+无需打开浏览器，直接在终端中进行全功能交互：
+
+```bash
+# 启动基于 Rich 的终端 TUI
+uv run mini-agent-tui
+```
+
+---
+
 ## 📂 项目目录结构
 
 ```text
@@ -126,6 +152,25 @@ mini-agent-web/
 │   │   └── py.typed           # PEP 561 类型检查标记
 │   └── pyproject.toml         # SDK 独立打包规范 (零外部依赖)
 │
+├── server/                    # FastAPI Web API Gateway
+│   ├── app.py                 # FastAPI 应用入口、CORS、生命周期与静态挂载
+│   ├── config.py              # 服务端环境与网络端口配置
+│   ├── session_manager.py     # Client 连接池、多会话路由与安全审批握手调度
+│   ├── main.py                # Uvicorn CLI 启动器
+│   └── routes/                # REST / SSE / WebSocket 路由分发
+│       ├── agent.py           # /api/agent/turn, /api/agent/stream, /ws/agent
+│       ├── threads.py         # /api/threads (列表/新建/分支/检查点/关闭)
+│       └── world.py           # /api/world, /api/mcp, /api/workflows
+│
+├── web/                       # 现代化单页 Web 前端 (Cursor / ChatGPT 风格)
+│   ├── index.html             # 现代化单页界面 (Thinking 折叠/工具卡片/审批弹窗)
+│   └── static/                # 静态样式与交互脚本
+│       ├── app.css
+│       └── app.js
+│
+├── tui/                       # Terminal UI (基于 Rich 的交互式终端客户端)
+│   └── tui_app.py
+│
 ├── cookbook/python-demo/      # 实战示例集
 │   ├── 01_basic_turn.py               # 基础一问一答与生命周期
 │   ├── 02_streaming_events.py         # 深度流式事件（Thinking/Tokens/多步工具）
@@ -134,7 +179,8 @@ mini-agent-web/
 │   └── 05_workflows_and_inspection.py # WorldState 快照与只读 Plan Mode
 │
 ├── tests/                     # 自动化集成与单元测试套件
-│   └── test_sdk_apis.py       # pytest-asyncio 全量 API 协议测试
+│   ├── test_gateway_api.py    # FastAPI REST / SSE 接口集成测试
+│   └── test_sdk_apis.py       # pytest-asyncio 全量 SDK API 协议测试
 │
 ├── docs/                      # 核心文档与架构记录
 │   ├── README.md                              # 文档导航中心

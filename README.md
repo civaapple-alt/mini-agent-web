@@ -120,7 +120,7 @@ if __name__ == "__main__":
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`uv run mini-agent-server`** | **后端 API 网关服务** | `8000` | ❌ 静态托管 | 生产体验、API 服务、单一进程开箱即用 | `http://localhost:8000`<br>*(API 文档: `/docs`)* |
 | **`uv run mini-agent-server-dev`** | **后端开发服务** | `8000` | ⚡ Python 热重载 | 修改 Python 后端代码、调试 API 接口 | `http://localhost:8000`<br>*(API 文档: `/docs`)* |
-| **`uv run mini-agent-frontend-dev`** | **前端开发服务器** | `5173` | ⚡ Vite 毫秒热更 | 修改 React 前端代码、调试 UI 组件与样式 | `http://localhost:5173`<br>*(自动代理 8000 后端)* |
+| **`cd frontend && npm run dev`** | **前端开发服务器** | `5173` | ⚡ Vite 毫秒热更 | 修改 React 前端代码、调试 UI 组件与样式 | `http://localhost:5173`<br>*(自动代理 8000 后端)* |
 | **`uv run mini-agent-tui`** | **终端 TUI 交互客户端** | - | - | 纯命令行环境交互与权限审批 | 终端直接交互 |
 
 ---
@@ -143,8 +143,9 @@ uv run mini-agent-server
 # 终端 1：启动带自动重载的 Python 后端（Port 8000，修改 Python 代码自动重启）
 uv run mini-agent-server-dev
 
-# 终端 2：启动带 Vite HMR 的 React 前端（Port 5173，修改 JSX/CSS 毫秒级热更）
-uv run mini-agent-frontend-dev
+# 终端 2：启动前端 Vite 开发服务器（Port 5173，修改 JSX/CSS 毫秒级热更）
+cd frontend
+npm run dev
 ```
 > 打开浏览器访问 `http://localhost:5173` 即可享受毫秒级热更新开发体验。
 

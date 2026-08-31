@@ -23,10 +23,10 @@ Accepted
    - 维护后台 `MiniAgentClient` 实例生命周期；
    - 收到 App Server 的高危工具审批请求时，生成异步 `asyncio.Future` 并向所有连接的前端广播；前端用户点击确认后即时唤醒并回传决策。
 
-3. **构建零繁重构建依赖的现代化 Web 前端 (`web/`)**：
-   - 采用原生 HTML5 + Tailwind CSS + Marked.js + Highlight.js + Lucide Icons；
-   - 避免冗长沉重的 Node 构建流程，用户无需额外安装 npm 依赖即可即开即用；
-   - 完整实现思考折叠卡片（Thinking Accordion）、工具执行卡片（Tool Cards）、会话历史分支与审批模态框。
+3. **构建 React 19 + Vite 现代化 SPA 前端工程 (`frontend/`)**：
+   - 架构对标 `llm-council/frontend`，采用 React 19、Vite 6、`lucide-react`、`react-markdown` 与 `remark-gfm`；
+   - 彻底解耦组件设计：`Header`, `Sidebar`, `ChatArea`, `ThinkingBlock`, `ToolCard`, `ApprovalDialog`, `InputBar`, `WorldDrawer`；
+   - 既支持 Vite 独立开发热更（反向代理 `/api` 与 `/ws`），又支持通过 `npm run build` 产物由 FastAPI 网关直接零门槛开箱托管。
 
 4. **提供轻量 Rich 终端客户端 (`tui/`)**：
    - 封装在 `tui/tui_app.py` 中，提供纯命令行环境下的格式化输出与审批交互。
@@ -34,8 +34,8 @@ Accepted
 ## Consequences
 
 * **Positive**:
-  - 用户只需一条命令 `uv run mini-agent-web` 即可立即在浏览器中开始多轮 Agent 对话与可视化开发；
-  - 架构清晰分层：Rust App Server (底座) -> Python SDK (客户端) -> FastAPI Gateway (服务层) -> Web UI / TUI (展示层)；
-  - 100% 保持零编译阻碍，极速启动。
+  - 用户只需一条命令 `uv run mini-agent-web` 即可立即在浏览器中享受完整的 React 19 单页应用；
+  - 架构清晰分层：Rust App Server (底座) -> Python SDK (客户端) -> FastAPI Gateway (服务层) -> React 19 SPA / TUI (展示层)；
+  - 前端具备工业级状态管理、组件复用能力与全套流式交互体验。
 * **Negative / Trade-offs**:
-  - Web UI 使用 CDN 加载基础 UI 库，离线极端环境下需依赖本地静态缓存（未来可扩展离线打包模式）。
+  - 前端源码开发需依赖 Node/npm 环境（生产打包产物直接由 Python 网关托管，终端用户无需 Node 环境）。

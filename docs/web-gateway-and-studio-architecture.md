@@ -8,11 +8,11 @@
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│                   Web Studio 前端 (web/index.html & static/)           │
-│  ├── 聊天主视窗 (Markdown 渲染、Thinking 思考折叠卡片、Tool 执行卡片)    │
-│  ├── 交互式安全审批弹窗 (Security Approval Dialog: 允许 / 拒绝)        │
-│  ├── 动态交互控制条 (Prompt 发送 / 实时纠偏 Steer / 协作中断 Interrupt)│
-│  └── 侧边栏与抽屉 (Thread 会话树、Fork 分支派生、WorldState 环境探测) │
+│                   React 19 + Vite 前端 (frontend/)                      │
+│  ├── 聊天主视窗 (ChatArea: ReactMarkdown 渲染、ThinkingBlock、ToolCard) │
+│  ├── 交互式安全审批弹窗 (ApprovalDialog: 允许 / 拒绝)                   │
+│  ├── 动态交互控制条 (InputBar: Prompt 发送 / 实时纠偏 Steer / 协作中断) │
+│  └── 侧边栏与抽屉 (Sidebar: 会话树与 Fork 分支; WorldDrawer: 环境探测)  │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │ HTTP REST + SSE / WebSocket (/ws/agent)
 ┌───────────────────────────────────▼────────────────────────────────────┐
@@ -73,23 +73,24 @@ App Server (Rust)             MiniAgentClient              SessionManager       
 
 ---
 
-## 3. Web Studio 前端 UI 特性
+## 3. Web Studio React 前端工程特性 (`frontend/`)
 
-* **Cursor / ChatGPT 现代化深色质感**：基于 Tailwind CSS + Marked.js + Highlight.js + Lucide 图标构建，无需复杂的 node_modules / 构建工具打包，即开即用；
-* **Thinking 思考折叠卡片**：
+* **React 19 + Vite 现代化技术栈**：对标 `llm-council/frontend` 架构，使用 `react-markdown`、`remark-gfm`、`lucide-react` 构建响应式 SPA；
+* **Thinking 思考折叠卡片 (`ThinkingBlock.jsx`)**：
   * 流式渐进展现思维链（支持 DeepSeek Reasoner、OpenAI o1/o3 思考过程）；
-  * 思考中带有脉冲动画与实时打字机效果，思考结束后自动标识完成并支持一键展开/收起；
-* **Tool 执行卡片**：
+  * 思考中带有脉冲呼吸灯动画与实时打字机效果，思考结束后自动标识完成并支持一键展开/收起；
+* **Tool 执行卡片 (`ToolCard.jsx`)**：
   * 动态展示工具名称、入参代码框、运行中/成功/失败状态徽章；
   * 终端输出结果支持独立折叠查看，避免大输出污染主聊窗；
-* **动态控制条**：
+* **动态控制条 (`InputBar.jsx`)**：
+  * 自适应高度多行输入框（Enter 发送，Shift+Enter 换行）；
   * Agent 执行过程中自动切换为【停止生成】(Interrupt) 按钮；
   * 浮动纠偏条允许用户在模型运行期间随时注入 Steer 提示词；
-* **多会话侧边栏与 Fork 分支**：
+* **多会话侧边栏与 Fork 分支 (`Sidebar.jsx`)**：
   * 支持查看与切换历史 Thread；
   * 支持一键从指定历史节点派生（Fork）出全新的子会话分支；
-* **WorldState 环境抽屉**：
-  * 右侧抽屉实时展示服务端探测到的操作系统、Shell 环境、已安装可用工具链（`git`, `cargo`, `uv`, `python` 等）及 MCP 服务器状态。
+* **WorldState 环境抽屉 (`WorldDrawer.jsx`)**：
+  * 右侧抽屉实时展示服务端探测到的操作系统、Shell 环境、已安装可用工具链（`git`, `cargo`, `uv`, `python` 等）及 MCP 服务器状态，支持一键重试连接。
 
 ---
 

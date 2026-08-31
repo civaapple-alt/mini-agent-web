@@ -114,8 +114,7 @@ if __name__ == "__main__":
 
 ## 🖥️ 启动 Web Studio 前端界面与 API 网关
 
-只需一条命令即可启动 FastAPI 网关并在浏览器中体验类似 Cursor / ChatGPT 的现代化交互界面：
-
+### 方式 1：一键生产模式（自动加载编译好的 React SPA 前端）
 ```bash
 # 启动 Web Studio (默认运行在 http://localhost:8000)
 uv run mini-agent-web
@@ -124,6 +123,17 @@ uv run mini-agent-web
 uv run uvicorn server.app:app --host 0.0.0.0 --port 8000
 ```
 > 打开浏览器访问 `http://localhost:8000` 即可进入 Web Studio 交互控制台；API 交互文档见 `http://localhost:8000/docs`。
+
+### 方式 2：前端开发调试模式（React 19 + Vite 热更新）
+```bash
+# 1. 启动后端网关 (8000 端口)
+uv run mini-agent-web
+
+# 2. 进入 frontend 目录启动 Vite 开发服务器 (5173 端口，自动代理 /api 和 /ws)
+cd frontend
+npm install
+npm run dev
+```
 
 ---
 
@@ -152,8 +162,18 @@ mini-agent-web/
 │   │   └── py.typed           # PEP 561 类型检查标记
 │   └── pyproject.toml         # SDK 独立打包规范 (零外部依赖)
 │
+├── frontend/                  # React 19 + Vite 现代化 SPA 前端工程 (参考 llm-council)
+│   ├── package.json           # React 19, Lucide-React, React-Markdown, Remark-Gfm
+│   ├── vite.config.js         # Vite 代理配置 (反向代理 /api 与 /ws 到 8000 端口)
+│   ├── index.html             # 前端 HTML 入口
+│   └── src/
+│       ├── main.jsx           # React 入口
+│       ├── App.jsx            # 主应用状态调度与 WebSocket 消息分发
+│       ├── api.js             # REST API、全双工 WebSocket 与断线重连客户端
+│       └── components/        # Header, Sidebar, ChatArea, ThinkingBlock, ToolCard, ApprovalDialog, InputBar, WorldDrawer
+│
 ├── server/                    # FastAPI Web API Gateway
-│   ├── app.py                 # FastAPI 应用入口、CORS、生命周期与静态挂载
+│   ├── app.py                 # FastAPI 应用入口、CORS、生命周期与静态资源托管
 │   ├── config.py              # 服务端环境与网络端口配置
 │   ├── session_manager.py     # Client 连接池、多会话路由与安全审批握手调度
 │   ├── main.py                # Uvicorn CLI 启动器
@@ -161,12 +181,6 @@ mini-agent-web/
 │       ├── agent.py           # /api/agent/turn, /api/agent/stream, /ws/agent
 │       ├── threads.py         # /api/threads (列表/新建/分支/检查点/关闭)
 │       └── world.py           # /api/world, /api/mcp, /api/workflows
-│
-├── web/                       # 现代化单页 Web 前端 (Cursor / ChatGPT 风格)
-│   ├── index.html             # 现代化单页界面 (Thinking 折叠/工具卡片/审批弹窗)
-│   └── static/                # 静态样式与交互脚本
-│       ├── app.css
-│       └── app.js
 │
 ├── tui/                       # Terminal UI (基于 Rich 的交互式终端客户端)
 │   └── tui_app.py

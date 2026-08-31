@@ -37,15 +37,18 @@ class ToolCall:
     """Represents a tool invocation requested by the model."""
 
     name: str
-    arguments: str
+    arguments: Any = ""
+    id: str = ""
     call_id: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ToolCall:
+        cid = data.get("id") or data.get("call_id") or data.get("callId", "")
         return cls(
             name=data.get("name", ""),
             arguments=data.get("arguments", ""),
-            call_id=data.get("call_id") or data.get("callId", ""),
+            id=cid,
+            call_id=cid,
         )
 
 
@@ -53,20 +56,24 @@ class ToolCall:
 class ModelUsage:
     """Token consumption statistics for a turn or step."""
 
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
+    input_tokens: int = 0
+    cached_input_tokens: int = 0
+    output_tokens: int = 0
     total_tokens: int = 0
-    cache_read_tokens: int = 0
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> ModelUsage:
         if not data:
             return cls()
+        inp = data.get("input_tokens") or data.get("prompt_tokens", 0)
+        cached = data.get("cached_input_tokens") or data.get("cache_read_tokens", 0)
+        out = data.get("output_tokens") or data.get("completion_tokens", 0)
+        tot = data.get("total_tokens") or (inp + out)
         return cls(
-            prompt_tokens=data.get("prompt_tokens", 0),
-            completion_tokens=data.get("completion_tokens", 0),
-            total_tokens=data.get("total_tokens", 0),
-            cache_read_tokens=data.get("cache_read_tokens", 0),
+            input_tokens=inp,
+            cached_input_tokens=cached,
+            output_tokens=out,
+            total_tokens=tot,
         )
 
 

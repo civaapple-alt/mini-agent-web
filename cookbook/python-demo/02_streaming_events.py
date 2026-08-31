@@ -5,6 +5,7 @@ token streaming, tool invocations, UTF-8 output truncation, and usage metrics.
 """
 
 import asyncio
+import json
 
 from mini_agent import MiniAgentClient
 
@@ -58,10 +59,13 @@ async def main():
 
                 usage = event.get("usage")
                 if usage:
+                    inp = usage.get("input_tokens", usage.get("prompt_tokens", 0))
+                    cached = usage.get("cached_input_tokens", usage.get("cache_read_tokens", 0))
+                    out = usage.get("output_tokens", usage.get("completion_tokens", 0))
+                    tot = usage.get("total_tokens", inp + out)
                     print(
                         f"[Seq #{seq:02d}] [Token Usage]: "
-                        f"prompt={usage.get('prompt_tokens')}, completion={usage.get('completion_tokens')}, "
-                        f"total={usage.get('total_tokens')}",
+                        f"input={inp}, cached={cached}, output={out}, total={tot}",
                         flush=True,
                     )
                 tool_calls = event.get("tool_calls", [])
@@ -76,9 +80,10 @@ async def main():
                     current_stream_mode = None
                 call = event.get("call", {})
                 args = call.get("arguments", "")
-                if len(args) > 100:
-                    args = args[:100] + "..."
-                print(f"[Seq #{seq:02d}] [Tool Started]: {call.get('name')}({args})", flush=True)
+                args_str = json.dumps(args, ensure_ascii=False) if isinstance(args, (dict, list)) else str(args)
+                if len(args_str) > 100:
+                    args_str = args_str[:100] + "..."
+                print(f"[Seq #{seq:02d}] [Tool Started]: {call.get('name')}({args_str})", flush=True)
 
             # 6. Tool finished
             elif event_type == "tool_finished":

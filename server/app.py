@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -58,10 +59,18 @@ def create_app() -> FastAPI:
     app.include_router(threads.router)
     app.include_router(world.router)
 
-    # Static UI Serving
+    # Static UI Serving (prioritize modern React frontend/dist, fallback to web/)
+    frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
     static_path = settings.static_dir
-    static_assets_path = static_path / "static"
 
+    if (frontend_dist / "assets").exists():
+        app.mount(
+            "/assets",
+            StaticFiles(directory=str(frontend_dist / "assets")),
+            name="assets",
+        )
+
+    static_assets_path = static_path / "static"
     if static_assets_path.exists():
         app.mount(
             "/static", StaticFiles(directory=str(static_assets_path)), name="static"
@@ -79,6 +88,9 @@ def create_app() -> FastAPI:
     @app.get("/", tags=["UI"])
     async def serve_index():
         """Serve Web UI single page app."""
+        if (frontend_dist / "index.html").exists():
+            return FileResponse(frontend_dist / "index.html")
+
         index_file = static_path / "index.html"
         if index_file.exists():
             return FileResponse(index_file)

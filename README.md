@@ -116,36 +116,37 @@ if __name__ == "__main__":
 
 本项目提供了清晰区分的命令行入口：
 
-| 命令 | 启动目标 | 监听端口 | 适用场景 | 访问入口 |
-| :--- | :--- | :--- | :--- | :--- |
-| `uv run mini-agent-server` | **后端 API 网关服务** | `8000` | 生产托管、API 服务、单一进程体验 | `http://localhost:8000`<br>*(API 文档: `/docs`)* |
-| `uv run mini-agent-frontend` | **前端 Vite 开发服务器** | `5173` | 修改 React 前端代码、实时热重载 (HMR) | `http://localhost:5173`<br>*(自动代理 8000 后端)* |
-| `uv run mini-agent-tui` | **终端 TUI 交互客户端** | - | 纯命令行环境交互 | 终端直接交互 |
+| 命令 | 启动目标 | 监听端口 | 热重载 (HMR) | 适用场景 | 访问入口 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`uv run mini-agent-server`** | **后端 API 网关服务** | `8000` | ❌ 静态托管 | 生产体验、API 服务、单一进程开箱即用 | `http://localhost:8000`<br>*(API 文档: `/docs`)* |
+| **`uv run mini-agent-server-dev`** | **后端开发服务** | `8000` | ⚡ Python 热重载 | 修改 Python 后端代码、调试 API 接口 | `http://localhost:8000`<br>*(API 文档: `/docs`)* |
+| **`uv run mini-agent-frontend-dev`** | **前端开发服务器** | `5173` | ⚡ Vite 毫秒热更 | 修改 React 前端代码、调试 UI 组件与样式 | `http://localhost:5173`<br>*(自动代理 8000 后端)* |
+| **`uv run mini-agent-tui`** | **终端 TUI 交互客户端** | - | - | 纯命令行环境交互与权限审批 | 终端直接交互 |
 
 ---
 
-### 🎯 场景 1：直接使用 / 体验 Web Studio（端口 8000）
+### 🎯 场景 1：直接使用 / 体验 Web Studio（只开 1 个终端）
 后端 FastAPI 会自动托管编译好的 React 前端静态包，**无需任何 Node.js 进程**：
 
 ```bash
-# 启动后端 API 网关（Port 8000）
+# 启动生产级后端 API 网关（Port 8000，开箱即用）
 uv run mini-agent-server
 ```
 > 打开浏览器访问 `http://localhost:8000` 即可进入 Web Studio；API 交互文档见 `http://localhost:8000/docs`。
 
 ---
 
-### 🛠️ 场景 2：前端二次开发与热重载（端口 5173 + 8000）
-当你正在修改 `frontend/src/` 中的 React/JSX/CSS 代码时：
+### 🛠️ 场景 2：全栈二次开发与实时热重载（开 2 个终端）
+当你正在修改 Python 后端或 React 前端源码时：
 
 ```bash
-# 终端 1：启动后端 API 网关（Port 8000，提供 /api 与 /ws 数据接口）
-uv run mini-agent-server
+# 终端 1：启动带自动重载的 Python 后端（Port 8000，修改 Python 代码自动重启）
+uv run mini-agent-server-dev
 
-# 终端 2：启动前端 Vite 开发服务器（Port 5173，监听源码并实时热更新）
-uv run mini-agent-frontend
+# 终端 2：启动带 Vite HMR 的 React 前端（Port 5173，修改 JSX/CSS 毫秒级热更）
+uv run mini-agent-frontend-dev
 ```
-> 打开浏览器访问 `http://localhost:5173`。编辑器保存代码后，浏览器 **0.1 秒内无刷新实时生效**。
+> 打开浏览器访问 `http://localhost:5173` 即可享受毫秒级热更新开发体验。
 
 > [!TIP]
 > **❓ 为什么 8000 已经能看网页了，开发时还需要 5173？**

@@ -6,7 +6,8 @@ and programmatically or interactively prompting the user.
 """
 
 import asyncio
-from client import MiniAgentClient
+
+from mini_agent import MiniAgentClient
 
 
 async def interactive_approval_handler(request_id: str, action: str) -> bool:

@@ -4,7 +4,12 @@ version = "0.1.0"
 description = "Web interface and Python SDK for Mini Agent Harness"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "mini-agent",
+]
+
+[tool.uv.sources]
+mini-agent = { path = "sdk/python", editable = true }
 
 [project.optional-dependencies]
 web = [

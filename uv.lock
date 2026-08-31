@@ -142,9 +142,17 @@ wheels = [
 ]
 
 [[package]]
+name = "mini-agent"
+version = "0.1.0"
+source = { editable = "sdk/python" }
+
+[[package]]
 name = "mini-agent-web"
 version = "0.1.0"
 source = { virtual = "." }
+dependencies = [
+    { name = "mini-agent" },
+]
 
 [package.optional-dependencies]
 dev = [
@@ -165,6 +173,7 @@ web = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.110.0" },
+    { name = "mini-agent", editable = "sdk/python" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
     { name = "rich", marker = "extra == 'tui'", specifier = ">=13.7.0" },

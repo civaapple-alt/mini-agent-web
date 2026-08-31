@@ -1,5 +1,5 @@
 """
-Mini Agent App Server Python Client SDK
+Mini Agent Python Client SDK
 Asynchronous JSON-RPC 2.0 Client over stdio transport.
 """
 
@@ -13,17 +13,15 @@ import shutil
 from collections.abc import AsyncIterator, Callable, Coroutine
 from typing import Any, Self
 
-logger = logging.getLogger("mini_agent_client")
+from mini_agent.errors import (
+    AppServerError,
+    ProtocolVersionMismatchError,
+    ServerProcessError,
+)
+from mini_agent.events import parse_event
+from mini_agent.types import ThreadCheckpoint, TurnReadResult, TurnSubmissionResult
 
-
-class AppServerError(Exception):
-    """Raised when the App Server returns a JSON-RPC error."""
-
-    def __init__(self, code: int, message: str, data: Any = None):
-        super().__init__(f"[{code}] {message} (data={data})")
-        self.code = code
-        self.message = message
-        self.data = data
+logger = logging.getLogger("mini_agent")
 
 
 def _find_and_load_env(cwd: str) -> dict[str, str]:
@@ -34,6 +32,7 @@ def _find_and_load_env(cwd: str) -> dict[str, str]:
         os.path.dirname(cwd),
         os.path.dirname(os.path.abspath(__file__)),
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
         os.path.expanduser("~/.mini-agent"),
     ]
     for d in search_dirs:
@@ -82,8 +81,8 @@ class MiniAgentClient:
         self.approval_handler = approval_handler or self._default_auto_approve
 
         self._proc: asyncio.subprocess.Process | None = None
-        self._reader_task: asyncio.Task | None = None
-        self._stderr_task: asyncio.Task | None = None
+        self._reader_task: asyncio.Task[None] | None = None
+        self._stderr_task: asyncio.Task[None] | None = None
         self._next_id: int = 1
         self._pending_requests: dict[int, asyncio.Future[Any]] = {}
         self._event_queues: list[asyncio.Queue[dict[str, Any]]] = []
@@ -93,24 +92,33 @@ class MiniAgentClient:
         await self.start()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> None:
         await self.stop()
 
     async def start(self) -> None:
         """Start the mini-agent-app-server subprocess and reader loop."""
         exe_path = shutil.which(self.executable, path=self.env.get("PATH"))
         if not exe_path:
-            # Fallback to direct executable if on Windows or absolute path
             exe_path = self.executable
 
-        self._proc = await asyncio.create_subprocess_exec(
-            exe_path,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=self.cwd,
-            env=self.env,
-        )
+        try:
+            self._proc = await asyncio.create_subprocess_exec(
+                exe_path,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=self.cwd,
+                env=self.env,
+            )
+        except OSError as err:
+            raise ServerProcessError(
+                f"Failed to spawn mini-agent-app-server executable '{exe_path}': {err}"
+            ) from err
 
         self._reader_task = asyncio.create_task(self._read_loop())
         self._stderr_task = asyncio.create_task(self._stderr_loop())
@@ -141,10 +149,14 @@ class MiniAgentClient:
                 fut.set_exception(RuntimeError("App Server stopped"))
         self._pending_requests.clear()
 
-    async def _send_request(self, method: str, params: dict | None = None) -> Any:
+    # -------------------------------------------------------------------------
+    # JSON-RPC Low-level Communication
+    # -------------------------------------------------------------------------
+
+    async def _send_request(self, method: str, params: dict[str, Any] | None = None) -> Any:
         """Send a JSON-RPC request and wait for correlated response."""
         if not self._proc or not self._proc.stdin or self._proc.returncode is not None:
-            raise RuntimeError("App Server is not running")
+            raise ServerProcessError("App Server process is not running")
 
         req_id = self._next_id
         self._next_id += 1
@@ -155,40 +167,39 @@ class MiniAgentClient:
             "method": method,
             "params": params if params is not None else {},
         }
+        data = json.dumps(payload) + "\n"
 
         loop = asyncio.get_running_loop()
-        future = loop.create_future()
+        future: asyncio.Future[Any] = loop.create_future()
         self._pending_requests[req_id] = future
 
-        line = json.dumps(payload) + "\n"
-        self._proc.stdin.write(line.encode("utf-8"))
+        self._proc.stdin.write(data.encode("utf-8"))
         await self._proc.stdin.drain()
 
         return await future
 
-    async def _send_notification(self, method: str, params: dict | None = None) -> None:
+    async def _send_notification(self, method: str, params: dict[str, Any] | None = None) -> None:
         """Send a JSON-RPC notification (no response expected)."""
         if not self._proc or not self._proc.stdin or self._proc.returncode is not None:
-            raise RuntimeError("App Server is not running")
+            raise ServerProcessError("App Server process is not running")
 
         payload = {
             "jsonrpc": "2.0",
             "method": method,
             "params": params if params is not None else {},
         }
-        line = json.dumps(payload) + "\n"
-        self._proc.stdin.write(line.encode("utf-8"))
+        data = json.dumps(payload) + "\n"
+        self._proc.stdin.write(data.encode("utf-8"))
         await self._proc.stdin.drain()
 
     async def _read_loop(self) -> None:
-        """Background loop reading JSON-RPC lines from stdout."""
+        """Background loop reading JSONL lines from server stdout."""
         assert self._proc and self._proc.stdout
         while True:
             line_bytes = await self._proc.stdout.readline()
             if not line_bytes:
                 break
-
-            line = line_bytes.decode("utf-8").strip()
+            line = line_bytes.decode("utf-8", errors="replace").strip()
             if not line:
                 continue
 
@@ -241,7 +252,7 @@ class MiniAgentClient:
             if line:
                 logger.warning("[Server STDERR]: %s", line)
 
-    async def _handle_approval_request(self, params: dict) -> None:
+    async def _handle_approval_request(self, params: dict[str, Any]) -> None:
         """Handle server approval/request notification."""
         request_id = params.get("requestId", "")
         action = params.get("action", "")
@@ -273,60 +284,65 @@ class MiniAgentClient:
         profile: str | None = "interactive",
         client_name: str = "python-sdk",
         client_version: str = "0.5.0",
-        providers: dict | None = None,
+        providers: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Negotiate protocol version 1 and receive capability manifest."""
         params: dict[str, Any] = {
             "protocolVersion": 1,
             "clientName": client_name,
             "clientVersion": client_version,
-            "capabilities": {},
         }
         if profile:
             params["profile"] = profile
         if providers:
             params["providers"] = providers
 
-        result = await self._send_request("initialize", params)
-        await self._send_notification("initialized", {})
-        return result
+        res = await self._send_request("initialize", params)
+        if res.get("protocolVersion") != 1:
+            raise ProtocolVersionMismatchError(
+                f"Unsupported protocol version {res.get('protocolVersion')}"
+            )
+        return res
 
     async def start_thread(self, thread_id: str = "default") -> str:
-        """Start or initialize default thread."""
-        result = await self._send_request("thread/start", {})
-        self._active_thread_id = result.get("threadId", thread_id)
+        """Start or attach to a conversation thread."""
+        res = await self._send_request("thread/start", {"threadId": thread_id})
+        self._active_thread_id = res.get("threadId", thread_id)
         return self._active_thread_id
 
-    async def read_thread(self, thread_id: str | None = None) -> dict[str, Any]:
+    async def read_thread(self, thread_id: str | None = None) -> ThreadCheckpoint:
         """Read settled checkpoint for thread."""
-        return await self._send_request(
+        res = await self._send_request(
             "thread/read",
             {"threadId": thread_id or self._active_thread_id},
         )
+        return ThreadCheckpoint.from_dict(res)
 
-    async def fork_thread(self, source_thread_id: str, new_thread_id: str) -> str:
-        """Fork a thread to a new independent branch."""
-        result = await self._send_request(
-            "thread/fork",
-            {"sourceThreadId": source_thread_id, "newThreadId": new_thread_id},
+    async def close_thread(self, thread_id: str | None = None) -> None:
+        """Close an active thread."""
+        await self._send_request(
+            "thread/close",
+            {"threadId": thread_id or self._active_thread_id},
         )
-        return result.get("threadId", new_thread_id)
 
     async def start_turn(
         self,
         prompt: str,
         mode: str = "start",
         thread_id: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> TurnSubmissionResult:
         """Submit a turn prompt to the App Server."""
-        target_thread = thread_id or self._active_thread_id
-        return await self._send_request(
+        res = await self._send_request(
             "turn/start",
             {
-                "threadId": target_thread,
-                "input": {"mode": mode, "text": prompt},
+                "threadId": thread_id or self._active_thread_id,
+                "input": {
+                    "mode": mode,
+                    "text": prompt,
+                },
             },
         )
+        return TurnSubmissionResult.from_dict(res)
 
     async def steer_turn(
         self,
@@ -340,7 +356,10 @@ class MiniAgentClient:
             {
                 "threadId": thread_id or self._active_thread_id,
                 "turnId": turn_id,
-                "text": text,
+                "input": {
+                    "mode": "steer",
+                    "text": text,
+                },
             },
         )
 
@@ -358,9 +377,10 @@ class MiniAgentClient:
             },
         )
 
-    async def read_turn(self, turn_id: str) -> dict[str, Any]:
+    async def read_turn(self, turn_id: str) -> TurnReadResult:
         """Read settled result and history of a turn."""
-        return await self._send_request("turn/read", {"turnId": turn_id})
+        res = await self._send_request("turn/read", {"turnId": turn_id})
+        return TurnReadResult.from_dict(res)
 
     async def stream_turn(
         self,
@@ -378,13 +398,12 @@ class MiniAgentClient:
 
         try:
             start_resp = await self.start_turn(prompt, mode=mode, thread_id=target_thread)
-            # Yield initial submission result
             yield {"type": "_turn_submission", "data": start_resp}
 
             while True:
                 envelope = await queue.get()
                 turn_id = envelope.get("turnId")
-                event = envelope.get("event", {})
+                event_dict = envelope.get("event", {})
                 sequence = envelope.get("sequence", 0)
 
                 yield {
@@ -392,10 +411,11 @@ class MiniAgentClient:
                     "threadId": envelope.get("threadId"),
                     "turnId": turn_id,
                     "sequence": sequence,
-                    "event": event,
+                    "event": event_dict,
+                    "typed_event": parse_event(event_dict),
                 }
 
-                event_type = event.get("type")
+                event_type = event_dict.get("type")
                 if event_type in ("turn_finished", "run_failed"):
                     break
         finally:
@@ -420,9 +440,6 @@ class MiniAgentClient:
             {"active": active, "prompt": prompt},
         )
 
-    async def start_goal(self, objective: str) -> dict[str, Any]:
-        """Start autonomous Goal Mode with verification milestones."""
-        return await self._send_request(
-            "workflow/goal/start",
-            {"objective": objective},
-        )
+
+# Convenient alias matching Codex convention
+AsyncMiniAgentClient = MiniAgentClient

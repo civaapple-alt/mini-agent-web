@@ -6,7 +6,7 @@ or interrupt/cancel a long-running execution.
 
 import asyncio
 
-from client import MiniAgentClient
+from mini_agent import MiniAgentClient
 
 
 async def main():

@@ -4,7 +4,8 @@ Demonstrates connecting to mini-agent-app-server, initializing, and executing a 
 """
 
 import asyncio
-from client import MiniAgentClient
+
+from mini_agent import MiniAgentClient
 
 
 async def main():
@@ -32,14 +33,8 @@ async def main():
 
         async for item in client.stream_turn(prompt):
             if item["type"] == "_turn_submission":
-                raw = item.get("data", {})
-                val = raw.get("value", raw) if isinstance(raw, dict) else raw
-                turn_id = (
-                    val.get("turn_id")
-                    or val.get("turnId")
-                    or (val.get("turn_id", {}).get("0") if isinstance(val.get("turn_id"), dict) else None)
-                    or "started"
-                )
+                sub = item.get("data")
+                turn_id = getattr(sub, "turn_id", None) or (sub.get("turn_id") if isinstance(sub, dict) else "started")
                 print(f"[Turn Started] Turn ID: {turn_id}")
 
             elif item["type"] == "event":

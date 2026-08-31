@@ -5,7 +5,8 @@ token usage, UTF-8 output truncation, and loop warnings.
 """
 
 import asyncio
-from client import MiniAgentClient
+
+from mini_agent import MiniAgentClient
 
 
 async def main():

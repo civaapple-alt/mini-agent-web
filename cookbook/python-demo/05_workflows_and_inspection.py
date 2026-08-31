@@ -7,7 +7,7 @@ and reading settled thread checkpoints.
 import asyncio
 import json
 
-from client import AppServerError, MiniAgentClient
+from mini_agent import AppServerError, MiniAgentClient
 
 
 async def main():

@@ -6,6 +6,12 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 
+[manifest]
+members = [
+    "mini-agent",
+    "mini-agent-web",
+]
+
 [[package]]
 name = "annotated-doc"
 version = "0.0.5"
@@ -170,6 +176,13 @@ web = [
     { name = "websockets", version = "17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.110.0" },
@@ -182,6 +195,13 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'web'", specifier = ">=12.0" },
 ]
 provides-extras = ["web", "tui", "dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.23.0" },
+    { name = "ruff", specifier = ">=0.4.0" },
+]
 
 [[package]]
 name = "packaging"

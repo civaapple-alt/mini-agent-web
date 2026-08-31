@@ -56,6 +56,7 @@ def create_app() -> FastAPI:
 
     # Register API Routers
     app.include_router(agent.router)
+    app.include_router(agent.ws_router)
     app.include_router(threads.router)
     app.include_router(world.router)
 

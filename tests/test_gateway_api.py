@@ -86,3 +86,13 @@ async def test_gateway_threads_and_workflows(test_app):
 
     finally:
         await session_manager.stop()
+
+
+def test_gateway_websocket(test_app):
+    from starlette.testclient import TestClient
+
+    client = TestClient(test_app)
+    with client.websocket_connect("/ws/agent") as ws:
+        ws.send_json({"action": "ping"})
+        data = ws.receive_json()
+        assert data.get("type") == "pong"

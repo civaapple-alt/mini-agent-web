@@ -177,7 +177,10 @@ async def list_pending_approvals() -> dict[str, Any]:
 # WebSocket Full-Duplex Gateway
 # -----------------------------------------------------------------------------
 
+ws_router = APIRouter(tags=["WebSocket"])
 
+
+@ws_router.websocket("/ws/agent")
 @router.websocket("/ws/agent")
 async def websocket_agent_endpoint(websocket: WebSocket) -> None:
     """

@@ -1,7 +1,7 @@
 """
 Demo 04: Steering and Cooperative Interruption
 Demonstrates how to steer an active turn with corrective guidance
-or interrupt/cancel a long-running execution.
+and cooperatively cancel/interrupt a long-running execution.
 """
 
 import asyncio
@@ -16,31 +16,56 @@ async def main():
         await client.initialize(profile="interactive")
         await client.start_thread()
 
-        prompt = "Write a comprehensive 1000-word tutorial on Python asyncio concurrency."
-        print(f"[Initial Prompt]: {prompt}\n", flush=True)
+        # ---------------------------------------------------------------------
+        # Part 1: Mid-Turn Steering
+        # ---------------------------------------------------------------------
+        prompt1 = "Write a comprehensive 1000-word tutorial on Python asyncio concurrency."
+        print(f"\n--- Part 1: Steering Active Turn ---")
+        print(f"[Initial Prompt]: {prompt1}\n", flush=True)
 
-        # 1. Start the turn directly
-        resp = await client.start_turn(prompt)
-        turn_id = resp.turn_id or "turn-1"
-        print(f"[Turn Started]: {turn_id}", flush=True)
+        resp1 = await client.start_turn(prompt1)
+        turn_id1 = resp1.turn_id or "turn-1"
+        print(f"[Turn 1 Started]: {turn_id1}", flush=True)
 
-        # 2. Wait 2 seconds while the agent starts thinking
-        await asyncio.sleep(2)
+        # Let the agent start thinking for 1.5 seconds
+        await asyncio.sleep(1.5)
 
-        # 3. Mid-turn steering: inject correction
+        # Inject runtime steering instruction
         steer_text = "Stop writing the full tutorial. Just give me a 3-bullet-point executive summary instead."
         print(f"\n[Steering Instruction Injected]: {steer_text}", flush=True)
-        steer_resp = await client.steer_turn(turn_id, steer_text)
-        print(f"[Steer Acknowledged]: {steer_resp}\n", flush=True)
+        steer_resp = await client.steer_turn(turn_id1, steer_text)
+        print(f"[Steer Acknowledged]: actionId={steer_resp.get('actionId')}\n", flush=True)
 
-        # 4. Read remaining events or fetch final result
-        await asyncio.sleep(5)
-        turn_result = await client.read_turn(turn_id)
-        print("[Final Turn State]:", flush=True)
-        print(f"Status     : {turn_result.status}", flush=True)
-        print(f"Stop Reason: {turn_result.stop_reason}", flush=True)
-        if turn_result.final_text:
-            print(f"\n[Final Output]:\n{turn_result.final_text}", flush=True)
+        # Wait until turn settles and read result
+        print("[Waiting for steered turn to settle...]", flush=True)
+        result1 = await client.wait_for_turn(turn_id1)
+        print("[Turn 1 Settled]:", flush=True)
+        print(f"Status     : {result1.status}", flush=True)
+        print(f"Stop Reason: {result1.stop_reason}", flush=True)
+        if result1.final_text:
+            print(f"\n[Output Preview]:\n{result1.final_text[:300]}...\n", flush=True)
+
+        # ---------------------------------------------------------------------
+        # Part 2: Cooperative Turn Interruption (Cancel)
+        # ---------------------------------------------------------------------
+        prompt2 = "Count from 1 to 1000 and write a paragraph explaining prime factorization for each."
+        print(f"\n--- Part 2: Cooperative Turn Interruption ---")
+        print(f"[Initial Prompt]: {prompt2}\n", flush=True)
+
+        resp2 = await client.start_turn(prompt2)
+        turn_id2 = resp2.turn_id or "turn-2"
+        print(f"[Turn 2 Started]: {turn_id2}", flush=True)
+
+        await asyncio.sleep(1.0)
+        print(f"[Interrupting Turn 2...]", flush=True)
+        await client.interrupt_turn(turn_id2)
+
+        print("[Waiting for turn cancellation checkpoint...]", flush=True)
+        result2 = await client.wait_for_turn(turn_id2)
+        print("[Turn 2 Settled]:", flush=True)
+        print(f"Status     : {result2.status}", flush=True)
+        print(f"Stop Reason: {result2.stop_reason}", flush=True)
+        print("\n=== Demo 04 Completed Successfully ===", flush=True)
 
 
 if __name__ == "__main__":

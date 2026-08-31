@@ -470,10 +470,7 @@ class MiniAgentClient:
             {
                 "threadId": thread_id or self._active_thread_id,
                 "turnId": turn_id,
-                "input": {
-                    "mode": "steer",
-                    "text": text,
-                },
+                "text": text,
             },
         )
 
@@ -495,6 +492,33 @@ class MiniAgentClient:
         """Read settled result and history of a turn."""
         res = await self._send_request("turn/read", {"turnId": turn_id})
         return TurnReadResult.from_dict(res)
+
+    async def wait_for_turn(
+        self,
+        turn_id: str,
+        timeout: float = 60.0,
+        poll_interval: float = 0.5,
+    ) -> TurnReadResult:
+        """
+        Wait/poll until a turn settles (completes, cancels, or fails),
+        and return its TurnReadResult.
+        """
+        deadline = asyncio.get_running_loop().time() + timeout
+        while True:
+            try:
+                return await self.read_turn(turn_id)
+            except AppServerError as err:
+                # Code -32000 means thread is busy / turn is active
+                if err.code == -32000 or "active turn" in str(err).lower():
+                    if asyncio.get_running_loop().time() >= deadline:
+                        raise TurnTimeoutError(
+                            f"Turn {turn_id} did not settle within {timeout}s"
+                        ) from err
+                    await asyncio.sleep(poll_interval)
+                else:
+                    raise
+
+    wait_turn = wait_for_turn
 
     async def stream_turn(
         self,

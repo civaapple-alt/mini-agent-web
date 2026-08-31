@@ -44,6 +44,8 @@ venv.bak/
 *.swp
 *.swo
 
-# Execution Logs
+# Execution logs & workflow artifacts
 logs/
 *.log
+plan.md
+plan_mode.json

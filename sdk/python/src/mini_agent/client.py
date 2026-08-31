@@ -31,6 +31,7 @@ def setup_logging(
     level: int | str = logging.DEBUG,
     console: bool = False,
     format_str: str | None = None,
+    mode: str = "a",
 ) -> logging.FileHandler | None:
     """
     Configure detailed file (and optional console) logging for mini-agent.
@@ -40,6 +41,7 @@ def setup_logging(
     :param level: Logging level (default: logging.DEBUG).
     :param console: Whether to also attach a console stream handler.
     :param format_str: Custom logging format string.
+    :param mode: File open mode ('a' for append, 'w' for overwrite/refresh on start).
     :return: The FileHandler instance, or None if no file target specified.
     """
     if isinstance(level, str):
@@ -64,12 +66,16 @@ def setup_logging(
     handler = None
     if target_file:
         abs_target = os.path.abspath(target_file)
-        for h in logger.handlers:
+        for h in list(logger.handlers):
             if isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", None) == abs_target:
-                handler = h
+                if mode == "w":
+                    logger.removeHandler(h)
+                    h.close()
+                else:
+                    handler = h
                 break
         if handler is None:
-            handler = logging.FileHandler(target_file, encoding="utf-8")
+            handler = logging.FileHandler(target_file, mode=mode, encoding="utf-8")
             handler.setLevel(level)
             handler.setFormatter(formatter)
             logger.addHandler(handler)
@@ -142,6 +148,7 @@ class MiniAgentClient:
         log_dir: str | None = None,
         log_file: str | None = None,
         log_level: str | int | None = None,
+        log_mode: str | None = None,
     ):
         """
         Initialize the MiniAgentClient.
@@ -154,6 +161,7 @@ class MiniAgentClient:
         :param log_dir: Target directory for execution logs (e.g. 'logs').
         :param log_file: Specific log file path (e.g. 'logs/01_basic_turn.log').
         :param log_level: Logging level ('DEBUG', 'INFO', logging.DEBUG, etc.).
+        :param log_mode: Log file open mode ('a' for append, 'w' for overwrite/fresh log).
         """
         _ensure_utf8_console()
         self.executable = executable
@@ -167,8 +175,14 @@ class MiniAgentClient:
         eff_dir = log_dir or self.env.get("MINI_AGENT_LOG_DIR")
         eff_file = log_file or self.env.get("MINI_AGENT_LOG_FILE")
         eff_level = log_level or self.env.get("MINI_AGENT_LOG_LEVEL", "DEBUG")
+        eff_mode = log_mode or self.env.get("MINI_AGENT_LOG_MODE", "a")
         if eff_dir or eff_file:
-            setup_logging(log_dir=eff_dir, log_file=eff_file, level=eff_level)
+            setup_logging(
+                log_dir=eff_dir,
+                log_file=eff_file,
+                level=eff_level,
+                mode=eff_mode,
+            )
 
         self._proc: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task[None] | None = None

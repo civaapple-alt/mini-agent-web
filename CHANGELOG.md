@@ -30,9 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Integrated `SessionManager` handling background `MiniAgentClient` lifecycles and broadcast channels.
   - Bidirectional security approval handshake enabling human-in-the-loop authorization over Web UI.
   - Endpoints covering Thread lifecycle, WorldState detection, MCP tool status/retry, Plan Mode, and Goal workflows.
-- **Modern Web Studio Frontend (`web/`)**:
-  - Single-page responsive web app styled in Cursor / ChatGPT / Claude aesthetics.
-  - Real-time Markdown rendering, code block syntax highlighting, and copy buttons.
+- **Modern Web Studio React SPA (`frontend/`)**:
+  - React 19 + Vite 6 single-page web app styled in Cursor / ChatGPT / Claude aesthetics.
+  - Componentized modular architecture (`Header`, `Sidebar`, `ChatArea`, `ThinkingBlock`, `ToolCard`, `ApprovalDialog`, `InputBar`, `WorldDrawer`).
+  - Real-time Markdown rendering with `remark-gfm`, syntax highlighting, and copy buttons.
   - Streaming Thinking accordion displaying model reasoning process and elapsed time.
   - Dynamic Tool Execution cards (status badges, arguments, expandable output logs).
   - Prominent interactive Security Approval dialogs for sensitive tool calls.

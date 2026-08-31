@@ -143,12 +143,12 @@ wheels = [
 
 [[package]]
 name = "mini-agent"
-version = "0.1.0"
+version = "0.5.0"
 source = { editable = "sdk/python" }
 
 [[package]]
 name = "mini-agent-web"
-version = "0.1.0"
+version = "0.5.0"
 source = { virtual = "." }
 dependencies = [
     { name = "mini-agent" },

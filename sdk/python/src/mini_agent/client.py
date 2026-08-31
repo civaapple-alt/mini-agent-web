@@ -18,6 +18,7 @@ from mini_agent.errors import (
     AppServerError,
     ProtocolVersionMismatchError,
     ServerProcessError,
+    TurnTimeoutError,
 )
 from mini_agent.events import parse_event
 from mini_agent.types import ThreadCheckpoint, TurnReadResult, TurnSubmissionResult

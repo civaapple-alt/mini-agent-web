@@ -20,7 +20,7 @@ async def main():
         # Part 1: Mid-Turn Steering
         # ---------------------------------------------------------------------
         prompt1 = "Write a comprehensive 1000-word tutorial on Python asyncio concurrency."
-        print(f"\n--- Part 1: Steering Active Turn ---")
+        print("\n--- Part 1: Steering Active Turn ---")
         print(f"[Initial Prompt]: {prompt1}\n", flush=True)
 
         resp1 = await client.start_turn(prompt1)
@@ -49,7 +49,7 @@ async def main():
         # Part 2: Cooperative Turn Interruption (Cancel)
         # ---------------------------------------------------------------------
         prompt2 = "Count from 1 to 1000 and write a paragraph explaining prime factorization for each."
-        print(f"\n--- Part 2: Cooperative Turn Interruption ---")
+        print("\n--- Part 2: Cooperative Turn Interruption ---")
         print(f"[Initial Prompt]: {prompt2}\n", flush=True)
 
         resp2 = await client.start_turn(prompt2)
@@ -57,7 +57,7 @@ async def main():
         print(f"[Turn 2 Started]: {turn_id2}", flush=True)
 
         await asyncio.sleep(1.0)
-        print(f"[Interrupting Turn 2...]", flush=True)
+        print("[Interrupting Turn 2...]", flush=True)
         await client.interrupt_turn(turn_id2)
 
         print("[Waiting for turn cancellation checkpoint...]", flush=True)

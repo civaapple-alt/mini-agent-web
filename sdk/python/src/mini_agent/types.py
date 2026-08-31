@@ -31,6 +31,20 @@ TurnInputMode = Literal[
     "follow_up",
 ]
 
+WorkflowGoalStatus = Literal[
+    "running",
+    "converged",
+    "failed",
+    "user_paused",
+]
+
+WorkflowVerdictOutcome = Literal[
+    "approved",
+    "rejected",
+    "needs_clarification",
+    "invalid",
+]
+
 
 @dataclass
 class ToolCall:
@@ -149,6 +163,248 @@ class ThreadCheckpoint:
             thread_id=val.get("thread_id") or val.get("threadId", "default"),
             status=val.get("status", "idle"),
             next_turn_number=val.get("next_turn_number") or val.get("nextTurnNumber", 1),
-            messages=val.get("session", {}).get("messages", []),
+            messages=val.get("session", {}).get("messages", []) or val.get("messages", []),
+            raw=data,
+        )
+
+
+@dataclass
+class ThreadListResult:
+    """List of available threads."""
+
+    data: list[str] = field(default_factory=list)
+    next_cursor: str | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ThreadListResult:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        threads = val.get("data", []) if isinstance(val, dict) else []
+        cursor = val.get("nextCursor") or val.get("next_cursor") if isinstance(val, dict) else None
+        return cls(data=threads, next_cursor=cursor, raw=data)
+
+
+@dataclass
+class ThreadForkResult:
+    """Result of forking a thread."""
+
+    thread_id: str
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ThreadForkResult:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        tid = val.get("threadId") or val.get("thread_id", "")
+        return cls(thread_id=tid, raw=data)
+
+
+@dataclass
+class ThreadResumeResult:
+    """Result of resuming a thread checkpoint."""
+
+    thread_id: str
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ThreadResumeResult:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        tid = val.get("threadId") or val.get("thread_id", "")
+        return cls(thread_id=tid, raw=data)
+
+
+@dataclass
+class WorkflowGoalState:
+    """Current state of a multi-milestone goal."""
+
+    goal_id: str
+    status: WorkflowGoalStatus
+    current_milestone: int = 0
+    total_milestones: int = 0
+    loop_count: int = 0
+    max_loops: int = 0
+    milestone_step_budget: int = 0
+    milestone_timeout_secs: int = 0
+    verifier_model: str | None = None
+    last_verifier_score: int | None = None
+    updated_at_ms: int = 0
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> WorkflowGoalState:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        return cls(
+            goal_id=val.get("goalId") or val.get("goal_id", ""),
+            status=val.get("status", "running"),
+            current_milestone=val.get("currentMilestone") or val.get("current_milestone", 0),
+            total_milestones=val.get("totalMilestones") or val.get("total_milestones", 0),
+            loop_count=val.get("loopCount") or val.get("loop_count", 0),
+            max_loops=val.get("maxLoops") or val.get("max_loops", 0),
+            milestone_step_budget=val.get("milestoneStepBudget") or val.get("milestone_step_budget", 0),
+            milestone_timeout_secs=val.get("milestoneTimeoutSecs") or val.get("milestone_timeout_secs", 0),
+            verifier_model=val.get("verifierModel") or val.get("verifier_model"),
+            last_verifier_score=val.get("lastVerifierScore") or val.get("last_verifier_score"),
+            updated_at_ms=val.get("updatedAtMs") or val.get("updated_at_ms", 0),
+            raw=data,
+        )
+
+
+@dataclass
+class WorkflowState:
+    """Secret-free workflow state projected by the App Server."""
+
+    plan_active: bool = False
+    goal: WorkflowGoalState | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> WorkflowState:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        goal_data = val.get("goal") if isinstance(val, dict) else None
+        goal = WorkflowGoalState.from_dict(goal_data) if goal_data else None
+        return cls(
+            plan_active=val.get("planActive") or val.get("plan_active", False) if isinstance(val, dict) else False,
+            goal=goal,
+            raw=data,
+        )
+
+
+@dataclass
+class WorkflowVerifierVerdict:
+    """Structured verdict submitted by an external verifier."""
+
+    outcome: WorkflowVerdictOutcome
+    summary: str
+    score: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        res: dict[str, Any] = {
+            "outcome": self.outcome,
+            "summary": self.summary,
+        }
+        if self.score is not None:
+            res["score"] = self.score
+        return res
+
+
+@dataclass
+class SessionInfo:
+    """Metadata about active session and workspace storage."""
+
+    session_id: str
+    thread_id: str
+    path: str
+    resumed: bool = False
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SessionInfo:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        return cls(
+            session_id=val.get("sessionId") or val.get("session_id", ""),
+            thread_id=val.get("threadId") or val.get("thread_id", ""),
+            path=val.get("path", ""),
+            resumed=val.get("resumed", False),
+            raw=data,
+        )
+
+
+@dataclass
+class WorldStateResult:
+    """Snapshot of workspace, environment, and security preset."""
+
+    context: str = ""
+    lines: list[str] = field(default_factory=list)
+    status: dict[str, Any] = field(default_factory=dict)
+    workspace: str = ""
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> WorldStateResult:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        return cls(
+            context=val.get("context", "") if isinstance(val, dict) else "",
+            lines=val.get("lines", []) if isinstance(val, dict) else [],
+            status=val.get("status", {}) if isinstance(val, dict) else {},
+            workspace=val.get("workspace", "") if isinstance(val, dict) else "",
+            raw=data,
+        )
+
+
+@dataclass
+class WorldRefreshResult:
+    """Result of refreshing workspace and environment detection."""
+
+    changed: bool
+    state: dict[str, Any] = field(default_factory=dict)
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> WorldRefreshResult:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        return cls(
+            changed=val.get("changed", False) if isinstance(val, dict) else False,
+            state=val.get("state", {}) if isinstance(val, dict) else {},
+            raw=data,
+        )
+
+
+@dataclass
+class WorldSetExecutionResult:
+    """Result of modifying world execution policies."""
+
+    changed: bool
+    state: dict[str, Any] = field(default_factory=dict)
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> WorldSetExecutionResult:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        return cls(
+            changed=val.get("changed", False) if isinstance(val, dict) else False,
+            state=val.get("state", {}) if isinstance(val, dict) else {},
+            raw=data,
+        )
+
+
+@dataclass
+class McpStatusResult:
+    """Registered MCP servers and tools status."""
+
+    enabled_servers: list[str] = field(default_factory=list)
+    inactive_servers: list[str] = field(default_factory=list)
+    tool_count: int = 0
+    retry_available: bool = False
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> McpStatusResult:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        return cls(
+            enabled_servers=val.get("enabledServers") or val.get("enabled_servers", []) if isinstance(val, dict) else [],
+            inactive_servers=val.get("inactiveServers") or val.get("inactive_servers", []) if isinstance(val, dict) else [],
+            tool_count=val.get("toolCount") or val.get("tool_count", 0) if isinstance(val, dict) else 0,
+            retry_available=val.get("retryAvailable") or val.get("retry_available", False) if isinstance(val, dict) else False,
+            raw=data,
+        )
+
+
+@dataclass
+class McpRetryResult:
+    """Result of retrying MCP server initialization."""
+
+    enabled_servers: list[str] = field(default_factory=list)
+    inactive_servers: list[str] = field(default_factory=list)
+    diagnostics: list[str] = field(default_factory=list)
+    tool_count: int = 0
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> McpRetryResult:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        return cls(
+            enabled_servers=val.get("enabledServers") or val.get("enabled_servers", []) if isinstance(val, dict) else [],
+            inactive_servers=val.get("inactiveServers") or val.get("inactive_servers", []) if isinstance(val, dict) else [],
+            diagnostics=val.get("diagnostics", []) if isinstance(val, dict) else [],
+            tool_count=val.get("toolCount") or val.get("tool_count", 0) if isinstance(val, dict) else 0,
             raw=data,
         )

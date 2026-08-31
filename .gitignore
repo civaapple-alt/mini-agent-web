@@ -49,3 +49,5 @@ logs/
 *.log
 plan.md
 plan_mode.json
+goal/
+.pytest_cache/

@@ -25,9 +25,9 @@
 | **Thread** | `thread/start` | `client.start_thread()` | ✅ 覆盖 | 启动或关联指定会话线程 |
 | | `thread/read` | `client.read_thread()` | ✅ 覆盖 | 读取会话最新结算检查点与消息历史 |
 | | `thread/close` | `client.close_thread()` | ✅ 覆盖 | 关闭会话并释放服务端资源 |
-| | `thread/list` | `client._send_request` | ⏳ 规划中 | 列出所有活跃会话 |
-| | `thread/fork` | `client._send_request` | ⏳ 规划中 | 会话分支派生 |
-| | `thread/resume` | `client._send_request` | ⏳ 规划中 | 从持久化记录恢复历史会话 |
+| | `thread/list` | `client.list_threads()` | ✅ 覆盖 | 列出所有活跃与持久化会话 |
+| | `thread/fork` | `client.fork_thread()` | ✅ 覆盖 | 会话分支派生与状态复制 |
+| | `thread/resume` | `client.resume_thread()` | ✅ 覆盖 | 从持久化检查点恢复历史会话 |
 | **Turn** | `turn/start` | `client.start_turn()` | ✅ 覆盖 | 提交 Prompt 启动推理轮次 |
 | | `turn/event` | `client.stream_turn()` | ✅ 覆盖 | 双向推流事件（Thinking/Tokens/Tools/Lifecycle） |
 | | `turn/read` | `client.read_turn()` | ✅ 覆盖 | 读取结算轮次的执行结果与停机原因 |
@@ -37,9 +37,19 @@
 | **Security** | `approval/request` | `client.approval_handler` | ✅ 覆盖 | 服务端权限拦截请求回调 |
 | | `approval/respond` | 内部自动分发 | ✅ 覆盖 | 异步向服务端回传授权决策 |
 | **Workflows** | `world/state` | `client.get_world_state()` | ✅ 覆盖 | 读取沙箱、系统、工具可用性快照 |
+| | `world/refresh` | `client.refresh_world()` | ✅ 覆盖 | 动态刷新工作区与工具链可用性探测 |
+| | `world/set_execution` | `client.set_world_execution()` | ✅ 覆盖 | 动态配置交互式/静默执行模式与安全策略 |
 | | `mcp/status` | `client.get_mcp_status()` | ✅ 覆盖 | 读取 MCP 服务器与工具注册状态 |
+| | `mcp/retry` | `client.retry_mcp()` | ✅ 覆盖 | 重试未就绪或断连的 MCP 服务 |
+| | `session/info` | `client.get_session_info()` | ✅ 覆盖 | 读取会话持久化与数据库路径元数据 |
+| | `workflow/state` | `client.get_workflow_state()` | ✅ 覆盖 | 读取 Plan Mode 与 Goal 工作流状态 |
 | | `workflow/plan/set` | `client.set_plan_mode()` | ✅ 覆盖 | 切换只读 Plan Mode 规划模式 |
-| | `workflow/goal/*` | `client._send_request` | ⏳ 规划中 | 多阶段 Goal 里程碑目标执行管理 |
+| | `workflow/goal/start` | `client.start_goal()` | ✅ 覆盖 | 启动多阶段 Goal 里程碑目标执行流 |
+| | `workflow/goal/pause` | `client.pause_goal()` | ✅ 覆盖 | 暂停活跃的 Goal 工作流 |
+| | `workflow/goal/fail` | `client.fail_goal()` | ✅ 覆盖 | 将活跃 Goal 标记为失败 |
+| | `workflow/goal/criteria` | `client.get_goal_criteria()` | ✅ 覆盖 | 获取当前里程碑评测指标与约束 |
+| | `workflow/goal/advance` | `client.advance_goal()` | ✅ 覆盖 | 携带外部校验员判定（Verdict）推进里程碑 |
+| | `workflow/goal/record_verdict` | `client.record_verifier_verdict()` | ✅ 覆盖 | 记录里程碑检查点的外部审计输出 |
 
 ---
 

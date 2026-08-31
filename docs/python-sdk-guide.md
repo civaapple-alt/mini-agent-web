@@ -158,6 +158,31 @@ checkpoint = await client.read_thread()
 print(f"Messages count: {len(checkpoint.messages)}")
 ```
 
+### 4.6 Thread Branching & Resuming
+```python
+# List all active threads
+threads = await client.list_threads()
+
+# Fork thread state into an experimental branch
+forked = await client.fork_thread(source_thread_id="default", new_thread_id="feature-experiment")
+
+# Resume thread from checkpoint
+resumed = await client.resume_thread(thread_id="restored-thread", checkpoint=checkpoint)
+```
+
+### 4.7 Multi-Milestone Goal Workflows
+```python
+# Start a multi-stage goal workflow
+goal = await client.start_goal("Implement High-Performance Caching Layer")
+print(f"Goal ID: {goal.goal_id}, Status: {goal.status}, Milestone: {goal.current_milestone}/{goal.total_milestones}")
+
+# Fetch milestone verification criteria
+criteria = await client.get_goal_criteria()
+
+# Pause or advance goal
+await client.pause_goal()
+```
+
 ---
 
 ## 5. Exception Hierarchy

@@ -21,7 +21,23 @@ from mini_agent.errors import (
     TurnTimeoutError,
 )
 from mini_agent.events import parse_event
-from mini_agent.types import ThreadCheckpoint, TurnReadResult, TurnSubmissionResult
+from mini_agent.types import (
+    McpRetryResult,
+    McpStatusResult,
+    SessionInfo,
+    ThreadCheckpoint,
+    ThreadForkResult,
+    ThreadListResult,
+    ThreadResumeResult,
+    TurnReadResult,
+    TurnSubmissionResult,
+    WorkflowGoalState,
+    WorkflowState,
+    WorkflowVerifierVerdict,
+    WorldRefreshResult,
+    WorldSetExecutionResult,
+    WorldStateResult,
+)
 
 logger = logging.getLogger("mini_agent")
 
@@ -419,11 +435,29 @@ class MiniAgentClient:
             )
         return res
 
+    # -------------------------------------------------------------------------
+    # Thread Management
+    # -------------------------------------------------------------------------
+
     async def start_thread(self, thread_id: str = "default") -> str:
         """Start or attach to a conversation thread."""
         res = await self._send_request("thread/start", {"threadId": thread_id})
         self._active_thread_id = res.get("threadId", thread_id)
         return self._active_thread_id
+
+    async def list_threads(
+        self,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> ThreadListResult:
+        """List active and persisted threads."""
+        params: dict[str, Any] = {}
+        if cursor is not None:
+            params["cursor"] = cursor
+        if limit is not None:
+            params["limit"] = limit
+        res = await self._send_request("thread/list", params)
+        return ThreadListResult.from_dict(res)
 
     async def read_thread(self, thread_id: str | None = None) -> ThreadCheckpoint:
         """Read settled checkpoint for thread."""
@@ -433,12 +467,49 @@ class MiniAgentClient:
         )
         return ThreadCheckpoint.from_dict(res)
 
-    async def close_thread(self, thread_id: str | None = None) -> None:
+    async def close_thread(self, thread_id: str | None = None) -> bool:
         """Close an active thread."""
-        await self._send_request(
+        res = await self._send_request(
             "thread/close",
             {"threadId": thread_id or self._active_thread_id},
         )
+        val = res.get("value", res) if isinstance(res, dict) else res
+        return val.get("closed", True) if isinstance(val, dict) else True
+
+    async def fork_thread(
+        self,
+        source_thread_id: str,
+        new_thread_id: str,
+    ) -> ThreadForkResult:
+        """Fork an existing thread history into a new branched thread."""
+        res = await self._send_request(
+            "thread/fork",
+            {
+                "sourceThreadId": source_thread_id,
+                "newThreadId": new_thread_id,
+            },
+        )
+        return ThreadForkResult.from_dict(res)
+
+    async def resume_thread(
+        self,
+        thread_id: str,
+        checkpoint: ThreadCheckpoint | dict[str, Any],
+    ) -> ThreadResumeResult:
+        """Resume a thread from a serialized checkpoint."""
+        cp_dict = checkpoint.raw if isinstance(checkpoint, ThreadCheckpoint) else checkpoint
+        res = await self._send_request(
+            "thread/resume",
+            {
+                "threadId": thread_id,
+                "checkpoint": cp_dict,
+            },
+        )
+        return ThreadResumeResult.from_dict(res)
+
+    # -------------------------------------------------------------------------
+    # Turn Execution & Real-Time Control
+    # -------------------------------------------------------------------------
 
     async def start_turn(
         self,
@@ -561,23 +632,121 @@ class MiniAgentClient:
             self._event_queues.remove(queue)
 
     # -------------------------------------------------------------------------
-    # Management & Workflow Methods
+    # Workflows: Plan Mode & Multi-Milestone Goals
     # -------------------------------------------------------------------------
 
-    async def get_world_state(self) -> dict[str, Any]:
-        """Get snapshot of current workspace, sandbox, and approval mode."""
-        return await self._send_request("world/state", {})
+    async def get_workflow_state(self) -> WorkflowState:
+        """Get current plan mode and active goal progress state."""
+        res = await self._send_request("workflow/state", {})
+        return WorkflowState.from_dict(res)
 
-    async def get_mcp_status(self) -> dict[str, Any]:
-        """Get status of registered MCP servers and tools."""
-        return await self._send_request("mcp/status", {})
-
-    async def set_plan_mode(self, active: bool, prompt: str | None = None) -> dict[str, Any]:
+    async def set_plan_mode(
+        self,
+        active: bool,
+        prompt: str | None = None,
+    ) -> WorkflowState:
         """Enable or disable Plan Mode (read-only exploration)."""
-        return await self._send_request(
+        res = await self._send_request(
             "workflow/plan/set",
             {"active": active, "prompt": prompt},
         )
+        return WorkflowState.from_dict(res)
+
+    async def start_goal(self, objective: str) -> WorkflowGoalState:
+        """Start a new multi-milestone goal workflow."""
+        res = await self._send_request(
+            "workflow/goal/start",
+            {"objective": objective},
+        )
+        return WorkflowGoalState.from_dict(res)
+
+    async def pause_goal(self) -> WorkflowGoalState:
+        """Pause active multi-milestone goal execution."""
+        res = await self._send_request("workflow/goal/pause", {})
+        return WorkflowGoalState.from_dict(res)
+
+    async def fail_goal(self) -> WorkflowGoalState:
+        """Mark the active goal as failed."""
+        res = await self._send_request("workflow/goal/fail", {})
+        return WorkflowGoalState.from_dict(res)
+
+    async def get_goal_criteria(self) -> str:
+        """Retrieve the evaluation criteria for the current goal milestone."""
+        res = await self._send_request("workflow/goal/criteria", {})
+        val = res.get("value", res) if isinstance(res, dict) else res
+        return val.get("criteria", "") if isinstance(val, dict) else ""
+
+    async def advance_goal(
+        self,
+        verdict: WorkflowVerifierVerdict | dict[str, Any] | None = None,
+    ) -> WorkflowGoalState:
+        """Advance the goal workflow with an optional verifier verdict."""
+        params: dict[str, Any] = {}
+        if verdict is not None:
+            params["verdict"] = verdict.to_dict() if isinstance(verdict, WorkflowVerifierVerdict) else verdict
+        res = await self._send_request("workflow/goal/advance", params)
+        return WorkflowGoalState.from_dict(res)
+
+    async def record_verifier_verdict(
+        self,
+        checkpoint_seq: int,
+        output: str,
+    ) -> None:
+        """Record an external verification result for a milestone checkpoint."""
+        await self._send_request(
+            "workflow/goal/record_verdict",
+            {
+                "checkpointSeq": checkpoint_seq,
+                "output": output,
+            },
+        )
+
+    # -------------------------------------------------------------------------
+    # Session, World Governance & MCP Management
+    # -------------------------------------------------------------------------
+
+    async def get_session_info(self) -> SessionInfo | None:
+        """Get active session storage and identifier metadata."""
+        res = await self._send_request("session/info", {})
+        val = res.get("value", res) if isinstance(res, dict) else res
+        if not val:
+            return None
+        return SessionInfo.from_dict(res)
+
+    async def get_world_state(self) -> WorldStateResult:
+        """Get snapshot of current workspace, sandbox, and approval mode."""
+        res = await self._send_request("world/state", {})
+        return WorldStateResult.from_dict(res)
+
+    async def refresh_world(self) -> WorldRefreshResult:
+        """Refresh workspace and detect newly installed commands or toolchains."""
+        res = await self._send_request("world/refresh", {})
+        return WorldRefreshResult.from_dict(res)
+
+    async def set_world_execution(
+        self,
+        approval: str = "interactive",
+        copilot: bool = False,
+    ) -> WorldSetExecutionResult:
+        """Configure runtime approval policy ('interactive' | 'automatic') and execution mode."""
+        res = await self._send_request(
+            "world/set_execution",
+            {
+                "approval": approval,
+                "copilot": copilot,
+            },
+        )
+        return WorldSetExecutionResult.from_dict(res)
+
+    async def get_mcp_status(self) -> McpStatusResult:
+        """Get status of registered MCP servers and tools."""
+        res = await self._send_request("mcp/status", {})
+        return McpStatusResult.from_dict(res)
+
+    async def retry_mcp(self) -> McpRetryResult:
+        """Retry connection to failed or inactive MCP servers."""
+        res = await self._send_request("mcp/retry", {})
+        return McpRetryResult.from_dict(res)
 
 
 # Convenient alias matching Codex convention

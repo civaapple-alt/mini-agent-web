@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -60,21 +59,14 @@ def create_app() -> FastAPI:
     app.include_router(threads.router)
     app.include_router(world.router)
 
-    # Static UI Serving (prioritize modern React frontend/dist, fallback to web/)
-    frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
-    static_path = settings.static_dir
+    # Static UI Serving (React SPA frontend/dist)
+    dist_path = settings.frontend_dist
 
-    if (frontend_dist / "assets").exists():
+    if (dist_path / "assets").exists():
         app.mount(
             "/assets",
-            StaticFiles(directory=str(frontend_dist / "assets")),
+            StaticFiles(directory=str(dist_path / "assets")),
             name="assets",
-        )
-
-    static_assets_path = static_path / "static"
-    if static_assets_path.exists():
-        app.mount(
-            "/static", StaticFiles(directory=str(static_assets_path)), name="static"
         )
 
     @app.get("/health", tags=["Health"])
@@ -88,17 +80,15 @@ def create_app() -> FastAPI:
 
     @app.get("/", tags=["UI"])
     async def serve_index():
-        """Serve Web UI single page app."""
-        if (frontend_dist / "index.html").exists():
-            return FileResponse(frontend_dist / "index.html")
-
-        index_file = static_path / "index.html"
+        """Serve React SPA single page app."""
+        index_file = dist_path / "index.html"
         if index_file.exists():
             return FileResponse(index_file)
         return {
             "service": "Mini Agent Web Gateway",
             "status": "running",
             "docs": "/docs",
+            "frontend_tip": "Run `npm run build` in frontend/ to build the React SPA.",
         }
 
     return app

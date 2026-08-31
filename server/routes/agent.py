@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse
 from mini_agent.errors import AppServerError
 from pydantic import BaseModel, Field
 
-from server.session_manager import session_manager
+from server.session_manager import session_manager, to_json_serializable
 
 logger = logging.getLogger("mini_agent.server.agent")
 
@@ -97,10 +97,11 @@ async def stream_turn(
                 mode=mode,
                 thread_id=thread_id,
             ):
+                safe_item = to_json_serializable(item)
                 # Also broadcast to active WebSockets for synced UI displays
-                await session_manager.broadcast_ws(item)
+                await session_manager.broadcast_ws(safe_item)
 
-                payload = json.dumps(item, ensure_ascii=False)
+                payload = json.dumps(safe_item, ensure_ascii=False)
                 yield f"data: {payload}\n\n"
         except Exception as err:
             logger.exception("SSE stream error")
@@ -273,7 +274,8 @@ async def _stream_turn_to_ws(
             mode=mode,
             thread_id=thread_id,
         ):
-            await websocket.send_json(item)
+            safe_item = to_json_serializable(item)
+            await websocket.send_json(safe_item)
     except Exception as err:
         logger.exception("WebSocket stream error")
         await websocket.send_json({"type": "error", "message": str(err)})

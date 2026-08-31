@@ -620,7 +620,15 @@ class MiniAgentClient:
             start_resp = await self.start_turn(
                 prompt, mode=mode, thread_id=target_thread
             )
-            yield {"type": "_turn_submission", "data": start_resp}
+            yield {
+                "type": "_turn_submission",
+                "data": {
+                    "status": start_resp.status,
+                    "turn_id": start_resp.turn_id,
+                    "reason": start_resp.reason,
+                },
+                "submission": start_resp,
+            }
 
             while True:
                 envelope = await queue.get()

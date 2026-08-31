@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from fastapi import WebSocket
@@ -15,6 +16,25 @@ from mini_agent import MiniAgentClient
 from server.config import settings
 
 logger = logging.getLogger("mini_agent.server")
+
+
+def to_json_serializable(obj: Any) -> Any:
+    """Recursively convert dataclasses and objects into JSON-safe dictionaries."""
+    if is_dataclass(obj) and not isinstance(obj, type):
+        return {
+            k: to_json_serializable(v)
+            for k, v in asdict(obj).items()
+            if not k.startswith("_")
+        }
+    if isinstance(obj, dict):
+        return {
+            k: to_json_serializable(v)
+            for k, v in obj.items()
+            if k not in ("typed_event", "submission")
+        }
+    if isinstance(obj, (list, tuple)):
+        return [to_json_serializable(v) for v in obj]
+    return obj
 
 
 class SessionManager:
@@ -151,10 +171,11 @@ class SessionManager:
 
     async def broadcast_ws(self, message: dict[str, Any]) -> None:
         """Broadcast JSON payload to all connected WebSockets."""
+        safe_message = to_json_serializable(message)
         disconnected = []
         for ws in self._active_connections:
             try:
-                await ws.send_json(message)
+                await ws.send_json(safe_message)
             except Exception:  # noqa: BLE001
                 disconnected.append(ws)
 

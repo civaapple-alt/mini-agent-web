@@ -6,8 +6,13 @@ and programmatically or interactively prompting the user.
 """
 
 import asyncio
+import sys
 
 from mini_agent import MiniAgentClient
+
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
 
 
 async def interactive_approval_handler(request_id: str, action: str) -> bool:
@@ -15,25 +20,24 @@ async def interactive_approval_handler(request_id: str, action: str) -> bool:
     Custom approval callback.
     Can be connected to a GUI modal, CLI prompt, or security policy engine.
     """
-    print("\n" + "=" * 60)
-    print("🔒 [SECURITY APPROVAL REQUIRED]")
-    print(f"Request ID : {request_id}")
-    print(f"Action     : {action}")
-    print("=" * 60)
+    print("\n" + "=" * 60, flush=True)
+    print("[SECURITY APPROVAL REQUIRED]", flush=True)
+    print(f"Request ID : {request_id}", flush=True)
+    print(f"Action     : {action}", flush=True)
+    print("=" * 60, flush=True)
 
-    # In a real UI, this could be a button click or WebSocket response.
     loop = asyncio.get_running_loop()
     user_choice = await loop.run_in_executor(
         None,
         lambda: input("Allow agent to execute this action? (y/N): ").strip().lower(),
     )
     approved = user_choice in ("y", "yes")
-    print(f"-> Decision: {'APPROVED' if approved else 'REJECTED'}\n")
+    print(f"-> Decision: {'APPROVED' if approved else 'REJECTED'}\n", flush=True)
     return approved
 
 
 async def main():
-    print("=== Demo 03: Sensitive Tool Approvals ===")
+    print("=== Demo 03: Sensitive Tool Approvals ===", flush=True)
 
     # Initialize client with our custom approval handler
     async with MiniAgentClient(approval_handler=interactive_approval_handler) as client:
@@ -41,7 +45,7 @@ async def main():
         await client.start_thread()
 
         prompt = "Please run a shell command to check current git status and list files."
-        print(f"[Prompt]: {prompt}\n")
+        print(f"[Prompt]: {prompt}\n", flush=True)
 
         async for item in client.stream_turn(prompt):
             if item["type"] == "event":
@@ -53,13 +57,13 @@ async def main():
 
                 elif event_type == "tool_started":
                     call = event.get("call", {})
-                    print(f"\n[Tool Started]: {call.get('name')}({call.get('arguments')})")
+                    print(f"\n[Tool Started]: {call.get('name')}({call.get('arguments')})", flush=True)
 
                 elif event_type == "tool_finished":
-                    print(f"[Tool Finished]: {event.get('name')}")
+                    print(f"[Tool Finished]: {event.get('name')}", flush=True)
 
                 elif event_type == "turn_finished":
-                    print(f"\n\n[Turn Finished Status]: {event.get('status')}")
+                    print(f"\n\n[Turn Finished Status]: {event.get('status')}", flush=True)
 
 
 if __name__ == "__main__":

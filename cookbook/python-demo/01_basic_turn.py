@@ -4,12 +4,17 @@ Demonstrates connecting to mini-agent-app-server, initializing, and executing a 
 """
 
 import asyncio
+import sys
 
 from mini_agent import MiniAgentClient
 
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+
 
 async def main():
-    print("=== Demo 01: Basic Turn Execution ===")
+    print("=== Demo 01: Basic Turn Execution ===", flush=True)
 
     # 1. Start client (automatically finds mini-agent-app-server on PATH)
     async with MiniAgentClient() as client:
@@ -18,15 +23,15 @@ async def main():
             profile="interactive",
             client_name="python-basic-demo",
         )
-        print(f"[OK] Initialized with profile: {init_result.get('profile')}")
+        print(f"[OK] Initialized with profile: {init_result.get('profile')}", flush=True)
 
         # 3. Start default execution thread
         thread_id = await client.start_thread()
-        print(f"[OK] Thread started: {thread_id}")
+        print(f"[OK] Thread started: {thread_id}", flush=True)
 
         # 4. Stream and process turn events
         prompt = "Hello! Please summarize what tools you have available in 2 concise sentences."
-        print(f"\n[User Prompt]: {prompt}\n")
+        print(f"\n[User Prompt]: {prompt}\n", flush=True)
 
         printed_reasoning_header = False
         printed_assistant_header = False
@@ -35,7 +40,7 @@ async def main():
             if item["type"] == "_turn_submission":
                 sub = item.get("data")
                 turn_id = getattr(sub, "turn_id", None) or (sub.get("turn_id") if isinstance(sub, dict) else "started")
-                print(f"[Turn Started] Turn ID: {turn_id}")
+                print(f"[Turn Started] Turn ID: {turn_id}", flush=True)
 
             elif item["type"] == "event":
                 event = item["event"]
@@ -58,22 +63,22 @@ async def main():
                 # Tool started
                 elif event_type == "tool_started":
                     call = event.get("call", {})
-                    print(f"\n -> [Tool Calling]: {call.get('name')}({call.get('arguments')})")
+                    print(f"\n -> [Tool Calling]: {call.get('name')}({call.get('arguments')})", flush=True)
 
                 # Tool finished
                 elif event_type == "tool_finished":
                     status = "ERROR" if event.get("is_error") else "OK"
-                    print(f" <- [Tool Finished] [{status}]: {event.get('name')}")
+                    print(f" <- [Tool Finished] [{status}]: {event.get('name')}", flush=True)
 
                 # Turn completed
                 elif event_type == "turn_finished":
                     status = event.get("status")
-                    print(f"\n\n[Turn Finished Status]: {status}")
+                    print(f"\n\n[Turn Finished Status]: {status}", flush=True)
 
                 # Run failed error
                 elif event_type == "run_failed":
                     reason = event.get("reason", "unknown error")
-                    print(f"\n\n[Run Failed Reason]: {reason}")
+                    print(f"\n\n[Run Failed Reason]: {reason}", flush=True)
 
 
 if __name__ == "__main__":

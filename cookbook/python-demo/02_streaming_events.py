@@ -1,23 +1,31 @@
 """
 Demo 02: Deep Event Stream Inspection
 Demonstrates inspecting granular event types including model step lifecycle,
-token usage, UTF-8 output truncation, and loop warnings.
+token streaming, tool invocations, UTF-8 output truncation, and usage metrics.
 """
 
 import asyncio
+import sys
 
 from mini_agent import MiniAgentClient
 
+# Ensure UTF-8 output on Windows consoles
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+
 
 async def main():
-    print("=== Demo 02: Deep Event Stream Inspection ===")
+    print("=== Demo 02: Deep Event Stream Inspection ===", flush=True)
 
     async with MiniAgentClient() as client:
         await client.initialize(profile="interactive")
         await client.start_thread()
 
         prompt = "Inspect the current directory, check files, and tell me the project structure."
-        print(f"[Prompt]: {prompt}\n")
+        print(f"[Prompt]: {prompt}\n", flush=True)
+
+        current_stream_mode: str | None = None
 
         async for item in client.stream_turn(prompt):
             if item["type"] != "event":
@@ -27,48 +35,84 @@ async def main():
             seq = item.get("sequence", 0)
             event_type = event.get("type", "unknown")
 
-            print(f"[Seq #{seq:02d}] Event: {event_type}")
-
+            # 1. Model inference step started
             if event_type == "model_started":
-                print(f"   Step: {event.get('step')}")
+                if current_stream_mode is not None:
+                    print("\n", flush=True)
+                    current_stream_mode = None
+                print(f"\n[Seq #{seq:02d}] [Model Step {event.get('step')} Started]", flush=True)
 
+            # 2. Streaming reasoning tokens
             elif event_type == "assistant_reasoning_delta":
-                delta = event.get("delta", "").replace("\n", " ")
-                if delta:
-                    print(f"   Thinking Delta: {delta[:60]}")
+                if current_stream_mode != "reasoning":
+                    print(f"\n[Seq #{seq:02d}] [Thinking]: ", end="", flush=True)
+                    current_stream_mode = "reasoning"
+                print(event.get("delta", ""), end="", flush=True)
 
+            # 3. Streaming response text tokens
             elif event_type == "assistant_text_delta":
-                delta = event.get("delta", "").replace("\n", " ")
-                if delta:
-                    print(f"   Text Delta: {delta[:60]}")
+                if current_stream_mode != "text":
+                    print(f"\n\n[Seq #{seq:02d}] [Assistant]: ", end="", flush=True)
+                    current_stream_mode = "text"
+                print(event.get("delta", ""), end="", flush=True)
 
+            # 4. Model responded step summary
             elif event_type == "model_responded":
+                if current_stream_mode is not None:
+                    print("\n", flush=True)
+                    current_stream_mode = None
+
                 usage = event.get("usage")
                 if usage:
                     print(
-                        f"   Usage: prompt_tokens={usage.get('prompt_tokens')}, "
-                        f"completion_tokens={usage.get('completion_tokens')}"
+                        f"[Seq #{seq:02d}] [Token Usage]: "
+                        f"prompt={usage.get('prompt_tokens')}, completion={usage.get('completion_tokens')}, "
+                        f"total={usage.get('total_tokens')}",
+                        flush=True,
                     )
                 tool_calls = event.get("tool_calls", [])
                 if tool_calls:
-                    print(f"   Proposed Tools: {[t['name'] for t in tool_calls]}")
-                if event.get("text"):
-                    print(f"   Text Snippet: {event['text'][:100]}...")
+                    names = [t.get("name") for t in tool_calls]
+                    print(f"[Seq #{seq:02d}] [Tools Proposed]: {names}", flush=True)
 
+            # 5. Tool invocation started
             elif event_type == "tool_started":
+                if current_stream_mode is not None:
+                    print("\n", flush=True)
+                    current_stream_mode = None
                 call = event.get("call", {})
-                print(f"   Executing Tool: {call.get('name')} with args: {call.get('arguments')}")
+                args = call.get("arguments", "")
+                if len(args) > 100:
+                    args = args[:100] + "..."
+                print(f"[Seq #{seq:02d}] [Tool Started]: {call.get('name')}({args})", flush=True)
 
+            # 6. Tool finished
             elif event_type == "tool_finished":
+                if current_stream_mode is not None:
+                    print("\n", flush=True)
+                    current_stream_mode = None
+                status = "ERROR" if event.get("is_error") else "OK"
+                truncated = " (truncated)" if event.get("truncated") else ""
                 print(
-                    f"   Tool: {event.get('name')}, Truncated: {event.get('truncated')}, "
-                    f"Outcome: {event.get('outcome')}"
+                    f"[Seq #{seq:02d}] [{status}] [Tool Finished]: {event.get('name')}{truncated}",
+                    flush=True,
                 )
-                content_preview = event.get("content", "")[:120].replace("\n", " ")
-                print(f"   Output Preview: {content_preview}...")
+                preview = event.get("content", "")[:150].replace("\n", " ")
+                if preview:
+                    print(f"       Output Preview: {preview}...", flush=True)
 
+            # 7. Turn finished or failed
             elif event_type == "turn_finished":
-                print(f"   Final Status: {event.get('status')}")
+                if current_stream_mode is not None:
+                    print("\n", flush=True)
+                    current_stream_mode = None
+                print(f"\n[Seq #{seq:02d}] [Turn Finished]: status={event.get('status')}", flush=True)
+
+            elif event_type == "run_failed":
+                if current_stream_mode is not None:
+                    print("\n", flush=True)
+                    current_stream_mode = None
+                print(f"\n[Seq #{seq:02d}] [Run Failed]: reason={event.get('reason')}", flush=True)
 
 
 if __name__ == "__main__":

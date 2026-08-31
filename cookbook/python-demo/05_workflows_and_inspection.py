@@ -6,53 +6,61 @@ and reading settled thread checkpoints.
 
 import asyncio
 import json
+import sys
 
 from mini_agent import AppServerError, MiniAgentClient
 
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+
 
 async def main():
-    print("=== Demo 05: Workflows and Management APIs ===")
+    print("=== Demo 05: Workflows and Management APIs ===", flush=True)
 
     async with MiniAgentClient() as client:
         # 1. Initialize
         init_res = await client.initialize(profile="interactive")
-        print(f"[OK] Initialized, server: {init_res.get('serverName')} v{init_res.get('serverVersion')}")
+        print(
+            f"[OK] Initialized, server: {init_res.get('serverName')} v{init_res.get('serverVersion')}",
+            flush=True,
+        )
         await client.start_thread()
 
         # 2. Inspect Environment & World State
-        print("\n--- 1. World State ---")
+        print("\n--- 1. World State ---", flush=True)
         try:
             world = await client.get_world_state()
-            print(json.dumps(world, indent=2, ensure_ascii=False))
+            print(json.dumps(world, indent=2, ensure_ascii=False), flush=True)
         except AppServerError as err:
-            print(f"(world/state not available on this server version: {err})")
+            print(f"(world/state not available on this server version: {err})", flush=True)
 
         # 3. Inspect MCP Servers status
-        print("\n--- 2. MCP Status ---")
+        print("\n--- 2. MCP Status ---", flush=True)
         try:
             mcp = await client.get_mcp_status()
-            print(json.dumps(mcp, indent=2, ensure_ascii=False))
+            print(json.dumps(mcp, indent=2, ensure_ascii=False), flush=True)
         except AppServerError as err:
-            print(f"(mcp/status not available on this server version: {err})")
+            print(f"(mcp/status not available on this server version: {err})", flush=True)
 
         # 4. Toggle Plan Mode (locks workspace mutations)
-        print("\n--- 3. Enabling Plan Mode ---")
+        print("\n--- 3. Enabling Plan Mode ---", flush=True)
         try:
             plan_resp = await client.set_plan_mode(
                 active=True,
                 prompt="Drafting high-level architecture before coding.",
             )
-            print(f"Plan Mode Set: {plan_resp}")
+            print(f"Plan Mode Set: {plan_resp}", flush=True)
         except AppServerError as err:
-            print(f"(workflow/plan/set not available on this server version: {err})")
+            print(f"(workflow/plan/set not available on this server version: {err})", flush=True)
 
         # 5. Read Thread Checkpoint
-        print("\n--- 4. Settled Thread Checkpoint ---")
+        print("\n--- 4. Settled Thread Checkpoint ---", flush=True)
         checkpoint = await client.read_thread()
-        print(f"Thread ID     : {checkpoint.get('thread_id')}")
-        print(f"Status        : {checkpoint.get('status')}")
-        print(f"Turn Counter  : {checkpoint.get('next_turn_number')}")
-        print(f"Message Count : {len(checkpoint.get('session', {}).get('messages', []))}")
+        print(f"Thread ID     : {checkpoint.thread_id}", flush=True)
+        print(f"Status        : {checkpoint.status}", flush=True)
+        print(f"Turn Counter  : {checkpoint.next_turn_number}", flush=True)
+        print(f"Message Count : {len(checkpoint.messages)}", flush=True)
 
 
 if __name__ == "__main__":

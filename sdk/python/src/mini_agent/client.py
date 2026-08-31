@@ -173,6 +173,7 @@ class MiniAgentClient:
         future: asyncio.Future[Any] = loop.create_future()
         self._pending_requests[req_id] = future
 
+        logger.debug(">>> SEND: %s", data.strip())
         self._proc.stdin.write(data.encode("utf-8"))
         await self._proc.stdin.drain()
 
@@ -189,6 +190,7 @@ class MiniAgentClient:
             "params": params if params is not None else {},
         }
         data = json.dumps(payload) + "\n"
+        logger.debug(">>> NOTIFY: %s", data.strip())
         self._proc.stdin.write(data.encode("utf-8"))
         await self._proc.stdin.drain()
 
@@ -203,6 +205,7 @@ class MiniAgentClient:
             if not line:
                 continue
 
+            logger.debug("<<< RECV: %s", line)
             try:
                 msg = json.loads(line)
             except json.JSONDecodeError:

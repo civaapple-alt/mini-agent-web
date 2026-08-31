@@ -258,24 +258,36 @@ class MiniAgentClient:
 
     async def stop(self) -> None:
         """Gracefully stop the server process."""
+        # 1. Terminate/kill the child process first so stdout/stderr receive EOF immediately
+        if self._proc and self._proc.returncode is None:
+            if self._proc.stdin and not self._proc.stdin.is_closing():
+                try:
+                    self._proc.stdin.close()
+                except Exception:  # noqa: BLE001, S110
+                    pass
+            try:
+                self._proc.terminate()
+            except Exception:  # noqa: BLE001, S110
+                pass
+            try:
+                await asyncio.wait_for(self._proc.wait(), timeout=1.0)
+            except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+                try:
+                    self._proc.kill()
+                    await asyncio.wait_for(self._proc.wait(), timeout=1.0)
+                except Exception:  # noqa: BLE001, S110
+                    pass
+
+        # 2. Cancel and wait for reader/stderr tasks
         for task in (self._reader_task, self._stderr_task):
             if task and not task.done():
                 task.cancel()
                 try:
-                    await task
-                except asyncio.CancelledError:
+                    await asyncio.wait_for(asyncio.shield(task), timeout=0.5)
+                except (asyncio.CancelledError, asyncio.TimeoutError, Exception):  # noqa: BLE001, S110
                     pass
 
-        if self._proc and self._proc.returncode is None:
-            if self._proc.stdin and not self._proc.stdin.is_closing():
-                self._proc.stdin.close()
-            try:
-                await asyncio.wait_for(self._proc.wait(), timeout=3.0)
-            except asyncio.TimeoutError:
-                self._proc.kill()
-                await self._proc.wait()
-
-        # Reject any pending futures
+        # 3. Reject any pending futures
         for fut in self._pending_requests.values():
             if not fut.done():
                 fut.set_exception(RuntimeError("App Server stopped"))

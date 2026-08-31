@@ -76,16 +76,28 @@ class SessionManager:
             self._initialized = True
 
     async def stop(self) -> None:
-        """Stop the background MiniAgentClient."""
+        """Stop the background MiniAgentClient and close WebSocket connections."""
         async with self._lock:
-            if self._client is not None:
-                # Cancel any pending approval futures
-                for fut in self._pending_approvals.values():
-                    if not fut.done():
-                        fut.cancel()
-                self._pending_approvals.clear()
+            # 1. Gracefully close active WebSocket connections
+            for ws in list(self._active_connections):
+                try:
+                    await ws.close(code=1001, reason="Server shutting down")
+                except Exception:  # noqa: BLE001, S110
+                    pass
+            self._active_connections.clear()
 
-                await self._client.__aexit__(None, None, None)
+            # 2. Cancel any pending approval futures
+            for fut in self._pending_approvals.values():
+                if not fut.done():
+                    fut.cancel()
+            self._pending_approvals.clear()
+
+            # 3. Terminate MiniAgentClient
+            if self._client is not None:
+                try:
+                    await asyncio.wait_for(self._client.stop(), timeout=3.0)
+                except (asyncio.TimeoutError, Exception):  # noqa: BLE001, S110
+                    pass
                 self._client = None
                 self._initialized = False
                 logger.info("MiniAgentClient terminated cleanly.")

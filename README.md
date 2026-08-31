@@ -114,26 +114,31 @@ if __name__ == "__main__":
 
 ## 🖥️ 启动 Web Studio 前端界面与 API 网关
 
-### 方式 1：一键生产模式（自动加载编译好的 React SPA 前端）
-```bash
-# 启动 Web Studio (默认运行在 http://localhost:8000)
-uv run mini-agent-web
+`mini-agent-web` 是后端的 **FastAPI API 网关主程序**。根据你的使用场景，有两种启动方式：
 
-# 或者使用 uvicorn 启动
-uv run uvicorn server.app:app --host 0.0.0.0 --port 8000
+### 🎯 场景 A：直接使用 / 体验（开箱即用，单一进程）
+FastAPI 后端会自动托管编译好的 React 前端静态网页，**无需开启 Node.js 服务**，一条命令即可启动前后端：
+
+```bash
+# 启动后端 API 网关（同时托管前端网页，默认运行在 http://localhost:8000）
+uv run mini-agent-web
 ```
-> 打开浏览器访问 `http://localhost:8000` 即可进入 Web Studio 交互控制台；API 交互文档见 `http://localhost:8000/docs`。
+> 启动后，直接打开浏览器访问 `http://localhost:8000` 即可使用 Web Studio；后端 API 文档见 `http://localhost:8000/docs`。
 
-### 方式 2：前端开发调试模式（React 19 + Vite 热更新）
+---
+
+### 🛠️ 场景 B：前端二次开发（React 19 + Vite 代码热更新）
+如果你正在**修改或开发前端界面代码**（React / JSX / CSS），需要前后端分离的实时热重载（HMR）环境：
+
 ```bash
-# 1. 启动后端网关 (8000 端口)
+# 终端 1：启动 Python 后端 API 网关（提供 /api 与 /ws 数据接口）
 uv run mini-agent-web
 
-# 2. 进入 frontend 目录启动 Vite 开发服务器 (5173 端口，自动代理 /api 和 /ws)
+# 终端 2：启动前端 Vite 开发服务器（提供前端代码实时热更新）
 cd frontend
-npm install
 npm run dev
 ```
+> 打开浏览器访问 `http://localhost:5173`。Vite 会自动将 `/api` 与 `/ws` 请求反向代理到 8000 端口的 Python 后端。
 
 ---
 

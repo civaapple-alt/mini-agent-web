@@ -6,13 +6,8 @@ and programmatically or interactively prompting the user.
 """
 
 import asyncio
-import sys
 
 from mini_agent import MiniAgentClient
-
-if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
 
 
 async def interactive_approval_handler(request_id: str, action: str) -> bool:

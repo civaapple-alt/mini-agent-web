@@ -4,13 +4,8 @@ Demonstrates connecting to mini-agent-app-server, initializing, and executing a 
 """
 
 import asyncio
-import sys
 
 from mini_agent import MiniAgentClient
-
-if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
 
 
 async def main():

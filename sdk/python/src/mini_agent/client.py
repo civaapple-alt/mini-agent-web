@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import shutil
+import sys
 from collections.abc import AsyncIterator, Callable, Coroutine
 from typing import Any, Self
 
@@ -22,6 +23,18 @@ from mini_agent.events import parse_event
 from mini_agent.types import ThreadCheckpoint, TurnReadResult, TurnSubmissionResult
 
 logger = logging.getLogger("mini_agent")
+
+
+def _ensure_utf8_console() -> None:
+    """Safely configure stdout/stderr for UTF-8 on Windows consoles."""
+    if sys.platform == "win32":
+        for stream_name in ("stdout", "stderr"):
+            stream = getattr(sys, stream_name, None)
+            if stream is not None and hasattr(stream, "reconfigure"):
+                try:
+                    stream.reconfigure(encoding="utf-8")
+                except OSError:
+                    pass
 
 
 def _find_and_load_env(cwd: str) -> dict[str, str]:
@@ -73,6 +86,7 @@ class MiniAgentClient:
         :param approval_handler: Async callback `async def handler(request_id: str, action: str) -> bool`
                                  for handling sensitive tool approvals. Defaults to auto-approve.
         """
+        _ensure_utf8_console()
         self.executable = executable
         self.cwd = cwd or os.getcwd()
         file_env = _find_and_load_env(self.cwd)

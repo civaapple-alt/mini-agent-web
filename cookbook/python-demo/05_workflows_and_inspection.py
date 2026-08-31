@@ -6,13 +6,8 @@ and reading settled thread checkpoints.
 
 import asyncio
 import json
-import sys
 
 from mini_agent import AppServerError, MiniAgentClient
-
-if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
 
 
 async def main():

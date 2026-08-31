@@ -5,14 +5,8 @@ token streaming, tool invocations, UTF-8 output truncation, and usage metrics.
 """
 
 import asyncio
-import sys
 
 from mini_agent import MiniAgentClient
-
-# Ensure UTF-8 output on Windows consoles
-if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
 
 
 async def main():

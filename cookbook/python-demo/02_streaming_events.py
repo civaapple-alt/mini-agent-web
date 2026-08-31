@@ -17,7 +17,7 @@ async def main():
         await client.initialize(profile="interactive")
         await client.start_thread()
 
-        prompt = "Inspect the current directory, check files, and tell me the project structure."
+        prompt = "Explain the key differences between synchronous and asynchronous event streaming in 3 clear bullet points."
         print(f"[Prompt]: {prompt}\n", flush=True)
 
         current_stream_mode: str | None = None

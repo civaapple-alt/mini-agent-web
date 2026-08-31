@@ -30,13 +30,15 @@
 
 ## 快速上手（基于 uv）
 
-本项目内置 `uv` 虚拟环境与依赖管理配置：
+本项目内置 `uv` 虚拟环境与依赖管理配置，并支持通过 `.env` 配置文件注入模型密钥：
 
 ```bash
-# 1. 确保已配置模型 API Key (DeepSeek / OpenAI / GLM)
-$env:OPENAI_API_KEY="your-api-key"
-$env:OPENAI_BASE_URL="https://api.deepseek.com"
-$env:OPENAI_MODEL="deepseek-v4-flash"
+# 1. 复制环境配置模板并填写 API Key (DeepSeek / OpenAI / GLM 等)
+# Windows PowerShell:
+Copy-Item .env.example .env
+
+# Linux / macOS:
+cp .env.example .env
 
 # 2. 一键运行基础 Demo (无需手动 activate 虚拟环境)
 uv run python cookbook/python-demo/01_basic_turn.py

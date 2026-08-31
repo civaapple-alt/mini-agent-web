@@ -26,6 +26,35 @@ class AppServerError(Exception):
         self.data = data
 
 
+def _find_and_load_env(cwd: str) -> dict[str, str]:
+    """Lightweight built-in .env parser without external dependencies."""
+    env_vars: dict[str, str] = {}
+    search_dirs = [
+        cwd,
+        os.path.dirname(cwd),
+        os.path.dirname(os.path.abspath(__file__)),
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        os.path.expanduser("~/.mini-agent"),
+    ]
+    for d in search_dirs:
+        env_path = os.path.join(d, ".env")
+        if os.path.isfile(env_path):
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#") or "=" not in line:
+                            continue
+                        k, v = line.split("=", 1)
+                        k = k.strip()
+                        v = v.strip().strip("'\"")
+                        if k and k not in env_vars:
+                            env_vars[k] = v
+            except Exception:
+                pass
+    return env_vars
+
+
 class MiniAgentClient:
     """Asynchronous Client for mini-agent-app-server."""
 
@@ -47,7 +76,9 @@ class MiniAgentClient:
         """
         self.executable = executable
         self.cwd = cwd or os.getcwd()
-        self.env = {**os.environ, **(env or {})}
+        file_env = _find_and_load_env(self.cwd)
+        # Priority: explicit env arg > process os.environ > .env file
+        self.env = {**file_env, **os.environ, **(env or {})}
         self.approval_handler = approval_handler or self._default_auto_approve
 
         self._proc: Optional[asyncio.subprocess.Process] = None

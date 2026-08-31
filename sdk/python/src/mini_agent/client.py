@@ -405,10 +405,32 @@ class MiniAgentClient:
 
     async def _handle_approval_request(self, params: dict[str, Any]) -> None:
         """Handle server approval/request notification."""
-        request_id = params.get("requestId", "")
-        action = params.get("action", "")
+        request_id = str(params.get("requestId") or params.get("request_id") or params.get("id") or "")
+        action = str(params.get("action") or params.get("tool") or "")
         try:
-            approved = await self.approval_handler(request_id, action)
+            if callable(self.approval_handler):
+                import inspect
+
+                sig = inspect.signature(self.approval_handler)
+                num_params = len(sig.parameters)
+                if num_params == 1:
+                    res = await self.approval_handler(params)
+                elif num_params == 2:
+                    res = await self.approval_handler(request_id, action)
+                else:
+                    res = await self.approval_handler(request_id, action, params)
+
+                if isinstance(res, bool):
+                    approved = res
+                elif isinstance(res, dict):
+                    decision = str(res.get("decision", "")).lower()
+                    approved = decision in ("approved", "allow", "yes", "true") or bool(res.get("approved"))
+                elif isinstance(res, str):
+                    approved = res.lower() in ("approved", "allow", "yes", "true")
+                else:
+                    approved = bool(res)
+            else:
+                approved = True
         except Exception as err:  # noqa: BLE001
             logger.error("Approval handler error: %s. Denying by default.", err)
             approved = False

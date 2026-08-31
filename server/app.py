@@ -45,10 +45,11 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Configure CORS
+    # Configure CORS (allow_origin_regex ensures WebSocket handshake passes on localhost/127.0.0.1)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
+        allow_origin_regex=r".*",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

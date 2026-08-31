@@ -465,7 +465,12 @@ function renderThreadHistory(checkpoint) {
   const container = document.getElementById("messagesContainer");
   container.innerHTML = "";
 
-  const messages = checkpoint.messages || [];
+  const messages = (checkpoint.messages || []).filter((msg) => {
+    if (msg.role === "system") return false;
+    const text = (msg.text || "").trim();
+    if (text.startsWith("<world_state") || text.includes("</world_state>")) return false;
+    return true;
+  });
   if (messages.length === 0) {
     showWelcomeBanner();
     return;

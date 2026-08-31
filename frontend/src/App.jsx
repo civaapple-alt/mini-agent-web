@@ -77,12 +77,19 @@ export default function App() {
     try {
       const cp = await api.readThread(threadId);
       const rawMessages = cp.messages || [];
-      const formatted = rawMessages.map((m) => ({
-        role: m.role,
-        text: m.text || '',
-        thinking: '',
-        tools: [],
-      }));
+      const formatted = rawMessages
+        .filter((m) => {
+          if (m.role === 'system') return false;
+          const text = (m.text || '').trim();
+          if (text.startsWith('<world_state') || text.includes('</world_state>')) return false;
+          return true;
+        })
+        .map((m) => ({
+          role: m.role,
+          text: m.text || '',
+          thinking: '',
+          tools: [],
+        }));
       setMessages(formatted);
     } catch (err) {
       console.error(`Failed to load thread ${threadId}:`, err);

@@ -24,12 +24,8 @@
   color: #38bdf8;
 }
 
-.tool-icon.spinning {
-  animation: spin 2s linear infinite;
-}
-
-@keyframes spin {
-  100% { transform: rotate(360deg); }
+.tool-icon {
+  color: #38bdf8;
 }
 
 .badge {
@@ -38,6 +34,8 @@
   border-radius: 4px;
   font-family: 'JetBrains Mono', monospace;
   font-weight: 500;
+  display: inline-flex;
+  align-items: center;
 }
 
 .badge.running {
@@ -102,6 +100,6 @@
   background-color: #080c14;
   color: #cbd5e1;
   font-size: 11px;
-  max-height: 200px;
+  max-height: 250px;
   overflow-y: auto;
 }

@@ -7,7 +7,7 @@ and reading settled thread checkpoints.
 import asyncio
 import json
 
-from client import MiniAgentClient
+from client import AppServerError, MiniAgentClient
 
 
 async def main():
@@ -15,26 +15,36 @@ async def main():
 
     async with MiniAgentClient() as client:
         # 1. Initialize
-        await client.initialize(profile="interactive")
+        init_res = await client.initialize(profile="interactive")
+        print(f"[OK] Initialized, server: {init_res.get('serverName')} v{init_res.get('serverVersion')}")
         await client.start_thread()
 
         # 2. Inspect Environment & World State
         print("\n--- 1. World State ---")
-        world = await client.get_world_state()
-        print(json.dumps(world, indent=2, ensure_ascii=False))
+        try:
+            world = await client.get_world_state()
+            print(json.dumps(world, indent=2, ensure_ascii=False))
+        except AppServerError as err:
+            print(f"(world/state not available on this server version: {err})")
 
         # 3. Inspect MCP Servers status
         print("\n--- 2. MCP Status ---")
-        mcp = await client.get_mcp_status()
-        print(json.dumps(mcp, indent=2, ensure_ascii=False))
+        try:
+            mcp = await client.get_mcp_status()
+            print(json.dumps(mcp, indent=2, ensure_ascii=False))
+        except AppServerError as err:
+            print(f"(mcp/status not available on this server version: {err})")
 
         # 4. Toggle Plan Mode (locks workspace mutations)
         print("\n--- 3. Enabling Plan Mode ---")
-        plan_resp = await client.set_plan_mode(
-            active=True,
-            prompt="Drafting high-level architecture before coding.",
-        )
-        print(f"Plan Mode Set: {plan_resp}")
+        try:
+            plan_resp = await client.set_plan_mode(
+                active=True,
+                prompt="Drafting high-level architecture before coding.",
+            )
+            print(f"Plan Mode Set: {plan_resp}")
+        except AppServerError as err:
+            print(f"(workflow/plan/set not available on this server version: {err})")
 
         # 5. Read Thread Checkpoint
         print("\n--- 4. Settled Thread Checkpoint ---")

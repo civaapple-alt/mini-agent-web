@@ -21,7 +21,8 @@ async def main():
 
         # 1. Start the turn directly
         resp = await client.start_turn(prompt)
-        turn_id = resp["value"]["turn_id"]
+        val = resp.get("value", resp) if isinstance(resp, dict) else resp
+        turn_id = val.get("turn_id") or val.get("turnId") or "turn-1"
         print(f"[Turn Started]: {turn_id}")
 
         # 2. Wait 2 seconds while the agent starts thinking

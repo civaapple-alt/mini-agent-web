@@ -395,7 +395,8 @@ class MiniAgentClient:
                     "event": event,
                 }
 
-                if "turn_finished" in event or "run_failed" in event:
+                event_type = event.get("type")
+                if event_type in ("turn_finished", "run_failed"):
                     break
         finally:
             self._event_queues.remove(queue)

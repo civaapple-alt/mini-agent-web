@@ -6,7 +6,6 @@ and programmatically or interactively prompting the user.
 """
 
 import asyncio
-
 from client import MiniAgentClient
 
 
@@ -22,7 +21,6 @@ async def interactive_approval_handler(request_id: str, action: str) -> bool:
     print("=" * 60)
 
     # In a real UI, this could be a button click or WebSocket response.
-    # Here we simulate an interactive terminal prompt.
     loop = asyncio.get_running_loop()
     user_choice = await loop.run_in_executor(
         None,
@@ -47,12 +45,20 @@ async def main():
         async for item in client.stream_turn(prompt):
             if item["type"] == "event":
                 event = item["event"]
-                if "model_responded" in event and event["model_responded"].get("text"):
-                    print(f"[Agent]: {event['model_responded']['text']}")
-                elif "tool_started" in event:
-                    print(f"[Tool]: Executing {event['tool_started']['call']['name']}...")
-                elif "tool_finished" in event:
-                    print(f"[Tool Finished]: {event['tool_finished']['name']}")
+                event_type = event.get("type")
+
+                if event_type == "assistant_text_delta":
+                    print(event.get("delta", ""), end="", flush=True)
+
+                elif event_type == "tool_started":
+                    call = event.get("call", {})
+                    print(f"\n[Tool Started]: {call.get('name')}({call.get('arguments')})")
+
+                elif event_type == "tool_finished":
+                    print(f"[Tool Finished]: {event.get('name')}")
+
+                elif event_type == "turn_finished":
+                    print(f"\n\n[Turn Finished Status]: {event.get('status')}")
 
 
 if __name__ == "__main__":

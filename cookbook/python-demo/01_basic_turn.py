@@ -4,7 +4,6 @@ Demonstrates connecting to mini-agent-app-server, initializing, and executing a 
 """
 
 import asyncio
-
 from client import MiniAgentClient
 
 
@@ -28,10 +27,13 @@ async def main():
         prompt = "Hello! Please summarize what tools you have available in 2 concise sentences."
         print(f"\n[User Prompt]: {prompt}\n")
 
+        printed_reasoning_header = False
+        printed_assistant_header = False
+
         async for item in client.stream_turn(prompt):
             if item["type"] == "_turn_submission":
-                raw_data = item.get("data", {})
-                val = raw_data.get("value", raw_data) if isinstance(raw_data, dict) else raw_data
+                raw = item.get("data", {})
+                val = raw.get("value", raw) if isinstance(raw, dict) else raw
                 turn_id = (
                     val.get("turn_id")
                     or val.get("turnId")
@@ -42,33 +44,41 @@ async def main():
 
             elif item["type"] == "event":
                 event = item["event"]
+                event_type = event.get("type")
 
-                # Handle model output
-                if "model_responded" in event:
-                    resp = event["model_responded"]
-                    if resp.get("reasoning"):
-                        print(f"[Thinking]:\n{resp['reasoning']}\n")
-                    if resp.get("text"):
-                        print(f"[Assistant Response]:\n{resp['text']}\n")
+                # Stream reasoning tokens
+                if event_type == "assistant_reasoning_delta":
+                    if not printed_reasoning_header:
+                        print("\n[Thinking]:\n", end="", flush=True)
+                        printed_reasoning_header = True
+                    print(event.get("delta", ""), end="", flush=True)
 
-                # Handle tool execution
-                elif "tool_started" in event:
-                    call = event["tool_started"]["call"]
-                    print(f" -> [Tool Calling]: {call['name']}({call['arguments']})")
+                # Stream assistant text tokens
+                elif event_type == "assistant_text_delta":
+                    if not printed_assistant_header:
+                        print("\n\n[Assistant Response]:\n", end="", flush=True)
+                        printed_assistant_header = True
+                    print(event.get("delta", ""), end="", flush=True)
 
-                elif "tool_finished" in event:
-                    tool_res = event["tool_finished"]
-                    status = "ERROR" if tool_res["is_error"] else "OK"
-                    print(f" <- [Tool Finished] [{status}]: {tool_res['name']}")
+                # Tool started
+                elif event_type == "tool_started":
+                    call = event.get("call", {})
+                    print(f"\n -> [Tool Calling]: {call.get('name')}({call.get('arguments')})")
 
-                # Turn finished or failed
-                elif "turn_finished" in event:
-                    status = event["turn_finished"]["status"]
-                    print(f"\n[Turn Finished Status]: {status}")
+                # Tool finished
+                elif event_type == "tool_finished":
+                    status = "ERROR" if event.get("is_error") else "OK"
+                    print(f" <- [Tool Finished] [{status}]: {event.get('name')}")
 
-                elif "run_failed" in event:
-                    reason = event["run_failed"].get("reason", event["run_failed"])
-                    print(f"\n[Run Failed Reason]: {reason}")
+                # Turn completed
+                elif event_type == "turn_finished":
+                    status = event.get("status")
+                    print(f"\n\n[Turn Finished Status]: {status}")
+
+                # Run failed error
+                elif event_type == "run_failed":
+                    reason = event.get("reason", "unknown error")
+                    print(f"\n\n[Run Failed Reason]: {reason}")
 
 
 if __name__ == "__main__":

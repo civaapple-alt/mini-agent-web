@@ -5,7 +5,6 @@ token usage, UTF-8 output truncation, and loop warnings.
 """
 
 import asyncio
-
 from client import MiniAgentClient
 
 
@@ -25,31 +24,50 @@ async def main():
 
             event = item["event"]
             seq = item.get("sequence", 0)
+            event_type = event.get("type", "unknown")
 
-            # Match event variant keys
-            for event_type, payload in event.items():
-                print(f"[Seq #{seq:02d}] Event: {event_type}")
+            print(f"[Seq #{seq:02d}] Event: {event_type}")
 
-                if event_type == "model_started":
-                    print(f"   Step: {payload.get('step')}")
+            if event_type == "model_started":
+                print(f"   Step: {event.get('step')}")
 
-                elif event_type == "model_responded":
-                    usage = payload.get("usage")
-                    if usage:
-                        print(f"   Usage: prompt_tokens={usage.get('prompt_tokens')}, completion_tokens={usage.get('completion_tokens')}")
-                    tool_calls = payload.get("tool_calls", [])
-                    if tool_calls:
-                        print(f"   Proposed Tools: {[t['name'] for t in tool_calls]}")
-                    if payload.get("text"):
-                        print(f"   Text Snippet: {payload['text'][:100]}...")
+            elif event_type == "assistant_reasoning_delta":
+                delta = event.get("delta", "").replace("\n", " ")
+                if delta:
+                    print(f"   Thinking Delta: {delta[:60]}")
 
-                elif event_type == "tool_finished":
-                    print(f"   Tool: {payload.get('name')}, Truncated: {payload.get('truncated')}, Outcome: {payload.get('outcome')}")
-                    content_preview = payload.get("content", "")[:120].replace("\n", " ")
-                    print(f"   Output Preview: {content_preview}...")
+            elif event_type == "assistant_text_delta":
+                delta = event.get("delta", "").replace("\n", " ")
+                if delta:
+                    print(f"   Text Delta: {delta[:60]}")
 
-                elif event_type == "turn_finished":
-                    print(f"   Final Status: {payload.get('status')}")
+            elif event_type == "model_responded":
+                usage = event.get("usage")
+                if usage:
+                    print(
+                        f"   Usage: prompt_tokens={usage.get('prompt_tokens')}, "
+                        f"completion_tokens={usage.get('completion_tokens')}"
+                    )
+                tool_calls = event.get("tool_calls", [])
+                if tool_calls:
+                    print(f"   Proposed Tools: {[t['name'] for t in tool_calls]}")
+                if event.get("text"):
+                    print(f"   Text Snippet: {event['text'][:100]}...")
+
+            elif event_type == "tool_started":
+                call = event.get("call", {})
+                print(f"   Executing Tool: {call.get('name')} with args: {call.get('arguments')}")
+
+            elif event_type == "tool_finished":
+                print(
+                    f"   Tool: {event.get('name')}, Truncated: {event.get('truncated')}, "
+                    f"Outcome: {event.get('outcome')}"
+                )
+                content_preview = event.get("content", "")[:120].replace("\n", " ")
+                print(f"   Output Preview: {content_preview}...")
+
+            elif event_type == "turn_finished":
+                print(f"   Final Status: {event.get('status')}")
 
 
 if __name__ == "__main__":

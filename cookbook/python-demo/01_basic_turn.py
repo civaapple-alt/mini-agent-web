@@ -30,8 +30,15 @@ async def main():
 
         async for item in client.stream_turn(prompt):
             if item["type"] == "_turn_submission":
-                sub = item["data"].get("value", {})
-                print(f"[Turn Started] Turn ID: {sub.get('turn_id')}")
+                raw_data = item.get("data", {})
+                val = raw_data.get("value", raw_data) if isinstance(raw_data, dict) else raw_data
+                turn_id = (
+                    val.get("turn_id")
+                    or val.get("turnId")
+                    or (val.get("turn_id", {}).get("0") if isinstance(val.get("turn_id"), dict) else None)
+                    or "started"
+                )
+                print(f"[Turn Started] Turn ID: {turn_id}")
 
             elif item["type"] == "event":
                 event = item["event"]
@@ -54,10 +61,14 @@ async def main():
                     status = "ERROR" if tool_res["is_error"] else "OK"
                     print(f" <- [Tool Finished] [{status}]: {tool_res['name']}")
 
-                # Turn finished
+                # Turn finished or failed
                 elif "turn_finished" in event:
                     status = event["turn_finished"]["status"]
                     print(f"\n[Turn Finished Status]: {status}")
+
+                elif "run_failed" in event:
+                    reason = event["run_failed"].get("reason", event["run_failed"])
+                    print(f"\n[Run Failed Reason]: {reason}")
 
 
 if __name__ == "__main__":

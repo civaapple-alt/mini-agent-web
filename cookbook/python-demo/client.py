@@ -83,6 +83,7 @@ class MiniAgentClient:
 
         self._proc: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task | None = None
+        self._stderr_task: asyncio.Task | None = None
         self._next_id: int = 1
         self._pending_requests: dict[int, asyncio.Future[Any]] = {}
         self._event_queues: list[asyncio.Queue[dict[str, Any]]] = []
@@ -112,16 +113,18 @@ class MiniAgentClient:
         )
 
         self._reader_task = asyncio.create_task(self._read_loop())
+        self._stderr_task = asyncio.create_task(self._stderr_loop())
         logger.debug("mini-agent-app-server started (PID: %d)", self._proc.pid)
 
     async def stop(self) -> None:
         """Gracefully stop the server process."""
-        if self._reader_task and not self._reader_task.done():
-            self._reader_task.cancel()
-            try:
-                await self._reader_task
-            except asyncio.CancelledError:
-                pass
+        for task in (self._reader_task, self._stderr_task):
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
         if self._proc and self._proc.returncode is None:
             if self._proc.stdin and not self._proc.stdin.is_closing():
@@ -226,6 +229,17 @@ class MiniAgentClient:
 
                 else:
                     logger.debug("Received server notification: %s", method)
+
+    async def _stderr_loop(self) -> None:
+        """Background loop reading and logging any stderr output from the server."""
+        assert self._proc and self._proc.stderr
+        while True:
+            line_bytes = await self._proc.stderr.readline()
+            if not line_bytes:
+                break
+            line = line_bytes.decode("utf-8", errors="replace").strip()
+            if line:
+                logger.warning("[Server STDERR]: %s", line)
 
     async def _handle_approval_request(self, params: dict) -> None:
         """Handle server approval/request notification."""

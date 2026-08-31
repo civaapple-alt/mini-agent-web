@@ -1,6 +1,6 @@
 # Mini Agent Official Python SDK (`mini-agent`) Developer Guide
 
-The `mini-agent` Python package is the official, zero-dependency async SDK designed to communicate with the Mini Agent Harness (`mini-agent-app-server`) over **Stdio JSON-RPC 2.0**.
+The `mini-agent` Python package is the official, zero-dependency async SDK designed to communicate with the [Mini Agent Harness (`mini-agent-app-server`)](https://github.com/civaapple-alt/mini-agent-harness) over **Stdio JSON-RPC 2.0**.
 
 ---
 

@@ -37,20 +37,42 @@
 
 ## 🚀 快速上手（基于 uv）
 
-本项目内置 `uv` 虚拟环境与依赖管理配置，并支持通过 `.env` 配置文件注入模型密钥：
+### 0. 前置准备
+* **Python 与 uv 环境**：
+  * Python $\ge$ 3.10
+  * 安装 `uv`（现代极速 Python 包管理）：
+    * Windows (PowerShell): `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+    * Linux / macOS: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+* **App Server 服务端就绪**：
+  * 本 SDK 需要与 Rust 后端服务 `mini-agent-app-server` 建立进程通信。
+  * 服务端源码与编译指引参见：[**mini-agent-harness**](https://github.com/civaapple-alt/mini-agent-harness)。
+  * 确保编译生成的 `mini-agent-app-server.exe`（或 Linux 下 `mini-agent-app-server`）已加入系统 `PATH`，或者在 `.env` 中通过 `MINI_AGENT_APP_SERVER_PATH` 显式指定其路径。
 
+### 1. 配置模型凭证与环境文件
 ```bash
-# 1. 复制环境配置模板并填写 API Key (DeepSeek / OpenAI / GLM 等)
+# 复制环境配置文件模板
 # Windows PowerShell:
 Copy-Item .env.example .env
 
 # Linux / macOS:
 cp .env.example .env
+```
+> 打开 `.env` 填入你的大模型 API 密钥（默认支持 DeepSeek / OpenAI / GLM 等任意兼容服务）。
 
-# 2. 一键同步环境与 SDK (无需手动激活虚拟环境)
+### 2. 一键同步环境与 SDK (Editable 本地挂载)
+```bash
 uv sync
+```
+> `uv` 将自动创建虚拟环境，挂载可编辑的 `mini-agent` SDK，并自动安装测试工具链。
 
-# 3. 运行基础示例
+### 3. 通信与协议自测 (零 Token 消耗)
+```bash
+uv run pytest
+```
+> 运行全量 API 自动化测试套件。返回 `1 passed` 即表明 Python SDK 与 App Server 进程握手通信完全正常。
+
+### 4. 运行首个实战示例
+```bash
 uv run python cookbook/python-demo/01_basic_turn.py
 ```
 

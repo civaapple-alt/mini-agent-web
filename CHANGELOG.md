@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- **Approval Handshake (SDK)**: `_handle_approval_request` now introspects the registered approval callback's signature — 1-param dict form, 2-param `(request_id, action)` form, or 3-param extended form — and parses `bool` / `dict` / `str` decision results. This restores sensitive-tool approvals from the Web Studio UI; previously every approval raised a `TypeError` and was denied by default, surfacing as "shell 失败" on tool calls.
+- **WebSocket**: registered the root `/ws/agent` endpoint so browser clients can connect, and added an automated WebSocket regression test.
+- **Serializer**: `stream_turn` now safely serializes dataclasses and filters non-serializable objects instead of raising mid-stream.
+- **Logging**: default log level lowered to INFO, suppressing verbose token-delta stdout logs.
+- **Shutdown (Windows)**: resolved the asyncio subprocess termination deadlock on Ctrl+C; WebSockets now close cleanly on shutdown.
+- **Web UI**: support sequential thinking blocks, stop the tool icon spinner after completion, and parse tool content outputs.
+
+---
+
 ## [0.5.0] - 2026-08-31
 
 ### Added

@@ -63,6 +63,7 @@ class SessionManager:
 
             self._client = MiniAgentClient(
                 log_dir=settings.log_dir,
+                log_level=settings.log_level,
                 approval_handler=self._handle_approval_request,
             )
             await self._client.__aenter__()

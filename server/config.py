@@ -28,6 +28,9 @@ class ServerSettings:
     log_dir: str = field(
         default_factory=lambda: os.getenv("MINI_AGENT_LOG_DIR", "logs")
     )
+    log_level: str = field(
+        default_factory=lambda: os.getenv("MINI_AGENT_LOG_LEVEL", "INFO")
+    )
     frontend_dist: Path = field(
         default_factory=lambda: Path(__file__).resolve().parent.parent / "frontend" / "dist"
     )

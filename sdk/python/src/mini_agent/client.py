@@ -202,7 +202,7 @@ class MiniAgentClient:
         # Configure file logging if log_dir, log_file or env specified
         eff_dir = log_dir or self.env.get("MINI_AGENT_LOG_DIR")
         eff_file = log_file or self.env.get("MINI_AGENT_LOG_FILE")
-        eff_level = log_level or self.env.get("MINI_AGENT_LOG_LEVEL", "DEBUG")
+        eff_level = log_level or self.env.get("MINI_AGENT_LOG_LEVEL", "INFO")
         eff_mode = log_mode or self.env.get("MINI_AGENT_LOG_MODE", "a")
         if eff_dir or eff_file:
             setup_logging(

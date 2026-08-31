@@ -19,8 +19,10 @@ Documentation = "https://github.com/civaapple-alt/mini-agent-web/tree/main/docs"
 Harness = "https://github.com/civaapple-alt/mini-agent-harness"
 
 [project.scripts]
-mini-agent-web = "server.main:run_server"
+mini-agent-server = "server.main:run_server"
+mini-agent-frontend = "scripts.frontend_runner:run_frontend_dev"
 mini-agent-tui = "tui.tui_app:main"
+mini-agent-web = "server.main:run_server"
 
 [tool.uv.sources]
 mini-agent = { workspace = true }

@@ -112,33 +112,40 @@ if __name__ == "__main__":
 
 ---
 
-## 🖥️ 启动 Web Studio 前端界面与 API 网关
+## 🖥️ 服务与前端启动命令速查
 
-`mini-agent-web` 是后端的 **FastAPI API 网关主程序**。根据你的使用场景，有两种启动方式：
+本项目提供了清晰区分的命令行入口：
 
-### 🎯 场景 A：直接使用 / 体验（开箱即用，单一进程）
-FastAPI 后端会自动托管编译好的 React 前端静态网页，**无需开启 Node.js 服务**，一条命令即可启动前后端：
-
-```bash
-# 启动后端 API 网关（同时托管前端网页，默认运行在 http://localhost:8000）
-uv run mini-agent-web
-```
-> 启动后，直接打开浏览器访问 `http://localhost:8000` 即可使用 Web Studio；后端 API 文档见 `http://localhost:8000/docs`。
+| 命令 | 启动目标 | 监听端口 | 适用场景 | 访问入口 |
+| :--- | :--- | :--- | :--- | :--- |
+| `uv run mini-agent-server` | **后端 API 网关服务** | `8000` | 生产托管、API 服务、单一进程体验 | `http://localhost:8000`<br>*(API 文档: `/docs`)* |
+| `uv run mini-agent-frontend` | **前端 Vite 开发服务器** | `5173` | 修改 React 前端代码、实时热重载 (HMR) | `http://localhost:5173`<br>*(自动代理 8000 后端)* |
+| `uv run mini-agent-tui` | **终端 TUI 交互客户端** | - | 纯命令行环境交互 | 终端直接交互 |
 
 ---
 
-### 🛠️ 场景 B：前端二次开发（React 19 + Vite 代码热更新）
-如果你正在**修改或开发前端界面代码**（React / JSX / CSS），需要前后端分离的实时热重载（HMR）环境：
+### 🎯 场景 1：直接使用 / 体验 Web Studio（端口 8000）
+后端 FastAPI 会自动托管编译好的 React 前端静态包，**无需任何 Node.js 进程**：
 
 ```bash
-# 终端 1：启动 Python 后端 API 网关（提供 /api 与 /ws 数据接口）
-uv run mini-agent-web
-
-# 终端 2：启动前端 Vite 开发服务器（提供前端代码实时热更新）
-cd frontend
-npm run dev
+# 启动后端 API 网关（Port 8000）
+uv run mini-agent-server
 ```
-> 打开浏览器访问 `http://localhost:5173`。Vite 会自动将 `/api` 与 `/ws` 请求反向代理到 8000 端口的 Python 后端。
+> 打开浏览器访问 `http://localhost:8000` 即可进入 Web Studio；API 交互文档见 `http://localhost:8000/docs`。
+
+---
+
+### 🛠️ 场景 2：前端二次开发与热重载（端口 5173 + 8000）
+修改前端 React 组件与样式时，分别在两个终端运行：
+
+```bash
+# 终端 1：启动后端 API 网关（Port 8000，提供 /api 与 /ws 数据接口）
+uv run mini-agent-server
+
+# 终端 2：启动前端 Vite 开发服务器（Port 5173，提供代码热重载）
+uv run mini-agent-frontend
+```
+> 打开浏览器访问 `http://localhost:5173` 即可实时热更新调试前端。
 
 ---
 

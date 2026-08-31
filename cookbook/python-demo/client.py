@@ -10,8 +10,8 @@ import json
 import logging
 import os
 import shutil
-import sys
-from typing import Any, AsyncIterator, Callable, Coroutine, Dict, Optional
+from collections.abc import AsyncIterator, Callable, Coroutine
+from typing import Any, Self
 
 logger = logging.getLogger("mini_agent_client")
 
@@ -40,7 +40,7 @@ def _find_and_load_env(cwd: str) -> dict[str, str]:
         env_path = os.path.join(d, ".env")
         if os.path.isfile(env_path):
             try:
-                with open(env_path, "r", encoding="utf-8") as f:
+                with open(env_path, encoding="utf-8") as f:
                     for line in f:
                         line = line.strip()
                         if not line or line.startswith("#") or "=" not in line:
@@ -50,7 +50,7 @@ def _find_and_load_env(cwd: str) -> dict[str, str]:
                         v = v.strip().strip("'\"")
                         if k and k not in env_vars:
                             env_vars[k] = v
-            except Exception:
+            except OSError:
                 pass
     return env_vars
 
@@ -61,9 +61,9 @@ class MiniAgentClient:
     def __init__(
         self,
         executable: str = "mini-agent-app-server",
-        cwd: Optional[str] = None,
-        env: Optional[Dict[str, str]] = None,
-        approval_handler: Optional[Callable[[str, str], Coroutine[Any, Any, bool]]] = None,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+        approval_handler: Callable[[str, str], Coroutine[Any, Any, bool]] | None = None,
     ):
         """
         Initialize the MiniAgentClient.
@@ -81,14 +81,14 @@ class MiniAgentClient:
         self.env = {**file_env, **os.environ, **(env or {})}
         self.approval_handler = approval_handler or self._default_auto_approve
 
-        self._proc: Optional[asyncio.subprocess.Process] = None
-        self._reader_task: Optional[asyncio.Task] = None
+        self._proc: asyncio.subprocess.Process | None = None
+        self._reader_task: asyncio.Task | None = None
         self._next_id: int = 1
-        self._pending_requests: Dict[int, asyncio.Future[Any]] = {}
+        self._pending_requests: dict[int, asyncio.Future[Any]] = {}
         self._event_queues: list[asyncio.Queue[dict[str, Any]]] = []
         self._active_thread_id: str = "default"
 
-    async def __aenter__(self) -> MiniAgentClient:
+    async def __aenter__(self) -> Self:
         await self.start()
         return self
 
@@ -138,7 +138,7 @@ class MiniAgentClient:
                 fut.set_exception(RuntimeError("App Server stopped"))
         self._pending_requests.clear()
 
-    async def _send_request(self, method: str, params: Optional[dict] = None) -> Any:
+    async def _send_request(self, method: str, params: dict | None = None) -> Any:
         """Send a JSON-RPC request and wait for correlated response."""
         if not self._proc or not self._proc.stdin or self._proc.returncode is not None:
             raise RuntimeError("App Server is not running")
@@ -163,7 +163,7 @@ class MiniAgentClient:
 
         return await future
 
-    async def _send_notification(self, method: str, params: Optional[dict] = None) -> None:
+    async def _send_notification(self, method: str, params: dict | None = None) -> None:
         """Send a JSON-RPC notification (no response expected)."""
         if not self._proc or not self._proc.stdin or self._proc.returncode is not None:
             raise RuntimeError("App Server is not running")
@@ -233,7 +233,7 @@ class MiniAgentClient:
         action = params.get("action", "")
         try:
             approved = await self.approval_handler(request_id, action)
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             logger.error("Approval handler error: %s. Denying by default.", err)
             approved = False
 
@@ -242,7 +242,7 @@ class MiniAgentClient:
                 "approval/respond",
                 {"requestId": request_id, "approved": approved},
             )
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             logger.error("Failed to send approval response: %s", err)
 
     @staticmethod
@@ -256,10 +256,10 @@ class MiniAgentClient:
 
     async def initialize(
         self,
-        profile: Optional[str] = "interactive",
+        profile: str | None = "interactive",
         client_name: str = "python-sdk",
         client_version: str = "0.5.0",
-        providers: Optional[dict] = None,
+        providers: dict | None = None,
     ) -> dict[str, Any]:
         """Negotiate protocol version 1 and receive capability manifest."""
         params: dict[str, Any] = {
@@ -283,7 +283,7 @@ class MiniAgentClient:
         self._active_thread_id = result.get("threadId", thread_id)
         return self._active_thread_id
 
-    async def read_thread(self, thread_id: Optional[str] = None) -> dict[str, Any]:
+    async def read_thread(self, thread_id: str | None = None) -> dict[str, Any]:
         """Read settled checkpoint for thread."""
         return await self._send_request(
             "thread/read",
@@ -302,7 +302,7 @@ class MiniAgentClient:
         self,
         prompt: str,
         mode: str = "start",
-        thread_id: Optional[str] = None,
+        thread_id: str | None = None,
     ) -> dict[str, Any]:
         """Submit a turn prompt to the App Server."""
         target_thread = thread_id or self._active_thread_id
@@ -318,7 +318,7 @@ class MiniAgentClient:
         self,
         turn_id: str,
         text: str,
-        thread_id: Optional[str] = None,
+        thread_id: str | None = None,
     ) -> dict[str, Any]:
         """Steer an active turn with a corrective instruction."""
         return await self._send_request(
@@ -333,7 +333,7 @@ class MiniAgentClient:
     async def interrupt_turn(
         self,
         turn_id: str,
-        thread_id: Optional[str] = None,
+        thread_id: str | None = None,
     ) -> None:
         """Cooperatively cancel/interrupt an active turn."""
         await self._send_request(
@@ -352,7 +352,7 @@ class MiniAgentClient:
         self,
         prompt: str,
         mode: str = "start",
-        thread_id: Optional[str] = None,
+        thread_id: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """
         Convenience generator that starts a turn and yields event payloads in real-time
@@ -398,7 +398,7 @@ class MiniAgentClient:
         """Get status of registered MCP servers and tools."""
         return await self._send_request("mcp/status", {})
 
-    async def set_plan_mode(self, active: bool, prompt: Optional[str] = None) -> dict[str, Any]:
+    async def set_plan_mode(self, active: bool, prompt: str | None = None) -> dict[str, Any]:
         """Enable or disable Plan Mode (read-only exploration)."""
         return await self._send_request(
             "workflow/plan/set",

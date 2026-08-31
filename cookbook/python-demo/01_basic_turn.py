@@ -4,6 +4,7 @@ Demonstrates connecting to mini-agent-app-server, initializing, and executing a 
 """
 
 import asyncio
+
 from client import MiniAgentClient
 
 

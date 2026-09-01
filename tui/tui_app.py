@@ -391,9 +391,32 @@ async def run_tui(state: TUIState) -> None:
                 continue
 
             if text.lower() == "/profile":
+                table = Table(
+                    title="Mini Agent System Profiles",
+                    border_style="cyan",
+                )
+                table.add_column("Profile ID", style="bold sky_blue1", width=16)
+                table.add_column("Status", style="green", width=12)
+                table.add_column("说明与适用场景", style="white")
+                table.add_row(
+                    "interactive",
+                    "✓ Active" if state.profile == "interactive" else "",
+                    "日常人机结对协作与单步工具把控 (默认/推荐)",
+                )
+                table.add_row(
+                    "autonomous",
+                    "✓ Active" if state.profile == "autonomous" else "",
+                    "目标驱动多里程碑无人值守收敛",
+                )
+                table.add_row(
+                    "strict",
+                    "✓ Active" if state.profile == "strict" else "",
+                    "严格只读审计与架构探索 (亦可通过 /plan 快捷切换)",
+                )
+                console.print(table)
                 console.print(
-                    f"[sky_blue1]Current Startup Profile: [bold]{state.profile}[/bold][/sky_blue1]\n"
-                    "[dim]To start with a different profile, restart with: mini-agent-tui --profile <interactive|autonomous|strict>[/dim]"
+                    "[dim]提示: 切换 Profile 可重启 TUI: [cyan]mini-agent-tui --profile <interactive|autonomous|strict>[/cyan]\n"
+                    "或在会话中输入 [yellow]/plan[/yellow] 实时进入只读严格规划模式。[/dim]"
                 )
                 continue
 

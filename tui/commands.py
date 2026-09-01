@@ -153,7 +153,7 @@ async def handle_slash_command(
 
                 steer_prompt = f"[Steering Directive]: {instruction}"
                 await render_turn_stream(
-                    client, steer_prompt, state, mode="follow_up"
+                    client, steer_prompt, state, mode="start"
                 )
         else:
             console.print(

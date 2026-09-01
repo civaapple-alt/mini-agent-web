@@ -35,13 +35,12 @@ class TUIState:
     active_turn_id: str | None = None
 
     def get_turn_mode(self, thread_id: str | None = None) -> str:
-        """Return 'start' for the first turn in a thread, 'follow_up' for subsequent turns."""
-        tid = thread_id or self.current_thread_id
-        count = self.turn_counts.get(tid, 0)
-        return "start" if count == 0 else "follow_up"
+        """Return 'start' matching App Server TurnInputMode protocol schema."""
+        return "start"
 
     def record_turn(self, thread_id: str | None = None) -> None:
         """Increment turn count for the specified thread."""
         tid = thread_id or self.current_thread_id
         self.turn_counts[tid] = self.turn_counts.get(tid, 0) + 1
+
 

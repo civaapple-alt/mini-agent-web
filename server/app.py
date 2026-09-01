@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from server.config import settings
 from server.routes import agent, threads, world
+from server.routes import settings as settings_route
 from server.session_manager import session_manager
 
 logger = logging.getLogger("mini_agent.server")
@@ -59,6 +60,7 @@ def create_app() -> FastAPI:
     app.include_router(agent.ws_router)
     app.include_router(threads.router)
     app.include_router(world.router)
+    app.include_router(settings_route.router)
 
     # Static UI Serving (React SPA frontend/dist)
     dist_path = settings.frontend_dist

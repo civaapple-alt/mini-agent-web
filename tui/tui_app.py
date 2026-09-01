@@ -1,6 +1,7 @@
 """
 Rich-based Terminal User Interface (TUI) for Mini Agent.
-Provides an interactive, visually rich CLI chat with thinking panels, tool cards, and approval prompts.
+Provides an interactive, visually rich CLI chat with thinking streams, tool badges,
+approval prompts, and full slash command workflows (/plan, /goal, /threads, /switch, /help).
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from mini_agent import MiniAgentClient
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
+from rich.table import Table
 
 # Ensure UTF-8 output on Windows consoles
 if sys.platform == "win32":
@@ -51,7 +53,6 @@ def _ask_approval_sync(action_desc: str, request_id: str) -> str:
             border_style="yellow",
         )
     )
-    # Require explicit confirmation without auto-accepting defaults
     choice = Prompt.ask(
         "[bold yellow]Allow this execution?[/bold yellow]",
         choices=["y", "n", "yes", "no"],
@@ -75,16 +76,34 @@ async def terminal_approval_handler(
     return {"decision": decision}
 
 
+def print_help_table() -> None:
+    table = Table(title="Mini Agent TUI Commands", border_style="cyan")
+    table.add_column("Command", style="bold sky_blue1", width=20)
+    table.add_column("Description", style="white")
+
+    table.add_row("/plan", "Toggle read-only Plan Mode (架构与规划探索)")
+    table.add_row("/goal <objective>", "Start multi-milestone Goal workflow")
+    table.add_row("/goal", "View current Goal convergence progress")
+    table.add_row("/threads", "List all active/historical conversation threads")
+    table.add_row("/switch <id>", "Switch active session thread")
+    table.add_row("/clear", "Clear terminal screen")
+    table.add_row("/help", "Display this help reference table")
+    table.add_row("exit / quit", "Exit TUI studio")
+    console.print(table)
+
+
 async def run_tui() -> None:
     """Main interactive TUI loop."""
     console.print(
         Panel.fit(
             "[bold sky_blue1]Mini Agent Terminal Studio (TUI)[/bold sky_blue1]\n"
-            "[dim]Powered by Mini Agent Harness & Rust App Server v0.5.0[/dim]\n"
-            "[dim]Type 'exit' or 'quit' to leave. Type '/plan' to toggle Plan Mode.[/dim]",
+            "[dim]Powered by Mini Agent Harness & Rust App Server v0.6.0[/dim]\n"
+            "[dim]Type '/help' for command reference. Type 'exit' to leave.[/dim]",
             border_style="cyan",
         )
     )
+
+    current_thread_id = "tui-session"
 
     async with MiniAgentClient(
         log_dir="logs", approval_handler=terminal_approval_handler
@@ -93,19 +112,30 @@ async def run_tui() -> None:
         console.print(
             f"[green]✓ Connected to {init_res.get('serverName')} v{init_res.get('serverVersion')}[/green]\n"
         )
-        await client.start_thread("tui-session")
+        await client.start_thread(current_thread_id)
 
         while True:
             try:
-                user_input = Prompt.ask("\n[bold cyan]You[/bold cyan]")
-                if not user_input.strip():
+                user_input = Prompt.ask(
+                    f"\n[bold cyan]You ({current_thread_id})[/bold cyan]"
+                )
+                text = user_input.strip()
+                if not text:
                     continue
 
-                if user_input.strip().lower() in ("exit", "quit"):
+                if text.lower() in ("exit", "quit"):
                     console.print("[dim]Goodbye![/dim]")
                     break
 
-                if user_input.strip().lower() == "/plan":
+                if text.lower() == "/clear":
+                    console.clear()
+                    continue
+
+                if text.lower() == "/help":
+                    print_help_table()
+                    continue
+
+                if text.lower() == "/plan":
                     wf = await client.get_workflow_state()
                     next_active = not wf.plan_active
                     res = await client.set_plan_mode(next_active)
@@ -114,12 +144,55 @@ async def run_tui() -> None:
                     )
                     continue
 
+                if text.lower().startswith("/goal"):
+                    parts = text.split(maxsplit=1)
+                    if len(parts) > 1:
+                        obj = parts[1].strip()
+                        res = await client.start_goal(obj)
+                        console.print(
+                            f"[green]✓ Goal started (ID: {res.goal_id}): {obj}[/green]"
+                        )
+                    else:
+                        wf = await client.get_workflow_state()
+                        if wf.goal:
+                            console.print(
+                                f"[sky_blue1]Active Goal ({wf.goal.goal_id}): milestone {wf.goal.current_milestone}/{wf.goal.total_milestones}, status={wf.goal.status}[/sky_blue1]"
+                            )
+                        else:
+                            console.print(
+                                "[dim]No active goal. Usage: /goal <objective>[/dim]"
+                            )
+                    continue
+
+                if text.lower() == "/threads":
+                    res = await client.list_threads()
+                    table = Table(title="Historical Threads", border_style="sky_blue1")
+                    table.add_column("Thread ID", style="bold sky_blue1")
+                    table.add_column("Active", style="green")
+                    for tid in res.data:
+                        table.add_row(
+                            tid, "✓ Current" if tid == current_thread_id else ""
+                        )
+                    console.print(table)
+                    continue
+
+                if text.lower().startswith("/switch"):
+                    parts = text.split(maxsplit=1)
+                    if len(parts) > 1:
+                        target = parts[1].strip()
+                        await client.start_thread(target)
+                        current_thread_id = target
+                        console.print(f"[green]✓ Switched to thread: {target}[/green]")
+                    else:
+                        console.print("[dim]Usage: /switch <thread_id>[/dim]")
+                    continue
+
                 console.print("\n[bold green]Mini Agent[/bold green]:")
 
                 current_mode = None  # None | "thinking" | "text"
 
                 async for item in client.stream_turn(
-                    user_input, thread_id="tui-session"
+                    user_input, thread_id=current_thread_id
                 ):
                     if item.get("type") == "event":
                         evt = item.get("event", {})

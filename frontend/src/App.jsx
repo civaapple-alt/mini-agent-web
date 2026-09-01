@@ -4,21 +4,31 @@ import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import InputBar from './components/InputBar';
 import ApprovalDialog from './components/ApprovalDialog';
-import WorldDrawer from './components/WorldDrawer';
+import SidePanel from './components/SidePanel';
+import SettingsModal from './components/SettingsModal';
 import { api, createAgentWebSocket } from './api';
 import './App.css';
 
 export default function App() {
-  const [threads, setThreads] = useState(['default']);
+  const [threads, setThreads] = useState([]);
   const [currentThread, setCurrentThread] = useState('default');
+  const [currentThreadMeta, setCurrentThreadMeta] = useState({
+    title: '默认会话 (Default Session)',
+    summary: '',
+  });
   const [messages, setMessages] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState(null);
   const [pendingApproval, setPendingApproval] = useState(null);
-  const [worldState, setWorldState] = useState(null);
-  const [mcpStatus, setMcpStatus] = useState(null);
+
+  // Workflow & Environment
   const [planActive, setPlanActive] = useState(false);
-  const [isWorldDrawerOpen, setIsWorldDrawerOpen] = useState(false);
+  const [goalState, setGoalState] = useState(null);
+
+  // Panels & Modals
+  const [sidePanelOpen, setSidePanelOpen] = useState(false);
+  const [sidePanelTab, setSidePanelTab] = useState('world');
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
 
   const wsRef = useRef(null);
@@ -31,7 +41,7 @@ export default function App() {
 
   useEffect(() => {
     loadThreads();
-    loadWorldAndWorkflows();
+    loadWorkflows();
     loadThreadHistory('default');
 
     // Establish WebSocket Connection
@@ -52,30 +62,38 @@ export default function App() {
       const data = await api.listThreads();
       if (data.threads && data.threads.length > 0) {
         setThreads(data.threads);
+        const cur = data.threads.find((t) => t.thread_id === currentThreadRef.current);
+        if (cur) {
+          setCurrentThreadMeta({
+            title: cur.title || cur.thread_id,
+            summary: cur.summary || '',
+          });
+        }
       }
     } catch (err) {
       console.error('Failed to load threads:', err);
     }
   };
 
-  const loadWorldAndWorkflows = async () => {
+  const loadWorkflows = async () => {
     try {
-      const [wState, mState, wfState] = await Promise.all([
-        api.getWorldState(),
-        api.getMcpStatus(),
-        api.getWorkflowState(),
-      ]);
-      setWorldState(wState);
-      setMcpStatus(mState);
-      setPlanActive(!!wfState.plan_active);
+      const wfState = await api.getWorkflowState();
+      setPlanActive(Boolean(wfState.plan_active));
+      setGoalState(wfState.goal || null);
     } catch (err) {
-      console.error('Failed to load world/workflows:', err);
+      console.error('Failed to load workflow state:', err);
     }
   };
 
   const loadThreadHistory = async (threadId) => {
     try {
       const cp = await api.readThread(threadId);
+      if (cp.metadata) {
+        setCurrentThreadMeta({
+          title: cp.metadata.title || threadId,
+          summary: cp.metadata.summary || '',
+        });
+      }
       const rawMessages = cp.messages || [];
       const formatted = rawMessages
         .filter((m) => {
@@ -89,6 +107,12 @@ export default function App() {
           text: m.text || '',
           thinking: '',
           tools: [],
+          blocks: [
+            {
+              type: 'text',
+              content: m.text || '',
+            },
+          ],
         }));
       setMessages(formatted);
     } catch (err) {
@@ -98,24 +122,26 @@ export default function App() {
   };
 
   // ---------------------------------------------------------------------------
-  // WebSocket Event Dispatcher
+  // WebSocket Message / Event Dispatcher
   // ---------------------------------------------------------------------------
 
   const handleServerEvent = (data) => {
-    // 1. Approval Request
+    if (!data) return;
+
+    // 1. Correlated Action Responses
+    if (data.type === 'response') {
+      if (data.action === 'turn') {
+        setActiveTurnId(data.turnId);
+      }
+      return;
+    }
+
+    // 2. Security Approval Interception
     if (data.type === 'approval_request') {
       setPendingApproval({
         requestId: data.requestId,
         data: data.data,
       });
-      return;
-    }
-
-    // 2. Turn Submission ID
-    if (data.type === '_turn_submission') {
-      if (data.data?.turn_id) {
-        setActiveTurnId(data.data.turn_id);
-      }
       return;
     }
 
@@ -137,7 +163,6 @@ export default function App() {
           const last = { ...copy[copy.length - 1] };
           const blocks = [...(last.blocks || [])];
 
-          // If the last block is not thinking, append a new thinking block
           const lastBlock = blocks[blocks.length - 1];
           if (!lastBlock || lastBlock.type !== 'thinking') {
             blocks.push({
@@ -165,14 +190,13 @@ export default function App() {
           const last = { ...copy[copy.length - 1] };
           const blocks = [...(last.blocks || [])];
 
-          // Mark previous thinking blocks as done streaming
+          // Mark previous thinking blocks as completed
           for (let i = 0; i < blocks.length; i++) {
             if (blocks[i].type === 'thinking') {
               blocks[i] = { ...blocks[i], isStreaming: false };
             }
           }
 
-          // If last block is not text, append a new text block
           const lastBlock = blocks[blocks.length - 1];
           if (!lastBlock || lastBlock.type !== 'text') {
             blocks.push({
@@ -198,7 +222,6 @@ export default function App() {
           const last = { ...copy[copy.length - 1] };
           const blocks = [...(last.blocks || [])];
 
-          // Mark thinking as not streaming
           for (let i = 0; i < blocks.length; i++) {
             if (blocks[i].type === 'thinking') {
               blocks[i] = { ...blocks[i], isStreaming: false };
@@ -248,7 +271,6 @@ export default function App() {
               : evt.result;
           const isError = Boolean(evt.is_error || evt.isError || evt.error);
 
-          // Update in blocks
           last.blocks = blocks.map((b) => {
             if (
               b.type === 'tool' &&
@@ -264,7 +286,6 @@ export default function App() {
             return b;
           });
 
-          // Update in legacy tools array
           last.tools = (last.tools || []).map((t) => {
             if (t.id === callId || (!callId && t.status === 'running')) {
               return {
@@ -308,10 +329,9 @@ export default function App() {
   // ---------------------------------------------------------------------------
 
   const handleSendMessage = (prompt) => {
-    // Optimistic user bubble
     setMessages((prev) => [
       ...prev,
-      { role: 'user', text: prompt, thinking: '', tools: [] },
+      { role: 'user', text: prompt, thinking: '', tools: [], blocks: [{ type: 'text', content: prompt }] },
     ]);
 
     if (wsRef.current) {
@@ -346,15 +366,17 @@ export default function App() {
     }
   };
 
-  const handleRespondApproval = async (requestId, decision) => {
+  const handleRespondApproval = async (requestId, decision, reason = '', remember = false) => {
     if (wsRef.current) {
       wsRef.current.send({
         action: 'approval_response',
         requestId,
         decision,
+        reason,
+        remember,
       });
     } else {
-      await api.respondApproval(requestId, decision);
+      await api.respondApproval(requestId, decision, reason, remember);
     }
     setPendingApproval(null);
   };
@@ -368,76 +390,99 @@ export default function App() {
   const handleNewThread = async () => {
     const tid = `thread_${Date.now().toString(36)}`;
     try {
-      await api.startThread(tid);
-      setCurrentThread(tid);
-      setMessages([]);
+      await api.startThread(tid, `新会话 ${tid}`);
       await loadThreads();
+      setCurrentThread(tid);
+      setCurrentThreadMeta({ title: `新会话 ${tid}`, summary: '' });
+      setMessages([]);
     } catch (err) {
-      console.error('Failed to create new thread:', err);
+      alert(`创建新会话失败: ${err.message}`);
     }
   };
 
-  const handleForkThread = async (sourceId) => {
-    const newId = prompt(`从 ${sourceId} 派生新分支会话名:`, `${sourceId}_fork`);
-    if (!newId) return;
-
+  const handleForkThread = async (sourceThreadId) => {
+    const newId = `${sourceThreadId}_fork_${Date.now().toString(36).slice(2, 6)}`;
     try {
-      await api.forkThread(sourceId, newId);
-      setCurrentThread(newId);
+      await api.forkThread(sourceThreadId, newId);
       await loadThreads();
-      await loadThreadHistory(newId);
+      setCurrentThread(newId);
+      loadThreadHistory(newId);
     } catch (err) {
-      console.error('Failed to fork thread:', err);
+      alert(`派生分支失败: ${err.message}`);
     }
   };
 
   const handleCloseThread = async (threadId) => {
-    if (!confirm(`确定关闭会话 ${threadId} 吗?`)) return;
     try {
       await api.closeThread(threadId);
+      await loadThreads();
       if (currentThread === threadId) {
         setCurrentThread('default');
         loadThreadHistory('default');
       }
+    } catch (err) {
+      alert(`关闭会话失败: ${err.message}`);
+    }
+  };
+
+  const handleRenameThread = async (threadId, newTitle) => {
+    try {
+      const targetId = typeof threadId === 'string' ? threadId : currentThread;
+      const res = await api.renameThread(targetId, newTitle);
+      if (targetId === currentThread) {
+        setCurrentThreadMeta((prev) => ({ ...prev, title: newTitle }));
+      }
       loadThreads();
     } catch (err) {
-      console.error('Failed to close thread:', err);
+      alert(`重命名失败: ${err.message}`);
+    }
+  };
+
+  const handleUpdateSummary = async (threadId, newSummary) => {
+    try {
+      const targetId = typeof threadId === 'string' ? threadId : currentThread;
+      await api.updateThreadSummary(targetId, newSummary);
+      if (targetId === currentThread) {
+        setCurrentThreadMeta((prev) => ({ ...prev, summary: newSummary }));
+      }
+      loadThreads();
+    } catch (err) {
+      alert(`设置摘要失败: ${err.message}`);
     }
   };
 
   const handleTogglePlan = async () => {
-    const next = !planActive;
+    const nextState = !planActive;
     try {
-      const res = await api.setPlanMode(next);
-      setPlanActive(!!res.plan_active);
+      const res = await api.setPlanMode(nextState);
+      setPlanActive(Boolean(res.plan_active));
     } catch (err) {
-      console.error('Failed to toggle plan mode:', err);
+      alert(`切换 Plan Mode 失败: ${err.message}`);
     }
   };
 
-  const handleRetryMcp = async () => {
-    try {
-      const res = await api.retryMcp();
-      setMcpStatus(res);
-    } catch (err) {
-      console.error('Failed to retry MCP:', err);
-    }
+  const handleOpenSidePanel = (tab = 'world') => {
+    setSidePanelTab(tab);
+    setSidePanelOpen(true);
   };
 
   return (
-    <div className="app-layout">
-      {/* Top Header */}
+    <div className="app-container">
       <Header
         currentThread={currentThread}
+        threadTitle={currentThreadMeta.title}
+        threadSummary={currentThreadMeta.summary}
         isConnected={isConnected}
         planActive={planActive}
+        goalState={goalState}
         onTogglePlan={handleTogglePlan}
-        onOpenWorld={() => setIsWorldDrawerOpen(true)}
+        onOpenSidePanel={handleOpenSidePanel}
+        onOpenSettings={() => setSettingsModalOpen(true)}
+        onRenameThread={(title) => handleRenameThread(currentThread, title)}
+        onUpdateSummary={(summary) => handleUpdateSummary(currentThread, summary)}
       />
 
-      {/* Main Content Area */}
-      <div className="app-main">
-        {/* Left Sidebar */}
+      <div className="app-main-layout">
         <Sidebar
           threads={threads}
           currentThread={currentThread}
@@ -445,44 +490,54 @@ export default function App() {
           onNewThread={handleNewThread}
           onForkThread={handleForkThread}
           onCloseThread={handleCloseThread}
+          onRenameThread={handleRenameThread}
+          onUpdateSummary={handleUpdateSummary}
           onRefreshThreads={loadThreads}
         />
 
-        {/* Center Workspace */}
-        <main className="chat-container">
+        <main className="app-content">
           <ChatArea
             messages={messages}
             isGenerating={isGenerating}
             onQuickPrompt={handleSendMessage}
+            onRetryPrompt={handleSendMessage}
           />
 
-          {/* Security Approval Floating Box */}
-          {pendingApproval && (
-            <div className="approval-floating-wrapper">
-              <ApprovalDialog
-                request={pendingApproval}
-                onRespond={handleRespondApproval}
-              />
-            </div>
-          )}
-
-          {/* Bottom Input Controls */}
           <InputBar
             isGenerating={isGenerating}
+            planActive={planActive}
             onSendMessage={handleSendMessage}
             onSteerMessage={handleSteerMessage}
             onInterrupt={handleInterrupt}
+            onTogglePlan={handleTogglePlan}
           />
         </main>
       </div>
 
-      {/* Right Drawer */}
-      <WorldDrawer
-        isOpen={isWorldDrawerOpen}
-        onClose={() => setIsWorldDrawerOpen(false)}
-        worldState={worldState}
-        mcpStatus={mcpStatus}
-        onRetryMcp={handleRetryMcp}
+      {/* Security Approval Interception Modal */}
+      <ApprovalDialog
+        request={pendingApproval}
+        onRespond={handleRespondApproval}
+      />
+
+      {/* Multi-Tab Side Panel */}
+      <SidePanel
+        isOpen={sidePanelOpen}
+        initialTab={sidePanelTab}
+        onClose={() => setSidePanelOpen(false)}
+        planActive={planActive}
+        onTogglePlan={handleTogglePlan}
+      />
+
+      {/* System Settings Modal */}
+      <SettingsModal
+        isOpen={settingsModalOpen}
+        onClose={() => setSettingsModalOpen(false)}
+        onSettingsSaved={(newSettings) => {
+          if (newSettings.theme) {
+            document.body.className = `theme-${newSettings.theme}`;
+          }
+        }}
       />
     </div>
   );

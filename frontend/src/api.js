@@ -15,23 +15,24 @@ export const api = {
     return res.json();
   },
 
-  async startThread(threadId = 'default') {
+  async startThread(threadId = 'default', title = null) {
     const res = await fetch(`${API_BASE}/api/threads`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ thread_id: threadId }),
+      body: JSON.stringify({ thread_id: threadId, title }),
     });
     if (!res.ok) throw new Error('Failed to start thread');
     return res.json();
   },
 
-  async forkThread(sourceThreadId, newThreadId) {
+  async forkThread(sourceThreadId, newThreadId, title = null) {
     const res = await fetch(`${API_BASE}/api/threads/fork`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         source_thread_id: sourceThreadId,
         new_thread_id: newThreadId,
+        title,
       }),
     });
     if (!res.ok) throw new Error('Failed to fork thread');
@@ -41,6 +42,26 @@ export const api = {
   async readThread(threadId) {
     const res = await fetch(`${API_BASE}/api/threads/${encodeURIComponent(threadId)}`);
     if (!res.ok) throw new Error(`Failed to read thread ${threadId}`);
+    return res.json();
+  },
+
+  async renameThread(threadId, title) {
+    const res = await fetch(`${API_BASE}/api/threads/${encodeURIComponent(threadId)}/rename`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    });
+    if (!res.ok) throw new Error(`Failed to rename thread ${threadId}`);
+    return res.json();
+  },
+
+  async updateThreadSummary(threadId, summary) {
+    const res = await fetch(`${API_BASE}/api/threads/${encodeURIComponent(threadId)}/summary`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ summary }),
+    });
+    if (!res.ok) throw new Error(`Failed to update summary for ${threadId}`);
     return res.json();
   },
 
@@ -81,7 +102,7 @@ export const api = {
   },
 
   // ---------------------------------------------------------------------------
-  // Workflows (Plan Mode & Goals)
+  // Workflows (Plan Mode & Goals) & Files
   // ---------------------------------------------------------------------------
 
   async getWorkflowState() {
@@ -110,11 +131,61 @@ export const api = {
     return res.json();
   },
 
+  async pauseGoal() {
+    const res = await fetch(`${API_BASE}/api/workflows/goal/pause`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to pause goal');
+    return res.json();
+  },
+
+  async failGoal() {
+    const res = await fetch(`${API_BASE}/api/workflows/goal/fail`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to fail goal');
+    return res.json();
+  },
+
+  async getWorkflowFiles() {
+    const res = await fetch(`${API_BASE}/api/workflows/files`);
+    if (!res.ok) throw new Error('Failed to list workflow files');
+    return res.json();
+  },
+
+  async getWorkflowFileContent(path) {
+    const res = await fetch(`${API_BASE}/api/workflows/file/content?path=${encodeURIComponent(path)}`);
+    if (!res.ok) throw new Error(`Failed to read file content for ${path}`);
+    return res.json();
+  },
+
+  async getGitStatus() {
+    const res = await fetch(`${API_BASE}/api/world/git/status`);
+    if (!res.ok) throw new Error('Failed to get git status');
+    return res.json();
+  },
+
+  // ---------------------------------------------------------------------------
+  // Settings Management
+  // ---------------------------------------------------------------------------
+
+  async getSettings() {
+    const res = await fetch(`${API_BASE}/api/settings`);
+    if (!res.ok) throw new Error('Failed to get settings');
+    return res.json();
+  },
+
+  async updateSettings(settings) {
+    const res = await fetch(`${API_BASE}/api/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    if (!res.ok) throw new Error('Failed to update settings');
+    return res.json();
+  },
+
   // ---------------------------------------------------------------------------
   // Security Approval Response
   // ---------------------------------------------------------------------------
 
-  async respondApproval(requestId, decision, reason = '') {
+  async respondApproval(requestId, decision, reason = '', remember = false) {
     const res = await fetch(`${API_BASE}/api/approval/respond`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -122,6 +193,7 @@ export const api = {
         request_id: requestId,
         decision,
         reason,
+        remember,
       }),
     });
     if (!res.ok) throw new Error('Failed to respond approval');

@@ -1,12 +1,15 @@
 """
-World governance, MCP, and Workflow endpoints.
+World governance, MCP, Workflow, and File/Git inspection endpoints.
 """
 
 from __future__ import annotations
 
+import asyncio
+import subprocess
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from mini_agent.errors import AppServerError
 from pydantic import BaseModel, Field
 
@@ -113,7 +116,7 @@ async def retry_mcp() -> dict[str, Any]:
 
 
 # -----------------------------------------------------------------------------
-# Workflows (Plan Mode & Multi-Milestone Goals)
+# Workflows (Plan Mode & Multi-Milestone Goals) & Artifact Inspection
 # -----------------------------------------------------------------------------
 
 
@@ -204,3 +207,108 @@ async def get_goal_criteria() -> dict[str, Any]:
         return {"criteria": criteria}
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.get("/workflows/files", summary="List workflow and plan files")
+async def list_workflow_files() -> dict[str, Any]:
+    """Scan workspace for plan/goal files like plan.md, goal/plan.md, etc."""
+    cwd = Path.cwd()
+    candidate_paths = [
+        "plan.md",
+        "goal/plan.md",
+        "goal/milestones.json",
+        "AGENTS.md",
+        "README.md",
+    ]
+    discovered = []
+    for rel in candidate_paths:
+        p = cwd / rel
+        if p.is_file():
+            discovered.append(
+                {
+                    "path": rel,
+                    "size": p.stat().st_size,
+                    "mtime": p.stat().st_mtime,
+                }
+            )
+
+    return {"files": discovered, "workspace": str(cwd)}
+
+
+@router.get("/workflows/file/content", summary="Read workflow file content")
+async def read_workflow_file_content(
+    path: str = Query(..., description="Relative file path"),
+) -> dict[str, Any]:
+    """Read full text content of a workflow/plan file."""
+    cwd = Path.cwd()
+    target = (cwd / path).resolve()
+    if not str(target).startswith(str(cwd.resolve())):
+        raise HTTPException(status_code=403, detail="File path is outside workspace")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        content = target.read_text(encoding="utf-8", errors="replace")
+        return {"path": path, "content": content, "size": len(content)}
+    except Exception as err:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to read file: {err}"
+        ) from err
+
+
+# -----------------------------------------------------------------------------
+# Git & Workspace Files Inspection
+# -----------------------------------------------------------------------------
+
+
+def _get_git_status_sync() -> dict[str, Any]:
+    try:
+        branch_proc = subprocess.run(
+            ["git", "branch", "--show-current"],
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+            check=False,
+        )
+        branch = branch_proc.stdout.strip() or "main"
+
+        status_proc = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+            check=False,
+        )
+        lines = [
+            line.strip() for line in status_proc.stdout.splitlines() if line.strip()
+        ]
+
+        modified = []
+        untracked = []
+        for line in lines:
+            if line.startswith("??"):
+                untracked.append(line[3:])
+            else:
+                modified.append(line)
+
+        return {
+            "branch": branch,
+            "dirty": len(lines) > 0,
+            "modified": modified,
+            "untracked": untracked,
+            "total_changes": len(lines),
+        }
+    except Exception as err:  # noqa: BLE001
+        return {
+            "branch": "unknown",
+            "dirty": False,
+            "modified": [],
+            "untracked": [],
+            "error": str(err),
+        }
+
+
+@router.get("/world/git/status", summary="Get git status and branch")
+async def get_git_status() -> dict[str, Any]:
+    """Retrieve Git repository status, current branch, and changed files."""
+    return await asyncio.to_thread(_get_git_status_sync)

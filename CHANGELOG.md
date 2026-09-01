@@ -11,9 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Approval lifecycle visibility**: App Server now emits the approval
-  `requested` and `resolved` notifications, and Python SDK `stream_turn()`
-  surfaces both records, including when `approval_handler` is omitted.
+- **Web Studio Full-Fidelity Upgrade**:
+  - **Header & Workflows**: segmented mode switcher for Chat, Plan Mode (`/plan`), and Goal Mode (`/goal`); real-time thread title and summary inline editor.
+  - **Sidebar Multi-Thread Organization**: chronological date grouping (Today, Yesterday, Previous 7 Days, Older), instant search/filter, action popup menu (Rename, Set Summary, Fork, Close).
+  - **4-Tab SidePanel**: comprehensive inspector covering WorldState & Environment, Plan & Goal (with live Markdown preview of `plan.md` / `goal/plan.md`), MCP Server tools & connectivity, and Git status & modified files.
+  - **System Settings Modal**: runtime configuration for client profiles (`interactive`, `autonomous`, `strict`), approval policies (`per_action`, `auto_approve`, `strict`), reasoning effort, themes (Dark, Midnight, Cyberpunk), and editor preferences.
+  - **Interactive Security Approval Modal**: floating backdrop modal with "Allow Once", "Always Allow (Remember)", and "Deny" with optional custom reason.
+  - **Input Bar Slash Commands**: quick slash command popup (`/plan`, `/goal`, `/clear`, `/steer`, `/status`), mode badges, mid-turn steer input, and stop generation.
+  - **TUI Command Alignment**: enhanced terminal studio supporting `/plan`, `/goal`, `/threads`, `/switch`, `/clear`, and `/help` slash command workflows.
 
 ### Documentation
 

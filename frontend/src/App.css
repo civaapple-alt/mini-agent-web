@@ -1,31 +1,24 @@
-.app-layout {
+.app-container {
   display: flex;
   flex-direction: column;
   height: 100vh;
   width: 100vw;
-  background-color: var(--bg-main);
+  background-color: var(--bg-app);
   overflow: hidden;
 }
 
-.app-main {
+.app-main-layout {
   display: flex;
   flex: 1;
   overflow: hidden;
   position: relative;
 }
 
-.chat-container {
+.app-content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background-color: var(--bg-main);
+  background-color: var(--bg-app);
   position: relative;
   overflow: hidden;
-}
-
-.approval-floating-wrapper {
-  max-width: 860px;
-  margin: 0 auto 8px auto;
-  width: calc(100% - 32px);
-  z-index: 30;
 }

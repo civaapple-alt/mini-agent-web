@@ -120,9 +120,7 @@ must require an explicit human decision; do not use the default in an untrusted
 workspace.
 
 ```python
-async def custom_approver(
-    request_id: str, action: str, params: dict
-) -> bool:
+async def custom_approver(request_id: str, action: str, params: dict) -> bool:
     print(f"[SECURITY ALERT] Request: {action}")
     # Prompt user or verify against whitelist
     return True

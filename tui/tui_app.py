@@ -142,8 +142,8 @@ def print_help_table(state: TUIState) -> None:
     )
     table.add_row(
         "",
-        "/profile",
-        f"查看当前客户端启动 Profile (当前: [bold cyan]{state.profile}[/bold cyan])",
+        "/profile [mode]",
+        f"查看或切换系统 Profile: interactive, autonomous, strict (当前: [bold cyan]{state.profile}[/bold cyan])",
     )
 
     # 4. 会话与多分支管理
@@ -276,6 +276,19 @@ class SlashCommandCompleter(Completer):
                         start_position=-len(sub_prefix),
                         display=pr_name,
                         display_meta=pr_desc,
+                    )
+        elif cmd == "/plan":
+            plan_options = [
+                ("on", "开启只读 Plan 架构探索模式"),
+                ("off", "关闭 Plan 模式 (恢复正常读写执行)"),
+            ]
+            for p_name, p_desc in plan_options:
+                if p_name.startswith(sub_prefix):
+                    yield Completion(
+                        p_name,
+                        start_position=-len(sub_prefix),
+                        display=p_name,
+                        display_meta=p_desc,
                     )
 
 
@@ -519,34 +532,50 @@ async def run_tui(state: TUIState) -> None:
                 console.print(table)
                 continue
 
-            if text.lower() == "/profile":
-                table = Table(
-                    title="Mini Agent System Profiles",
-                    border_style="cyan",
-                )
-                table.add_column("Profile ID", style="bold sky_blue1", width=16)
-                table.add_column("Status", style="green", width=12)
-                table.add_column("说明与适用场景", style="white")
-                table.add_row(
-                    "interactive",
-                    "✓ Active" if state.profile == "interactive" else "",
-                    "日常人机结对协作与单步工具把控 (默认/推荐)",
-                )
-                table.add_row(
-                    "autonomous",
-                    "✓ Active" if state.profile == "autonomous" else "",
-                    "目标驱动多里程碑无人值守收敛",
-                )
-                table.add_row(
-                    "strict",
-                    "✓ Active" if state.profile == "strict" else "",
-                    "严格只读审计与架构探索 (亦可通过 /plan 快捷切换)",
-                )
-                console.print(table)
-                console.print(
-                    "[dim]提示: 切换 Profile 可重启 TUI: [cyan]mini-agent-tui --profile <interactive|autonomous|strict>[/cyan]\n"
-                    "或在会话中输入 [yellow]/plan[/yellow] 实时进入只读严格规划模式。[/dim]"
-                )
+            if text.lower().startswith("/profile"):
+                parts = text.split(maxsplit=1)
+                if len(parts) > 1:
+                    target_profile = parts[1].strip().lower()
+                    if target_profile in ("interactive", "autonomous", "strict"):
+                        state.profile = target_profile
+                        if target_profile == "strict":
+                            await client.set_plan_mode(True)
+                        elif target_profile in ("interactive", "autonomous"):
+                            await client.set_plan_mode(False)
+                        console.print(
+                            f"[green]✓ System Profile switched to: [bold]{state.profile}[/bold][/green]"
+                        )
+                    else:
+                        console.print(
+                            "[yellow]Invalid profile. Choose from: interactive, autonomous, strict[/yellow]"
+                        )
+                else:
+                    table = Table(
+                        title="Mini Agent System Profiles",
+                        border_style="cyan",
+                    )
+                    table.add_column("Profile ID", style="bold sky_blue1", width=16)
+                    table.add_column("Status", style="green", width=12)
+                    table.add_column("说明与适用场景", style="white")
+                    table.add_row(
+                        "interactive",
+                        "✓ Active" if state.profile == "interactive" else "",
+                        "日常人机结对协作与单步工具把控 (默认/推荐)",
+                    )
+                    table.add_row(
+                        "autonomous",
+                        "✓ Active" if state.profile == "autonomous" else "",
+                        "目标驱动多里程碑无人值守收敛",
+                    )
+                    table.add_row(
+                        "strict",
+                        "✓ Active" if state.profile == "strict" else "",
+                        "严格只读审计与架构探索 (亦可通过 /plan 快捷切换)",
+                    )
+                    console.print(table)
+                    console.print(
+                        "[dim]用法: [cyan]/profile <interactive | autonomous | strict>[/cyan][/dim]"
+                    )
                 continue
 
             if text.lower().startswith("/policy") or text.lower().startswith("/approve"):
@@ -575,10 +604,20 @@ async def run_tui(state: TUIState) -> None:
                 console.print("[green]✓ Cleared all remembered tool approvals for this session.[/green]")
                 continue
 
-            if text.lower() == "/plan":
-                wf = await client.get_workflow_state()
-                next_active = not wf.plan_active
-                res = await client.set_plan_mode(next_active)
+            if text.lower().startswith("/plan"):
+                parts = text.split(maxsplit=1)
+                if len(parts) > 1:
+                    arg = parts[1].strip().lower()
+                    if arg in ("on", "true", "1", "enable"):
+                        res = await client.set_plan_mode(True)
+                    elif arg in ("off", "false", "0", "disable"):
+                        res = await client.set_plan_mode(False)
+                    else:
+                        wf = await client.get_workflow_state()
+                        res = await client.set_plan_mode(not wf.plan_active)
+                else:
+                    wf = await client.get_workflow_state()
+                    res = await client.set_plan_mode(not wf.plan_active)
                 console.print(
                     f"[yellow]Plan Mode is now: {'ACTIVE (Read-Only 探索模式)' if res.plan_active else 'OFF'}[/yellow]"
                 )

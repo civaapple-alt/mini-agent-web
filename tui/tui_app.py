@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
+import subprocess
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from mini_agent import MiniAgentClient
@@ -37,6 +40,7 @@ class TUIState:
 
     profile: str = "interactive"  # interactive | autonomous | strict
     approval_policy: str = "per_action"  # per_action | auto_approve | strict
+    effort: str = "medium"  # low | medium | high
     remembered_approvals: set[str] = field(default_factory=set)
     current_thread_id: str = "tui-session"
 
@@ -103,23 +107,61 @@ def _ask_approval_sync(
 
 
 def print_help_table(state: TUIState) -> None:
-    table = Table(title="Mini Agent TUI Commands", border_style="cyan")
-    table.add_column("Command", style="bold sky_blue1", width=24)
-    table.add_column("Description", style="white")
-
-    table.add_row("/plan", "Toggle read-only Plan Mode (只读架构与规划探索)")
-    table.add_row("/goal <objective>", "Start multi-milestone Goal workflow")
-    table.add_row("/goal", "View current Goal convergence progress")
-    table.add_row(
-        "/policy [mode]",
-        f"Switch approval policy: per_action, auto_approve, strict (Current: [cyan]{state.approval_policy}[/cyan])",
+    table = Table(
+        title="Mini Agent Terminal Studio (TUI) 命令大全",
+        border_style="cyan",
+        show_lines=False,
     )
-    table.add_row("/clear-approvals", "Clear remembered session tool approvals")
-    table.add_row("/threads", "List all active/historical conversation threads")
-    table.add_row("/switch <id>", "Switch active session thread")
-    table.add_row("/clear", "Clear terminal screen")
-    table.add_row("/help", "Display this help reference table")
-    table.add_row("exit / quit / :q", "Exit TUI studio")
+    table.add_column("分类", style="bold yellow", width=14)
+    table.add_column("命令 / 格式", style="bold sky_blue1", width=26)
+    table.add_column("功能说明与当前配置", style="white")
+
+    # 1. 工作流模式
+    table.add_row("🎯 工作流模式", "/plan", "开启/切换只读 Plan Mode (只读架构与方案探索)")
+    table.add_row("", "/goal <目标描述>", "启动目标驱动多里程碑无人值守收敛任务")
+    table.add_row("", "/goal", "查看当前活动 Goal 进度与各里程碑收敛状态")
+    table.add_row("", "/workflows", "探测工作区内规范与计划文件 (plan.md, AGENTS.md)")
+
+    # 2. 模型与思考控制
+    table.add_row(
+        "💭 模型与思考",
+        "/effort [low|med|high]",
+        f"查看或切换思考链强度 (当前: [bold cyan]{state.effort}[/bold cyan])",
+    )
+
+    # 3. 安全与审批策略
+    table.add_row(
+        "🛡️ 安全与审批",
+        "/policy [mode]",
+        f"切换审批策略: per_action, auto_approve, strict (当前: [bold cyan]{state.approval_policy}[/bold cyan])",
+    )
+    table.add_row(
+        "",
+        "/clear-approvals",
+        f"清空已记住的工具放行缓存 (当前记住: {len(state.remembered_approvals)} 个)",
+    )
+    table.add_row(
+        "",
+        "/profile",
+        f"查看当前客户端启动 Profile (当前: [bold cyan]{state.profile}[/bold cyan])",
+    )
+
+    # 4. 会话与多分支管理
+    table.add_row("🧵 会话管理", "/threads", "列出所有历史会话与分支列表")
+    table.add_row("", "/new [thread_id]", "新建并切换至新会话线程")
+    table.add_row("", "/switch <thread_id>", "切换当前活跃会话线程")
+    table.add_row("", "/history", "查看当前会话已结算 Checkpoint 与轮次")
+
+    # 5. 工作区与环境探测
+    table.add_row("📂 工作区探测", "/status", "查看运行时环境、Server 状态与配置总览")
+    table.add_row("", "/git", "查看当前工作区 Git 分支及未提交变更")
+    table.add_row("", "/files [query]", "快速检索当前工作区代码文件路径")
+
+    # 6. 通用控制
+    table.add_row("⚡ 通用控制", "/clear", "清空终端屏幕")
+    table.add_row("", "/help", "显示本命令参考大全")
+    table.add_row("", "exit / quit / :q / q", "退出 TUI 交互终端")
+
     console.print(table)
 
 
@@ -183,6 +225,169 @@ async def run_tui(state: TUIState) -> None:
 
             if text.lower() == "/help":
                 print_help_table(state)
+                continue
+
+            if text.lower().startswith("/effort") or text.lower().startswith("/reasoning"):
+                parts = text.split(maxsplit=1)
+                if len(parts) > 1:
+                    target_effort = parts[1].strip().lower()
+                    if target_effort in ("low", "medium", "med", "high"):
+                        state.effort = "medium" if target_effort == "med" else target_effort
+                        console.print(
+                            f"[green]✓ Reasoning effort set to: [bold]{state.effort}[/bold][/green]"
+                        )
+                    else:
+                        console.print(
+                            "[yellow]Invalid effort. Choose from: low, medium, high[/yellow]"
+                        )
+                else:
+                    console.print(
+                        f"[sky_blue1]Current Reasoning Effort: [bold]{state.effort}[/bold] (Options: low, medium, high)[/sky_blue1]"
+                    )
+                continue
+
+            if text.lower() == "/status":
+                table = Table(
+                    title="Mini Agent Runtime Status", border_style="cyan"
+                )
+                table.add_column("Property", style="bold sky_blue1", width=22)
+                table.add_column("Value", style="white")
+                table.add_row(
+                    "Server",
+                    f"{init_res.get('serverName')} v{init_res.get('serverVersion')}",
+                )
+                table.add_row(
+                    "Workspace Root", str(Path.cwd().resolve())
+                )
+                table.add_row("Active Profile", state.profile)
+                table.add_row("Approval Policy", state.approval_policy)
+                table.add_row(
+                    "Remembered Approvals",
+                    f"{len(state.remembered_approvals)} tools",
+                )
+                table.add_row("Reasoning Effort", state.effort)
+                table.add_row("Active Thread", state.current_thread_id)
+                console.print(table)
+                continue
+
+            if text.lower() in ("/git", "/diff"):
+                try:
+                    def _get_git_info() -> tuple[str, list[str]]:
+                        b_proc = subprocess.run(
+                            ["git", "branch", "--show-current"],
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                        )
+                        branch_name = b_proc.stdout.strip() or "main"
+                        s_proc = subprocess.run(
+                            ["git", "status", "--porcelain"],
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                        )
+                        out_lines = [
+                            ln.strip()
+                            for ln in s_proc.stdout.splitlines()
+                            if ln.strip()
+                        ]
+                        return branch_name, out_lines
+
+                    branch, lines = await asyncio.to_thread(_get_git_info)
+                    table = Table(
+                        title=f"Git Status (Branch: {branch})",
+                        border_style="green" if not lines else "yellow",
+                    )
+                    table.add_column("Status", style="bold cyan", width=10)
+                    table.add_column("File Path", style="white")
+                    if not lines:
+                        table.add_row(
+                            "Clean",
+                            "[dim]Working tree clean, no changes[/dim]",
+                        )
+                    else:
+                        for line in lines:
+                            st = line[:2].strip()
+                            fp = line[3:].strip()
+                            table.add_row(st, fp)
+                    console.print(table)
+                except Exception as err:  # noqa: BLE001
+                    console.print(f"[red]Git check failed: {err}[/red]")
+                continue
+
+            if text.lower().startswith("/files") or text.lower().startswith("/ls"):
+                parts = text.split(maxsplit=1)
+                query = parts[1].strip().lower() if len(parts) > 1 else ""
+                ignore_dirs = {
+                    ".git",
+                    "node_modules",
+                    "__pycache__",
+                    ".venv",
+                    "venv",
+                    ".pytest_cache",
+                    ".ruff_cache",
+                    "dist",
+                    "build",
+                    "target",
+                }
+                matches = []
+                for root, dirs, files in os.walk(Path.cwd()):
+                    dirs[:] = [
+                        d
+                        for d in dirs
+                        if d not in ignore_dirs and not d.startswith(".")
+                    ]
+                    rel_root = Path(root).relative_to(Path.cwd())
+                    for f in files:
+                        if f.startswith(".") and f != ".env.example":
+                            continue
+                        rel_p = (
+                            str(rel_root / f).replace("\\", "/")
+                            if str(rel_root) != "."
+                            else f
+                        )
+                        if not query or query in rel_p.lower():
+                            matches.append(rel_p)
+                            if len(matches) >= 30:
+                                break
+                    if len(matches) >= 30:
+                        break
+                table = Table(
+                    title=f"Workspace Files ({len(matches)} matches)",
+                    border_style="sky_blue1",
+                )
+                table.add_column("File Path", style="white")
+                for m in matches:
+                    table.add_row(m)
+                console.print(table)
+                continue
+
+            if text.lower() == "/workflows":
+                candidates = [
+                    "plan.md",
+                    "goal/plan.md",
+                    "goal/milestones.json",
+                    "AGENTS.md",
+                    "README.md",
+                ]
+                table = Table(
+                    title="Workflow & Architecture Files",
+                    border_style="cyan",
+                )
+                table.add_column("File", style="bold sky_blue1", width=25)
+                table.add_column("Status", style="green", width=12)
+                table.add_column("Size / Note", style="white")
+                for c in candidates:
+                    p = Path.cwd() / c
+                    if p.is_file():
+                        table.add_row(
+                            c, "✓ Present", f"{p.stat().st_size} bytes"
+                        )
+                    else:
+                        table.add_row(
+                            c, "[dim]Absent[/dim]", "[dim]Not found[/dim]"
+                        )
+                console.print(table)
                 continue
 
             if text.lower() == "/profile":
@@ -259,6 +464,20 @@ async def run_tui(state: TUIState) -> None:
                 console.print(table)
                 continue
 
+            if text.lower().startswith("/new"):
+                parts = text.split(maxsplit=1)
+                new_thread = (
+                    parts[1].strip()
+                    if len(parts) > 1
+                    else f"session-{int(asyncio.get_running_loop().time())}"
+                )
+                await client.start_thread(new_thread)
+                state.current_thread_id = new_thread
+                console.print(
+                    f"[green]✓ Created and switched to new thread: [bold]{new_thread}[/bold][/green]"
+                )
+                continue
+
             if text.lower().startswith("/switch"):
                 parts = text.split(maxsplit=1)
                 if len(parts) > 1:
@@ -270,13 +489,37 @@ async def run_tui(state: TUIState) -> None:
                     console.print("[dim]Usage: /switch <thread_id>[/dim]")
                 continue
 
+            if text.lower() in ("/history", "/checkpoint"):
+                try:
+                    cp = await client.read_thread(state.current_thread_id)
+                    table = Table(
+                        title=f"Thread Checkpoint: {state.current_thread_id}",
+                        border_style="sky_blue1",
+                    )
+                    table.add_column(
+                        "Property", style="bold sky_blue1", width=22
+                    )
+                    table.add_column("Value", style="white")
+                    table.add_row("Turn ID", str(cp.turn_id or "N/A"))
+                    table.add_row("Sequence", str(cp.sequence))
+                    table.add_row("Status", str(cp.status or "active"))
+                    table.add_row("Model Visible Turns", str(len(cp.turns)))
+                    console.print(table)
+                except Exception as err:  # noqa: BLE001
+                    console.print(
+                        f"[red]Failed to read thread history: {err}[/red]"
+                    )
+                continue
+
             console.print("\n[bold green]Mini Agent[/bold green]:")
 
             current_mode = None  # None | "thinking" | "text"
 
             try:
                 async for item in client.stream_turn(
-                    user_input, thread_id=state.current_thread_id
+                    user_input,
+                    thread_id=state.current_thread_id,
+                    effort=state.effort,
                 ):
                     if item.get("type") == "event":
                         evt = item.get("event", {})
@@ -346,6 +589,13 @@ def main() -> None:
         help="Security approval policy: per_action (default), auto_approve, strict",
     )
     parser.add_argument(
+        "-e",
+        "--effort",
+        choices=["low", "medium", "high"],
+        default="medium",
+        help="Model reasoning effort: low, medium (default), high",
+    )
+    parser.add_argument(
         "-t",
         "--thread",
         dest="thread_id",
@@ -357,6 +607,7 @@ def main() -> None:
     state = TUIState(
         profile=args.profile,
         approval_policy=args.approval_policy,
+        effort=args.effort,
         current_thread_id=args.thread_id,
     )
 

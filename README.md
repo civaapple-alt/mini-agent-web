@@ -186,12 +186,20 @@ Web Studio 采用现代 IDE 交互范式，深度对齐 Codex 交互体系：
 
 ## 📟 启动终端交互界面 (Terminal TUI)
 
-无需打开浏览器，直接在终端中进行全功能交互：
+无需打开浏览器，直接在终端中进行全功能交互，体验现代化终端结对工作台：
 
 ```bash
-# 启动基于 Rich 的终端 TUI
+# 启动基于 prompt_toolkit + Rich 的现代化终端 Studio
 uv run mini-agent-tui
+
+# 带有自定义参数启动 (支持 --profile, --policy, --effort, --thread)
+uv run mini-agent-tui --profile autonomous --policy auto_approve --effort high
 ```
+
+* **智能补全**：支持 Tab 键自动补全斜杠命令与二级参数候选菜单；
+* **快捷按键**：输入框有内容时按 `Ctrl+C` 一键清空当前行，输入框为空时按 `Ctrl+C` 优雅退出；
+* **命令集锦**：支持 `/plan`、`/goal`、`/steer`、`/policy`、`/fork`、`/mcp`、`/git`、`/status` 等 15+ 个内置命令；
+* **详细文档**：参见 [**`tui/README.md`**](tui/README.md)。
 
 ---
 
@@ -199,7 +207,7 @@ uv run mini-agent-tui
 
 ```text
 mini-agent-web/
-├── AGENTS.md                 # SDK、Gateway、Frontend、TUI 与 Cookbook 协作规则
+├── AGENTS.md                 # 协作规范与变更准入要求
 ├── sdk/python/                # 官方 Python SDK (包名: mini-agent)
 │   ├── src/mini_agent/
 │   │   ├── __init__.py        # 公共导出 (MiniAgentClient, setup_logging 等)
@@ -210,40 +218,38 @@ mini-agent-web/
 │   │   └── py.typed           # PEP 561 类型检查标记
 │   └── pyproject.toml         # SDK 独立打包规范 (零外部依赖)
 │
-├── frontend/                  # React 19 + Vite 现代化 SPA 前端工程 (参考 llm-council)
-│   ├── package.json           # React 19, Lucide-React, React-Markdown, Remark-Gfm
-│   ├── vite.config.js         # Vite 代理配置 (反向代理 /api 与 /ws 到 8000 端口)
+├── frontend/                  # React 18 + Vite 现代化 SPA 前端工程 (参见 frontend/README.md)
+│   ├── package.json           # React, Lucide-React, React-Markdown, Remark-Gfm
+│   ├── vite.config.js         # Vite 反向代理 (/api 与 /ws 到 8000 端口)
 │   ├── index.html             # 前端 HTML 入口
-│   └── src/
-│       ├── main.jsx           # React 入口
-│       ├── App.jsx            # 主应用状态调度与 WebSocket 消息分发
-│       ├── api.js             # REST API、全双工 WebSocket 与断线重连客户端
-│       └── components/        # Header, Sidebar, ChatArea, ThinkingBlock, ToolCard, ApprovalDialog, InputBar, WorldDrawer
+│   └── src/                   # 组件库 (ChatArea, ToolCard, ThinkingBlock, ApprovalDialog, SidePanel)
 │
-├── server/                    # FastAPI Web API Gateway
+├── server/                    # FastAPI Web API Gateway (参见 server/README.md)
 │   ├── app.py                 # FastAPI 应用入口、CORS、生命周期与静态资源托管
 │   ├── config.py              # 服务端环境与网络端口配置
-│   ├── session_manager.py     # Client 连接池、多会话路由与安全审批握手调度
+│   ├── session_manager.py     # App Server 子进程生命周期、连接池与 WebSocket 分发池
 │   ├── main.py                # Uvicorn CLI 启动器
-│   └── routes/                # REST / SSE / WebSocket 路由分发
-│       ├── agent.py           # /api/agent/turn, /api/agent/stream, /ws/agent
-│       ├── threads.py         # /api/threads (列表/新建/分支/检查点/关闭)
-│       └── world.py           # /api/world, /api/mcp, /api/workflows
+│   └── routes/                # REST 路由 (agent.py, threads.py, world.py, settings.py)
 │
-├── tui/                       # Terminal UI (基于 Rich 的交互式终端客户端)
-│   └── tui_app.py
+├── tui/                       # Terminal TUI 交互式终端工作室 (参见 tui/README.md)
+│   ├── state.py               # 会话状态管理与 UTF-8 控制台配置
+│   ├── approvals.py           # 安全审批拦截与策略评估 ([y]es / [n]o / [a]lways)
+│   ├── completer.py           # Tab 自动补全与二级参数联想菜单
+│   ├── commands.py            # 斜杠命令分发与环境自省 (/plan, /goal, /steer, /mcp, /fork 等)
+│   ├── stream_renderer.py     # 思考链、文本打字机流式渲染与上下文压缩感知
+│   └── tui_app.py             # 极简 CLI 入口与自愈探针调度
 │
-├── cookbook/python-demo/      # 实战示例集
+├── cookbook/python-demo/      # 实战示例集 (参见 cookbook/python-demo/README.md)
 │   ├── 01_basic_turn.py               # 基础一问一答与生命周期
 │   ├── 02_streaming_events.py         # 深度流式事件（Thinking/Tokens/多步工具）
 │   ├── 03_approval_handling.py        # 敏感工具权限审批拦截
 │   ├── 04_steering_and_interrupt.py   # 运行时动态转向与协作取消
-│   ├── 05_workflows_and_inspection.py # WorldState 快照与只读 Plan Mode
+│   ├── 05_workflows_and_inspection.py # WorldState 快照、MCP 状态与只读 Plan Mode
 │   └── 06_protocol_compatibility.py   # 0.6.0 事件协议无 Token 验证
 │
-├── tests/                     # 自动化集成与单元测试套件
+├── tests/                     # 自动化集成与单元测试套件 (参见 tests/README.md)
 │   ├── test_cookbook_validation.py # Cookbook 编译与无 Token 协议验证
-│   ├── test_gateway_api.py    # FastAPI REST / SSE 接口集成测试
+│   ├── test_gateway_api.py    # FastAPI REST 与 WebSocket 接口集成测试
 │   ├── test_sdk_apis.py       # pytest-asyncio 全量 SDK API 协议测试
 │   └── test_sdk_events.py     # 0.6.0 事件解析与 Thread/Turn 分流测试
 │
@@ -251,8 +257,7 @@ mini-agent-web/
 │   ├── README.md                              # 文档导航中心
 │   ├── python-sdk-guide.md                    # 官方开发者指南
 │   ├── sdk-maturity-and-protocol-coverage.md  # 协议覆盖与成熟度报告
-│   ├── app-server-concurrency-and-deadlock-analysis.md # 并发死锁与加固剖析
-│   └── adr/                                   # 架构决策记录 (ADR)
+│   └── app-server-concurrency-and-deadlock-analysis.md # 并发死锁与加固剖析
 │
 ├── logs/                      # 运行时隔离日志 (git-ignored)
 ├── CHANGELOG.md               # 版本变更记录
@@ -263,13 +268,16 @@ mini-agent-web/
 
 ---
 
-## 📚 核心文档索引
+## 📚 模块文档中心与索引
 
+* 📟 [**终端 TUI 工作室文档 (`tui/README.md`)**](tui/README.md)：架构分层、Tab 补全、`/steer` 实时纠偏、`/fork` 分支与命令参考。
+* 🎨 [**Web UI 前端工程文档 (`frontend/README.md`)**](frontend/README.md)：React 组件树、ThinkingBlock、ToolCard 与 WebSocket API。
+* 🌐 [**FastAPI 网关服务文档 (`server/README.md`)**](server/README.md)：RESTful API、`/ws/events` 实时分发与 `SessionManager` 子进程池。
+* 🧪 [**自动化测试套件文档 (`tests/README.md`)**](tests/README.md)：零 Token 消耗、AST 语法编译、网关与事件测试。
 * 📘 [**Python SDK 开发者指南 (`docs/python-sdk-guide.md`)**](docs/python-sdk-guide.md)：完整 API 说明、流式事件、审批拦截与错误处理。
 * 📊 [**SDK 成熟度与协议覆盖报告 (`docs/sdk-maturity-and-protocol-coverage.md`)**](docs/sdk-maturity-and-protocol-coverage.md)：JSON-RPC 2.0 接口覆盖矩阵与测试验收。
-* 🧪 [**Cookbook 验证说明 (`cookbook/python-demo/README.md`)**](cookbook/python-demo/README.md)：Demo 01–05 的 live 运行边界与 Demo 06 的无 Token 协议验证。
-* 🛠️ [**App Server 并发死锁与流式挂起根因剖析 (`docs/app-server-concurrency-and-deadlock-analysis.md`)**](docs/app-server-concurrency-and-deadlock-analysis.md)：Tokio 多线程、Actor 自锁、SSE Keep-Alive 与子进程隔离加固实录。
-* 🤝 [**贡献者与变更准入规则 (`AGENTS.md`)**](AGENTS.md)：版本同步、测试、Cookbook 和变更卫生要求。
+* 🧪 [**Cookbook 实战与协议验证 (`cookbook/python-demo/README.md`)**](cookbook/python-demo/README.md)：Demo 01–05 的 live 运行边界与 Demo 06 协议验证。
+* 🤝 [**贡献者与变更准入规则 (`AGENTS.md`)**](AGENTS.md)：版本同步、测试规范与变更准入要求。
 * 📜 [**版本更新日志 (`CHANGELOG.md`)**](CHANGELOG.md)：版本变更与功能演进记录。
 
 ---

@@ -10,6 +10,7 @@ import asyncio
 import logging
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import WebSocket
@@ -40,7 +41,7 @@ def to_json_serializable(obj: Any) -> Any:
 
 
 class SessionManager:
-    """Manages the backend MiniAgentClient, frontend connections, and metadata."""
+    """Manages the backend MiniAgentClient, frontend connections, projects, and metadata."""
 
     def __init__(self) -> None:
         self._client: MiniAgentClient | None = None
@@ -49,6 +50,16 @@ class SessionManager:
         self._remembered_approvals: set[str] = set()
         self._lock = asyncio.Lock()
         self._initialized = False
+
+        # Project workspaces tracking
+        self._current_project_path: Path = Path.cwd().resolve()
+        self._recent_projects: list[dict[str, Any]] = [
+            {
+                "name": self._current_project_path.name,
+                "path": str(self._current_project_path),
+                "is_git": (self._current_project_path / ".git").is_dir(),
+            }
+        ]
 
         # In-memory thread metadata store: thread_id -> metadata
         self._thread_metadata: dict[str, dict[str, Any]] = {
@@ -74,6 +85,64 @@ class SessionManager:
             "word_wrap": True,
             "font_size": 13,
         }
+
+    def get_projects(self) -> dict[str, Any]:
+        return {
+            "current_project": {
+                "name": self._current_project_path.name,
+                "path": str(self._current_project_path),
+                "is_git": (self._current_project_path / ".git").is_dir(),
+            },
+            "recent_projects": self._recent_projects,
+        }
+
+    def create_project(
+        self, name: str, path: str | None = None, init_readme: bool = True
+    ) -> dict[str, Any]:
+        target_dir = (
+            Path(path).resolve()
+            if path
+            else (self._current_project_path.parent / name).resolve()
+        )
+        target_dir.mkdir(parents=True, exist_ok=True)
+        if init_readme:
+            readme_path = target_dir / "README.md"
+            if not readme_path.exists():
+                readme_path.write_text(
+                    f"# {name}\n\nProject initialized via Mini Agent Codex Studio.\n",
+                    encoding="utf-8",
+                )
+            agents_path = target_dir / "AGENTS.md"
+            if not agents_path.exists():
+                agents_path.write_text(
+                    f"# {name} Agent Development Contract\n\n- Runtime workspace managed by Mini Agent Harness.\n",
+                    encoding="utf-8",
+                )
+
+        proj_info = {
+            "name": name,
+            "path": str(target_dir),
+            "is_git": (target_dir / ".git").is_dir(),
+        }
+        if not any(p["path"] == str(target_dir) for p in self._recent_projects):
+            self._recent_projects.insert(0, proj_info)
+        return proj_info
+
+    def switch_project(self, target_path: str) -> dict[str, Any]:
+        p = Path(target_path).resolve()
+        if not p.is_dir():
+            raise FileNotFoundError(f"Project directory not found: {target_path}")
+        self._current_project_path = p
+        proj_info = {
+            "name": p.name,
+            "path": str(p),
+            "is_git": (p / ".git").is_dir(),
+        }
+        self._recent_projects = [
+            item for item in self._recent_projects if item["path"] != str(p)
+        ]
+        self._recent_projects.insert(0, proj_info)
+        return proj_info
 
     @property
     def client(self) -> MiniAgentClient:

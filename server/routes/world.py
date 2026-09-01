@@ -36,6 +36,55 @@ class StartGoalRequest(BaseModel):
     )
 
 
+class CreateProjectRequest(BaseModel):
+    name: str = Field(..., description="Project folder name or identifier")
+    path: str | None = Field(default=None, description="Optional custom directory path")
+    init_readme: bool = Field(
+        default=True, description="Create initial README.md and AGENTS.md"
+    )
+
+
+class SwitchProjectRequest(BaseModel):
+    path: str = Field(..., description="Target directory path")
+
+
+# -----------------------------------------------------------------------------
+# Projects & Workspace Management
+# -----------------------------------------------------------------------------
+
+
+@router.get("/projects", summary="List current and recent projects")
+async def list_projects() -> dict[str, Any]:
+    """Retrieve current workspace project and recently opened projects."""
+    return session_manager.get_projects()
+
+
+@router.post("/projects/new", summary="Create new project workspace")
+async def create_project_endpoint(req: CreateProjectRequest) -> dict[str, Any]:
+    """Create a new project workspace directory with initial scaffold."""
+    try:
+        proj = session_manager.create_project(
+            name=req.name, path=req.path, init_readme=req.init_readme
+        )
+        return {"project": proj, "status": "created"}
+    except Exception as err:
+        raise HTTPException(
+            status_code=400, detail=f"Failed to create project: {err}"
+        ) from err
+
+
+@router.post("/projects/switch", summary="Switch project workspace")
+async def switch_project_endpoint(req: SwitchProjectRequest) -> dict[str, Any]:
+    """Switch active project workspace."""
+    try:
+        proj = session_manager.switch_project(req.path)
+        return {"project": proj, "status": "switched"}
+    except Exception as err:
+        raise HTTPException(
+            status_code=400, detail=f"Failed to switch project: {err}"
+        ) from err
+
+
 # -----------------------------------------------------------------------------
 # World & MCP Endpoints
 # -----------------------------------------------------------------------------

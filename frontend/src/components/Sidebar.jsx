@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus,
   MessageSquare,
@@ -11,7 +11,14 @@ import {
   FileText,
   Pin,
   Clock,
+  Folder,
+  FolderPlus,
+  ChevronDown,
+  Check,
+  X,
+  ExternalLink,
 } from 'lucide-react';
+import { api } from '../api';
 import './Sidebar.css';
 
 export default function Sidebar({
@@ -27,6 +34,56 @@ export default function Sidebar({
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeMenuThread, setActiveMenuThread] = useState(null);
+
+  // Projects State
+  const [projectsData, setProjectsData] = useState(null);
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+  const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectPath, setNewProjectPath] = useState('');
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+
+  useEffect(() => {
+    loadProjects();
+  }, []);
+
+  const loadProjects = async () => {
+    try {
+      const data = await api.listProjects();
+      setProjectsData(data);
+    } catch (err) {
+      console.error('Failed to load projects:', err);
+    }
+  };
+
+  const handleCreateProject = async (e) => {
+    if (e) e.preventDefault();
+    if (!newProjectName.trim()) return;
+    setIsCreatingProject(true);
+    try {
+      await api.createProject(newProjectName.trim(), newProjectPath.trim() || null, true);
+      setNewProjectName('');
+      setNewProjectPath('');
+      setShowNewProjectModal(false);
+      await loadProjects();
+      if (onRefreshThreads) onRefreshThreads();
+    } catch (err) {
+      alert(`创建项目失败: ${err.message}`);
+    } finally {
+      setIsCreatingProject(false);
+    }
+  };
+
+  const handleSwitchProject = async (path) => {
+    try {
+      await api.switchProject(path);
+      setShowProjectDropdown(false);
+      await loadProjects();
+      if (onRefreshThreads) onRefreshThreads();
+    } catch (err) {
+      alert(`切换项目失败: ${err.message}`);
+    }
+  };
 
   // Group threads chronologically
   const groupedThreads = useMemo(() => {
@@ -99,176 +156,289 @@ export default function Sidebar({
 
     if (action === 'fork') {
       onForkThread(thread.thread_id);
+    } else if (action === 'close') {
+      if (confirm(`确认关闭并归档会话 "${thread.title}" 吗？`)) {
+        onCloseThread(thread.thread_id);
+      }
     } else if (action === 'rename') {
-      const newTitle = prompt('重命名会话标题:', thread.title);
+      const newTitle = prompt('重命名会话:', thread.title);
       if (newTitle && newTitle.trim()) {
         onRenameThread(thread.thread_id, newTitle.trim());
       }
     } else if (action === 'summary') {
-      const newSummary = prompt('指定会话摘要:', thread.summary);
-      if (newSummary !== null) {
-        onUpdateSummary(thread.thread_id, newSummary.trim());
-      }
-    } else if (action === 'close') {
-      if (confirm(`确定要关闭会话 "${thread.title}" 吗？`)) {
-        onCloseThread(thread.thread_id);
+      const newSum = prompt('设置阶段摘要:', thread.summary);
+      if (newSum !== null) {
+        onUpdateSummary(thread.thread_id, newSum.trim());
       }
     }
   };
 
-  const renderThreadItem = (thread) => {
-    const isActive = thread.thread_id === currentThread;
-    const isMenuOpen = activeMenuThread === thread.thread_id;
+  const renderThreadGroup = (title, items, icon = null) => {
+    if (!items || items.length === 0) return null;
 
     return (
-      <div
-        key={thread.thread_id}
-        className={`thread-item ${isActive ? 'active' : ''}`}
-        onClick={() => {
-          setActiveMenuThread(null);
-          onSelectThread(thread.thread_id);
-        }}
-      >
-        <div className="thread-main">
-          <div className="thread-icon-wrap">
-            {thread.pinned ? (
-              <Pin size={13} className="pin-icon" />
-            ) : isActive ? (
-              <MessageSquare size={13} className="active-icon" />
-            ) : (
-              <Clock size={13} className="clock-icon" />
-            )}
-          </div>
-
-          <div className="thread-content-text">
-            <span className="thread-title" title={thread.title}>
-              {thread.title}
-            </span>
-            {thread.summary && (
-              <span className="thread-summary-preview" title={thread.summary}>
-                {thread.summary}
-              </span>
-            )}
-          </div>
+      <div className="thread-time-group" key={title}>
+        <div className="time-group-title">
+          {icon}
+          <span>{title}</span>
+          <span className="group-count font-mono">{items.length}</span>
         </div>
 
-        <div className="thread-actions-wrap" onClick={(e) => e.stopPropagation()}>
-          <button
-            className={`btn-more ${isMenuOpen ? 'open' : ''}`}
-            onClick={() => setActiveMenuThread(isMenuOpen ? null : thread.thread_id)}
-            title="更多操作"
-          >
-            <MoreVertical size={13} />
-          </button>
+        <div className="thread-list">
+          {items.map((thread) => {
+            const isSelected = thread.thread_id === currentThread;
+            return (
+              <div
+                key={thread.thread_id}
+                className={`thread-item ${isSelected ? 'selected' : ''}`}
+                onClick={() => onSelectThread(thread.thread_id)}
+              >
+                <div className="thread-main">
+                  <div className="thread-title-row">
+                    <MessageSquare size={13} className="thread-icon" />
+                    <span className="thread-title font-mono" title={thread.title}>
+                      {thread.title}
+                    </span>
+                  </div>
 
-          {isMenuOpen && (
-            <div className="thread-popup-menu">
-              <button onClick={(e) => handleAction(e, 'rename', thread)}>
-                <Edit2 size={12} />
-                <span>重命名</span>
-              </button>
-              <button onClick={(e) => handleAction(e, 'summary', thread)}>
-                <FileText size={12} />
-                <span>设置摘要</span>
-              </button>
-              <button onClick={(e) => handleAction(e, 'fork', thread)}>
-                <GitFork size={12} />
-                <span>派生分支 (Fork)</span>
-              </button>
-              {thread.thread_id !== 'default' && (
-                <button className="danger" onClick={(e) => handleAction(e, 'close', thread)}>
-                  <Trash2 size={12} />
-                  <span>关闭会话</span>
-                </button>
-              )}
-            </div>
-          )}
+                  {thread.summary && (
+                    <div className="thread-summary-snippet font-mono">
+                      {thread.summary}
+                    </div>
+                  )}
+                </div>
+
+                {/* Popover action button */}
+                <div className="thread-item-actions">
+                  <button
+                    className="icon-btn-dots"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveMenuThread(
+                        activeMenuThread === thread.thread_id ? null : thread.thread_id
+                      );
+                    }}
+                    title="会话选项"
+                  >
+                    <MoreVertical size={13} />
+                  </button>
+
+                  {activeMenuThread === thread.thread_id && (
+                    <div className="thread-popup-menu">
+                      <button
+                        className="popup-item"
+                        onClick={(e) => handleAction(e, 'rename', thread)}
+                      >
+                        <Edit2 size={12} />
+                        <span>重命名 (Rename)</span>
+                      </button>
+
+                      <button
+                        className="popup-item"
+                        onClick={(e) => handleAction(e, 'summary', thread)}
+                      >
+                        <FileText size={12} />
+                        <span>指定摘要 (Summary)</span>
+                      </button>
+
+                      <button
+                        className="popup-item"
+                        onClick={(e) => handleAction(e, 'fork', thread)}
+                      >
+                        <GitFork size={12} />
+                        <span>派生分支 (Fork)</span>
+                      </button>
+
+                      {thread.thread_id !== 'default' && (
+                        <button
+                          className="popup-item danger"
+                          onClick={(e) => handleAction(e, 'close', thread)}
+                        >
+                          <Trash2 size={12} />
+                          <span>关闭会话 (Close)</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
   };
 
+  const currentProjectName = projectsData?.current_project?.name || 'mini-agent-workspace';
+  const currentProjectPath = projectsData?.current_project?.path || '';
+
   return (
-    <aside className="app-sidebar" onClick={() => setActiveMenuThread(null)}>
-      {/* Top Header & Search */}
-      <div className="sidebar-header">
-        <button className="btn-new-chat" onClick={onNewThread}>
-          <Plus size={15} />
-          <span>新对话 (New Thread)</span>
+    <aside className="app-sidebar">
+      {/* 1. Project Workspace Selector Header */}
+      <div className="sidebar-project-header">
+        <div
+          className="project-selector-btn"
+          onClick={() => setShowProjectDropdown(!showProjectDropdown)}
+          title={`当前项目工作区: ${currentProjectPath}`}
+        >
+          <Folder size={14} className="text-amber" />
+          <div className="project-text-wrap">
+            <span className="project-label">当前项目工作区</span>
+            <span className="project-name font-mono">{currentProjectName}</span>
+          </div>
+          <ChevronDown size={12} className="text-muted" />
+        </div>
+
+        <button
+          className="btn-new-project-icon"
+          onClick={() => setShowNewProjectModal(true)}
+          title="新建工作区项目"
+        >
+          <FolderPlus size={14} />
         </button>
 
-        <div className="sidebar-search-box">
-          <Search size={13} className="search-icon" />
-          <input
-            type="text"
-            className="search-input"
-            placeholder="搜索历史会话 / 摘要..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
+        {/* Project Dropdown Menu */}
+        {showProjectDropdown && (
+          <div className="project-dropdown-menu custom-scrollbar">
+            <div className="dropdown-title">最近打开的项目工作区</div>
+            {projectsData?.recent_projects?.map((proj) => (
+              <div
+                key={proj.path}
+                className={`project-dropdown-item ${proj.path === currentProjectPath ? 'active' : ''}`}
+                onClick={() => handleSwitchProject(proj.path)}
+              >
+                <div className="item-left">
+                  <Folder size={13} className="text-sky" />
+                  <div className="proj-item-text">
+                    <span className="proj-name font-mono">{proj.name}</span>
+                    <span className="proj-path font-mono">{proj.path}</span>
+                  </div>
+                </div>
+                {proj.path === currentProjectPath && (
+                  <Check size={12} className="text-green" />
+                )}
+              </div>
+            ))}
+
+            <div className="dropdown-divider"></div>
+            <button
+              className="btn-dropdown-action"
+              onClick={() => {
+                setShowProjectDropdown(false);
+                setShowNewProjectModal(true);
+              }}
+            >
+              <FolderPlus size={13} />
+              <span>+ 创建新项目工作区...</span>
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Grouped Thread List */}
-      <div className="sidebar-list custom-scrollbar">
-        {groupedThreads.pinned.length > 0 && (
-          <div className="thread-group">
-            <div className="group-header">
-              <Pin size={11} />
-              <span>置顶会话 (Pinned)</span>
+      {/* 2. New Project Modal */}
+      {showNewProjectModal && (
+        <div className="modal-overlay-mini" onClick={() => setShowNewProjectModal(false)}>
+          <div className="modal-card-mini" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-card-header">
+              <div className="modal-card-title">
+                <FolderPlus size={14} className="text-emerald" />
+                <span>新建工作区项目 (New Project)</span>
+              </div>
+              <button
+                className="modal-card-close"
+                onClick={() => setShowNewProjectModal(false)}
+              >
+                <X size={13} />
+              </button>
             </div>
-            {groupedThreads.pinned.map(renderThreadItem)}
-          </div>
-        )}
 
-        {groupedThreads.today.length > 0 && (
-          <div className="thread-group">
-            <div className="group-header">今天 (Today)</div>
-            {groupedThreads.today.map(renderThreadItem)}
-          </div>
-        )}
+            <form onSubmit={handleCreateProject} className="modal-card-body">
+              <div className="form-field">
+                <label>项目名称 (Project Name)</label>
+                <input
+                  type="text"
+                  className="font-mono"
+                  placeholder="例如: my-ai-service"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  autoFocus
+                  required
+                />
+              </div>
 
-        {groupedThreads.yesterday.length > 0 && (
-          <div className="thread-group">
-            <div className="group-header">昨天 (Yesterday)</div>
-            {groupedThreads.yesterday.map(renderThreadItem)}
-          </div>
-        )}
+              <div className="form-field">
+                <label>自定义目录路径 (可选，默认在上一级新建目录)</label>
+                <input
+                  type="text"
+                  className="font-mono"
+                  placeholder="例如: D:\gh-ws\my-ai-service"
+                  value={newProjectPath}
+                  onChange={(e) => setNewProjectPath(e.target.value)}
+                />
+              </div>
 
-        {groupedThreads.lastWeek.length > 0 && (
-          <div className="thread-group">
-            <div className="group-header">过去 7 天 (Previous 7 Days)</div>
-            {groupedThreads.lastWeek.map(renderThreadItem)}
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="btn-subtle"
+                  onClick={() => setShowNewProjectModal(false)}
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={!newProjectName.trim() || isCreatingProject}
+                >
+                  {isCreatingProject ? '创建中...' : '立即创建'}
+                </button>
+              </div>
+            </form>
           </div>
-        )}
-
-        {groupedThreads.older.length > 0 && (
-          <div className="thread-group">
-            <div className="group-header">更早 (Older)</div>
-            {groupedThreads.older.map(renderThreadItem)}
-          </div>
-        )}
-
-        {threads.length === 0 && (
-          <div className="sidebar-empty">
-            <span>暂无历史会话</span>
-          </div>
-        )}
-      </div>
-
-      {/* Bottom Bar */}
-      <div className="sidebar-footer">
-        <div className="footer-status font-mono">
-          <span className="dot-live"></span>
-          <span>App Server v0.6.0</span>
         </div>
+      )}
+
+      {/* 3. New Thread Action Bar */}
+      <div className="sidebar-action-bar">
+        <button className="btn-new-thread" onClick={onNewThread}>
+          <Plus size={14} />
+          <span>新建会话 (New Thread)</span>
+        </button>
+
         <button
-          className="btn-refresh"
+          className="btn-refresh-threads"
           onClick={onRefreshThreads}
           title="刷新会话列表"
         >
           <RefreshCw size={13} />
         </button>
+      </div>
+
+      {/* 4. Search Filter */}
+      <div className="sidebar-search-box">
+        <Search size={13} className="search-icon" />
+        <input
+          type="text"
+          className="search-input font-mono"
+          placeholder="搜索会话标题、ID 或摘要..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+      </div>
+
+      {/* 5. Chronological Thread List */}
+      <div className="sidebar-threads-scroll custom-scrollbar">
+        {renderThreadGroup('置顶与默认', groupedThreads.pinned, <Pin size={11} className="text-amber" />)}
+        {renderThreadGroup('今日 (Today)', groupedThreads.today, <Clock size={11} className="text-sky" />)}
+        {renderThreadGroup('昨日 (Yesterday)', groupedThreads.yesterday, <Clock size={11} className="text-muted" />)}
+        {renderThreadGroup('过去 7 天 (Last 7 Days)', groupedThreads.lastWeek, <Clock size={11} className="text-muted" />)}
+        {renderThreadGroup('更早会话 (Older)', groupedThreads.older, <Clock size={11} className="text-muted" />)}
+
+        {threads.length === 0 && (
+          <div className="empty-threads-state font-mono">
+            <span>暂无活跃会话</span>
+          </div>
+        )}
       </div>
     </aside>
   );

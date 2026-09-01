@@ -162,6 +162,42 @@ export const api = {
   },
 
   // ---------------------------------------------------------------------------
+  // Projects & Workspace Management
+  // ---------------------------------------------------------------------------
+
+  async listProjects() {
+    const res = await fetch(`${API_BASE}/api/projects`);
+    if (!res.ok) throw new Error('Failed to list projects');
+    return res.json();
+  },
+
+  async createProject(name, path = null, initReadme = true) {
+    const res = await fetch(`${API_BASE}/api/projects/new`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, path, init_readme: initReadme }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to create project');
+    }
+    return res.json();
+  },
+
+  async switchProject(path) {
+    const res = await fetch(`${API_BASE}/api/projects/switch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to switch project');
+    }
+    return res.json();
+  },
+
+  // ---------------------------------------------------------------------------
   // Settings Management
   // ---------------------------------------------------------------------------
 

@@ -197,6 +197,41 @@ export const api = {
     return res.json();
   },
 
+  async updateProject(projectId, updates) {
+    const res = await fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to update project');
+    }
+    return res.json();
+  },
+
+  async deleteProject(projectId) {
+    const res = await fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to delete project');
+    }
+    return res.json();
+  },
+
+  async pinProject(projectId) {
+    const res = await fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/pin`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to pin project');
+    }
+    return res.json();
+  },
+
   // ---------------------------------------------------------------------------
   // Settings Management
   // ---------------------------------------------------------------------------

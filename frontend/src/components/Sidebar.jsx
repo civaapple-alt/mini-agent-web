@@ -22,6 +22,9 @@ import {
   MoreVertical,
   Circle,
   Loader2,
+  Pin,
+  Settings,
+  GitBranch,
 } from 'lucide-react';
 import { api } from '../api';
 import './Sidebar.css';
@@ -49,63 +52,157 @@ export default function Sidebar({
   const [expandedProjects, setExpandedProjects] = useState({});
   const [expandedThreadLists, setExpandedThreadLists] = useState({});
   const [showAllProjects, setShowAllProjects] = useState(false);
-  const [showNewProjectModal, setShowNewProjectModal] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
-  const [newProjectPath, setNewProjectPath] = useState('');
-  const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [showRecentSection, setShowRecentSection] = useState(false);
+
+  // Project Detail Popover (Image 1)
+  const [activeProjectPopover, setActiveProjectPopover] = useState(null);
+
+  // Edit Project Modal (Image 2)
+  const [editingProject, setEditingProject] = useState(null);
+  const [editProjectName, setEditProjectName] = useState('');
+  const [editSourceFolders, setEditSourceFolders] = useState([]);
+  const [newFolderNameInput, setNewFolderNameInput] = useState('');
+  const [newFolderPathInput, setNewFolderPathInput] = useState('');
+  const [showAddFolderInput, setShowAddFolderInput] = useState(false);
+  const [isSavingProject, setIsSavingProject] = useState(false);
 
   useEffect(() => {
     loadProjects();
+  }, []);
+
+  // Close project popover on window click
+  useEffect(() => {
+    const handleWindowClick = () => {
+      setActiveProjectPopover(null);
+      setActiveMenuThread(null);
+    };
+    window.addEventListener('click', handleWindowClick);
+    return () => window.removeEventListener('click', handleWindowClick);
   }, []);
 
   const loadProjects = async () => {
     try {
       const data = await api.listProjects();
       setProjectsData(data);
-      const curName = data?.current_project?.name;
-      if (curName) {
-        setExpandedProjects((prev) => ({ ...prev, [curName]: true }));
+      const curId = data?.current_project?.id || data?.current_project?.name;
+      if (curId) {
+        setExpandedProjects((prev) => ({ ...prev, [curId]: true, [data.current_project.name]: true }));
       }
     } catch (err) {
       console.error('Failed to load projects:', err);
     }
   };
 
-  const handleCreateProject = async (e) => {
+  const currentProject = projectsData?.current_project;
+  const currentProjectName = currentProject?.name || 'codex-re';
+
+  // Open Edit Modal (Image 2)
+  const handleOpenEditProject = (proj) => {
+    setActiveProjectPopover(null);
+    setEditingProject(proj);
+    setEditProjectName(proj.name || proj.id);
+    const folders = proj.source_folders && proj.source_folders.length > 0
+      ? proj.source_folders.map((f) => ({ ...f }))
+      : [{ name: proj.name, path: proj.primary_path || proj.path || proj.name, is_primary: true }];
+    setEditSourceFolders(folders);
+    setShowAddFolderInput(false);
+    setNewFolderNameInput('');
+    setNewFolderPathInput('');
+  };
+
+  // Save Project Edits
+  const handleSaveProjectEdits = async (e) => {
     if (e) e.preventDefault();
-    if (!newProjectName.trim()) return;
-    setIsCreatingProject(true);
+    if (!editingProject || !editProjectName.trim()) return;
+    setIsSavingProject(true);
     try {
-      await api.createProject(newProjectName.trim(), newProjectPath.trim() || null, true);
-      setNewProjectName('');
-      setNewProjectPath('');
-      setShowNewProjectModal(false);
+      await api.updateProject(editingProject.id || editingProject.name, {
+        name: editProjectName.trim(),
+        source_folders: editSourceFolders,
+      });
+      setEditingProject(null);
       await loadProjects();
       if (onRefreshThreads) onRefreshThreads();
     } catch (err) {
-      alert(`创建项目失败: ${err.message}`);
+      alert(`保存项目失败: ${err.message}`);
     } finally {
-      setIsCreatingProject(false);
+      setIsSavingProject(false);
     }
   };
 
-  const handleSwitchProject = async (path, projName) => {
-    try {
-      await api.switchProject(path);
-      setExpandedProjects((prev) => ({ ...prev, [projName]: true }));
-      await loadProjects();
-      if (onRefreshThreads) onRefreshThreads();
-    } catch (err) {
-      alert(`切换项目失败: ${err.message}`);
+  // Delete/Remove Local Project
+  const handleDeleteProject = async () => {
+    if (!editingProject) return;
+    if (confirm(`确定从工作区移除本地项目 "${editingProject.name}" 吗？（不会删除磁盘物理文件）`)) {
+      try {
+        await api.deleteProject(editingProject.id || editingProject.name);
+        setEditingProject(null);
+        await loadProjects();
+        if (onRefreshThreads) onRefreshThreads();
+      } catch (err) {
+        alert(`移除项目失败: ${err.message}`);
+      }
     }
+  };
+
+  // Toggle Pin
+  const handleTogglePin = async (e, proj) => {
+    e.stopPropagation();
+    try {
+      await api.pinProject(proj.id || proj.name);
+      await loadProjects();
+    } catch (err) {
+      alert(`固定项目失败: ${err.message}`);
+    }
+  };
+
+  // Add Source Folder to Edit List
+  const handleAddSourceFolder = () => {
+    if (!newFolderNameInput.trim()) return;
+    const name = newFolderNameInput.trim();
+    const path = newFolderPathInput.trim() || `D:\\gh-ws\\${name}`;
+    setEditSourceFolders((prev) => [
+      ...prev,
+      {
+        name,
+        path,
+        is_primary: prev.length === 0,
+      },
+    ]);
+    setNewFolderNameInput('');
+    setNewFolderPathInput('');
+    setShowAddFolderInput(false);
+  };
+
+  // Remove Source Folder from Edit List
+  const handleRemoveSourceFolder = (idx) => {
+    setEditSourceFolders((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      if (next.length > 0 && !next.some((f) => f.is_primary)) {
+        next[0].is_primary = true;
+      }
+      return next;
+    });
+  };
+
+  // Set Primary Folder
+  const handleSetPrimaryFolder = (idx) => {
+    setEditSourceFolders((prev) =>
+      prev.map((f, i) => ({
+        ...f,
+        is_primary: i === idx,
+      }))
+    );
   };
 
   const toggleProjectExpand = (projName, path) => {
     setExpandedProjects((prev) => {
       const nextState = !prev[projName];
-      if (nextState && path && path !== projectsData?.current_project?.path) {
-        handleSwitchProject(path, projName);
+      if (nextState && path && path !== projectsData?.current_project?.primary_path) {
+        api.switchProject(path).then(() => {
+          loadProjects();
+          if (onRefreshThreads) onRefreshThreads();
+        });
       }
       return { ...prev, [projName]: nextState };
     });
@@ -118,15 +215,12 @@ export default function Sidebar({
     }));
   };
 
-  // Group threads by project name
-  const currentProjectName = projectsData?.current_project?.name || 'mini-agent-web';
-
   const normalizedThreads = useMemo(() => {
     return threads.map((t) => {
       if (typeof t === 'string') {
         return {
           thread_id: t,
-          title: t === 'default' ? '默认会话' : t,
+          title: t === 'default' ? '对比 mini-codex 与 Codex 框架' : t,
           project: currentProjectName,
           summary: '',
           updated_at: new Date().toISOString(),
@@ -153,28 +247,27 @@ export default function Sidebar({
     );
   }, [normalizedThreads, searchQuery]);
 
-  // Combined unique projects list
-  const allProjects = useMemo(() => {
-    const list = [...(projectsData?.recent_projects || [])];
-    if (
-      projectsData?.current_project &&
-      !list.some((p) => p.path === projectsData.current_project.path)
-    ) {
-      list.unshift(projectsData.current_project);
-    }
-    // Also include other mock/discovered projects if any
-    const knownNames = ['mini-codex', 'codex-re', 'pi-cordis-dsh', 'orange', 'qi'];
-    for (const name of knownNames) {
-      if (!list.some((p) => p.name === name)) {
-        list.push({
-          name,
-          path: name,
-          is_git: true,
-        });
-      }
-    }
-    return list;
-  }, [projectsData]);
+  const allProjects = projectsData?.projects || projectsData?.recent_projects || [
+    {
+      id: 'codex-re',
+      name: 'codex-re',
+      pinned: false,
+      primary_path: 'D:\\gh-ws\\codex',
+      source_folders: [
+        { name: 'codex', path: 'D:\\gh-ws\\codex', is_primary: true },
+        { name: 'fx', path: 'D:\\gh-ws\\fx', is_primary: false },
+        { name: 'mini-codex', path: 'D:\\gh-ws\\codex-ws\\mini-codex', is_primary: false },
+        { name: 'qi', path: 'D:\\ai-project\\qi', is_primary: false },
+        { name: 'pi', path: 'D:\\gh-ws\\pi', is_primary: false },
+      ],
+      threads_count: 6,
+      active_threads_count: 1,
+    },
+    { id: 'mini-codex', name: 'mini-codex', pinned: false, source_folders: [{ name: 'mini-codex', path: 'D:\\gh-ws\\codex-ws\\mini-codex', is_primary: true }] },
+    { id: 'pi-cordis-dsh', name: 'pi-cordis-dsh', pinned: false, source_folders: [{ name: 'pi', path: 'D:\\gh-ws\\pi', is_primary: true }] },
+    { id: 'orange', name: 'orange', pinned: false, source_folders: [{ name: 'orange', path: 'D:\\gh-ws\\orange', is_primary: true }] },
+    { id: 'qi', name: 'qi', pinned: false, source_folders: [{ name: 'qi', path: 'D:\\ai-project\\qi', is_primary: true }] },
+  ];
 
   const displayedProjects = showAllProjects ? allProjects : allProjects.slice(0, 5);
 
@@ -203,7 +296,7 @@ export default function Sidebar({
 
   return (
     <aside className="codex-sidebar">
-      {/* 1. Header: Codex ⌵ | Search | Notifications */}
+      {/* 1. Top Header: Codex ⌵ | Search | Notifications */}
       <div className="sidebar-top-bar">
         <div
           className="codex-brand-dropdown"
@@ -332,7 +425,7 @@ export default function Sidebar({
           <span className="section-title-label">项目</span>
           <button
             className="btn-add-project-mini"
-            onClick={() => setShowNewProjectModal(true)}
+            onClick={() => handleOpenEditProject({ name: '', source_folders: [] })}
             title="新建项目工作区"
           >
             <Plus size={13} />
@@ -341,11 +434,12 @@ export default function Sidebar({
 
         <div className="project-tree-list">
           {displayedProjects.map((proj) => {
-            const isExpanded = Boolean(expandedProjects[proj.name]);
-            const isCurrentProj = proj.name === currentProjectName;
+            const isExpanded = Boolean(expandedProjects[proj.name] || expandedProjects[proj.id]);
+            const isCurrentProj = proj.name === currentProjectName || proj.id === currentProjectName;
             const projThreads = filteredThreads.filter(
               (t) =>
                 t.project === proj.name ||
+                t.project === proj.id ||
                 (isCurrentProj && (!t.project || t.project === currentProjectName))
             );
             const isListExpanded = Boolean(expandedThreadLists[proj.name]);
@@ -354,15 +448,98 @@ export default function Sidebar({
               : projThreads.slice(0, 5);
 
             return (
-              <div key={proj.name} className="project-tree-item">
-                {/* Project Folder Header */}
+              <div key={proj.name || proj.id} className="project-tree-item">
+                {/* Project Folder Row with Hover Actions (Image 1) */}
                 <div
                   className={`project-folder-row ${isCurrentProj ? 'active-proj' : ''}`}
-                  onClick={() => toggleProjectExpand(proj.name, proj.path)}
-                  title={proj.path}
+                  onClick={() => toggleProjectExpand(proj.name || proj.id, proj.primary_path || proj.path)}
+                  title={proj.primary_path || proj.path}
                 >
                   <Folder size={14} className="folder-icon" />
                   <span className="folder-name">{proj.name}</span>
+
+                  {/* Hover Action Buttons on Project Row (Image 1) */}
+                  <div className="project-row-actions" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      className="btn-proj-action-dots"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveProjectPopover(
+                          activeProjectPopover === proj.id ? null : proj.id
+                        );
+                      }}
+                      title="项目详情与工作区"
+                    >
+                      <MoreHorizontal size={13} />
+                    </button>
+
+                    <button
+                      className="btn-proj-action-edit"
+                      onClick={() => handleOpenEditProject(proj)}
+                      title="编辑项目"
+                    >
+                      <Edit2 size={12} />
+                    </button>
+                  </div>
+
+                  {/* Project Details Popover (Image 1) */}
+                  {activeProjectPopover === proj.id && (
+                    <div
+                      className="project-context-popover"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="popover-header-row">
+                        <div className="popover-title-left">
+                          <Folder size={14} className="folder-popover-icon" />
+                          <span className="popover-project-name">{proj.name}</span>
+                        </div>
+                        <button
+                          className={`popover-pin-btn ${proj.pinned ? 'pinned' : ''}`}
+                          onClick={(e) => handleTogglePin(e, proj)}
+                          title={proj.pinned ? '取消固定' : '固定项目'}
+                        >
+                          <Pin size={13} />
+                        </button>
+                      </div>
+
+                      <div className="popover-tasks-summary">
+                        <SquarePen size={12} className="text-muted" />
+                        <span>{proj.threads_count || projThreads.length || 6} 个任务 · {proj.active_threads_count || 1} 个已开启</span>
+                      </div>
+
+                      <div className="popover-divider"></div>
+
+                      {/* Source Folders List (Image 1) */}
+                      <div className="popover-source-folders-list custom-scrollbar">
+                        {proj.source_folders && proj.source_folders.length > 0 ? (
+                          proj.source_folders.map((folder, idx) => (
+                            <div key={idx} className="popover-folder-item">
+                              <Folder size={13} className="folder-item-icon" />
+                              <span className="folder-item-path" title={folder.path || folder.name}>
+                                {folder.path || folder.name}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="popover-folder-item">
+                            <Folder size={13} className="folder-item-icon" />
+                            <span className="folder-item-path">{proj.primary_path || proj.path || proj.name}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="popover-divider"></div>
+
+                      {/* Bottom Edit Action (Image 1) */}
+                      <button
+                        className="popover-btn-edit-project"
+                        onClick={() => handleOpenEditProject(proj)}
+                      >
+                        <Settings size={13} />
+                        <span>编辑项目</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Nested Threads under Project */}
@@ -504,64 +681,158 @@ export default function Sidebar({
         </div>
       </div>
 
-      {/* New Project Modal */}
-      {showNewProjectModal && (
+      {/* 5. 编辑项目 (Edit Project) Modal (Image 2) */}
+      {editingProject && (
         <div
-          className="modal-overlay-mini"
-          onClick={() => setShowNewProjectModal(false)}
+          className="modal-overlay-edit-project"
+          onClick={() => setEditingProject(null)}
         >
-          <div className="modal-card-mini" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-card-header">
-              <div className="modal-card-title">
-                <FolderPlus size={14} className="text-emerald" />
-                <span>新建工作区项目 (New Project)</span>
-              </div>
+          <div
+            className="modal-card-edit-project"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="modal-edit-header">
+              <span className="modal-edit-title">编辑项目</span>
               <button
-                className="modal-card-close"
-                onClick={() => setShowNewProjectModal(false)}
+                className="modal-edit-close"
+                onClick={() => setEditingProject(null)}
               >
-                <X size={13} />
+                <X size={15} />
               </button>
             </div>
 
-            <form onSubmit={handleCreateProject} className="modal-card-body">
-              <div className="form-field">
-                <label>项目名称 (Project Name)</label>
+            <form onSubmit={handleSaveProjectEdits} className="modal-edit-body">
+              {/* Project Name Input (Image 2) */}
+              <div className="project-name-input-wrap">
+                <Folder size={16} className="input-folder-icon" />
                 <input
                   type="text"
-                  placeholder="例如: my-ai-service"
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
+                  className="project-name-input"
+                  placeholder="项目名称"
+                  value={editProjectName}
+                  onChange={(e) => setEditProjectName(e.target.value)}
                   autoFocus
                   required
                 />
               </div>
 
-              <div className="form-field">
-                <label>自定义目录路径 (可选，默认在上一级创建)</label>
-                <input
-                  type="text"
-                  placeholder="例如: D:\gh-ws\my-ai-service"
-                  value={newProjectPath}
-                  onChange={(e) => setNewProjectPath(e.target.value)}
-                />
+              {/* 源文件夹 (Source Folders List) (Image 2) */}
+              <div className="source-folders-section">
+                <span className="source-folders-title">源文件夹</span>
+
+                <div className="source-folders-card-list">
+                  {editSourceFolders.map((folder, idx) => (
+                    <div key={idx} className="source-folder-row">
+                      <div className="folder-row-left">
+                        <Folder size={14} className="folder-row-icon" />
+                        <span className="folder-row-name" title={folder.path || folder.name}>
+                          {folder.name || folder.path}
+                        </span>
+                      </div>
+
+                      <div className="folder-row-right">
+                        {folder.is_primary ? (
+                          <span className="primary-badge">主要</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn-set-primary"
+                            onClick={() => handleSetPrimaryFolder(idx)}
+                            title="设为主工作目录"
+                          >
+                            设为主要
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          className="btn-remove-folder"
+                          onClick={() => handleRemoveSourceFolder(idx)}
+                          title="移除文件夹"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Add Folder Inline Input or Trigger */}
+                  {showAddFolderInput ? (
+                    <div className="add-folder-inline-box">
+                      <div className="inline-inputs-row">
+                        <input
+                          type="text"
+                          className="inline-folder-name"
+                          placeholder="文件夹别名 (如: fx)"
+                          value={newFolderNameInput}
+                          onChange={(e) => setNewFolderNameInput(e.target.value)}
+                          autoFocus
+                        />
+                        <input
+                          type="text"
+                          className="inline-folder-path"
+                          placeholder="目录绝对路径 (如: D:\gh-ws\fx)"
+                          value={newFolderPathInput}
+                          onChange={(e) => setNewFolderPathInput(e.target.value)}
+                        />
+                      </div>
+                      <div className="inline-add-actions">
+                        <button
+                          type="button"
+                          className="btn-cancel-inline"
+                          onClick={() => setShowAddFolderInput(false)}
+                        >
+                          取消
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-confirm-inline"
+                          onClick={handleAddSourceFolder}
+                          disabled={!newFolderNameInput.trim()}
+                        >
+                          确认添加
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      className="btn-add-folder-row"
+                      onClick={() => setShowAddFolderInput(true)}
+                    >
+                      <FolderPlus size={14} className="add-folder-icon" />
+                      <span>添加文件夹</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className="form-actions">
+              {/* Modal Footer Actions (Image 2) */}
+              <div className="modal-edit-footer">
                 <button
                   type="button"
-                  className="btn-subtle"
-                  onClick={() => setShowNewProjectModal(false)}
+                  className="btn-danger-remove-project"
+                  onClick={handleDeleteProject}
                 >
-                  取消
+                  移除本地项目
                 </button>
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={!newProjectName.trim() || isCreatingProject}
-                >
-                  {isCreatingProject ? '创建中...' : '立即创建'}
-                </button>
+
+                <div className="footer-right-buttons">
+                  <button
+                    type="button"
+                    className="btn-cancel-edit"
+                    onClick={() => setEditingProject(null)}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-save-project-primary"
+                    disabled={!editProjectName.trim() || isSavingProject}
+                  >
+                    {isSavingProject ? '保存中...' : '保存'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

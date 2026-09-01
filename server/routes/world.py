@@ -44,6 +44,14 @@ class CreateProjectRequest(BaseModel):
     )
 
 
+class UpdateProjectRequest(BaseModel):
+    name: str | None = Field(default=None, description="Updated project display name")
+    pinned: bool | None = Field(default=None, description="Pinned status")
+    source_folders: list[dict[str, Any]] | None = Field(
+        default=None, description="List of source folders with is_primary flag"
+    )
+
+
 class SwitchProjectRequest(BaseModel):
     path: str = Field(..., description="Target directory path")
 
@@ -70,6 +78,42 @@ async def create_project_endpoint(req: CreateProjectRequest) -> dict[str, Any]:
     except Exception as err:
         raise HTTPException(
             status_code=400, detail=f"Failed to create project: {err}"
+        ) from err
+
+
+@router.patch("/projects/{project_id}", summary="Update project configuration")
+async def update_project_endpoint(
+    project_id: str, req: UpdateProjectRequest
+) -> dict[str, Any]:
+    """Update project name, primary path, or source folders."""
+    try:
+        updates = {k: v for k, v in req.model_dump().items() if v is not None}
+        proj = session_manager.update_project(project_id, updates)
+        return {"project": proj, "status": "updated"}
+    except Exception as err:
+        raise HTTPException(
+            status_code=400, detail=f"Failed to update project: {err}"
+        ) from err
+
+
+@router.delete("/projects/{project_id}", summary="Delete local project")
+async def delete_project_endpoint(project_id: str) -> dict[str, Any]:
+    """Remove a project from the workspace registry."""
+    success = session_manager.delete_project(project_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {"status": "deleted", "project_id": project_id}
+
+
+@router.post("/projects/{project_id}/pin", summary="Toggle project pin state")
+async def pin_project_endpoint(project_id: str) -> dict[str, Any]:
+    """Toggle pin/unpin for a project."""
+    try:
+        proj = session_manager.toggle_pin_project(project_id)
+        return {"project": proj, "status": "pinned_toggled"}
+    except Exception as err:
+        raise HTTPException(
+            status_code=400, detail=f"Failed to pin project: {err}"
         ) from err
 
 

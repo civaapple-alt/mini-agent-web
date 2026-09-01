@@ -238,6 +238,7 @@
   cursor: pointer;
   color: var(--text-secondary);
   transition: all 0.15s ease;
+  position: relative;
 }
 
 .project-folder-row:hover {
@@ -260,6 +261,168 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Hover Action Buttons on Project Row (Image 1) */
+.project-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.project-folder-row:hover .project-row-actions {
+  opacity: 1;
+}
+
+.btn-proj-action-dots,
+.btn-proj-action-edit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-proj-action-dots:hover,
+.btn-proj-action-edit:hover {
+  background-color: var(--border-subtle);
+  color: var(--text-primary);
+}
+
+/* Project Context Popover (Image 1) */
+.project-context-popover {
+  position: absolute;
+  left: 200px;
+  top: 0;
+  width: 260px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18);
+  padding: 10px 12px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: scaleInPopover 0.15s ease;
+}
+
+@keyframes scaleInPopover {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.popover-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.popover-title-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.folder-popover-icon {
+  color: var(--text-secondary);
+}
+
+.popover-pin-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.popover-pin-btn:hover,
+.popover-pin-btn.pinned {
+  color: var(--accent-amber);
+  background-color: var(--bg-card-hover);
+}
+
+.popover-tasks-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.popover-divider {
+  height: 1px;
+  background-color: var(--border-subtle);
+  margin: 2px 0;
+}
+
+.popover-source-folders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.popover-folder-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  padding: 3px 4px;
+  border-radius: 4px;
+}
+
+.popover-folder-item:hover {
+  background-color: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.folder-item-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.folder-item-path {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.popover-btn-edit-project {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.popover-btn-edit-project:hover {
+  background-color: var(--bg-card-hover);
 }
 
 /* Nested Threads List */
@@ -477,135 +640,349 @@ body.theme-cyberpunk .nested-thread-item.selected {
   font-weight: 500;
 }
 
-/* New Project Modal */
-.modal-overlay-mini {
+/* -------------------------------------------------------------------------- */
+/* 5. 编辑项目 (Edit Project) Modal (Image 2)                                  */
+/* -------------------------------------------------------------------------- */
+
+.modal-overlay-edit-project {
   position: fixed;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(2px);
-  z-index: 100;
+  background-color: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(3px);
+  z-index: 120;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.modal-card-mini {
-  width: 380px;
+.modal-card-edit-project {
+  width: 440px;
   background-color: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 10px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
   overflow: hidden;
-  animation: scaleInModal 0.15s ease;
+  animation: scaleInEditModal 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes scaleInModal {
-  from { opacity: 0; transform: scale(0.96); }
+@keyframes scaleInEditModal {
+  from { opacity: 0; transform: scale(0.95); }
   to { opacity: 1; transform: scale(1); }
 }
 
-.modal-card-header {
+.modal-edit-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 16px 20px 12px;
 }
 
-.modal-card-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
+.modal-edit-title {
+  font-size: 15px;
+  font-weight: 700;
   color: var(--text-primary);
 }
 
-.modal-card-close {
+.modal-edit-close {
   background: transparent;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
+  transition: color 0.15s ease;
 }
 
-.modal-card-close:hover {
+.modal-edit-close:hover {
   color: var(--text-primary);
   background-color: var(--bg-card-hover);
 }
 
-.modal-card-body {
-  padding: 16px;
+.modal-edit-body {
+  padding: 0 20px 20px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
-.form-field {
+/* Project Name Active Input (Image 2) */
+.project-name-input-wrap {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
+  border: 1.5px solid #2563eb;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background-color: var(--bg-surface);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
-.form-field label {
-  font-size: 11px;
+.input-folder-icon {
   color: var(--text-secondary);
-  font-weight: 500;
 }
 
-.form-field input {
+.project-name-input {
+  border: none;
+  background: transparent;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+  outline: none;
+  width: 100%;
+}
+
+/* 源文件夹 Section (Image 2) */
+.source-folders-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.source-folders-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.source-folders-card-list {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background-color: var(--bg-surface);
+  overflow: hidden;
+}
+
+.source-folder-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background-color 0.15s ease;
+}
+
+.source-folder-row:hover {
+  background-color: var(--bg-card-hover);
+}
+
+.folder-row-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.folder-row-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.folder-row-name {
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folder-row-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.primary-badge {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
   background-color: var(--bg-app);
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.btn-set-primary {
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.btn-set-primary:hover {
+  color: var(--accent-green);
+  text-decoration: underline;
+}
+
+.btn-remove-folder {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-remove-folder:hover {
+  color: var(--accent-rose);
+  background-color: rgba(225, 29, 72, 0.08);
+}
+
+/* Add Folder Trigger & Inline Inputs */
+.btn-add-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: background-color 0.15s ease;
+}
+
+.btn-add-folder-row:hover {
+  background-color: var(--bg-card-hover);
+}
+
+.add-folder-icon {
+  color: var(--text-muted);
+}
+
+.add-folder-inline-box {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background-color: var(--bg-app);
+}
+
+.inline-inputs-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inline-folder-name,
+.inline-folder-path {
+  background-color: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  padding: 7px 10px;
+  padding: 6px 10px;
   font-size: 12px;
   color: var(--text-primary);
   outline: none;
 }
 
-.form-field input:focus {
-  border-color: var(--border-focus);
+.inline-folder-name:focus,
+.inline-folder-path:focus {
+  border-color: #2563eb;
 }
 
-.form-actions {
+.inline-add-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 6px;
 }
 
-.btn-subtle {
+.btn-cancel-inline {
   background: transparent;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 6px 12px;
-  font-size: 12px;
-  color: var(--text-secondary);
+  border: none;
+  font-size: 11.5px;
+  color: var(--text-muted);
   cursor: pointer;
 }
 
-.btn-subtle:hover {
-  background-color: var(--bg-card-hover);
-}
-
-.btn-primary {
+.btn-confirm-inline {
   background-color: var(--accent-green);
   border: none;
-  border-radius: 6px;
-  padding: 6px 14px;
-  font-size: 12px;
-  font-weight: 600;
+  border-radius: 5px;
   color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
   cursor: pointer;
 }
 
-.btn-primary:hover:not(:disabled) {
+.btn-confirm-inline:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Modal Footer Actions (Image 2) */
+.modal-edit-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.btn-danger-remove-project {
+  background-color: #fee2e2;
+  color: #ef4444;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-danger-remove-project:hover {
+  background-color: #fecaca;
+}
+
+.footer-right-buttons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-cancel-edit {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 6px 10px;
+}
+
+.btn-cancel-edit:hover {
+  color: var(--text-primary);
+}
+
+.btn-save-project-primary {
+  background-color: #18181b;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+body.theme-dark .btn-save-project-primary,
+body.theme-midnight .btn-save-project-primary,
+body.theme-cyberpunk .btn-save-project-primary {
+  background-color: var(--accent-green);
+  color: #ffffff;
+}
+
+.btn-save-project-primary:hover:not(:disabled) {
   opacity: 0.9;
 }
 
-.btn-primary:disabled {
+.btn-save-project-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

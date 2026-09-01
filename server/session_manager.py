@@ -51,25 +51,116 @@ class SessionManager:
         self._lock = asyncio.Lock()
         self._initialized = False
 
-        # Project workspaces tracking
+        # Structured project registry: project_id -> project dict
         self._current_project_path: Path = Path.cwd().resolve()
-        self._recent_projects: list[dict[str, Any]] = [
-            {
-                "name": self._current_project_path.name,
-                "path": str(self._current_project_path),
-                "is_git": (self._current_project_path / ".git").is_dir(),
-            }
-        ]
+        cur_name = self._current_project_path.name
+        self._current_project_id: str = "codex-re" if "codex" in cur_name else cur_name
+        self._projects_registry: dict[str, dict[str, Any]] = {
+            "codex-re": {
+                "id": "codex-re",
+                "name": "codex-re",
+                "pinned": False,
+                "primary_path": str(self._current_project_path),
+                "source_folders": [
+                    {"name": "codex", "path": "D:\\gh-ws\\codex", "is_primary": True},
+                    {"name": "fx", "path": "D:\\gh-ws\\fx", "is_primary": False},
+                    {"name": "mini-codex", "path": "D:\\gh-ws\\codex-ws\\mini-codex", "is_primary": False},
+                    {"name": "qi", "path": "D:\\ai-project\\qi", "is_primary": False},
+                    {"name": "pi", "path": "D:\\gh-ws\\pi", "is_primary": False},
+                ],
+            },
+            "mini-codex": {
+                "id": "mini-codex",
+                "name": "mini-codex",
+                "pinned": False,
+                "primary_path": str(self._current_project_path.parent / "mini-codex"),
+                "source_folders": [
+                    {
+                        "name": "mini-codex",
+                        "path": str(self._current_project_path.parent / "mini-codex"),
+                        "is_primary": True,
+                    },
+                ],
+            },
+            "pi-cordis-dsh": {
+                "id": "pi-cordis-dsh",
+                "name": "pi-cordis-dsh",
+                "pinned": False,
+                "primary_path": "D:\\gh-ws\\pi",
+                "source_folders": [
+                    {"name": "pi", "path": "D:\\gh-ws\\pi", "is_primary": True},
+                ],
+            },
+            "orange": {
+                "id": "orange",
+                "name": "orange",
+                "pinned": False,
+                "primary_path": "D:\\gh-ws\\orange",
+                "source_folders": [
+                    {"name": "orange", "path": "D:\\gh-ws\\orange", "is_primary": True},
+                ],
+            },
+            "qi": {
+                "id": "qi",
+                "name": "qi",
+                "pinned": False,
+                "primary_path": "D:\\ai-project\\qi",
+                "source_folders": [
+                    {"name": "qi", "path": "D:\\ai-project\\qi", "is_primary": True},
+                ],
+            },
+        }
 
         # In-memory thread metadata store: thread_id -> metadata
         self._thread_metadata: dict[str, dict[str, Any]] = {
             "default": {
-                "title": "默认会话 (Default Session)",
+                "title": "对比 mini-codex 与 Codex 框架",
+                "project": "codex-re",
                 "summary": "Main interactive coding workspace",
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
                 "pinned": True,
-            }
+            },
+            "t-2": {
+                "title": "评价 mini-agent-harness 0.5.0",
+                "project": "codex-re",
+                "summary": "",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "pinned": False,
+            },
+            "t-3": {
+                "title": "评价 0.4.0 版本内容",
+                "project": "codex-re",
+                "summary": "",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "pinned": False,
+            },
+            "t-4": {
+                "title": "快速评价 commit 后改动",
+                "project": "codex-re",
+                "summary": "",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "pinned": False,
+            },
+            "t-5": {
+                "title": "查看 fx 项目",
+                "project": "codex-re",
+                "summary": "",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "pinned": False,
+            },
+            "t-6": {
+                "title": "介绍 mini-codex 项目",
+                "project": "mini-codex",
+                "summary": "",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "pinned": False,
+            },
         }
 
         # Runtime system settings
@@ -87,18 +178,39 @@ class SessionManager:
         }
 
     def get_projects(self) -> dict[str, Any]:
+        """Get all projects with active threads summary."""
+        projects_list = []
+        for p in self._projects_registry.values():
+            proj_id = p["id"]
+            p_threads = [
+                t for t in self._thread_metadata.values() if t.get("project") == proj_id or t.get("project") == p.get("name")
+            ]
+            projects_list.append(
+                {
+                    **p,
+                    "threads_count": len(p_threads),
+                    "active_threads_count": max(1, len(p_threads)),
+                }
+            )
+
+        cur_proj = self._projects_registry.get(
+            self._current_project_id,
+            next(iter(self._projects_registry.values())),
+        )
         return {
-            "current_project": {
-                "name": self._current_project_path.name,
-                "path": str(self._current_project_path),
-                "is_git": (self._current_project_path / ".git").is_dir(),
-            },
-            "recent_projects": self._recent_projects,
+            "current_project": cur_proj,
+            "projects": projects_list,
+            "recent_projects": projects_list,
         }
 
     def create_project(
-        self, name: str, path: str | None = None, init_readme: bool = True
+        self,
+        name: str,
+        path: str | None = None,
+        source_folders: list[dict[str, Any]] | None = None,
+        init_readme: bool = True,
     ) -> dict[str, Any]:
+        proj_id = name.lower().replace(" ", "-")
         target_dir = (
             Path(path).resolve()
             if path
@@ -112,36 +224,100 @@ class SessionManager:
                     f"# {name}\n\nProject initialized via Mini Agent Codex Studio.\n",
                     encoding="utf-8",
                 )
-            agents_path = target_dir / "AGENTS.md"
-            if not agents_path.exists():
-                agents_path.write_text(
-                    f"# {name} Agent Development Contract\n\n- Runtime workspace managed by Mini Agent Harness.\n",
-                    encoding="utf-8",
-                )
 
+        sources = source_folders or [
+            {"name": name, "path": str(target_dir), "is_primary": True}
+        ]
         proj_info = {
+            "id": proj_id,
             "name": name,
-            "path": str(target_dir),
-            "is_git": (target_dir / ".git").is_dir(),
+            "pinned": False,
+            "primary_path": str(target_dir),
+            "source_folders": sources,
         }
-        if not any(p["path"] == str(target_dir) for p in self._recent_projects):
-            self._recent_projects.insert(0, proj_info)
+        self._projects_registry[proj_id] = proj_info
+        self._current_project_id = proj_id
+        self._current_project_path = target_dir
         return proj_info
 
-    def switch_project(self, target_path: str) -> dict[str, Any]:
-        p = Path(target_path).resolve()
+    def update_project(
+        self, project_id: str, updates: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Update project name, primary path, source folders, or pinned state."""
+        proj = self._projects_registry.get(project_id)
+        if not proj:
+            # Fallback by name
+            for k, v in self._projects_registry.items():
+                if v.get("name") == project_id:
+                    proj = v
+                    project_id = k
+                    break
+        if not proj:
+            raise KeyError(f"Project '{project_id}' not found")
+
+        if updates.get("name"):
+            proj["name"] = updates["name"]
+        if "pinned" in updates:
+            proj["pinned"] = bool(updates["pinned"])
+        if "source_folders" in updates and isinstance(updates["source_folders"], list):
+            proj["source_folders"] = updates["source_folders"]
+            # Find primary folder
+            primary = next(
+                (f["path"] for f in proj["source_folders"] if f.get("is_primary")),
+                proj["source_folders"][0]["path"] if proj["source_folders"] else proj["primary_path"],
+            )
+            proj["primary_path"] = primary
+
+        return proj
+
+    def delete_project(self, project_id: str) -> bool:
+        """Remove a project from the workspace registry."""
+        if project_id in self._projects_registry:
+            del self._projects_registry[project_id]
+            if self._current_project_id == project_id and self._projects_registry:
+                self._current_project_id = next(iter(self._projects_registry.keys()))
+            return True
+        return False
+
+    def toggle_pin_project(self, project_id: str) -> dict[str, Any]:
+        proj = self._projects_registry.get(project_id)
+        if not proj:
+            raise KeyError(f"Project '{project_id}' not found")
+        proj["pinned"] = not proj.get("pinned", False)
+        return proj
+
+    def switch_project(self, project_id_or_path: str) -> dict[str, Any]:
+        # 1. Match by project ID
+        if project_id_or_path in self._projects_registry:
+            self._current_project_id = project_id_or_path
+            proj = self._projects_registry[project_id_or_path]
+            self._current_project_path = Path(proj["primary_path"])
+            return proj
+
+        # 2. Match by path
+        for pid, p in self._projects_registry.items():
+            if p.get("primary_path") == project_id_or_path or any(
+                f.get("path") == project_id_or_path for f in p.get("source_folders", [])
+            ):
+                self._current_project_id = pid
+                self._current_project_path = Path(p["primary_path"])
+                return p
+
+        # 3. Arbitrary new directory path
+        p = Path(project_id_or_path).resolve()
         if not p.is_dir():
-            raise FileNotFoundError(f"Project directory not found: {target_path}")
+            raise FileNotFoundError(f"Project directory not found: {project_id_or_path}")
         self._current_project_path = p
+        proj_id = p.name.lower()
         proj_info = {
+            "id": proj_id,
             "name": p.name,
-            "path": str(p),
-            "is_git": (p / ".git").is_dir(),
+            "pinned": False,
+            "primary_path": str(p),
+            "source_folders": [{"name": p.name, "path": str(p), "is_primary": True}],
         }
-        self._recent_projects = [
-            item for item in self._recent_projects if item["path"] != str(p)
-        ]
-        self._recent_projects.insert(0, proj_info)
+        self._projects_registry[proj_id] = proj_info
+        self._current_project_id = proj_id
         return proj_info
 
     @property

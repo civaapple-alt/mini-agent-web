@@ -1,21 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import {
   X,
-  Cpu,
-  Compass,
-  Target,
-  FileCode,
-  GitBranch,
   RefreshCw,
-  CheckCircle2,
-  AlertCircle,
+  Cpu,
+  Target,
+  Layers,
+  GitBranch,
+  FileCode,
+  CheckCircle,
+  AlertTriangle,
   Play,
   Pause,
-  ExternalLink,
-  ChevronRight,
-  Shield,
-  Layers,
+  Compass,
+  FileText,
   Terminal,
+  Folder,
+  RotateCcw,
 } from 'lucide-react';
 import { api } from '../api';
 import './SidePanel.css';
@@ -27,25 +27,17 @@ export default function SidePanel({
   planActive,
   onTogglePlan,
 }) {
-  const [activeTab, setActiveTab] = useState(initialTab); // 'world' | 'plan_goal' | 'mcp' | 'git'
-
-  // Tab 1: World state
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [worldData, setWorldData] = useState(null);
-  const [isLoadingWorld, setIsLoadingWorld] = useState(false);
-
-  // Tab 2: Plan & Goal files & workflow
+  const [mcpData, setMcpData] = useState(null);
   const [workflowState, setWorkflowState] = useState(null);
   const [workflowFiles, setWorkflowFiles] = useState([]);
-  const [selectedFileContent, setSelectedFileContent] = useState(null);
-  const [selectedFilePath, setSelectedFilePath] = useState(null);
-  const [goalObjectiveInput, setGoalObjectiveInput] = useState('');
-
-  // Tab 3: MCP status
-  const [mcpData, setMcpData] = useState(null);
-  const [isRetryingMcp, setIsRetryingMcp] = useState(false);
-
-  // Tab 4: Git status
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFileContent, setSelectedFileContent] = useState('');
   const [gitData, setGitData] = useState(null);
+  const [goalObjectiveInput, setGoalObjectiveInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRetryingMcp, setIsRetryingMcp] = useState(false);
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
@@ -55,47 +47,67 @@ export default function SidePanel({
     if (isOpen) {
       loadAllData();
     }
-  }, [isOpen]);
+  }, [isOpen, activeTab]);
 
   const loadAllData = async () => {
-    loadWorld();
-    loadWorkflow();
-    loadMcp();
-    loadGit();
+    setIsLoading(true);
+    try {
+      if (activeTab === 'world') {
+        await loadWorld();
+      } else if (activeTab === 'plan_goal') {
+        await Promise.all([loadWorkflow(), loadWorkflowFiles()]);
+      } else if (activeTab === 'mcp') {
+        await loadMcp();
+      } else if (activeTab === 'git') {
+        await loadGit();
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const loadWorld = async () => {
-    setIsLoadingWorld(true);
     try {
       const data = await api.getWorldState();
       setWorldData(data);
     } catch (err) {
       console.error('Failed to load world state:', err);
-    } finally {
-      setIsLoadingWorld(false);
+    }
+  };
+
+  const handleRefreshWorld = async () => {
+    try {
+      await api.refreshWorld();
+      await loadWorld();
+    } catch (err) {
+      alert(`刷新环境探测失败: ${err.message}`);
     }
   };
 
   const loadWorkflow = async () => {
     try {
-      const [wf, filesRes] = await Promise.all([
-        api.getWorkflowState(),
-        api.getWorkflowFiles(),
-      ]);
-      setWorkflowState(wf);
-      setWorkflowFiles(filesRes.files || []);
-
-      // Auto load first plan file if available
-      if (filesRes.files && filesRes.files.length > 0 && !selectedFilePath) {
-        handleReadFile(filesRes.files[0].path);
-      }
+      const data = await api.getWorkflowState();
+      setWorkflowState(data);
     } catch (err) {
       console.error('Failed to load workflow state:', err);
     }
   };
 
-  const handleReadFile = async (path) => {
-    setSelectedFilePath(path);
+  const loadWorkflowFiles = async () => {
+    try {
+      const res = await api.getWorkflowFiles();
+      const files = res.files || [];
+      setWorkflowFiles(files);
+      if (files.length > 0 && !selectedFile) {
+        handleSelectFile(files[0].path);
+      }
+    } catch (err) {
+      console.error('Failed to load workflow files:', err);
+    }
+  };
+
+  const handleSelectFile = async (path) => {
+    setSelectedFile(path);
     try {
       const res = await api.getWorkflowFileContent(path);
       setSelectedFileContent(res.content);
@@ -139,11 +151,18 @@ export default function SidePanel({
     try {
       await api.startGoal(goalObjectiveInput.trim());
       setGoalObjectiveInput('');
-      loadWorkflow();
+      await loadWorkflow();
     } catch (err) {
       alert(`启动 Goal 失败: ${err.message}`);
     }
   };
+
+  const isGoalRunning = Boolean(
+    workflowState?.goal &&
+      (workflowState.goal.status === 'running' ||
+        workflowState.goal.status === 'in_progress' ||
+        workflowState.goal.status === 'active')
+  );
 
   if (!isOpen) return null;
 
@@ -182,68 +201,89 @@ export default function SidePanel({
               onClick={() => setActiveTab('git')}
             >
               <GitBranch size={14} />
-              <span>Git 与变更</span>
+              <span>文件与 Git</span>
             </button>
           </div>
 
           <button className="panel-close-btn" onClick={onClose}>
-            <X size={16} />
+            <X size={15} />
           </button>
         </div>
 
-        {/* Content Area */}
+        {/* Panel Content Body */}
         <div className="sidepanel-content custom-scrollbar">
           {/* TAB 1: WorldState */}
           {activeTab === 'world' && (
             <div className="tab-pane">
               <div className="pane-section-header">
-                <div className="section-title">
-                  <Shield size={14} className="text-sky" />
-                  <span>环境治理与沙箱策略 (World Governance)</span>
-                </div>
+                <span className="section-title">
+                  <Terminal size={14} className="text-sky" />
+                  环境探测与运行约束
+                </span>
                 <button
                   className="btn-action-small"
-                  onClick={async () => {
-                    await api.refreshWorld();
-                    loadWorld();
-                  }}
-                  disabled={isLoadingWorld}
+                  onClick={handleRefreshWorld}
+                  title="重新扫描工作区与工具链"
                 >
-                  <RefreshCw size={12} className={isLoadingWorld ? 'animate-spin' : ''} />
-                  <span>重新探测</span>
+                  <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} />
+                  <span>重新扫描</span>
                 </button>
               </div>
 
               {worldData ? (
                 <div className="world-details-grid">
                   <div className="detail-card">
-                    <span className="card-label">工作区目录 (Workspace Root)</span>
-                    <span className="card-val font-mono">{worldData.workspace || 'D:\\gh-ws\\codex-ws\\mini-agent-web'}</span>
+                    <span className="card-label">操作系统 (OS)</span>
+                    <span className="card-val font-mono">{worldData.status?.os || 'unknown'}</span>
                   </div>
 
                   <div className="detail-card">
-                    <span className="card-label">执行模式与沙箱 (Execution & Sandbox)</span>
-                    <span className="card-val font-mono">native / per_action approval</span>
+                    <span className="card-label">系统架构 (Arch)</span>
+                    <span className="card-val font-mono">{worldData.status?.arch || 'unknown'}</span>
+                  </div>
+
+                  <div className="detail-card">
+                    <span className="card-label">默认 Shell</span>
+                    <span className="card-val font-mono">{worldData.status?.shell || 'pwsh / bash'}</span>
+                  </div>
+
+                  <div className="detail-card">
+                    <span className="card-label">沙箱限制 (Sandbox)</span>
+                    <span className="card-val font-mono">{worldData.status?.sandbox || 'workspace'}</span>
                   </div>
 
                   <div className="detail-card full-width">
-                    <span className="card-label">可用系统工具链 (Available Commands)</span>
-                    <div className="tag-cloud font-mono">
-                      {['git', 'rg', 'fd', 'curl', 'cargo', 'rustc', 'python', 'uv', 'node', 'npm', 'docker'].map((cmd) => (
-                        <span key={cmd} className="cmd-tag available">
-                          <CheckCircle2 size={10} /> {cmd}
-                        </span>
-                      ))}
+                    <span className="card-label">当前工作区目录 (Workspace CWD)</span>
+                    <span className="card-val font-mono">{worldData.workspace || 'N/A'}</span>
+                  </div>
+
+                  <div className="detail-card full-width">
+                    <span className="card-label">可用工具链 (Installed Toolchains)</span>
+                    <div className="tag-cloud">
+                      {worldData.status?.commands_available &&
+                      worldData.status.commands_available.length > 0 ? (
+                        worldData.status.commands_available.map((cmd) => (
+                          <span key={cmd} className="cmd-tag available font-mono">
+                            ✓ {cmd}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-muted text-xs">未扫描到工具链</span>
+                      )}
                     </div>
                   </div>
 
-                  <div className="detail-card full-width">
-                    <span className="card-label">环境提示词上下文 (Injected Prompt Snippet)</span>
-                    <pre className="xml-preview font-mono">{worldData.context || '<world_state>...</world_state>'}</pre>
-                  </div>
+                  {worldData.context && (
+                    <div className="detail-card full-width">
+                      <span className="card-label">系统注入上下文 (Prompt Injection Context)</span>
+                      <div className="xml-preview font-mono custom-scrollbar">
+                        {worldData.context}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
-                <div className="loading-placeholder">正在加载环境状态...</div>
+                <div className="loading-placeholder font-mono">加载环境探测数据中...</div>
               )}
             </div>
           )}
@@ -258,7 +298,9 @@ export default function SidePanel({
                     <Compass size={15} className="text-amber" />
                     <div>
                       <span className="workflow-title">只读规划模式 (Plan Mode)</span>
-                      <p className="workflow-sub">启用后 Agent 进入深度只读探索模式，生成严密的设计与实施计划</p>
+                      <p className="workflow-sub">
+                        启用后 Agent 处于只读探索状态，在对话流中输出严密的架构与实施计划，禁止写文件
+                      </p>
                     </div>
                   </div>
                   <button
@@ -282,7 +324,7 @@ export default function SidePanel({
                   </div>
                 </div>
 
-                {workflowState?.goal ? (
+                {isGoalRunning ? (
                   <div className="goal-status-box">
                     <div className="goal-meta-row font-mono">
                       <span>Goal ID: <strong>{workflowState.goal.goal_id}</strong></span>
@@ -320,28 +362,28 @@ export default function SidePanel({
                 )}
               </div>
 
-              {/* Discovered Plan & Workflow Files */}
+              {/* Workflow & Plan Artifact Files */}
               <div className="workflow-files-section">
                 <div className="section-title-bar">
-                  <FileCode size={14} className="text-sky" />
-                  <span>工作区规划配套文件 (Workflow Artifacts)</span>
+                  <FileText size={13} />
+                  <span>工作区规划与配套文件 (Plan & Goal Artifacts)</span>
                 </div>
 
                 <div className="files-layout">
-                  <div className="files-list font-mono">
-                    {workflowFiles.map((file) => (
-                      <div
-                        key={file.path}
-                        className={`file-item ${selectedFilePath === file.path ? 'active' : ''}`}
-                        onClick={() => handleReadFile(file.path)}
-                      >
-                        <ChevronRight size={12} />
-                        <span className="file-name">{file.path}</span>
-                        <span className="file-size">{(file.size / 1024).toFixed(1)}k</span>
-                      </div>
-                    ))}
-                    {workflowFiles.length === 0 && (
-                      <div className="no-files">未探测到 plan.md / goal 配套文件</div>
+                  <div className="files-list custom-scrollbar">
+                    {workflowFiles.length > 0 ? (
+                      workflowFiles.map((file) => (
+                        <div
+                          key={file.path}
+                          className={`file-item ${selectedFile === file.path ? 'active' : ''}`}
+                          onClick={() => handleSelectFile(file.path)}
+                        >
+                          <span className="file-name font-mono">{file.path}</span>
+                          <span className="file-size font-mono">{file.size} B</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="no-files font-mono">未发现 plan.md 等规划文件</div>
                     )}
                   </div>
 
@@ -349,7 +391,7 @@ export default function SidePanel({
                     {selectedFileContent ? (
                       <pre>{selectedFileContent}</pre>
                     ) : (
-                      <div className="no-content">点击左侧文件查看实时 Markdown 内容</div>
+                      <div className="no-content">请选择左侧文件以查看内容</div>
                     )}
                   </div>
                 </div>
@@ -357,65 +399,73 @@ export default function SidePanel({
             </div>
           )}
 
-          {/* TAB 3: MCP Servers */}
+          {/* TAB 3: MCP Status */}
           {activeTab === 'mcp' && (
             <div className="tab-pane">
               <div className="pane-section-header">
-                <div className="section-title">
+                <span className="section-title">
                   <Layers size={14} className="text-purple" />
-                  <span>已连接的 MCP 服务器与工具</span>
-                </div>
+                  已注册 MCP 扩展服务
+                </span>
                 <button
                   className="btn-action-small"
                   onClick={handleRetryMcp}
                   disabled={isRetryingMcp}
+                  title="重新连接所有 MCP 服务"
                 >
-                  <RefreshCw size={12} className={isRetryingMcp ? 'animate-spin' : ''} />
-                  <span>重新连接</span>
+                  <RotateCcw size={12} className={isRetryingMcp ? 'animate-spin' : ''} />
+                  <span>{isRetryingMcp ? '重连中...' : '重试连接'}</span>
                 </button>
               </div>
 
               {mcpData ? (
-                <div className="mcp-grid">
+                <div className="world-details-grid">
                   <div className="detail-card">
-                    <span className="card-label">已启用 MCP 服务 (Enabled Servers)</span>
-                    <div className="mcp-tags font-mono">
-                      {(mcpData.enabled_servers || []).length > 0 ? (
-                        mcpData.enabled_servers.map((s) => (
-                          <span key={s} className="cmd-tag available">
-                            <CheckCircle2 size={10} /> {s}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-muted text-xs">暂无外部 MCP 注册</span>
-                      )}
-                    </div>
+                    <span className="card-label">已启用 MCP 服务</span>
+                    <span className="card-val font-mono">{mcpData.enabled_servers?.length || 0} 个</span>
                   </div>
 
                   <div className="detail-card">
-                    <span className="card-label">总可用工具数量 (Registered Tools)</span>
-                    <span className="card-val font-mono font-bold text-sky">
-                      {mcpData.tool_count || 12} 个工具已就绪
-                    </span>
+                    <span className="card-label">MCP 工具总数</span>
+                    <span className="card-val font-mono">{mcpData.tool_count || 0} 个工具</span>
+                  </div>
+
+                  <div className="detail-card full-width">
+                    <span className="card-label">活动服务列表</span>
+                    <div className="tag-cloud">
+                      {mcpData.enabled_servers && mcpData.enabled_servers.length > 0 ? (
+                        mcpData.enabled_servers.map((s) => (
+                          <span key={s} className="cmd-tag available font-mono">
+                            ✓ {s}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-muted text-xs">无活动的 MCP 服务</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               ) : (
-                <div className="loading-placeholder">正在加载 MCP 状态...</div>
+                <div className="loading-placeholder font-mono">加载 MCP 数据中...</div>
               )}
             </div>
           )}
 
-          {/* TAB 4: Git & Files */}
+          {/* TAB 4: Git & Changes */}
           {activeTab === 'git' && (
             <div className="tab-pane">
               <div className="pane-section-header">
-                <div className="section-title">
-                  <GitBranch size={14} className="text-emerald" />
-                  <span>Git 工作区状态 (Git Status)</span>
-                </div>
-                <button className="btn-action-small" onClick={loadGit}>
-                  <RefreshCw size={12} />
-                  <span>刷新</span>
+                <span className="section-title">
+                  <GitBranch size={14} className="text-green" />
+                  Git 工作区版本与变更
+                </span>
+                <button
+                  className="btn-action-small"
+                  onClick={loadGit}
+                  title="刷新 Git 变更状态"
+                >
+                  <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} />
+                  <span>刷新状态</span>
                 </button>
               </div>
 
@@ -423,41 +473,45 @@ export default function SidePanel({
                 <div className="git-details-box">
                   <div className="git-branch-banner font-mono">
                     <span>当前分支: <strong>{gitData.branch}</strong></span>
-                    <span className={`badge ${gitData.dirty ? 'running' : 'completed'}`}>
-                      {gitData.dirty ? `${gitData.total_changes} 处变更` : '工作区整洁'}
+                    <span className={`status-pill ${gitData.dirty ? 'dirty' : 'clean'}`}>
+                      {gitData.dirty ? `未提交 (${gitData.total_changes})` : '工作区整洁'}
                     </span>
                   </div>
 
-                  {gitData.modified && gitData.modified.length > 0 && (
-                    <div className="git-file-list-card">
-                      <span className="list-title">已修改/未提交文件</span>
-                      <div className="git-files-list font-mono">
-                        {gitData.modified.map((f) => (
-                          <div key={f} className="git-file-line modified">
+                  <div className="git-file-list-card">
+                    <span className="list-title">已修改文件 (Modified)</span>
+                    <div className="git-files-list font-mono custom-scrollbar">
+                      {gitData.modified && gitData.modified.length > 0 ? (
+                        gitData.modified.map((f, i) => (
+                          <div key={i} className="git-file-line">
                             <span className="git-dot mod">M</span>
-                            <span>{f}</span>
+                            <span className="git-path">{f}</span>
                           </div>
-                        ))}
-                      </div>
+                        ))
+                      ) : (
+                        <span className="text-muted text-xs">无已修改文件</span>
+                      )}
                     </div>
-                  )}
+                  </div>
 
-                  {gitData.untracked && gitData.untracked.length > 0 && (
-                    <div className="git-file-list-card">
-                      <span className="list-title">未跟踪文件 (Untracked)</span>
-                      <div className="git-files-list font-mono">
-                        {gitData.untracked.map((f) => (
-                          <div key={f} className="git-file-line untracked">
+                  <div className="git-file-list-card">
+                    <span className="list-title">未跟踪文件 (Untracked)</span>
+                    <div className="git-files-list font-mono custom-scrollbar">
+                      {gitData.untracked && gitData.untracked.length > 0 ? (
+                        gitData.untracked.map((f, i) => (
+                          <div key={i} className="git-file-line">
                             <span className="git-dot untr">?</span>
-                            <span>{f}</span>
+                            <span className="git-path">{f}</span>
                           </div>
-                        ))}
-                      </div>
+                        ))
+                      ) : (
+                        <span className="text-muted text-xs">无未跟踪文件</span>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
               ) : (
-                <div className="loading-placeholder">正在探测 Git 状态...</div>
+                <div className="loading-placeholder font-mono">加载 Git 数据中...</div>
               )}
             </div>
           )}

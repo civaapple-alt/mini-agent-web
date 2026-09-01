@@ -16,13 +16,27 @@ from rich.prompt import Prompt
 console = Console()
 
 
-async def terminal_approval_handler(req: dict[str, Any]) -> dict[str, Any]:
+async def terminal_approval_handler(
+    req: dict[str, Any] | str, action: str | None = None
+) -> dict[str, Any]:
     """Terminal approval prompt when sensitive actions occur."""
+    if isinstance(req, dict):
+        action_desc = req.get("action") or str(req)
+        request_id = req.get("requestId") or req.get("request_id") or ""
+    else:
+        action_desc = action or req
+        request_id = req
+
+    title = (
+        f"[bold red]Action Intercepted ({request_id})[/bold red]"
+        if request_id
+        else "[bold red]Action Intercepted[/bold red]"
+    )
     console.print("\n[bold yellow]⚠️  SECURITY APPROVAL REQUIRED[/bold yellow]")
     console.print(
         Panel(
-            str(req),
-            title="[bold red]Action Intercepted[/bold red]",
+            str(action_desc),
+            title=title,
             border_style="yellow",
         )
     )
@@ -91,12 +105,15 @@ async def run_tui() -> None:
                             output_buffer += delta
                             console.print(delta, end="")
                         elif evt_type == "tool_started":
+                            call = evt.get("call", {})
+                            tool_name = evt.get("name") or call.get("name") or "tool"
                             console.print(
-                                f"\n[dim cyan]⚡ Tool started: {evt.get('name')}[/dim cyan]"
+                                f"\n[dim cyan]⚡ Tool started: {tool_name}[/dim cyan]"
                             )
                         elif evt_type == "tool_finished":
+                            tool_name = evt.get("name") or "tool"
                             console.print(
-                                f"[dim green]✓ Tool finished: {evt.get('name')}[/dim green]"
+                                f"[dim green]✓ Tool finished: {tool_name}[/dim green]"
                             )
 
                 console.print("\n")

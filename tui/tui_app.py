@@ -125,7 +125,7 @@ async def run_tui(state: TUIState) -> None:
                         if consecutive_interrupts >= 2:
                             console.print("\n[dim]Exiting Mini Agent TUI... Goodbye![/dim]")
                             break
-                        console.print("\n[dim yellow](Press Ctrl+C again or type 'exit' to quit)[/dim yellow]")
+                        console.print("\n[dim yellow](Press Ctrl+C again or type '/exit' to quit)[/dim yellow]")
                         continue
                     except EOFError:
                         console.print("\n[dim]Session terminated.[/dim]")
@@ -161,7 +161,7 @@ async def run_tui(state: TUIState) -> None:
                         if consecutive_interrupts >= 2:
                             console.print("\n[dim]Exiting Mini Agent TUI... Goodbye![/dim]")
                             break
-                        console.print("\n[dim yellow](Press Ctrl+C again or type 'exit' to quit)[/dim yellow]")
+                        console.print("\n[dim yellow](Press Ctrl+C again or type '/exit' to quit)[/dim yellow]")
                         continue
                     except EOFError:
                         console.print("\n[dim]Session terminated.[/dim]")
@@ -195,7 +195,7 @@ async def run_tui(state: TUIState) -> None:
             try:
                 await render_turn_stream(client, user_input, state)
             except (KeyboardInterrupt, asyncio.CancelledError):
-                pass
+                await asyncio.sleep(0.05)
             except Exception as err:  # noqa: BLE001
                 console.print(f"\n[bold red]Error during turn: {err}[/bold red]\n")
 

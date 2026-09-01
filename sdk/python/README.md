@@ -42,8 +42,8 @@ if __name__ == "__main__":
 ## Key Features
 
 * **Async Context Manager**: Simple `async with MiniAgentClient()` manages subprocess lifecycle cleanly.
-* **Stream Generator**: `stream_turn()` yields target-Thread/Turn events, real-time reasoning deltas, text tokens, tool start/finish, context compaction, and run lifecycle events.
-* **Security & Approval Interceptor**: Native support for `approval/request` and `approval/respond` protocol.
+* **Stream Generator**: `stream_turn()` yields target-Thread/Turn events, real-time reasoning deltas, text tokens, tool start/finish, context compaction, run lifecycle events, and `approval` records (`requested`/`resolved`).
+* **Security & Approval Interceptor**: Native support for `approval/request`, `approval/respond`, and server `approval/resolved`; approval records are visible even when `approval_handler` is omitted and the SDK uses its default auto-approval policy.
 * **Steering & Interrupt**: Mid-turn instruction injection (`turn/steer`) and cooperative cancellation (`turn/interrupt`).
 * **Zero Required Dependencies**: Runs entirely on Python 3.10+ Standard Library (`asyncio`, `json`, `subprocess`).
 

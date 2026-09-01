@@ -11,7 +11,7 @@
 ```text
 cookbook/python-demo/
 ├── 01_basic_turn.py               # 基础对话与 Turn 执行示例
-├── 02_streaming_events.py         # 深度流式事件监听 (Token/Step/Tool/Usage)
+├── 02_streaming_events.py         # 深度流式事件监听 (Token/Step/Approval/Tool/Usage)
 ├── 03_approval_handling.py        # 敏感工具权限审批拦截与交互处理
 ├── 04_steering_and_interrupt.py   # 运行时协同中断与中途转向 (Steer)
 ├── 05_workflows_and_inspection.py # 环境快照、Plan Mode 与线程检查点读取
@@ -67,7 +67,7 @@ uv run python cookbook/python-demo/01_basic_turn.py
 ```
 
 ### Demo 02: 深度流式事件监听
-演示如何精细化捕获 Step 步长、推理 Token、工具调用参数、工具输出 UTF-8 截断状态及 Token 使用量。
+演示如何精细化捕获 Step 步长、推理 Token、审批 requested/resolved 记录、工具调用参数、工具输出 UTF-8 截断状态及 Token 使用量。
 ```bash
 uv run python cookbook/python-demo/02_streaming_events.py
 ```

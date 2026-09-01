@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Approval lifecycle visibility**: App Server now emits the approval
+  `requested` and `resolved` notifications, and Python SDK `stream_turn()`
+  surfaces both records, including when `approval_handler` is omitted.
+
 ### Documentation
 
 - Added `AGENTS.md` and synchronized the README, SDK guide, Cookbook guide,

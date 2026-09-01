@@ -104,7 +104,7 @@ async def main():
         await client.initialize(profile="interactive")
         await client.start_thread()
 
-        # 实时推流 token 与工具调用事件
+        # 实时推流 token、审批 requested/resolved 与工具调用事件
         async for event in client.stream_turn(
             "请列出当前目录下的所有文件并给出简短总结"
         ):

@@ -184,8 +184,9 @@ class MiniAgentClient:
         :param executable: Path or command name for mini-agent-app-server binary.
         :param cwd: Working directory for the server process (defaults to current directory).
         :param env: Additional environment variables.
-        :param approval_handler: Async callback `async def handler(request_id: str, action: str) -> bool`
-                                 for handling sensitive tool approvals. Defaults to auto-approve.
+        :param approval_handler: Optional async callback for handling sensitive tool approvals.
+                                 When omitted, the SDK answers with the default auto-approval
+                                 policy while still exposing approval records in stream_turn().
         :param log_dir: Target directory for execution logs (e.g. 'logs').
         :param log_file: Specific log file path (e.g. 'logs/01_basic_turn.log').
         :param log_level: Logging level ('DEBUG', 'INFO', logging.DEBUG, etc.).
@@ -197,7 +198,7 @@ class MiniAgentClient:
         file_env = _find_and_load_env(self.cwd)
         # Priority: explicit env arg > process os.environ > .env file
         self.env = {**file_env, **os.environ, **(env or {})}
-        self.approval_handler = approval_handler or self._default_auto_approve
+        self.approval_handler = approval_handler
 
         # Configure file logging if log_dir, log_file or env specified
         eff_dir = log_dir or self.env.get("MINI_AGENT_LOG_DIR")
@@ -390,7 +391,11 @@ class MiniAgentClient:
                         await q.put(params)
 
                 elif method == "approval/request":
+                    await self._publish_approval(params, "requested")
                     asyncio.create_task(self._handle_approval_request(params))
+
+                elif method == "approval/resolved":
+                    await self._publish_approval(params, "resolved")
 
                 else:
                     logger.debug("Received server notification: %s", method)
@@ -406,6 +411,18 @@ class MiniAgentClient:
             if line:
                 logger.warning("[Server STDERR]: %s", line)
 
+    async def _publish_approval(self, params: dict[str, Any], phase: str) -> None:
+        approval = {**params, "phase": phase}
+        logger.info(
+            "[Approval] %s action: %s (id=%s, approved=%s)",
+            phase,
+            approval.get("action", ""),
+            approval.get("requestId", ""),
+            approval.get("approved", "pending"),
+        )
+        for q in self._event_queues:
+            await q.put({"type": "approval", "approval": approval})
+
     async def _handle_approval_request(self, params: dict[str, Any]) -> None:
         """Handle server approval/request notification."""
         request_id = str(
@@ -416,7 +433,7 @@ class MiniAgentClient:
         )
         action = str(params.get("action") or params.get("tool") or "")
         try:
-            if callable(self.approval_handler):
+            if self.approval_handler is not None:
                 import inspect
 
                 sig = inspect.signature(self.approval_handler)
@@ -452,11 +469,6 @@ class MiniAgentClient:
             )
         except Exception as err:  # noqa: BLE001
             logger.error("Failed to send approval response: %s", err)
-
-    @staticmethod
-    async def _default_auto_approve(request_id: str, action: str) -> bool:
-        logger.info("[Approval] Auto-approved action: %s (id=%s)", action, request_id)
-        return True
 
     # -------------------------------------------------------------------------
     # High-level Protocol Methods
@@ -679,6 +691,15 @@ class MiniAgentClient:
 
             while True:
                 envelope = await queue.get()
+                if envelope.get("type") == "approval":
+                    approval = envelope.get("approval", {})
+                    approval_thread = approval.get("threadId") or approval.get(
+                        "thread_id"
+                    )
+                    if approval_thread and approval_thread != target_thread:
+                        continue
+                    yield envelope
+                    continue
                 if envelope.get("threadId") != target_thread:
                     continue
                 turn_id = envelope.get("turnId")

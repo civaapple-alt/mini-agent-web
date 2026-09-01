@@ -23,6 +23,17 @@ async def main():
         current_stream_mode: str | None = None
 
         async for item in client.stream_turn(prompt):
+            if item["type"] == "approval":
+                approval = item.get("approval", {})
+                phase = approval.get("phase", "unknown")
+                approved = approval.get("approved", "pending")
+                print(
+                    f"[Approval {phase}] {approval.get('action', '')} "
+                    f"(id={approval.get('requestId', '')}, approved={approved})",
+                    flush=True,
+                )
+                continue
+
             if item["type"] != "event":
                 continue
 

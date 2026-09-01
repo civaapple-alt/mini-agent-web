@@ -97,6 +97,17 @@ async def test_stream_turn_filters_events_by_thread_and_turn():
     queue = client._event_queues[0]
     await queue.put(
         {
+            "type": "approval",
+            "approval": {
+                "phase": "requested",
+                "requestId": "approval-1",
+                "threadId": "thread-1",
+                "action": "shell command pwd",
+            },
+        }
+    )
+    await queue.put(
+        {
             "threadId": "other-thread",
             "turnId": "other-turn",
             "sequence": 1,
@@ -120,11 +131,13 @@ async def test_stream_turn_filters_events_by_thread_and_turn():
         }
     )
 
+    approval_event = await anext(stream)
     text_event = await anext(stream)
     finished_event = await anext(stream)
     with pytest.raises(StopAsyncIteration):
         await anext(stream)
 
+    assert approval_event["approval"]["phase"] == "requested"
     assert text_event["event"] == {"type": "assistant_text_delta", "delta": "right"}
     assert finished_event["event"] == {
         "type": "turn_finished",

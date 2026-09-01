@@ -38,6 +38,7 @@ async def run_tui(state: TUIState) -> None:
         try:
             from pathlib import Path
 
+            from prompt_toolkit.filters import has_completions
             from prompt_toolkit.history import FileHistory
             from prompt_toolkit.key_binding import KeyBindings
 
@@ -51,6 +52,14 @@ async def run_tui(state: TUIState) -> None:
                     buf.reset()
                 else:
                     event.app.exit(exception=KeyboardInterrupt())
+
+            @kb.add("enter", filter=~has_completions)
+            def _handle_enter(event: Any) -> None:
+                """Ignore Enter if buffer is empty or pure whitespace; stay on the same prompt line."""
+                buf = event.current_buffer
+                if not buf.text.strip():
+                    return
+                buf.validate_and_handle()
 
             hist_file = Path.home() / ".mini-agent" / "tui_history"
             hist_file.parent.mkdir(parents=True, exist_ok=True)
@@ -132,26 +141,40 @@ async def run_tui(state: TUIState) -> None:
                         break
                     except Exception:  # noqa: BLE001
                         def _read_std_input() -> str:
-                            console.print(
-                                f"[bold cyan]You ({state.current_thread_id}) > [/bold cyan]",
-                                end="" if sys.stdin.isatty() else "\n",
-                            )
-                            line = sys.stdin.readline()
-                            if not line:
-                                raise EOFError
-                            return line
+                            while True:
+                                if sys.stdin.isatty():
+                                    console.print(
+                                        f"[bold cyan]You ({state.current_thread_id}) > [/bold cyan]",
+                                        end="",
+                                    )
+                                line = sys.stdin.readline()
+                                if not line:
+                                    raise EOFError
+                                if line.strip():
+                                    if not sys.stdin.isatty():
+                                        console.print(
+                                            f"[bold cyan]You ({state.current_thread_id}) > [/bold cyan]{line.strip()}"
+                                        )
+                                    return line
 
                         user_input = await asyncio.to_thread(_read_std_input)
                 else:
                     def _read_std_input() -> str:
-                        console.print(
-                            f"[bold cyan]You ({state.current_thread_id}) > [/bold cyan]",
-                            end="" if sys.stdin.isatty() else "\n",
-                        )
-                        line = sys.stdin.readline()
-                        if not line:
-                            raise EOFError
-                        return line
+                        while True:
+                            if sys.stdin.isatty():
+                                console.print(
+                                    f"[bold cyan]You ({state.current_thread_id}) > [/bold cyan]",
+                                    end="",
+                                )
+                            line = sys.stdin.readline()
+                            if not line:
+                                raise EOFError
+                            if line.strip():
+                                if not sys.stdin.isatty():
+                                    console.print(
+                                        f"[bold cyan]You ({state.current_thread_id}) > [/bold cyan]{line.strip()}"
+                                    )
+                                return line
 
                     try:
                         user_input = await asyncio.to_thread(_read_std_input)

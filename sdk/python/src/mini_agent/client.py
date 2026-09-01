@@ -582,18 +582,19 @@ class MiniAgentClient:
         prompt: str,
         mode: str = "start",
         thread_id: str | None = None,
+        effort: str | None = None,
     ) -> TurnSubmissionResult:
-        """Submit a turn prompt to the App Server."""
-        res = await self._send_request(
-            "turn/start",
-            {
-                "threadId": thread_id or self._active_thread_id,
-                "input": {
-                    "mode": mode,
-                    "text": prompt,
-                },
+        """Submit a turn prompt to the App Server with optional reasoning effort ('low', 'medium', 'high')."""
+        payload: dict[str, Any] = {
+            "threadId": thread_id or self._active_thread_id,
+            "input": {
+                "mode": mode,
+                "text": prompt,
             },
-        )
+        }
+        if effort is not None:
+            payload["effort"] = effort
+        res = await self._send_request("turn/start", payload)
         return TurnSubmissionResult.from_dict(res)
 
     async def steer_turn(
@@ -648,9 +649,9 @@ class MiniAgentClient:
             except AppServerError as err:
                 # Code -32000 means thread is busy / turn is active
                 if err.code == -32000 or "active turn" in str(err).lower():
-                    if asyncio.get_running_loop().time() >= deadline:
+                    if asyncio.get_running_loop().time() > deadline:
                         raise TurnTimeoutError(
-                            f"Turn {turn_id} did not settle within {timeout}s"
+                            f"Turn {turn_id} did not complete within {timeout}s"
                         ) from err
                     await asyncio.sleep(poll_interval)
                 else:
@@ -663,19 +664,30 @@ class MiniAgentClient:
         prompt: str,
         mode: str = "start",
         thread_id: str | None = None,
+        effort: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """
         Convenience generator that starts a turn and yields event payloads in real-time
         until the turn finishes.
+
+        :param prompt: User instruction or task prompt.
+        :param mode: Turn mode ('start' or 'continue').
+        :param thread_id: Conversation thread identifier.
+        :param effort: Optional reasoning effort ('low', 'medium', 'high').
         """
         target_thread = thread_id or self._active_thread_id
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self._event_queues.append(queue)
 
         try:
-            start_resp = await self.start_turn(
-                prompt, mode=mode, thread_id=target_thread
-            )
+            if effort is not None:
+                start_resp = await self.start_turn(
+                    prompt, mode=mode, thread_id=target_thread, effort=effort
+                )
+            else:
+                start_resp = await self.start_turn(
+                    prompt, mode=mode, thread_id=target_thread
+                )
             yield {
                 "type": "_turn_submission",
                 "data": {

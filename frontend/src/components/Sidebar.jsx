@@ -587,7 +587,7 @@ export default function Sidebar({
             {/* Modal Header */}
             <div className="modal-edit-header">
               <span className="modal-edit-title">
-                {editingProject.is_new ? '新建工作区项目' : '编辑项目'}
+                {editingProject.is_new ? '创建项目' : '编辑项目'}
               </span>
               <button
                 className="modal-edit-close"
@@ -598,13 +598,13 @@ export default function Sidebar({
             </div>
 
             <form onSubmit={handleSaveProjectEdits} className="modal-edit-body">
-              {/* Project Name Input (Image 2) */}
+              {/* Project Name Input (Image 2 & 3) */}
               <div className="project-name-input-wrap">
                 <Folder size={16} className="input-folder-icon" />
                 <input
                   type="text"
                   className="project-name-input"
-                  placeholder="项目名称 (例如: my-ai-service)"
+                  placeholder="项目名称"
                   value={editProjectName}
                   onChange={(e) => setEditProjectName(e.target.value)}
                   autoFocus
@@ -612,16 +612,24 @@ export default function Sidebar({
                 />
               </div>
 
-              {/* 源文件夹 (Source Folders List) (Image 2) */}
+              {/* 源文件夹 (Source Folders List) (Image 2 & 3) */}
               <div className="source-folders-section">
                 <span className="source-folders-title">源文件夹</span>
 
                 <div className="source-folders-card-list">
-                  {editSourceFolders.length === 0 && (
-                    <div className="empty-source-folders-hint">
-                      <span>默认将以项目名称创建主工作目录，或点击下方添加自定义文件夹</span>
+                  {/* Empty state box matching Image 3 (media_1788234880786.png) */}
+                  {editSourceFolders.length === 0 && !showAddFolderInput ? (
+                    <div
+                      className="create-project-empty-folder-box"
+                      onClick={() => setShowAddFolderInput(true)}
+                      title="点击添加文件夹"
+                    >
+                      <FolderPlus size={22} className="empty-folder-icon" />
+                      <span className="empty-folder-text">
+                        添加 Codex 可读取和编辑的文件夹
+                      </span>
                     </div>
-                  )}
+                  ) : null}
 
                   {editSourceFolders.map((folder, idx) => (
                     <div key={idx} className="source-folder-row">

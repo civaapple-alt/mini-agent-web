@@ -109,10 +109,8 @@ class SlashCommandCompleter(Completer):
         elif cmd == "/profile":
             profiles = [
                 ("interactive", "日常人机结对协作与单步工具把控 (默认/推荐)"),
-                ("auto", "目标驱动多里程碑无人值守收敛 (autonomous)"),
-                ("ask", "严格只读问答与架构探索 (strict/read-only)"),
-                ("autonomous", "目标驱动无人值守别名"),
-                ("strict", "严格只读问答别名"),
+                ("auto", "目标驱动多里程碑无人值守收敛"),
+                ("ask", "严格只读问答与架构探索 (支持 /plan)"),
             ]
             for pr_name, pr_desc in profiles:
                 if pr_name.startswith(sub_prefix):

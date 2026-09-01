@@ -22,18 +22,6 @@ if sys.platform == "win32":
 console = Console(force_terminal=True, legacy_windows=False)
 
 
-def canonical_profile(name: str | None) -> str:
-    """Normalize user-friendly or alias profile names into wire-compatible protocol names (interactive | auto | ask)."""
-    if not name:
-        return "interactive"
-    n = name.strip().lower()
-    if n in ("auto", "autonomous"):
-        return "auto"
-    if n in ("ask", "strict", "readonly", "read_only"):
-        return "ask"
-    return "interactive"
-
-
 @dataclass
 class TUIState:
     """Runtime mutable state for the active TUI session."""

@@ -19,7 +19,7 @@ from rich.panel import Panel
 from tui.approvals import _ask_approval_sync
 from tui.commands import handle_slash_command
 from tui.completer import SlashCommandCompleter
-from tui.state import TUIState, canonical_profile, console
+from tui.state import TUIState, console
 from tui.stream_renderer import render_turn_stream
 
 
@@ -165,9 +165,9 @@ def main() -> None:
     parser.add_argument(
         "-p",
         "--profile",
-        choices=["interactive", "auto", "autonomous", "ask", "strict"],
+        choices=["interactive", "auto", "ask"],
         default="interactive",
-        help="Startup system profile: interactive (default), auto (autonomous), ask (strict)",
+        help="Startup system profile: interactive (default), auto, ask",
     )
     parser.add_argument(
         "-a",
@@ -195,7 +195,7 @@ def main() -> None:
 
     args = parser.parse_args()
     state = TUIState(
-        profile=canonical_profile(args.profile),
+        profile=args.profile,
         approval_policy=args.approval_policy,
         effort=args.effort,
         current_thread_id=args.thread_id,

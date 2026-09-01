@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/settings", tags=["Settings"])
 
 class UpdateSettingsRequest(BaseModel):
     profile: str | None = Field(
-        default=None, description="Client profile (interactive, autonomous, strict)"
+        default=None, description="Client profile (interactive, auto, ask)"
     )
     approval_policy: str | None = Field(
         default=None, description="Approval policy: per_action, auto_approve, strict"

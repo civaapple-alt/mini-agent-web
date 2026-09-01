@@ -54,13 +54,13 @@ uv run python -m tui.tui_app
 ### 3. 自定义启动参数 (CLI Flags)
 ```bash
 # 指定初始 Profile、审批策略与思考强度
-uv run mini-agent-tui --profile autonomous --policy auto_approve --effort high --thread my-branch
+uv run mini-agent-tui --profile auto --policy auto_approve --effort high --thread my-branch
 ```
 
 #### 参数一览：
 | 参数 | 缩写 | 可选值 | 默认值 | 描述 |
 | :--- | :---: | :--- | :--- | :--- |
-| `--profile` | `-p` | `interactive`, `autonomous`, `strict` | `interactive` | 启动系统 Profile |
+| `--profile` | `-p` | `interactive`, `auto`, `ask` | `interactive` | 启动系统 Profile |
 | `--policy` / `--approval-policy` | `-a` | `per_action`, `auto_approve`, `strict` | `per_action` | 工具安全审批策略 |
 | `--effort` | `-e` | `low`, `medium`, `high` | `medium` | 模型思考链强度 |
 | `--thread` | `-t` | `<字符串>` | `tui-session` | 初始会话线程 ID |

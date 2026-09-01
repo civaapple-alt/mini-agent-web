@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from rich.table import Table
 
-from tui.state import canonical_profile, console
+from tui.state import console
 
 if TYPE_CHECKING:
     from mini_agent import MiniAgentClient
@@ -63,7 +63,7 @@ def print_help_table(state: TUIState) -> None:
     table.add_row(
         "",
         "/profile [mode]",
-        f"查看或切换系统 Profile: interactive, autonomous, strict (当前: [bold cyan]{state.profile}[/bold cyan])",
+        f"查看或切换系统 Profile: interactive, auto, ask (当前: [bold cyan]{state.profile}[/bold cyan])",
     )
 
     # 4. 会话与多分支管理
@@ -309,10 +309,10 @@ async def handle_slash_command(
     if lower_text.startswith("/profile"):
         parts = text.split(maxsplit=1)
         if len(parts) > 1:
-            raw_profile = parts[1].strip().lower()
-            if raw_profile in ("interactive", "auto", "autonomous", "ask", "strict"):
-                state.profile = canonical_profile(raw_profile)
-                if state.profile == "ask":
+            target_profile = parts[1].strip().lower()
+            if target_profile in ("interactive", "auto", "ask"):
+                state.profile = target_profile
+                if target_profile == "ask":
                     await client.set_plan_mode(True)
                 else:
                     await client.set_plan_mode(False)
@@ -321,7 +321,7 @@ async def handle_slash_command(
                 )
             else:
                 console.print(
-                    "[yellow]Invalid profile. Choose from: interactive, auto (autonomous), ask (strict)[/yellow]"
+                    "[yellow]Invalid profile. Choose from: interactive, auto, ask[/yellow]"
                 )
         else:
             table = Table(
@@ -339,12 +339,12 @@ async def handle_slash_command(
             table.add_row(
                 "auto",
                 "✓ Active" if state.profile == "auto" else "",
-                "目标驱动多里程碑无人值守收敛 (别名: autonomous)",
+                "目标驱动多里程碑无人值守收敛",
             )
             table.add_row(
                 "ask",
                 "✓ Active" if state.profile == "ask" else "",
-                "严格只读审计与架构探索 (别名: strict / 支持 /plan)",
+                "严格只读问答与架构探索 (支持 /plan)",
             )
             console.print(table)
             console.print(

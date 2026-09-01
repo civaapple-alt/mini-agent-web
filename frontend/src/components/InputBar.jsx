@@ -252,19 +252,6 @@ export default function InputBar({
         </div>
       )}
 
-      {/* Steer instruction banner */}
-      {isGenerating && !pendingApproval && (
-        <div className="steer-hint-banner">
-          <div className="steer-hint-text">
-            <Navigation size={13} className="steer-icon pulse" />
-            <span>Agent 正在执行... 您可以在下方直接输入指令进行实时纠偏 (Steer)</span>
-          </div>
-          <button className="btn-interrupt-small" onClick={onInterrupt}>
-            中断当前轮次
-          </button>
-        </div>
-      )}
-
       {/* Slash command popup */}
       {showSlashPopup && (
         <div className="slash-popup-menu custom-scrollbar">

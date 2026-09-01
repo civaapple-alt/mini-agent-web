@@ -215,50 +215,6 @@ body.theme-dark .btn-dock-deny {
   background-color: rgba(225, 29, 72, 0.08);
 }
 
-/* Steer Hint Banner */
-.steer-hint-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px;
-  margin-bottom: 8px;
-  background-color: rgba(2, 132, 199, 0.06);
-  border: 1px solid rgba(2, 132, 199, 0.2);
-  border-radius: 6px;
-  font-size: 11px;
-}
-
-.steer-hint-text {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--accent-sky);
-}
-
-.steer-icon.pulse {
-  animation: pulse-steer 1.5s infinite;
-}
-
-@keyframes pulse-steer {
-  0%, 100% { opacity: 0.6; transform: scale(0.9); }
-  50% { opacity: 1; transform: scale(1.1); }
-}
-
-.btn-interrupt-small {
-  background: transparent;
-  border: 1px solid rgba(225, 29, 72, 0.4);
-  color: #e11d48;
-  font-size: 10px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.btn-interrupt-small:hover {
-  background-color: rgba(225, 29, 72, 0.1);
-}
-
 /* Slash Command Popup */
 .slash-popup-menu {
   position: absolute;

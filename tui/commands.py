@@ -43,6 +43,11 @@ def print_help_table(state: TUIState) -> None:
         "/effort [low|med|high]",
         f"查看或切换思考链强度 (当前: [bold cyan]{state.effort}[/bold cyan])",
     )
+    table.add_row(
+        "",
+        "/steer <纠偏指令>",
+        "向当前轮次注入实时纠偏或发送引导指令",
+    )
 
     # 3. 安全与审批策略
     table.add_row(
@@ -113,6 +118,45 @@ async def handle_slash_command(
         else:
             console.print(
                 f"[sky_blue1]Current Reasoning Effort: [bold]{state.effort}[/bold] (Options: low, medium, high)[/sky_blue1]"
+            )
+        return True
+
+    if lower_text.startswith("/steer"):
+        parts = text.split(maxsplit=1)
+        if len(parts) > 1:
+            instruction = parts[1].strip()
+            if state.active_turn_id:
+                try:
+                    res = await client.steer_turn(
+                        state.active_turn_id,
+                        instruction,
+                        thread_id=state.current_thread_id,
+                    )
+                    action_id = (
+                        res.get("actionId", "ok")
+                        if isinstance(res, dict)
+                        else "ok"
+                    )
+                    console.print(
+                        f"[green]✓ Steer instruction injected into active turn {state.active_turn_id} (Action: {action_id}):[/green]\n"
+                        f"[dim cyan]{instruction}[/dim cyan]"
+                    )
+                except Exception as err:  # noqa: BLE001
+                    console.print(f"[red]Failed to steer active turn: {err}[/red]")
+            else:
+                console.print(
+                    f"[cyan]⚡ Injected steering instruction as follow-up guidance:[/cyan] [bold]{instruction}[/bold]"
+                )
+                from tui.stream_renderer import render_turn_stream
+
+                steer_prompt = f"[Steering Directive]: {instruction}"
+                await render_turn_stream(
+                    client, steer_prompt, state, mode="follow_up"
+                )
+        else:
+            console.print(
+                f"[sky_blue1]Usage: [bold]/steer <corrective guidance>[/bold]\n"
+                f"Active Turn: [bold]{state.active_turn_id or 'None (idle)'}[/bold][/sky_blue1]"
             )
         return True
 

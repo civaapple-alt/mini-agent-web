@@ -31,3 +31,17 @@ class TUIState:
     effort: str = "medium"  # low | medium | high
     remembered_approvals: set[str] = field(default_factory=set)
     current_thread_id: str = "tui-session"
+    turn_counts: dict[str, int] = field(default_factory=dict)
+    active_turn_id: str | None = None
+
+    def get_turn_mode(self, thread_id: str | None = None) -> str:
+        """Return 'start' for the first turn in a thread, 'follow_up' for subsequent turns."""
+        tid = thread_id or self.current_thread_id
+        count = self.turn_counts.get(tid, 0)
+        return "start" if count == 0 else "follow_up"
+
+    def record_turn(self, thread_id: str | None = None) -> None:
+        """Increment turn count for the specified thread."""
+        tid = thread_id or self.current_thread_id
+        self.turn_counts[tid] = self.turn_counts.get(tid, 0) + 1
+

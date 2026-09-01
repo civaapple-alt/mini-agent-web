@@ -35,6 +35,7 @@ class SlashCommandCompleter(Completer):
             commands = [
                 ("/plan", "开启/切换只读 Plan Mode (架构与规划探索)"),
                 ("/goal", "启动/查看目标驱动多里程碑收敛任务"),
+                ("/steer", "向当前轮次注入实时纠偏指令 (Steering Guidance)"),
                 ("/policy", "查看/切换安全审批策略 (per_action|auto_approve|strict)"),
                 ("/approve", "切换安全审批策略别名"),
                 ("/effort", "查看/切换思考链强度 (low|medium|high)"),

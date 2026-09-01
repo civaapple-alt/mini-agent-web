@@ -16,22 +16,34 @@ if TYPE_CHECKING:
 
 
 async def render_turn_stream(
-    client: MiniAgentClient, user_input: str, state: TUIState
+    client: MiniAgentClient,
+    user_input: str,
+    state: TUIState,
+    mode: str | None = None,
 ) -> None:
     """Execute a turn with client.stream_turn() and render formatted output."""
     console.print("\n[bold green]Mini Agent[/bold green]:")
 
     current_mode = None  # None | "thinking" | "text"
+    eff_mode = mode or state.get_turn_mode()
 
     try:
         async for item in client.stream_turn(
             user_input,
+            mode=eff_mode,
             thread_id=state.current_thread_id,
             effort=state.effort,
         ):
-            if item.get("type") == "event":
+            if item.get("type") == "_turn_submission":
+                sub_data = item.get("data", {})
+                state.active_turn_id = sub_data.get("turn_id")
+                state.record_turn()
+
+            elif item.get("type") == "event":
                 evt = item.get("event", {})
                 evt_type = evt.get("type")
+                if not state.active_turn_id and item.get("turnId"):
+                    state.active_turn_id = item.get("turnId")
 
                 if evt_type == "assistant_reasoning_delta":
                     delta = evt.get("delta", "")
@@ -69,8 +81,21 @@ async def render_turn_stream(
                         f"[dim green]✓ Tool finished: {tool_name}[/dim green]"
                     )
 
+                elif evt_type == "turn_finished":
+                    state.active_turn_id = None
+
         console.print("\n")
     except (KeyboardInterrupt, asyncio.CancelledError):
         console.print("\n[yellow]⚠️  Turn interrupted by user (Ctrl+C).[/yellow]\n")
+        if state.active_turn_id:
+            try:
+                await client.interrupt_turn(
+                    state.active_turn_id, thread_id=state.current_thread_id
+                )
+            except Exception:  # noqa: BLE001, S110
+                pass
     except Exception as err:  # noqa: BLE001
         console.print(f"\n[bold red]Error during turn: {err}[/bold red]\n")
+    finally:
+        state.active_turn_id = None
+

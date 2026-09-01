@@ -128,9 +128,13 @@ async def run_tui() -> None:
                         if evt_type == "assistant_reasoning_delta":
                             delta = evt.get("delta", "")
                             if current_mode != "thinking":
-                                console.print("\n[bold cyan]💭 Thinking:[/bold cyan] ", end="")
+                                console.print(
+                                    "\n[bold cyan]💭 Thinking:[/bold cyan] ", end=""
+                                )
                                 current_mode = "thinking"
-                            console.print(delta, style="dim italic", markup=False, end="")
+                            console.print(
+                                delta, style="dim italic", markup=False, end=""
+                            )
 
                         elif evt_type == "assistant_text_delta":
                             delta = evt.get("delta", "")

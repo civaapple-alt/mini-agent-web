@@ -12,6 +12,7 @@ async def test_advanced_thread_and_workflow_apis():
         # 1. Initialize
         init_res = await client.initialize(profile="interactive")
         assert init_res.get("protocolVersion") == 1
+        assert init_res.get("serverVersion") == "0.6.0"
 
         # 2. Thread lifecycle
         tid1 = await client.start_thread("thread-main")

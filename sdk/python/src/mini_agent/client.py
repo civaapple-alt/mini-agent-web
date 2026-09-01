@@ -234,9 +234,12 @@ class MiniAgentClient:
 
     async def start(self) -> None:
         """Start the mini-agent-app-server subprocess and reader loop."""
-        exe_path = shutil.which(self.executable, path=self.env.get("PATH"))
+        executable = self.executable
+        if executable == "mini-agent-app-server":
+            executable = self.env.get("MINI_AGENT_APP_SERVER_PATH", executable)
+        exe_path = shutil.which(executable, path=self.env.get("PATH"))
         if not exe_path:
-            exe_path = self.executable
+            exe_path = executable
 
         try:
             self._proc = await asyncio.create_subprocess_exec(
@@ -405,7 +408,12 @@ class MiniAgentClient:
 
     async def _handle_approval_request(self, params: dict[str, Any]) -> None:
         """Handle server approval/request notification."""
-        request_id = str(params.get("requestId") or params.get("request_id") or params.get("id") or "")
+        request_id = str(
+            params.get("requestId")
+            or params.get("request_id")
+            or params.get("id")
+            or ""
+        )
         action = str(params.get("action") or params.get("tool") or "")
         try:
             if callable(self.approval_handler):
@@ -424,7 +432,9 @@ class MiniAgentClient:
                     approved = res
                 elif isinstance(res, dict):
                     decision = str(res.get("decision", "")).lower()
-                    approved = decision in ("approved", "allow", "yes", "true") or bool(res.get("approved"))
+                    approved = decision in ("approved", "allow", "yes", "true") or bool(
+                        res.get("approved")
+                    )
                 elif isinstance(res, str):
                     approved = res.lower() in ("approved", "allow", "yes", "true")
                 else:
@@ -456,7 +466,7 @@ class MiniAgentClient:
         self,
         profile: str | None = "interactive",
         client_name: str = "python-sdk",
-        client_version: str = "0.5.0",
+        client_version: str = "0.6.0",
         providers: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Negotiate protocol version 1 and receive capability manifest."""
@@ -664,9 +674,16 @@ class MiniAgentClient:
                 "submission": start_resp,
             }
 
+            if not start_resp.turn_id:
+                return
+
             while True:
                 envelope = await queue.get()
+                if envelope.get("threadId") != target_thread:
+                    continue
                 turn_id = envelope.get("turnId")
+                if start_resp.turn_id and turn_id != start_resp.turn_id:
+                    continue
                 event_dict = envelope.get("event", {})
                 sequence = envelope.get("sequence", 0)
 

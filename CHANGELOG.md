@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.6.0] - 2026-09-01
+
+### Added
+
+- **SDK 0.6.0 protocol alignment**: added typed context-compaction and run-lifecycle events, structured run-failure details, and the `event_type` convenience property.
+- **Bounded stream routing**: `stream_turn()` now filters notifications to the requested Thread/Turn and returns cleanly when App Server reports a queued or non-submitted turn without a turn ID.
+- **Explicit App Server selection**: `MINI_AGENT_APP_SERVER_PATH` is now honored when the default executable name is used.
+- **Cookbook validation**: added Demo 06 and no-token tests that compile every Cookbook script and exercise the complete 0.6.0 event fixture set.
+
 ### Fixed
 - **Approval Handshake (SDK)**: `_handle_approval_request` now introspects the registered approval callback's signature — 1-param dict form, 2-param `(request_id, action)` form, or 3-param extended form — and parses `bool` / `dict` / `str` decision results. This restores sensitive-tool approvals from the Web Studio UI; previously every approval raised a `TypeError` and was denied by default, surfacing as "shell 失败" on tool calls.
 - **WebSocket**: registered the root `/ws/agent` endpoint so browser clients can connect, and added an automated WebSocket regression test.

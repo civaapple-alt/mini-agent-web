@@ -1,4 +1,4 @@
-# Mini Agent Official Python SDK (`mini-agent`) Developer Guide
+# Mini Agent Official Python SDK (`mini-agent`) 0.6.0 Developer Guide
 
 The `mini-agent` Python package is the official, zero-dependency async SDK designed to communicate with the [Mini Agent Harness (`mini-agent-app-server`)](https://github.com/civaapple-alt/mini-agent-harness) over **Stdio JSON-RPC 2.0**.
 
@@ -71,20 +71,20 @@ if __name__ == "__main__":
 from mini_agent import MiniAgentClient
 
 client = MiniAgentClient(
-    binary_path=None,  # Auto-discovers mini-agent-app-server.exe on PATH
+    executable="mini-agent-app-server",  # Auto-discovers the App Server on PATH
     log_dir="logs",  # Auto-records detailed session logs
     approval_handler=None,  # Custom async approval callback
 )
 ```
 
 ### 3.2 Automated `.env` Discovery
-`MiniAgentClient` automatically locates and parses root `.env` or `.env.local` files, providing credentials (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, etc.) directly to the backend process environment without modifying global state.
+`MiniAgentClient` automatically locates and parses `.env` files, providing credentials (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, etc.) directly to the backend process environment without modifying global state. Set `MINI_AGENT_APP_SERVER_PATH` to select an explicit 0.6.0 App Server binary.
 
 ### 3.3 Dynamic File-Based Logging
 Passing `log_dir="logs"` automatically creates script-isolated logs (e.g. `logs/02_streaming_events.log`).
 ```python
 # Enable SDK debug logging with script-name auto-detection
-setup_logging(log_dir="logs", level=logging.DEBUG, mode="overwrite")
+setup_logging(log_dir="logs", level=logging.DEBUG, mode="w")
 ```
 
 ---
@@ -92,22 +92,22 @@ setup_logging(log_dir="logs", level=logging.DEBUG, mode="overwrite")
 ## 4. Interaction Patterns
 
 ### 4.1 Token-by-Token Streaming (`stream_turn`)
-`stream_turn` returns an async generator yielding real-time events until `turn_finished` or `run_failed`:
+`stream_turn` returns an async generator yielding only the requested Thread/Turn's real-time events until `turn_finished` or `run_failed`. It also parses `context_compaction_started`, `context_compaction_finished`, and `run_finished`:
 
 ```python
 async for envelope in client.stream_turn("Explain quantum computing"):
     if envelope["type"] == "event":
         event = envelope["typed_event"]
-        
+
         # Token deltas
         if event.event_type == "assistant_text_delta":
             print(event.delta, end="", flush=True)
-            
+
         # Tool execution lifecycle
         elif event.event_type == "tool_started":
-            print(f"\n[Calling Tool]: {event.name}({event.input})")
+            print(f"\n[Calling Tool]: {event.call.name}({event.call.arguments})")
         elif event.event_type == "tool_finished":
-            print(f"\n[Tool Result]: {event.output_preview}")
+            print(f"\n[Tool Result]: {event.content}")
 ```
 
 ### 4.2 Security Approval Interception (`approval_handler`)

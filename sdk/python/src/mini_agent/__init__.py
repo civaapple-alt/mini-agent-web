@@ -14,10 +14,15 @@ from mini_agent.events import (
     AgentEvent,
     AssistantReasoningDeltaEvent,
     AssistantTextDeltaEvent,
+    ContextCompactionFinishedEvent,
+    ContextCompactionStartedEvent,
+    EventModel,
     GenericEvent,
     ModelRespondedEvent,
     ModelStartedEvent,
     RunFailedEvent,
+    RunFailure,
+    RunFinishedEvent,
     RunStartedEvent,
     ToolFinishedEvent,
     ToolStartedEvent,
@@ -50,7 +55,7 @@ from mini_agent.types import (
     WorldStateResult,
 )
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "AgentEvent",
@@ -58,6 +63,9 @@ __all__ = [
     "AssistantReasoningDeltaEvent",
     "AssistantTextDeltaEvent",
     "AsyncMiniAgentClient",
+    "ContextCompactionFinishedEvent",
+    "ContextCompactionStartedEvent",
+    "EventModel",
     "GenericEvent",
     "McpRetryResult",
     "McpStatusResult",
@@ -68,6 +76,8 @@ __all__ = [
     "ModelUsage",
     "ProtocolVersionMismatchError",
     "RunFailedEvent",
+    "RunFailure",
+    "RunFinishedEvent",
     "RunStartedEvent",
     "ServerProcessError",
     "SessionInfo",

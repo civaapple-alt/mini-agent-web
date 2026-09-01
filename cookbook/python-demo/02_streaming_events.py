@@ -112,6 +112,29 @@ async def main():
                 if preview:
                     print(f"       Output Preview: {preview}...", flush=True)
 
+            # 8. Bounded context compaction lifecycle
+            elif event_type == "context_compaction_started":
+                print(
+                    f"[Seq #{seq:02d}] [Compaction Started]: "
+                    f"before={event.get('before_bytes', 0)} bytes",
+                    flush=True,
+                )
+
+            elif event_type == "context_compaction_finished":
+                print(
+                    f"[Seq #{seq:02d}] [Compaction Finished]: "
+                    f"{event.get('before_bytes', 0)} -> {event.get('after_bytes', 0)} bytes",
+                    flush=True,
+                )
+
+            # 9. Run-level stop outcome (turn_finished follows it)
+            elif event_type == "run_finished":
+                print(
+                    f"[Seq #{seq:02d}] [Run Finished]: "
+                    f"reason={event.get('stop_reason')}, steps={event.get('steps', 0)}",
+                    flush=True,
+                )
+
             # 7. Turn finished or failed
             elif event_type == "turn_finished":
                 if current_stream_mode is not None:

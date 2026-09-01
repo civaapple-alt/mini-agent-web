@@ -13,6 +13,7 @@ cookbook/python-demo/
 ├── 03_approval_handling.py        # 敏感工具权限审批拦截与交互处理
 ├── 04_steering_and_interrupt.py   # 运行时协同中断与中途转向 (Steer)
 ├── 05_workflows_and_inspection.py # 环境快照、Plan Mode 与线程检查点读取
+├── 06_protocol_compatibility.py   # 0.6.0 事件协议兼容性无 Token 验证
 └── README.md                      # 本说明文档
 ```
 
@@ -86,6 +87,19 @@ uv run python cookbook/python-demo/04_steering_and_interrupt.py
 ```bash
 uv run python cookbook/python-demo/05_workflows_and_inspection.py
 ```
+
+### Demo 06: 0.6.0 协议兼容性验证
+不启动 App Server、不调用模型，验证 SDK 能解析当前全部生命周期事件，包含上下文压缩、Run 终态和结构化失败原因。
+```bash
+uv run python cookbook/python-demo/06_protocol_compatibility.py
+```
+
+CI 使用同一无 Token 场景，并对全部 Cookbook 脚本执行 Python 编译检查：
+```bash
+uv run pytest tests/test_cookbook_validation.py -q
+```
+
+Demo 01–05 是需要 `mini-agent-app-server` 与模型 Provider 的 live 场景；发布验证时应使用与 SDK 同版本的 0.6.0 App Server。它们不放入默认 CI，避免隐式产生 Provider 请求或 Token 费用。
 
 ---
 

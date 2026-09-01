@@ -5,7 +5,7 @@
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
-`mini-agent-web` 是连接现代 Web 前端与 [Mini Agent Harness](https://github.com/civaapple-alt/mini-agent-harness) 的官方 Python SDK、实战示例与应用开发工作区。
+`mini-agent-web` 是连接现代 Web 前端与 [Mini Agent Harness](https://github.com/civaapple-alt/mini-agent-harness) 的官方 Python SDK 0.6.0、实战示例与应用开发工作区。
 
 它通过 Stdio JSON-RPC 2.0 协议与 `mini-agent-app-server` 高效通信，为 Python 开发者提供异步 Client SDK、全套实战 Cookbook 以及未来 Web / TUI 应用扩展底座。
 
@@ -74,7 +74,7 @@ uv sync
 ```bash
 uv run pytest
 ```
-> 运行全量 API 自动化测试套件。返回 `1 passed` 即表明 Python SDK 与 App Server 进程握手通信完全正常。
+> 运行全量 API 自动化测试套件。测试会验证 SDK 与 0.6.0 App Server 的握手和管理 API；需要 live Provider 的 Cookbook 不在默认测试中执行。
 
 ### 4. 运行首个实战示例
 ```bash
@@ -209,7 +209,8 @@ mini-agent-web/
 │   ├── 02_streaming_events.py         # 深度流式事件（Thinking/Tokens/多步工具）
 │   ├── 03_approval_handling.py        # 敏感工具权限审批拦截
 │   ├── 04_steering_and_interrupt.py   # 运行时动态转向与协作取消
-│   └── 05_workflows_and_inspection.py # WorldState 快照与只读 Plan Mode
+│   ├── 05_workflows_and_inspection.py # WorldState 快照与只读 Plan Mode
+│   └── 06_protocol_compatibility.py   # 0.6.0 事件协议无 Token 验证
 │
 ├── tests/                     # 自动化集成与单元测试套件
 │   ├── test_gateway_api.py    # FastAPI REST / SSE 接口集成测试

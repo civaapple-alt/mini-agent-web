@@ -15,7 +15,7 @@ export default function Header({
         <div className="app-logo">MA</div>
         <div className="app-title-group">
           <h1 className="app-title">Mini Agent Studio</h1>
-          <span className="version-tag">v0.5.0</span>
+          <span className="version-tag">v0.6.0</span>
         </div>
       </div>
 

@@ -11,7 +11,29 @@ from mini_agent.types import ModelUsage, ToolCall
 
 
 @dataclass
-class TurnStartedEvent:
+class EventModel:
+    """Common convenience API shared by parsed protocol events."""
+
+    @property
+    def event_type(self) -> str:
+        """Return the wire event discriminator."""
+        return self.type
+
+
+@dataclass
+class RunFailure:
+    """Structured failure detail emitted by the App Server."""
+
+    type: str
+    detail: Any = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RunFailure:
+        return cls(type=str(data.get("type", "unknown")), detail=data.get("detail"))
+
+
+@dataclass
+class TurnStartedEvent(EventModel):
     """Emitted when a turn starts execution."""
 
     mode: str
@@ -24,7 +46,7 @@ class TurnStartedEvent:
 
 
 @dataclass
-class RunStartedEvent:
+class RunStartedEvent(EventModel):
     """Emitted when an agent harness run loop starts."""
 
     prompt: str
@@ -36,7 +58,7 @@ class RunStartedEvent:
 
 
 @dataclass
-class ModelStartedEvent:
+class ModelStartedEvent(EventModel):
     """Emitted before a model inference step."""
 
     step: int
@@ -48,7 +70,7 @@ class ModelStartedEvent:
 
 
 @dataclass
-class AssistantReasoningDeltaEvent:
+class AssistantReasoningDeltaEvent(EventModel):
     """Streaming chunk of model's internal thinking/reasoning."""
 
     delta: str
@@ -60,7 +82,7 @@ class AssistantReasoningDeltaEvent:
 
 
 @dataclass
-class AssistantTextDeltaEvent:
+class AssistantTextDeltaEvent(EventModel):
     """Streaming chunk of model's response text."""
 
     delta: str
@@ -72,7 +94,7 @@ class AssistantTextDeltaEvent:
 
 
 @dataclass
-class ModelRespondedEvent:
+class ModelRespondedEvent(EventModel):
     """Emitted when a full model response step is received."""
 
     reasoning: str
@@ -93,7 +115,7 @@ class ModelRespondedEvent:
 
 
 @dataclass
-class ToolStartedEvent:
+class ToolStartedEvent(EventModel):
     """Emitted when a tool invocation begins."""
 
     call: ToolCall
@@ -105,7 +127,7 @@ class ToolStartedEvent:
 
 
 @dataclass
-class ToolFinishedEvent:
+class ToolFinishedEvent(EventModel):
     """Emitted when a tool execution settles."""
 
     call_id: str
@@ -129,7 +151,53 @@ class ToolFinishedEvent:
 
 
 @dataclass
-class TurnFinishedEvent:
+class ContextCompactionStartedEvent(EventModel):
+    """Emitted before the bounded context is compacted."""
+
+    before_bytes: int
+    type: str = "context_compaction_started"
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ContextCompactionStartedEvent:
+        return cls(before_bytes=data.get("before_bytes") or data.get("beforeBytes", 0))
+
+
+@dataclass
+class ContextCompactionFinishedEvent(EventModel):
+    """Emitted after bounded context compaction completes."""
+
+    before_bytes: int
+    after_bytes: int
+    usage: ModelUsage | None = None
+    type: str = "context_compaction_finished"
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ContextCompactionFinishedEvent:
+        return cls(
+            before_bytes=data.get("before_bytes") or data.get("beforeBytes", 0),
+            after_bytes=data.get("after_bytes") or data.get("afterBytes", 0),
+            usage=ModelUsage.from_dict(data.get("usage")),
+        )
+
+
+@dataclass
+class RunFinishedEvent(EventModel):
+    """Emitted when the model/tool run reaches a stop reason."""
+
+    stop_reason: str
+    steps: int
+    type: str = "run_finished"
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RunFinishedEvent:
+        return cls(
+            stop_reason=data.get("stop_reason") or data.get("stopReason", "unknown"),
+            steps=data.get("steps", 0),
+        )
+
+
+@dataclass
+class TurnFinishedEvent(EventModel):
     """Emitted when the turn settles with a final status."""
 
     status: str
@@ -141,19 +209,22 @@ class TurnFinishedEvent:
 
 
 @dataclass
-class RunFailedEvent:
+class RunFailedEvent(EventModel):
     """Emitted when a fatal harness error occurs."""
 
-    reason: str
+    reason: RunFailure | str
     type: str = "run_failed"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RunFailedEvent:
-        return cls(reason=str(data.get("reason", "unknown error")))
+        reason = data.get("reason", "unknown error")
+        if isinstance(reason, dict):
+            reason = RunFailure.from_dict(reason)
+        return cls(reason=reason)
 
 
 @dataclass
-class GenericEvent:
+class GenericEvent(EventModel):
     """Fallback representation for any unmodeled event type."""
 
     type: str
@@ -173,6 +244,9 @@ AgentEvent = (
     | ModelRespondedEvent
     | ToolStartedEvent
     | ToolFinishedEvent
+    | ContextCompactionStartedEvent
+    | ContextCompactionFinishedEvent
+    | RunFinishedEvent
     | TurnFinishedEvent
     | RunFailedEvent
     | GenericEvent
@@ -187,6 +261,9 @@ _EVENT_TYPE_MAP = {
     "model_responded": ModelRespondedEvent,
     "tool_started": ToolStartedEvent,
     "tool_finished": ToolFinishedEvent,
+    "context_compaction_started": ContextCompactionStartedEvent,
+    "context_compaction_finished": ContextCompactionFinishedEvent,
+    "run_finished": RunFinishedEvent,
     "turn_finished": TurnFinishedEvent,
     "run_failed": RunFailedEvent,
 }

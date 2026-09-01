@@ -1,4 +1,4 @@
-# Mini Agent Python SDK
+# Mini Agent Python SDK 0.6.0
 
 Official asynchronous Python SDK for interacting with the `mini-agent-app-server` runtime and Harness engine.
 
@@ -42,7 +42,7 @@ if __name__ == "__main__":
 ## Key Features
 
 * **Async Context Manager**: Simple `async with MiniAgentClient()` manages subprocess lifecycle cleanly.
-* **Stream Generator**: `stream_turn()` yields real-time reasoning deltas, text tokens, tool start/finish, and checkpoint events.
+* **Stream Generator**: `stream_turn()` yields target-Thread/Turn events, real-time reasoning deltas, text tokens, tool start/finish, context compaction, and run lifecycle events.
 * **Security & Approval Interceptor**: Native support for `approval/request` and `approval/respond` protocol.
 * **Steering & Interrupt**: Mid-turn instruction injection (`turn/steer`) and cooperative cancellation (`turn/interrupt`).
 * **Zero Required Dependencies**: Runs entirely on Python 3.10+ Standard Library (`asyncio`, `json`, `subprocess`).

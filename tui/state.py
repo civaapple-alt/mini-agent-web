@@ -22,11 +22,23 @@ if sys.platform == "win32":
 console = Console(force_terminal=True, legacy_windows=False)
 
 
+def canonical_profile(name: str | None) -> str:
+    """Normalize user-friendly or alias profile names into wire-compatible protocol names (interactive | auto | ask)."""
+    if not name:
+        return "interactive"
+    n = name.strip().lower()
+    if n in ("auto", "autonomous"):
+        return "auto"
+    if n in ("ask", "strict", "readonly", "read_only"):
+        return "ask"
+    return "interactive"
+
+
 @dataclass
 class TUIState:
     """Runtime mutable state for the active TUI session."""
 
-    profile: str = "interactive"  # interactive | autonomous | strict
+    profile: str = "interactive"  # interactive | auto | ask
     approval_policy: str = "per_action"  # per_action | auto_approve | strict
     effort: str = "medium"  # low | medium | high
     remembered_approvals: set[str] = field(default_factory=set)
@@ -42,5 +54,6 @@ class TUIState:
         """Increment turn count for the specified thread."""
         tid = thread_id or self.current_thread_id
         self.turn_counts[tid] = self.turn_counts.get(tid, 0) + 1
+
 
 

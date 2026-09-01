@@ -32,6 +32,7 @@ def run_server() -> None:
         host=settings.host,
         port=settings.port,
         reload=False,
+        timeout_graceful_shutdown=1.0,
     )
 
 
@@ -46,6 +47,7 @@ def run_server_dev() -> None:
         host=settings.host,
         port=settings.port,
         reload=True,
+        timeout_graceful_shutdown=1.0,
     )
 
 

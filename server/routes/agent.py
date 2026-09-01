@@ -254,10 +254,11 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
             elif action == "ping":
                 await websocket.send_json({"type": "pong"})
 
-    except WebSocketDisconnect:
-        session_manager.disconnect_ws(websocket)
+    except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
+        pass
     except Exception:
         logger.exception("WebSocket unhandled exception")
+    finally:
         session_manager.disconnect_ws(websocket)
 
 

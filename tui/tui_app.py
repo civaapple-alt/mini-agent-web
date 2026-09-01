@@ -119,78 +119,83 @@ async def run_tui() -> None:
                 user_input = Prompt.ask(
                     f"\n[bold cyan]You ({current_thread_id})[/bold cyan]"
                 )
-                text = user_input.strip()
-                if not text:
-                    continue
+            except (KeyboardInterrupt, EOFError):
+                console.print("\n[dim]Session terminated.[/dim]")
+                break
 
-                if text.lower() in ("exit", "quit"):
-                    console.print("[dim]Goodbye![/dim]")
-                    break
+            text = user_input.strip()
+            if not text:
+                continue
 
-                if text.lower() == "/clear":
-                    console.clear()
-                    continue
+            if text.lower() in ("exit", "quit", ":q", "q"):
+                console.print("[dim]Goodbye![/dim]")
+                break
 
-                if text.lower() == "/help":
-                    print_help_table()
-                    continue
+            if text.lower() == "/clear":
+                console.clear()
+                continue
 
-                if text.lower() == "/plan":
-                    wf = await client.get_workflow_state()
-                    next_active = not wf.plan_active
-                    res = await client.set_plan_mode(next_active)
+            if text.lower() == "/help":
+                print_help_table()
+                continue
+
+            if text.lower() == "/plan":
+                wf = await client.get_workflow_state()
+                next_active = not wf.plan_active
+                res = await client.set_plan_mode(next_active)
+                console.print(
+                    f"[yellow]Plan Mode is now: {'ACTIVE (Read-Only)' if res.plan_active else 'OFF'}[/yellow]"
+                )
+                continue
+
+            if text.lower().startswith("/goal"):
+                parts = text.split(maxsplit=1)
+                if len(parts) > 1:
+                    obj = parts[1].strip()
+                    res = await client.start_goal(obj)
                     console.print(
-                        f"[yellow]Plan Mode is now: {'ACTIVE (Read-Only)' if res.plan_active else 'OFF'}[/yellow]"
+                        f"[green]✓ Goal started (ID: {res.goal_id}): {obj}[/green]"
                     )
-                    continue
-
-                if text.lower().startswith("/goal"):
-                    parts = text.split(maxsplit=1)
-                    if len(parts) > 1:
-                        obj = parts[1].strip()
-                        res = await client.start_goal(obj)
+                else:
+                    wf = await client.get_workflow_state()
+                    if wf.goal:
                         console.print(
-                            f"[green]✓ Goal started (ID: {res.goal_id}): {obj}[/green]"
+                            f"[sky_blue1]Active Goal ({wf.goal.goal_id}): milestone {wf.goal.current_milestone}/{wf.goal.total_milestones}, status={wf.goal.status}[/sky_blue1]"
                         )
                     else:
-                        wf = await client.get_workflow_state()
-                        if wf.goal:
-                            console.print(
-                                f"[sky_blue1]Active Goal ({wf.goal.goal_id}): milestone {wf.goal.current_milestone}/{wf.goal.total_milestones}, status={wf.goal.status}[/sky_blue1]"
-                            )
-                        else:
-                            console.print(
-                                "[dim]No active goal. Usage: /goal <objective>[/dim]"
-                            )
-                    continue
-
-                if text.lower() == "/threads":
-                    res = await client.list_threads()
-                    table = Table(title="Historical Threads", border_style="sky_blue1")
-                    table.add_column("Thread ID", style="bold sky_blue1")
-                    table.add_column("Active", style="green")
-                    for tid in res.data:
-                        table.add_row(
-                            tid, "✓ Current" if tid == current_thread_id else ""
+                        console.print(
+                            "[dim]No active goal. Usage: /goal <objective>[/dim]"
                         )
-                    console.print(table)
-                    continue
+                continue
 
-                if text.lower().startswith("/switch"):
-                    parts = text.split(maxsplit=1)
-                    if len(parts) > 1:
-                        target = parts[1].strip()
-                        await client.start_thread(target)
-                        current_thread_id = target
-                        console.print(f"[green]✓ Switched to thread: {target}[/green]")
-                    else:
-                        console.print("[dim]Usage: /switch <thread_id>[/dim]")
-                    continue
+            if text.lower() == "/threads":
+                res = await client.list_threads()
+                table = Table(title="Historical Threads", border_style="sky_blue1")
+                table.add_column("Thread ID", style="bold sky_blue1")
+                table.add_column("Active", style="green")
+                for tid in res.data:
+                    table.add_row(
+                        tid, "✓ Current" if tid == current_thread_id else ""
+                    )
+                console.print(table)
+                continue
 
-                console.print("\n[bold green]Mini Agent[/bold green]:")
+            if text.lower().startswith("/switch"):
+                parts = text.split(maxsplit=1)
+                if len(parts) > 1:
+                    target = parts[1].strip()
+                    await client.start_thread(target)
+                    current_thread_id = target
+                    console.print(f"[green]✓ Switched to thread: {target}[/green]")
+                else:
+                    console.print("[dim]Usage: /switch <thread_id>[/dim]")
+                continue
 
-                current_mode = None  # None | "thinking" | "text"
+            console.print("\n[bold green]Mini Agent[/bold green]:")
 
+            current_mode = None  # None | "thinking" | "text"
+
+            try:
                 async for item in client.stream_turn(
                     user_input, thread_id=current_thread_id
                 ):
@@ -235,16 +240,20 @@ async def run_tui() -> None:
                             )
 
                 console.print("\n")
-
-            except (KeyboardInterrupt, EOFError):
-                console.print("\n[dim]Session terminated.[/dim]")
-                break
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                console.print("\n[yellow]⚠️  Turn interrupted by user (Ctrl+C).[/yellow]\n")
             except Exception as err:  # noqa: BLE001
-                console.print(f"\n[bold red]Error: {err}[/bold red]")
+                console.print(f"\n[bold red]Error during turn: {err}[/bold red]\n")
 
 
 def main() -> None:
-    asyncio.run(run_tui())
+    try:
+        asyncio.run(run_tui())
+    except (KeyboardInterrupt, EOFError, SystemExit):
+        console.print("\n[dim]Mini Agent TUI exited.[/dim]")
+    except Exception as err:  # noqa: BLE001
+        console.print(f"\n[bold red]Fatal error: {err}[/bold red]")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

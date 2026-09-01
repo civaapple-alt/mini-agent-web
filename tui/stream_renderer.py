@@ -62,8 +62,9 @@ async def render_turn_stream(
     """Execute a turn with client.stream_turn() and render formatted output."""
     console.print("\n[bold green]Mini Agent[/bold green]:")
 
-    current_mode: str | None = None  # None | "thinking" | "text"
     metrics = TurnMetrics()
+    current_mode: str | None = None
+    assistant_text_chunks: list[str] = []
 
     try:
         async for item in client.stream_turn(
@@ -99,6 +100,8 @@ async def render_turn_stream(
 
                 elif evt_type == "assistant_text_delta":
                     delta = evt.get("delta", "")
+                    if delta:
+                        assistant_text_chunks.append(delta)
                     if current_mode != "text":
                         if current_mode == "thinking":
                             console.print("\n")
@@ -187,6 +190,9 @@ async def render_turn_stream(
                 elif evt_type == "turn_finished":
                     state.active_turn_id = None
                     metrics.status = evt.get("status", "completed")
+
+        if assistant_text_chunks:
+            state.last_assistant_response = "".join(assistant_text_chunks).strip()
 
         console.print("\n")
         # Print sleek turn settlement telemetry

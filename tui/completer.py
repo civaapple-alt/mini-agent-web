@@ -74,6 +74,8 @@ class SlashCommandCompleter(Completer):
                 ("/diff", "查看 Git 变更别名"),
                 ("/files", "快速检索当前工作区代码文件路径"),
                 ("/workflows", "探测工作区内规范与计划文件"),
+                ("/copy", "复制模型最新回复或完整会话 Markdown 到系统剪贴板"),
+                ("/cp", "复制回复 Markdown 别名"),
                 ("/clear", "清空终端屏幕"),
                 ("/help", "显示完整命令参考大全"),
                 ("/exit", "退出 TUI 交互终端"),

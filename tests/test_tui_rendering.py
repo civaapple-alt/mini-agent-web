@@ -254,6 +254,18 @@ async def test_handle_slash_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     assert handled is True
     assert "Usage: !<shell_command>" in output_buffer.getvalue()
 
+    # 10. /copy command
+    state.last_assistant_response = "# Summary\n\nTask completed successfully."
+    monkeypatch.setattr("tui.clipboard.copy_to_clipboard", lambda text: True)
+    handled = await handle_slash_command("/copy", state, mock_client)
+    assert handled is True
+    assert "Copied latest assistant response" in output_buffer.getvalue()
+
+    # 11. /copy all
+    handled = await handle_slash_command("/copy all", state, mock_client)
+    assert handled is True
+    assert "Copied full thread conversation" in output_buffer.getvalue()
+
 
 def test_ask_approval_sync(monkeypatch: pytest.MonkeyPatch) -> None:
     output_buffer = io.StringIO()

@@ -49,6 +49,7 @@ class TUIState:
     turn_counts: dict[str, int] = field(default_factory=dict)
     active_turn_id: str | None = None
     last_turn_metrics: TurnMetrics | None = None
+    last_assistant_response: str = ""
 
     def record_turn(self, thread_id: str | None = None) -> None:
         """Increment turn count for the specified thread."""

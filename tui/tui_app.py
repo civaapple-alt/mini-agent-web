@@ -14,7 +14,17 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
 
-console = Console()
+# Ensure UTF-8 output on Windows consoles
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:  # noqa: BLE001, S110
+        pass
+
+console = Console(force_terminal=True, legacy_windows=False)
 
 
 def _ask_approval_sync(action_desc: str, request_id: str) -> str:
@@ -118,21 +128,21 @@ async def run_tui() -> None:
                         if evt_type == "assistant_reasoning_delta":
                             delta = evt.get("delta", "")
                             if current_mode != "thinking":
-                                console.print("\n[dim italic]💭 Thinking: ", end="")
+                                console.print("\n[bold cyan]💭 Thinking:[/bold cyan] ", end="")
                                 current_mode = "thinking"
-                            console.print(f"[dim italic]{delta}[/dim italic]", end="")
+                            console.print(delta, style="dim italic", markup=False, end="")
 
                         elif evt_type == "assistant_text_delta":
                             delta = evt.get("delta", "")
                             if current_mode != "text":
                                 if current_mode == "thinking":
-                                    console.print("[/dim italic]\n")
+                                    console.print("\n")
                                 current_mode = "text"
-                            console.print(delta, end="")
+                            console.print(delta, markup=False, end="")
 
                         elif evt_type == "tool_started":
                             if current_mode == "thinking":
-                                console.print("[/dim italic]\n")
+                                console.print("\n")
                             current_mode = None
                             call = evt.get("call", {})
                             tool_name = evt.get("name") or call.get("name") or "tool"
@@ -147,8 +157,6 @@ async def run_tui() -> None:
                                 f"[dim green]✓ Tool finished: {tool_name}[/dim green]"
                             )
 
-                if current_mode == "thinking":
-                    console.print("[/dim italic]")
                 console.print("\n")
 
             except (KeyboardInterrupt, EOFError):

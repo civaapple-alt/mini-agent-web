@@ -37,10 +37,24 @@ async def run_tui(state: TUIState) -> None:
     prompt_session: PromptSession[str] | None = None
     if sys.stdin.isatty() and sys.stdout.isatty():
         try:
+            from prompt_toolkit.key_binding import KeyBindings
+
+            kb = KeyBindings()
+
+            @kb.add("c-c")
+            def _handle_ctrl_c(event: Any) -> None:
+                """If buffer has content, clear it; if empty, exit with KeyboardInterrupt."""
+                buf = event.current_buffer
+                if buf.text.strip():
+                    buf.reset()
+                else:
+                    event.app.exit(exception=KeyboardInterrupt())
+
             prompt_session = PromptSession(
                 history=InMemoryHistory(),
                 auto_suggest=AutoSuggestFromHistory(),
                 completer=SlashCommandCompleter(state),
+                key_bindings=kb,
                 style=Style.from_dict({
                     "prompt": "bold #88c0d0",
                     "completion-menu.completion": "bg:#2e3440 #d8dee9",

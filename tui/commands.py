@@ -183,6 +183,16 @@ async def handle_slash_command(
         )
         table.add_row("Reasoning Effort", state.effort)
         table.add_row("Active Thread", state.current_thread_id)
+        table.add_row(
+            "Completed Turns",
+            f"{state.turn_counts.get(state.current_thread_id, 0)} turns",
+        )
+        if state.last_turn_metrics:
+            m = state.last_turn_metrics
+            table.add_row(
+                "Last Turn Settlement",
+                f"{m.status} (steps={m.steps}, stop={m.stop_reason}, tokens={m.input_tokens}in/{m.output_tokens}out)",
+            )
         console.print(table)
         return True
 

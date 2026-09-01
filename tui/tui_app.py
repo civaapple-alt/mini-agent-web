@@ -122,12 +122,22 @@ async def run_tui(state: TUIState) -> None:
                                 raise EOFError
                             return line
 
+                        def _read_std_input() -> str:
+                            console.print(
+                                f"\n[bold cyan]You ({state.current_thread_id}) > [/bold cyan]",
+                                end="" if sys.stdin.isatty() else "\n",
+                            )
+                            line = sys.stdin.readline()
+                            if not line:
+                                raise EOFError
+                            return line
+
                         user_input = await asyncio.to_thread(_read_std_input)
                 else:
                     def _read_std_input() -> str:
                         console.print(
                             f"\n[bold cyan]You ({state.current_thread_id}) > [/bold cyan]",
-                            end="",
+                            end="" if sys.stdin.isatty() else "\n",
                         )
                         line = sys.stdin.readline()
                         if not line:
@@ -143,7 +153,7 @@ async def run_tui(state: TUIState) -> None:
             if not text:
                 continue
 
-            if text.lower() in ("exit", "quit", ":q", "q"):
+            if text.lower().strip() in ("exit", "quit", ":q", "q"):
                 console.print("[dim]Goodbye![/dim]")
                 break
 

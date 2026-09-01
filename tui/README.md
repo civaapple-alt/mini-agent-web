@@ -8,7 +8,13 @@
 
 - **⚡ 模块化架构**：从单文件解耦为 `state`、`approvals`、`completer`、`commands`、`stream_renderer` 与 `tui_app` 六大单一职责模块。
 - **⌨️ 智能 Tab 补全与二级联想**：集成 `prompt_toolkit`，支持斜杠命令前缀提示与二级参数（如 `/policy auto_approve`、`/effort high`）浮动候选菜单。
-- **🧠 思考链与文本打字机流式渲染**：支持 `💭 Thinking:` 暗淡斜体思考流与响应正文实时推流，并在工具起止时动态展示状态徽章（`⚡ Tool started` / `✓ Tool finished`）。
+- **🧠 思考链与文本打字机流式渲染**：支持 `💭 Thinking:` 暗淡斜体思考流与响应正文实时推流。
+- **🔍 深度工具透明度与错误诊断**：
+  - 工具调用时显示**入参简要**：`⚡ Tool started: shell(command='pytest')`；
+  - 工具完成时展示**输出预览**与截断标识；
+  - 工具报错显式呈现**红色报错徽章**（`✗ Tool failed: ...`），杜绝误报绿色 ✓；
+  - 运行时失败（`run_failed`）显式呈现**结构化原因**（`⛔ Run failed: ...`），杜绝无声丢弃。
+- **📊 轮次结算遥测（Turn Settlement Telemetry）**：每轮结束自动输出状态、执行步数、停止原因与 Token 消耗（`Status | Steps | Stop | Tokens`），并沉淀至 `/status`。
 - **🛡️ 交互式安全审批与策略引擎**：敏感操作拦截弹窗，支持 `[y]es`、`[n]o` 与 `[a]lways`（会话级工具放行记忆），支持 `/policy`（`per_action` / `auto_approve` / `strict`）动态切换。
 - **🎯 实时纠偏与协作中断**：
   - `/steer <指令>`：在模型长推理中动态注入纠偏指令（Steering Guidance）。

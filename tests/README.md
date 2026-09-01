@@ -13,14 +13,26 @@ tests/
 ├── test_cookbook_validation.py  # Cookbook 脚本语法编译与协议兼容性 Smoke Test
 ├── test_gateway_api.py          # FastAPI Gateway HTTP 路由、WebSocket 事件流与生命周期测试
 ├── test_sdk_apis.py             # SDK 高级线程管理、Checkpoint 检查点与工作流 API 测试
-└── test_sdk_events.py           # 核心协议强类型事件解析与流式过滤测试
+├── test_sdk_events.py           # 核心协议强类型事件解析与流式过滤测试
+└── test_tui_rendering.py        # TUI 流式渲染、工具透明度、失败诊断与结算遥测测试
 ```
 
 ---
 
 ## 🧪 测试套件详细说明
 
-### 1. `test_cookbook_validation.py`
+### 1. `test_tui_rendering.py` (TUI 渲染与遥测单元测试)
+- **工具透明度与错误显式化**：
+  - 测试 `tool_finished` 成功状态下的参数、绿色徽章与输出折叠摘要；
+  - 测试 `is_error=True` 状态下的红色 ✗ 报错徽章与 `(truncated)` 截断标识；
+- **致命失败与异常诊断**：
+  - 测试 `run_failed` 结构化原因提取与错误呈现，杜绝无声失败；
+- **轮次结算行与遥测**：
+  - 测试 `model_responded`、`run_finished`、`turn_finished` 生成的 `Status | Steps | Stop | Tokens` 结算行；
+- **斜杠命令与审批安全测试**：
+  - 测试 `/status`（包含轮次与 Token 统计）、`/profile`、`/policy`、`/clear-approvals` 及 `_ask_approval_sync`。
+
+### 2. `test_cookbook_validation.py`
 - **Cookbook 语法与编译校验**：
   - 自动遍历 `cookbook/python-demo/` 目录下全部 6 个示例脚本（`01_basic_turn.py` ~ `06_protocol_compatibility.py`），使用 Python AST 引擎进行静态编译与语法检查。
 - **协议兼容性烟雾测试**：

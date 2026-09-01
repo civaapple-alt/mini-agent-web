@@ -19,7 +19,22 @@ if sys.platform == "win32":
     except Exception:  # noqa: BLE001, S110
         pass
 
-console = Console(force_terminal=True, legacy_windows=False)
+console = Console(
+    force_terminal=True if (hasattr(sys.stdout, "isatty") and sys.stdout.isatty()) else None,
+    legacy_windows=False,
+)
+
+
+@dataclass
+class TurnMetrics:
+    """Telemetry and settlement metrics for the last turn."""
+
+    status: str = "completed"
+    steps: int = 0
+    stop_reason: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
 
 
 @dataclass
@@ -33,15 +48,13 @@ class TUIState:
     current_thread_id: str = "tui-session"
     turn_counts: dict[str, int] = field(default_factory=dict)
     active_turn_id: str | None = None
-
-    def get_turn_mode(self, thread_id: str | None = None) -> str:
-        """Return 'start' matching App Server TurnInputMode protocol schema."""
-        return "start"
+    last_turn_metrics: TurnMetrics | None = None
 
     def record_turn(self, thread_id: str | None = None) -> None:
         """Increment turn count for the specified thread."""
         tid = thread_id or self.current_thread_id
         self.turn_counts[tid] = self.turn_counts.get(tid, 0) + 1
+
 
 
 

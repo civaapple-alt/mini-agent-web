@@ -23,6 +23,7 @@ export default function App() {
   // Workflow & Environment
   const [planActive, setPlanActive] = useState(false);
   const [goalState, setGoalState] = useState(null);
+  const [approvalPolicy, setApprovalPolicy] = useState('per_action');
 
   // Panels & Modals
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
@@ -39,6 +40,7 @@ export default function App() {
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
+    loadSettings();
     loadThreads();
     loadWorkflows();
     loadThreadHistory('default');
@@ -55,6 +57,16 @@ export default function App() {
       wsClient.close();
     };
   }, []);
+
+  const loadSettings = async () => {
+    try {
+      const data = await api.getSettings();
+      if (data.approval_policy) setApprovalPolicy(data.approval_policy);
+      if (data.theme) document.body.className = `theme-${data.theme}`;
+    } catch (err) {
+      console.error('Failed to load settings:', err);
+    }
+  };
 
   const loadThreads = async () => {
     try {
@@ -465,6 +477,15 @@ export default function App() {
     setSidePanelOpen(true);
   };
 
+  const handleUpdateApprovalPolicy = async (newPolicy) => {
+    setApprovalPolicy(newPolicy);
+    try {
+      await api.updateSettings({ approval_policy: newPolicy });
+    } catch (err) {
+      console.error('Failed to update approval policy:', err);
+    }
+  };
+
   return (
     <div className="app-container">
       <Header
@@ -472,9 +493,6 @@ export default function App() {
         threadTitle={currentThreadMeta.title}
         threadSummary={currentThreadMeta.summary}
         isConnected={isConnected}
-        planActive={planActive}
-        goalState={goalState}
-        onTogglePlan={handleTogglePlan}
         onOpenSidePanel={handleOpenSidePanel}
         onOpenSettings={() => setSettingsModalOpen(true)}
         onRenameThread={(title) => handleRenameThread(currentThread, title)}
@@ -507,12 +525,16 @@ export default function App() {
           <InputBar
             isGenerating={isGenerating}
             planActive={planActive}
+            goalState={goalState}
+            approvalPolicy={approvalPolicy}
             pendingApproval={pendingApproval}
             onRespondApproval={handleRespondApproval}
+            onChangeApprovalPolicy={handleUpdateApprovalPolicy}
             onSendMessage={handleSendMessage}
             onSteerMessage={handleSteerMessage}
             onInterrupt={handleInterrupt}
             onTogglePlan={handleTogglePlan}
+            onOpenSidePanel={handleOpenSidePanel}
           />
         </main>
       </div>
@@ -533,6 +555,9 @@ export default function App() {
         onSettingsSaved={(newSettings) => {
           if (newSettings.theme) {
             document.body.className = `theme-${newSettings.theme}`;
+          }
+          if (newSettings.approval_policy) {
+            setApprovalPolicy(newSettings.approval_policy);
           }
         }}
       />

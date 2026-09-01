@@ -2,8 +2,6 @@ import React, { useState } from 'react';
 import {
   Sparkles,
   GitBranch,
-  Compass,
-  Target,
   Cpu,
   Settings,
   Edit2,
@@ -18,10 +16,6 @@ export default function Header({
   threadTitle,
   threadSummary,
   isConnected,
-  planActive,
-  goalState,
-  onTogglePlan,
-  onStartGoal,
   onOpenSidePanel,
   onOpenSettings,
   onRenameThread,
@@ -46,15 +40,13 @@ export default function Header({
     setShowSummaryPopover(false);
   };
 
-  const currentMode = planActive ? 'plan' : goalState?.status === 'running' ? 'goal' : 'chat';
-
   return (
     <header className="app-header">
       {/* Left: Branding & Current Thread / Workspace */}
       <div className="header-left">
         <div className="app-branding">
           <div className="brand-logo">
-            <Sparkles size={16} className="logo-icon" />
+            <Sparkles size={15} className="logo-icon" />
           </div>
           <div className="brand-text">
             <span className="brand-title">Mini Agent</span>
@@ -80,10 +72,10 @@ export default function Header({
                 }}
                 autoFocus
               />
-              <button className="icon-btn-micro check" onClick={handleSaveTitle}>
+              <button className="icon-btn-micro check" onClick={handleSaveTitle} title="确认">
                 <Check size={12} />
               </button>
-              <button className="icon-btn-micro cancel" onClick={() => setIsEditingTitle(false)}>
+              <button className="icon-btn-micro cancel" onClick={() => setIsEditingTitle(false)} title="取消">
                 <X size={12} />
               </button>
             </div>
@@ -99,7 +91,7 @@ export default function Header({
             </div>
           )}
 
-          {/* Summary badge / button */}
+          {/* Thread Summary Popover Badge */}
           <div className="summary-popover-wrapper">
             <button
               className={`summary-badge-btn ${threadSummary ? 'has-summary' : ''}`}
@@ -107,16 +99,16 @@ export default function Header({
                 setSummaryInput(threadSummary || '');
                 setShowSummaryPopover(!showSummaryPopover);
               }}
-              title={threadSummary ? `摘要: ${threadSummary}` : '为当前会话指定摘要'}
+              title="查看/指定会话阶段摘要"
             >
               <FileText size={11} />
-              <span>{threadSummary ? '已设摘要' : '+ 摘要'}</span>
+              <span className="font-mono">{threadSummary ? '指定摘要' : '+ 摘要'}</span>
             </button>
 
             {showSummaryPopover && (
-              <div className="summary-popover">
+              <div className="summary-popover custom-scrollbar">
                 <div className="popover-header">
-                  <span>指定会话摘要 (Thread Summary)</span>
+                  <span>会话阶段摘要 (Thread Summary)</span>
                   <button className="popover-close" onClick={() => setShowSummaryPopover(false)}>
                     <X size={12} />
                   </button>
@@ -139,65 +131,28 @@ export default function Header({
         </div>
       </div>
 
-      {/* Center: Workflow Mode Segmented Switcher */}
-      <div className="header-center">
-        <div className="workflow-segmented-bar">
-          <button
-            className={`mode-btn ${currentMode === 'chat' ? 'active' : ''}`}
-            onClick={() => {
-              if (planActive) onTogglePlan();
-            }}
-          >
-            <span>💬 对话模式 (Chat)</span>
-          </button>
-
-          <button
-            className={`mode-btn plan ${currentMode === 'plan' ? 'active' : ''}`}
-            onClick={onTogglePlan}
-            title="开启/关闭只读规划探索模式"
-          >
-            <Compass size={13} />
-            <span>📋 规划模式 (Plan)</span>
-            {planActive && <span className="mode-pulse-dot amber"></span>}
-          </button>
-
-          <button
-            className={`mode-btn goal ${currentMode === 'goal' ? 'active' : ''}`}
-            onClick={() => onOpenSidePanel('plan_goal')}
-            title="目标收敛多里程碑驱动模式"
-          >
-            <Target size={13} />
-            <span>🎯 目标模式 (Goal)</span>
-            {goalState?.status === 'running' && <span className="mode-pulse-dot green"></span>}
-          </button>
-        </div>
-      </div>
-
       {/* Right: Tools, SidePanel, Settings, and Status */}
       <div className="header-right">
         <button
           className="header-action-btn"
           onClick={() => onOpenSidePanel('world')}
-          title="打开侧边环境与扩展面板"
+          title="打开环境与工作流抽屉"
         >
-          <Cpu size={14} />
-          <span>侧边面板</span>
+          <Cpu size={13} />
+          <span>控制台面板</span>
         </button>
 
         <button
           className="header-action-btn icon-only"
           onClick={onOpenSettings}
-          title="系统与偏好设置"
+          title="系统与模型偏好设置"
         >
-          <Settings size={15} />
+          <Settings size={14} />
         </button>
 
-        <div
-          className={`connection-status ${isConnected ? 'online' : 'offline'}`}
-          title={isConnected ? 'WebSocket 网关已连接' : 'WebSocket 连接已断开，正在重试...'}
-        >
+        <div className={`connection-status ${isConnected ? 'online' : 'offline'}`}>
           <span className="status-dot"></span>
-          <span className="status-label">{isConnected ? 'Connected' : 'Offline'}</span>
+          <span className="status-label">{isConnected ? 'ONLINE' : 'OFFLINE'}</span>
         </div>
       </div>
     </header>

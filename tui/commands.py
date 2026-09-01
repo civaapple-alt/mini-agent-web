@@ -69,11 +69,13 @@ def print_help_table(state: TUIState) -> None:
     # 4. 会话与多分支管理
     table.add_row("会话管理", "/threads", "列出所有历史会话与分支列表")
     table.add_row("", "/new [thread_id]", "新建并切换至新会话线程")
+    table.add_row("", "/fork <new_id>", "分叉当前会话历史为新的实验分支")
     table.add_row("", "/switch <thread_id>", "切换当前活跃会话线程")
     table.add_row("", "/history", "查看当前会话已结算 Checkpoint 与轮次")
 
     # 5. 工作区与环境探测
     table.add_row("工作区探测", "/status", "查看运行时环境、Server 状态与配置总览")
+    table.add_row("", "/mcp", "查看已启用的 MCP 服务与扩展工具状态")
     table.add_row("", "/git", "查看当前工作区 Git 分支及未提交变更")
     table.add_row("", "/files [query]", "快速检索当前工作区代码文件路径")
 
@@ -441,6 +443,22 @@ async def handle_slash_command(
         )
         return True
 
+    if lower_text.startswith("/fork"):
+        parts = text.split(maxsplit=1)
+        if len(parts) > 1:
+            target = parts[1].strip()
+            try:
+                await client.fork_thread(state.current_thread_id, target)
+                state.current_thread_id = target
+                console.print(
+                    f"[green]✓ Forked thread into new branch: [bold]{target}[/bold][/green]"
+                )
+            except Exception as err:  # noqa: BLE001
+                console.print(f"[red]Failed to fork thread: {err}[/red]")
+        else:
+            console.print("[dim]Usage: /fork <new_thread_id>[/dim]")
+        return True
+
     if lower_text.startswith("/switch"):
         parts = text.split(maxsplit=1)
         if len(parts) > 1:
@@ -450,6 +468,22 @@ async def handle_slash_command(
             console.print(f"[green]✓ Switched to thread: {target}[/green]")
         else:
             console.print("[dim]Usage: /switch <thread_id>[/dim]")
+        return True
+
+    if lower_text == "/mcp":
+        try:
+            mcp_status = await client.get_mcp_status()
+            table = Table(
+                title="Model Context Protocol (MCP) Status",
+                border_style="cyan",
+            )
+            table.add_column("Property", style="bold sky_blue1", width=22)
+            table.add_column("Value", style="white")
+            table.add_row("Enabled Servers", str(mcp_status.enabled_servers))
+            table.add_row("Available Tools", str(mcp_status.tool_count))
+            console.print(table)
+        except Exception as err:  # noqa: BLE001
+            console.print(f"[red]Failed to query MCP status: {err}[/red]")
         return True
 
     if lower_text in ("/history", "/checkpoint"):

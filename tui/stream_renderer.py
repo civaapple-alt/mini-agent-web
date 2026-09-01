@@ -81,6 +81,13 @@ async def render_turn_stream(
                         f"[dim green]✓ Tool finished: {tool_name}[/dim green]"
                     )
 
+                elif evt_type == "context_compaction_finished":
+                    before = evt.get("before_bytes", 0)
+                    after = evt.get("after_bytes", 0)
+                    console.print(
+                        f"\n[dim magenta]⚡ Context compacted: {before} -> {after} bytes[/dim magenta]"
+                    )
+
                 elif evt_type == "turn_finished":
                     state.active_turn_id = None
 

@@ -14,7 +14,7 @@ In OpenAI Codex, client integration is decoupled into standard official SDKs (e.
 Previously, `mini-agent-web` relied on ad-hoc, script-level JSON-RPC clients in individual demo folders. To achieve production readiness, maintainability, and clean separation of concerns:
 1. A standard, standalone Python SDK package (`mini-agent`) is established in `sdk/python`.
 2. Upper-layer consumers (Web frontends, Cookbooks, CLI automation, Benchmarking scripts) import and interact with the engine via the official SDK rather than reinventing IPC piping.
-3. The SDK provides full typing coverage (PEP 561 `py.typed`), typed event models, automated `.env` discovery, and non-blocking streaming.
+3. The SDK provides PEP 561 packaging (`py.typed`), typed protocol/event models, automated `.env` discovery, and non-blocking streaming.
 
 ---
 
@@ -63,7 +63,10 @@ Previously, `mini-agent-web` relied on ad-hoc, script-level JSON-RPC clients in 
     * `TurnStartedEvent`, `RunStartedEvent`, `ModelStartedEvent`
     * `AssistantReasoningDeltaEvent`, `AssistantTextDeltaEvent`
     * `ModelRespondedEvent`, `ToolStartedEvent`, `ToolFinishedEvent`
-    * `TurnFinishedEvent`, `RunFailedEvent`
+    * `ContextCompactionStartedEvent`, `ContextCompactionFinishedEvent`
+    * `RunFinishedEvent`, `TurnFinishedEvent`, `RunFailedEvent`
+  * Parsed events expose `event_type`; unknown future events remain as
+    `GenericEvent`.
   * `parse_event(dict) -> AgentEvent` factory.
 * **`mini_agent/types.py`**:
   * Protocol data models: `TurnSubmissionResult`, `TurnReadResult`, `ThreadCheckpoint`, `ToolCall`, `ModelUsage`.
@@ -84,3 +87,18 @@ Previously, `mini-agent-web` relied on ad-hoc, script-level JSON-RPC clients in 
      * Settled in `completed` status with proper turn ID correlation.
 3. **Workspace Line Budget**:
    * Zero Rust code added to `mini-codex`. Rust runtime line budget remains strictly within limits (20,000 runtime / 30,000 workspace).
+
+## 5. 0.6.0 Follow-up
+
+The 0.6.0 release keeps this architecture and adds the compatibility evidence
+that was missing from the original implementation record:
+
+- `stream_turn()` filters event notifications by the requested Thread and Turn,
+  preventing unrelated concurrent streams from being surfaced to consumers.
+- `MINI_AGENT_APP_SERVER_PATH` supports an explicit matching App Server binary
+  when the default executable name is not on `PATH`.
+- Demo 06 and `test_cookbook_validation.py` provide deterministic, no-provider
+  validation for every current lifecycle event and unknown-event fallback.
+- The release validation completed with 21 Python tests, Ruff, frontend build,
+  and `mini_agent-0.6.0` wheel/sdist construction. Live Demos 01–05 remain
+  explicit Provider-dependent checks.

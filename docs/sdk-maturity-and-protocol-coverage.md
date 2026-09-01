@@ -74,3 +74,19 @@
    - 自动提取当前执行脚本名称（例如 `02_streaming_events`），将日志输出至 `logs/02_streaming_events.log`，支持 `w` 与 `a` 模式。
 3. **Rust 行数预算控制**：
    - 本次 SDK 建设完全在客户端层完成，严格遵循 `mini-codex` 的 20,000 行运行时硬限制与 30,000 行全工作区限制。
+
+## 5. 0.6.0 发布验证证据
+
+本次发布使用与 SDK 同版本的 `mini-agent-app-server` 二进制完成本地验证：
+
+| 检查 | 结果 |
+| :--- | :--- |
+| `uv run pytest -q` | **21 passed**；含 SDK API、事件分流、Gateway 与 Cookbook 验证 |
+| `uv run ruff check .` | **PASS** |
+| `uv run ruff format --check .` | **PASS** |
+| `npm run build` | **PASS** |
+| `uv build --package mini-agent` | **PASS**，生成 `mini_agent-0.6.0` wheel/sdist |
+| Demo 06 | **PASS**，无 App Server、无 Provider、无 Token |
+
+Demo 01–05 的 live Provider 运行仍需开发者显式配置模型凭证；这部分不被
+默认测试伪装成无条件通过。

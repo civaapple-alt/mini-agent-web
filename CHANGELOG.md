@@ -9,7 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-No changes yet.
+### Documentation
+
+- Added `AGENTS.md` and synchronized the README, SDK guide, Cookbook guide,
+  ADRs, and validation notes with the 0.6.0 release surface.
 
 ## [0.6.0] - 2026-09-01
 

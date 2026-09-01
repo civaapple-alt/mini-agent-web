@@ -1,6 +1,8 @@
 # Mini Agent Python Cookbook (Based on Official SDK)
 
-本目录提供了基于官方 Python SDK `mini-agent` 调用并集成 `mini-agent-app-server` 的全套实战示例。
+本目录提供了基于官方 Python SDK `mini-agent` 0.6.0 调用并集成
+`mini-agent-app-server` 的全套实战示例。示例按“可直接验证的协议契约”和
+“需要真实 Provider 的交互场景”分层，避免把 Token 请求隐藏在默认测试中。
 
 ---
 

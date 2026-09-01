@@ -9,6 +9,8 @@
 
 它通过 Stdio JSON-RPC 2.0 协议与 `mini-agent-app-server` 高效通信，为 Python 开发者提供异步 Client SDK、全套实战 Cookbook 以及未来 Web / TUI 应用扩展底座。
 
+当前发布版本为 `0.6.0`，对应 JSON-RPC wire protocol version `1`。SDK、App Server、FastAPI 网关、Frontend 和 TUI 的版本信息保持同步。
+
 ---
 
 ## 🏛️ 架构示意
@@ -74,7 +76,13 @@ uv sync
 ```bash
 uv run pytest
 ```
-> 运行全量 API 自动化测试套件。测试会验证 SDK 与 0.6.0 App Server 的握手和管理 API；需要 live Provider 的 Cookbook 不在默认测试中执行。
+> 运行全量 API 自动化测试套件。测试会验证 SDK 与 0.6.0 App Server 的握手和管理 API；需要 live Provider 的 Cookbook 不在默认测试中执行。若 App Server 不在 `PATH`，请先设置 `MINI_AGENT_APP_SERVER_PATH`。
+
+只运行无 Provider、无 Token 的 Cookbook 协议验证：
+
+```bash
+uv run pytest tests/test_cookbook_validation.py -q
+```
 
 ### 4. 运行首个实战示例
 ```bash
@@ -171,6 +179,7 @@ uv run mini-agent-tui
 
 ```text
 mini-agent-web/
+├── AGENTS.md                 # SDK、Gateway、Frontend、TUI 与 Cookbook 协作规则
 ├── sdk/python/                # 官方 Python SDK (包名: mini-agent)
 │   ├── src/mini_agent/
 │   │   ├── __init__.py        # 公共导出 (MiniAgentClient, setup_logging 等)
@@ -213,8 +222,10 @@ mini-agent-web/
 │   └── 06_protocol_compatibility.py   # 0.6.0 事件协议无 Token 验证
 │
 ├── tests/                     # 自动化集成与单元测试套件
+│   ├── test_cookbook_validation.py # Cookbook 编译与无 Token 协议验证
 │   ├── test_gateway_api.py    # FastAPI REST / SSE 接口集成测试
-│   └── test_sdk_apis.py       # pytest-asyncio 全量 SDK API 协议测试
+│   ├── test_sdk_apis.py       # pytest-asyncio 全量 SDK API 协议测试
+│   └── test_sdk_events.py     # 0.6.0 事件解析与 Thread/Turn 分流测试
 │
 ├── docs/                      # 核心文档与架构记录
 │   ├── README.md                              # 文档导航中心
@@ -236,7 +247,9 @@ mini-agent-web/
 
 * 📘 [**Python SDK 开发者指南 (`docs/python-sdk-guide.md`)**](docs/python-sdk-guide.md)：完整 API 说明、流式事件、审批拦截与错误处理。
 * 📊 [**SDK 成熟度与协议覆盖报告 (`docs/sdk-maturity-and-protocol-coverage.md`)**](docs/sdk-maturity-and-protocol-coverage.md)：JSON-RPC 2.0 接口覆盖矩阵与测试验收。
+* 🧪 [**Cookbook 验证说明 (`cookbook/python-demo/README.md`)**](cookbook/python-demo/README.md)：Demo 01–05 的 live 运行边界与 Demo 06 的无 Token 协议验证。
 * 🛠️ [**App Server 并发死锁与流式挂起根因剖析 (`docs/app-server-concurrency-and-deadlock-analysis.md`)**](docs/app-server-concurrency-and-deadlock-analysis.md)：Tokio 多线程、Actor 自锁、SSE Keep-Alive 与子进程隔离加固实录。
+* 🤝 [**贡献者与变更准入规则 (`AGENTS.md`)**](AGENTS.md)：版本同步、测试、Cookbook 和变更卫生要求。
 * 📜 [**版本更新日志 (`CHANGELOG.md`)**](CHANGELOG.md)：版本变更与功能演进记录。
 
 ---
@@ -266,6 +279,12 @@ uv run pytest tests/ -s -vv
 
 # 运行特定测试文件
 uv run pytest tests/test_sdk_apis.py
+```
+
+0.6.0 发布验证还包含 SDK 事件解析、Thread/Turn 分流和全部 Cookbook 脚本编译检查：
+
+```bash
+uv run pytest tests/test_sdk_events.py tests/test_cookbook_validation.py -q
 ```
 
 ### 3. 代码质量与规范检查

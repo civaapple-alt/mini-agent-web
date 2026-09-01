@@ -115,7 +115,7 @@ Sensitive actions (shell execution, workspace file modification, web fetching) t
 
 ```python
 async def custom_approver(
-    request_id: str, action: str, thread_id: str, turn_id: str | None
+    request_id: str, action: str, params: dict
 ) -> bool:
     print(f"[SECURITY ALERT] Request: {action}")
     # Prompt user or verify against whitelist
@@ -150,7 +150,22 @@ result = await client.wait_for_turn(turn_id)
 assert result.status == "cancelled"
 ```
 
-### 4.5 Workflows & Plan Mode
+### 4.5 Protocol Compatibility and Future Events
+
+The 0.6.0 SDK targets App Server JSON-RPC protocol version `1`. Parsed event
+objects expose `event_type`, and the typed event surface includes context
+compaction (`context_compaction_started` / `context_compaction_finished`) and
+run lifecycle (`run_finished` / structured `run_failed`) events. Unknown future
+event types remain available as `GenericEvent` instead of breaking the stream.
+
+Use the deterministic Cookbook contract check when changing event models:
+
+```bash
+uv run python cookbook/python-demo/06_protocol_compatibility.py
+uv run pytest tests/test_sdk_events.py tests/test_cookbook_validation.py -q
+```
+
+### 4.6 Workflows & Plan Mode
 ```python
 # Inspect system environment & available tools
 world_state = await client.get_world_state()
@@ -165,7 +180,7 @@ checkpoint = await client.read_thread()
 print(f"Messages count: {len(checkpoint.messages)}")
 ```
 
-### 4.6 Thread Branching & Resuming
+### 4.7 Thread Branching & Resuming
 ```python
 # List all active threads
 threads = await client.list_threads()
@@ -179,7 +194,7 @@ forked = await client.fork_thread(
 resumed = await client.resume_thread(thread_id="restored-thread", checkpoint=checkpoint)
 ```
 
-### 4.7 Multi-Milestone Goal Workflows
+### 4.8 Multi-Milestone Goal Workflows
 ```python
 # Start a multi-stage goal workflow
 goal = await client.start_goal("Implement High-Performance Caching Layer")

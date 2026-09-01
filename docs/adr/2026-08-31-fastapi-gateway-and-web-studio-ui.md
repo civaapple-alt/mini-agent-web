@@ -39,3 +39,12 @@ Accepted
   - 前端具备工业级状态管理、组件复用能力与全套流式交互体验。
 * **Negative / Trade-offs**:
   - 前端源码开发需依赖 Node/npm 环境（生产打包产物直接由 Python 网关托管，终端用户无需 Node 环境）。
+
+## 0.6.0 Compatibility Note
+
+The Gateway remains layered over the 0.6.0 `mini-agent` SDK and the JSON-RPC
+wire protocol version `1`. SDK streams now retain Thread/Turn identity while
+the existing Gateway SessionManager continues to own its connection lifecycle
+and broadcast behavior. Event-model and no-provider Cookbook checks are kept in
+`tests/test_sdk_events.py` and `tests/test_cookbook_validation.py`; live model
+scenarios remain explicit rather than implicit CI dependencies.

@@ -21,6 +21,7 @@ export default function App() {
   const [pendingApproval, setPendingApproval] = useState(null);
 
   // Workflow & Environment
+  const [profile, setProfile] = useState('interactive');
   const [planActive, setPlanActive] = useState(false);
   const [goalState, setGoalState] = useState(null);
   const [approvalPolicy, setApprovalPolicy] = useState('per_action');
@@ -61,6 +62,7 @@ export default function App() {
   const loadSettings = async () => {
     try {
       const data = await api.getSettings();
+      if (data.profile) setProfile(data.profile);
       if (data.approval_policy) setApprovalPolicy(data.approval_policy);
       if (data.theme) document.body.className = `theme-${data.theme}`;
     } catch (err) {
@@ -477,6 +479,31 @@ export default function App() {
     setSidePanelOpen(true);
   };
 
+  const PROFILE_DEFAULTS = {
+    interactive: { approval_policy: 'per_action' },
+    autonomous: { approval_policy: 'auto_approve' },
+    strict: { approval_policy: 'strict' },
+  };
+
+  const handleUpdateProfile = async (newProfile) => {
+    setProfile(newProfile);
+    const defaults = PROFILE_DEFAULTS[newProfile] || {};
+    const nextPolicy = defaults.approval_policy || approvalPolicy;
+    setApprovalPolicy(nextPolicy);
+    try {
+      await api.updateSettings({ profile: newProfile, approval_policy: nextPolicy });
+      if (newProfile === 'strict') {
+        await api.setPlanMode(true);
+        setPlanActive(true);
+      } else if (planActive) {
+        await api.setPlanMode(false);
+        setPlanActive(false);
+      }
+    } catch (err) {
+      console.error('Failed to update profile:', err);
+    }
+  };
+
   const handleUpdateApprovalPolicy = async (newPolicy) => {
     setApprovalPolicy(newPolicy);
     try {
@@ -524,17 +551,15 @@ export default function App() {
 
           <InputBar
             isGenerating={isGenerating}
-            planActive={planActive}
-            goalState={goalState}
+            profile={profile}
             approvalPolicy={approvalPolicy}
             pendingApproval={pendingApproval}
             onRespondApproval={handleRespondApproval}
+            onChangeProfile={handleUpdateProfile}
             onChangeApprovalPolicy={handleUpdateApprovalPolicy}
             onSendMessage={handleSendMessage}
             onSteerMessage={handleSteerMessage}
             onInterrupt={handleInterrupt}
-            onTogglePlan={handleTogglePlan}
-            onOpenSidePanel={handleOpenSidePanel}
           />
         </main>
       </div>
@@ -555,6 +580,9 @@ export default function App() {
         onSettingsSaved={(newSettings) => {
           if (newSettings.theme) {
             document.body.className = `theme-${newSettings.theme}`;
+          }
+          if (newSettings.profile) {
+            setProfile(newSettings.profile);
           }
           if (newSettings.approval_policy) {
             setApprovalPolicy(newSettings.approval_policy);

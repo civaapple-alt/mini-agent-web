@@ -14,7 +14,6 @@ import {
   X,
   ChevronDown,
   MessageSquare,
-  ChevronUp,
 } from 'lucide-react';
 import './InputBar.css';
 
@@ -26,6 +25,12 @@ const SLASH_COMMANDS = [
   { cmd: '/status', desc: '查看环境探测与状态', icon: <Command size={13} className="text-emerald" /> },
 ];
 
+const PROFILES = [
+  { id: 'interactive', label: '交互协作 (Interactive)', icon: <MessageSquare size={11} className="text-sky" />, desc: '日常人机结对对话与单步工具把控 (推荐)' },
+  { id: 'autonomous', label: '自治目标 (Autonomous)', icon: <Target size={11} className="text-green" />, desc: '目标驱动多里程碑无人值守收敛' },
+  { id: 'strict', label: '严格只读 (Strict)', icon: <Compass size={11} className="text-amber" />, desc: '只读规划探索与高安全审计，禁止写操作' },
+];
+
 const APPROVAL_POLICIES = [
   { id: 'per_action', label: '每次确认 (Per-Action)', desc: '每次敏感操作单独弹窗确认 (推荐)' },
   { id: 'auto_approve', label: '自动放行 (Auto-Approve)', desc: '全自动放行工具执行 (Dev/高速)' },
@@ -34,21 +39,20 @@ const APPROVAL_POLICIES = [
 
 export default function InputBar({
   isGenerating,
-  planActive,
-  goalState,
+  profile = 'interactive',
   approvalPolicy = 'per_action',
   pendingApproval,
   onRespondApproval,
+  onChangeProfile,
   onChangeApprovalPolicy,
   onSendMessage,
   onSteerMessage,
   onInterrupt,
-  onTogglePlan,
-  onOpenSidePanel,
 }) {
   const [prompt, setPrompt] = useState('');
   const [showSlashPopup, setShowSlashPopup] = useState(false);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showPolicyMenu, setShowPolicyMenu] = useState(false);
   const [denyReason, setDenyReason] = useState('');
   const [showDenyInput, setShowDenyInput] = useState(false);
@@ -60,6 +64,20 @@ export default function InputBar({
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 180)}px`;
     }
   }, [prompt]);
+
+  // Close popup menus when clicking outside
+  useEffect(() => {
+    const handleDocumentClick = () => {
+      setShowProfileMenu(false);
+      setShowPolicyMenu(false);
+    };
+    if (showProfileMenu || showPolicyMenu) {
+      window.addEventListener('click', handleDocumentClick);
+    }
+    return () => {
+      window.removeEventListener('click', handleDocumentClick);
+    };
+  }, [showProfileMenu, showPolicyMenu]);
 
   const handleInputChange = (e) => {
     const val = e.target.value;
@@ -75,7 +93,7 @@ export default function InputBar({
 
   const handleSelectSlashCommand = (cmdObj) => {
     if (cmdObj.cmd === '/plan') {
-      onTogglePlan();
+      if (onChangeProfile) onChangeProfile(profile === 'strict' ? 'interactive' : 'strict');
       setPrompt('');
     } else {
       setPrompt(`${cmdObj.cmd} `);
@@ -90,7 +108,7 @@ export default function InputBar({
     if (!text) return;
 
     if (text === '/plan') {
-      onTogglePlan();
+      if (onChangeProfile) onChangeProfile(profile === 'strict' ? 'interactive' : 'strict');
       setPrompt('');
       return;
     }
@@ -153,6 +171,7 @@ export default function InputBar({
     }
   };
 
+  const currentProfileObj = PROFILES.find((p) => p.id === profile) || PROFILES[0];
   const currentPolicyObj = APPROVAL_POLICIES.find((p) => p.id === approvalPolicy) || APPROVAL_POLICIES[0];
 
   // Format pending approval action text
@@ -161,13 +180,6 @@ export default function InputBar({
       ? pendingApproval.data.action || JSON.stringify(pendingApproval.data, null, 2)
       : String(pendingApproval.data)
     : '';
-
-  const isGoalRunning = Boolean(
-    goalState &&
-      (goalState.status === 'running' ||
-        goalState.status === 'in_progress' ||
-        goalState.status === 'active')
-  );
 
   return (
     <div className="input-bar-container">
@@ -271,73 +283,9 @@ export default function InputBar({
         </div>
       )}
 
-      {/* Policy Quick Selector Popup */}
-      {showPolicyMenu && (
-        <div className="policy-popup-menu custom-scrollbar">
-          <div className="policy-popup-title">安全审批策略 (Approval Policy)</div>
-          {APPROVAL_POLICIES.map((item) => (
-            <div
-              key={item.id}
-              className={`policy-item ${item.id === approvalPolicy ? 'active' : ''}`}
-              onClick={() => {
-                if (onChangeApprovalPolicy) onChangeApprovalPolicy(item.id);
-                setShowPolicyMenu(false);
-              }}
-            >
-              <div className="policy-item-header">
-                <span className="policy-name font-mono">{item.label}</span>
-                {item.id === approvalPolicy && <Check size={12} className="text-green" />}
-              </div>
-              <span className="policy-desc">{item.desc}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* Main Composer Box */}
       <form className="input-form" onSubmit={handleSubmit}>
-        {/* Top-Left Composer Mode Switcher */}
-        <div className="composer-top-bar">
-          <div className="composer-mode-selector">
-            <button
-              type="button"
-              className={`mode-pill-btn ${!planActive && !isGoalRunning ? 'active' : ''}`}
-              onClick={() => {
-                if (planActive) onTogglePlan();
-              }}
-              title="常规对话模式"
-            >
-              <MessageSquare size={11} />
-              <span>对话 (Chat)</span>
-            </button>
-
-            <button
-              type="button"
-              className={`mode-pill-btn plan ${planActive ? 'active' : ''}`}
-              onClick={onTogglePlan}
-              title="开启/关闭只读规划探索模式"
-            >
-              <Compass size={11} />
-              <span>规划 (Plan)</span>
-              {planActive && <span className="mode-dot amber"></span>}
-            </button>
-
-            <button
-              type="button"
-              className={`mode-pill-btn goal ${isGoalRunning ? 'active' : ''}`}
-              onClick={() => {
-                if (onOpenSidePanel) onOpenSidePanel('plan_goal');
-              }}
-              title="目标收敛多里程碑驱动模式"
-            >
-              <Target size={11} />
-              <span>目标 (Goal)</span>
-              {isGoalRunning && <span className="mode-dot green"></span>}
-            </button>
-          </div>
-        </div>
-
-        {/* Textarea Input */}
+        {/* Textarea Input: Direct, Spacious & Uncluttered */}
         <div className="textarea-wrapper">
           <textarea
             ref={textareaRef}
@@ -350,8 +298,10 @@ export default function InputBar({
                 ? '⚠️ 等待上方安全权限审批确认后继续...'
                 : isGenerating
                 ? 'Agent 执行中... 输入内容并按回车可动态纠偏 (Steer)'
-                : planActive
-                ? '📋 Plan Mode: 输入规划任务需求... (只读探索与计划制定)'
+                : profile === 'strict'
+                ? '📋 Strict Mode: 输入规划任务需求... (只读探索与计划制定)'
+                : profile === 'autonomous'
+                ? '🎯 Autonomous Mode: 输入宏观目标需求... (多里程碑无人值守收敛)'
                 : '输入任务、指令或问题... (输入 / 查看快捷命令)'
             }
             className="chat-textarea"
@@ -360,23 +310,102 @@ export default function InputBar({
 
         {/* Bottom Composer Footer */}
         <div className="input-footer-bar">
-          {/* Bottom-Left: Approval Policy Selector & Shortcuts */}
+          {/* Bottom-Left Controls: Profile Selector + Approval Policy Selector */}
           <div className="input-hints">
-            <button
-              type="button"
-              className="policy-indicator-btn font-mono"
-              onClick={() => setShowPolicyMenu(!showPolicyMenu)}
-              title="点击快速切换安全审批策略"
-            >
-              <Shield size={11} className={approvalPolicy === 'auto_approve' ? 'text-green' : approvalPolicy === 'strict' ? 'text-rose' : 'text-amber'} />
-              <span>审批: {currentPolicyObj.label.split(' ')[0]}</span>
-              <ChevronDown size={10} />
-            </button>
+            {/* 1. Profile Dropdown Selector (Left of Approval Policy) */}
+            <div className="composer-popover-wrapper" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                className="composer-pill-btn font-mono"
+                onClick={() => {
+                  setShowProfileMenu(!showProfileMenu);
+                  setShowPolicyMenu(false);
+                }}
+                title="点击切换客户端运行 Profile"
+              >
+                {currentProfileObj.icon}
+                <span>{currentProfileObj.label.split(' ')[0]}</span>
+                <ChevronDown size={10} className="text-muted" />
+              </button>
 
-            <span className="hint-kbd font-mono">Enter 发送 · Shift+Enter 换行</span>
+              {showProfileMenu && (
+                <div className="composer-popup-menu custom-scrollbar">
+                  <div className="composer-popup-title">运行 Profile (Profile)</div>
+                  {PROFILES.map((p) => (
+                    <div
+                      key={p.id}
+                      className={`composer-popup-item ${p.id === profile ? 'active' : ''}`}
+                      onClick={() => {
+                        if (onChangeProfile) onChangeProfile(p.id);
+                        setShowProfileMenu(false);
+                      }}
+                    >
+                      <div className="item-header">
+                        <div className="item-title-wrap">
+                          {p.icon}
+                          <span className="item-name font-mono">{p.label}</span>
+                        </div>
+                        {p.id === profile && <Check size={12} className="text-green" />}
+                      </div>
+                      <span className="item-desc">{p.desc}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 2. Approval Policy Dropdown Selector */}
+            <div className="composer-popover-wrapper" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                className="composer-pill-btn font-mono"
+                onClick={() => {
+                  setShowPolicyMenu(!showPolicyMenu);
+                  setShowProfileMenu(false);
+                }}
+                title="点击切换安全审批策略"
+              >
+                <Shield
+                  size={11}
+                  className={
+                    approvalPolicy === 'auto_approve'
+                      ? 'text-green'
+                      : approvalPolicy === 'strict'
+                      ? 'text-rose'
+                      : 'text-amber'
+                  }
+                />
+                <span>审批: {currentPolicyObj.label.split(' ')[0]}</span>
+                <ChevronDown size={10} className="text-muted" />
+              </button>
+
+              {showPolicyMenu && (
+                <div className="composer-popup-menu custom-scrollbar">
+                  <div className="composer-popup-title">安全审批策略 (Approval Policy)</div>
+                  {APPROVAL_POLICIES.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`composer-popup-item ${item.id === approvalPolicy ? 'active' : ''}`}
+                      onClick={() => {
+                        if (onChangeApprovalPolicy) onChangeApprovalPolicy(item.id);
+                        setShowPolicyMenu(false);
+                      }}
+                    >
+                      <div className="item-header">
+                        <span className="item-name font-mono">{item.label}</span>
+                        {item.id === approvalPolicy && <Check size={12} className="text-green" />}
+                      </div>
+                      <span className="item-desc">{item.desc}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <span className="hint-kbd font-mono">Enter 发送</span>
           </div>
 
-          {/* Bottom-Right: Actions */}
+          {/* Bottom-Right: Action Buttons */}
           <div className="input-actions">
             {isGenerating ? (
               <button

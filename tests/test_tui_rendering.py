@@ -261,10 +261,9 @@ async def test_handle_slash_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     assert handled is True
     assert "Copied latest assistant response" in output_buffer.getvalue()
 
-    # 11. /copy all
-    handled = await handle_slash_command("/copy all", state, mock_client)
+    # 11. /cp alias command
+    handled = await handle_slash_command("/cp", state, mock_client)
     assert handled is True
-    assert "Copied full thread conversation" in output_buffer.getvalue()
 
 
 def test_ask_approval_sync(monkeypatch: pytest.MonkeyPatch) -> None:

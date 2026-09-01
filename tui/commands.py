@@ -84,7 +84,7 @@ def print_help_table(state: TUIState) -> None:
     table.add_row("", "!<command>", "直接在宿主环境执行本地 Shell 命令 (如 !git status, !cargo test)")
 
     # 6. 通用控制
-    table.add_row("通用控制", "/copy [all]", "复制模型最新回复或完整会话 Markdown 到剪贴板 (别名: /cp)")
+    table.add_row("通用控制", "/copy", "复制模型最新回复/文档 Markdown 到系统剪贴板 (别名: /cp)")
     table.add_row("", "/clear", "清空终端屏幕")
     table.add_row("", "/help", "显示本命令参考大全")
     table.add_row("", "/exit / /quit", "退出 TUI 交互终端")
@@ -148,47 +148,23 @@ async def handle_slash_command(
         print_help_table(state)
         return True
 
-    if lower_text.startswith(("/copy", "/cp")):
-        parts = text.split(maxsplit=1)
-        sub_arg = parts[1].strip().lower() if len(parts) > 1 else ""
-
-        text_to_copy = ""
-        desc = ""
-
-        if sub_arg in ("all", "thread", "full"):
+    if lower_text in ("/copy", "/cp"):
+        text_to_copy = state.last_assistant_response
+        if not text_to_copy:
+            # Fallback: attempt to read latest assistant message from thread checkpoint
             try:
                 cp = await client.read_thread(state.current_thread_id)
-                lines = [f"# Thread: {state.current_thread_id}\n"]
-                for msg in cp.messages:
-                    role = str(msg.get("role") or msg.get("type") or "user").capitalize()
-                    content = msg.get("text") or msg.get("content") or ""
-                    if isinstance(content, list):
-                        content = "\n".join(str(c) for c in content)
-                    lines.append(f"### {role}\n\n{content}\n")
-                text_to_copy = "\n".join(lines).strip()
-                desc = f"full thread conversation ({len(cp.messages)} messages)"
-            except Exception as err:  # noqa: BLE001
-                console.print(f"[red]Failed to read thread messages: {err}[/red]")
-                return True
-        else:
-            if state.last_assistant_response:
-                text_to_copy = state.last_assistant_response
-                desc = "latest assistant response"
-            else:
-                try:
-                    cp = await client.read_thread(state.current_thread_id)
-                    for msg in reversed(cp.messages):
-                        role = str(msg.get("role") or msg.get("type") or "").lower()
-                        if role in ("assistant", "model", "bot"):
-                            content = msg.get("text") or msg.get("content") or ""
-                            if isinstance(content, list):
-                                content = "\n".join(str(c) for c in content)
-                            if content.strip():
-                                text_to_copy = content.strip()
-                                desc = "latest assistant response"
-                                break
-                except Exception:  # noqa: BLE001, S110
-                    pass
+                for msg in reversed(cp.messages):
+                    role = str(msg.get("role") or msg.get("type") or "").lower()
+                    if role in ("assistant", "model", "bot"):
+                        content = msg.get("text") or msg.get("content") or ""
+                        if isinstance(content, list):
+                            content = "\n".join(str(c) for c in content)
+                        if content.strip():
+                            text_to_copy = content.strip()
+                            break
+            except Exception:  # noqa: BLE001, S110
+                pass
 
         if not text_to_copy:
             console.print("[yellow]No assistant response or summary available to copy yet.[/yellow]")
@@ -199,7 +175,7 @@ async def handle_slash_command(
         success = copy_to_clipboard(text_to_copy)
         if success:
             console.print(
-                f"[green]✓ Copied {desc} ([bold]{len(text_to_copy)}[/bold] chars, Markdown) to system clipboard.[/green]"
+                f"[green]✓ Copied latest assistant response ([bold]{len(text_to_copy)}[/bold] chars, Markdown) to system clipboard.[/green]"
             )
         else:
             console.print(

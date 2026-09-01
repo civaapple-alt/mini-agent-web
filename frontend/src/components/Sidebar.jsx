@@ -220,7 +220,7 @@ export default function Sidebar({
       if (typeof t === 'string') {
         return {
           thread_id: t,
-          title: t === 'default' ? '对比 mini-codex 与 Codex 框架' : t,
+          title: t === 'default' ? '默认会话' : t,
           project: currentProjectName,
           summary: '',
           updated_at: new Date().toISOString(),
@@ -228,7 +228,7 @@ export default function Sidebar({
       }
       return {
         thread_id: t.thread_id,
-        title: t.title || t.thread_id,
+        title: t.title || (t.thread_id === 'default' ? '默认会话' : t.thread_id),
         project: t.project || currentProjectName,
         summary: t.summary || '',
         updated_at: t.updated_at || new Date().toISOString(),
@@ -247,27 +247,15 @@ export default function Sidebar({
     );
   }, [normalizedThreads, searchQuery]);
 
-  const allProjects = projectsData?.projects || projectsData?.recent_projects || [
-    {
-      id: 'codex-re',
-      name: 'codex-re',
-      pinned: false,
-      primary_path: 'D:\\gh-ws\\codex',
-      source_folders: [
-        { name: 'codex', path: 'D:\\gh-ws\\codex', is_primary: true },
-        { name: 'fx', path: 'D:\\gh-ws\\fx', is_primary: false },
-        { name: 'mini-codex', path: 'D:\\gh-ws\\codex-ws\\mini-codex', is_primary: false },
-        { name: 'qi', path: 'D:\\ai-project\\qi', is_primary: false },
-        { name: 'pi', path: 'D:\\gh-ws\\pi', is_primary: false },
-      ],
-      threads_count: 6,
-      active_threads_count: 1,
-    },
-    { id: 'mini-codex', name: 'mini-codex', pinned: false, source_folders: [{ name: 'mini-codex', path: 'D:\\gh-ws\\codex-ws\\mini-codex', is_primary: true }] },
-    { id: 'pi-cordis-dsh', name: 'pi-cordis-dsh', pinned: false, source_folders: [{ name: 'pi', path: 'D:\\gh-ws\\pi', is_primary: true }] },
-    { id: 'orange', name: 'orange', pinned: false, source_folders: [{ name: 'orange', path: 'D:\\gh-ws\\orange', is_primary: true }] },
-    { id: 'qi', name: 'qi', pinned: false, source_folders: [{ name: 'qi', path: 'D:\\ai-project\\qi', is_primary: true }] },
-  ];
+  const allProjects = useMemo(() => {
+    if (projectsData?.projects && projectsData.projects.length > 0) {
+      return projectsData.projects;
+    }
+    if (projectsData?.current_project) {
+      return [projectsData.current_project];
+    }
+    return [];
+  }, [projectsData]);
 
   const displayedProjects = showAllProjects ? allProjects : allProjects.slice(0, 5);
 

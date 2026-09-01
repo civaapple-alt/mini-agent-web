@@ -7,6 +7,7 @@ thread metadata caching (titles, summaries), and runtime user settings.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
@@ -51,117 +52,18 @@ class SessionManager:
         self._lock = asyncio.Lock()
         self._initialized = False
 
+        # Persistence state file path: ~/.mini-agent/state.json
+        self._state_dir = Path.home() / ".mini-agent"
+        self._state_file = self._state_dir / "state.json"
+
         # Structured project registry: project_id -> project dict
         self._current_project_path: Path = Path.cwd().resolve()
-        cur_name = self._current_project_path.name
-        self._current_project_id: str = "codex-re" if "codex" in cur_name else cur_name
-        self._projects_registry: dict[str, dict[str, Any]] = {
-            "codex-re": {
-                "id": "codex-re",
-                "name": "codex-re",
-                "pinned": False,
-                "primary_path": str(self._current_project_path),
-                "source_folders": [
-                    {"name": "codex", "path": "D:\\gh-ws\\codex", "is_primary": True},
-                    {"name": "fx", "path": "D:\\gh-ws\\fx", "is_primary": False},
-                    {"name": "mini-codex", "path": "D:\\gh-ws\\codex-ws\\mini-codex", "is_primary": False},
-                    {"name": "qi", "path": "D:\\ai-project\\qi", "is_primary": False},
-                    {"name": "pi", "path": "D:\\gh-ws\\pi", "is_primary": False},
-                ],
-            },
-            "mini-codex": {
-                "id": "mini-codex",
-                "name": "mini-codex",
-                "pinned": False,
-                "primary_path": str(self._current_project_path.parent / "mini-codex"),
-                "source_folders": [
-                    {
-                        "name": "mini-codex",
-                        "path": str(self._current_project_path.parent / "mini-codex"),
-                        "is_primary": True,
-                    },
-                ],
-            },
-            "pi-cordis-dsh": {
-                "id": "pi-cordis-dsh",
-                "name": "pi-cordis-dsh",
-                "pinned": False,
-                "primary_path": "D:\\gh-ws\\pi",
-                "source_folders": [
-                    {"name": "pi", "path": "D:\\gh-ws\\pi", "is_primary": True},
-                ],
-            },
-            "orange": {
-                "id": "orange",
-                "name": "orange",
-                "pinned": False,
-                "primary_path": "D:\\gh-ws\\orange",
-                "source_folders": [
-                    {"name": "orange", "path": "D:\\gh-ws\\orange", "is_primary": True},
-                ],
-            },
-            "qi": {
-                "id": "qi",
-                "name": "qi",
-                "pinned": False,
-                "primary_path": "D:\\ai-project\\qi",
-                "source_folders": [
-                    {"name": "qi", "path": "D:\\ai-project\\qi", "is_primary": True},
-                ],
-            },
-        }
+        self._current_project_id: str = self._current_project_path.name
+        self._projects_registry: dict[str, dict[str, Any]] = {}
+        self._thread_metadata: dict[str, dict[str, Any]] = {}
 
-        # In-memory thread metadata store: thread_id -> metadata
-        self._thread_metadata: dict[str, dict[str, Any]] = {
-            "default": {
-                "title": "对比 mini-codex 与 Codex 框架",
-                "project": "codex-re",
-                "summary": "Main interactive coding workspace",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-                "pinned": True,
-            },
-            "t-2": {
-                "title": "评价 mini-agent-harness 0.5.0",
-                "project": "codex-re",
-                "summary": "",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-                "pinned": False,
-            },
-            "t-3": {
-                "title": "评价 0.4.0 版本内容",
-                "project": "codex-re",
-                "summary": "",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-                "pinned": False,
-            },
-            "t-4": {
-                "title": "快速评价 commit 后改动",
-                "project": "codex-re",
-                "summary": "",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-                "pinned": False,
-            },
-            "t-5": {
-                "title": "查看 fx 项目",
-                "project": "codex-re",
-                "summary": "",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-                "pinned": False,
-            },
-            "t-6": {
-                "title": "介绍 mini-codex 项目",
-                "project": "mini-codex",
-                "summary": "",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-                "pinned": False,
-            },
-        }
+        # Load persisted state or initialize clean default with only the active workspace
+        self._load_state()
 
         # Runtime system settings
         self._settings: dict[str, Any] = {
@@ -176,6 +78,74 @@ class SessionManager:
             "word_wrap": True,
             "font_size": 13,
         }
+
+    def _load_state(self) -> None:
+        """Load projects and session metadata from persistent JSON file."""
+        if self._state_file.is_file():
+            try:
+                data = json.loads(self._state_file.read_text(encoding="utf-8"))
+                self._projects_registry = data.get("projects", {})
+                self._thread_metadata = data.get("thread_metadata", {})
+                persisted_cur_id = data.get("current_project_id")
+                if persisted_cur_id and persisted_cur_id in self._projects_registry:
+                    self._current_project_id = persisted_cur_id
+                    self._current_project_path = Path(
+                        self._projects_registry[persisted_cur_id].get(
+                            "primary_path", str(self._current_project_path)
+                        )
+                    )
+            except Exception as err:  # noqa: BLE001
+                logger.warning("Failed to parse %s, initializing clean state: %s", self._state_file, err)
+
+        # If no projects exist, initialize ONLY the current active workspace directory
+        cur_name = self._current_project_path.name
+        if not self._projects_registry:
+            self._current_project_id = cur_name
+            self._projects_registry = {
+                cur_name: {
+                    "id": cur_name,
+                    "name": cur_name,
+                    "pinned": False,
+                    "primary_path": str(self._current_project_path),
+                    "source_folders": [
+                        {
+                            "name": cur_name,
+                            "path": str(self._current_project_path),
+                            "is_primary": True,
+                        }
+                    ],
+                }
+            }
+
+        # Ensure default thread exists
+        if not self._thread_metadata:
+            self._thread_metadata = {
+                "default": {
+                    "title": "默认会话 (Default Session)",
+                    "project": self._current_project_id,
+                    "summary": "Main interactive coding workspace",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "pinned": True,
+                }
+            }
+        self._save_state()
+
+    def _save_state(self) -> None:
+        """Persist current projects and session metadata to disk."""
+        try:
+            self._state_dir.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "current_project_id": self._current_project_id,
+                "projects": self._projects_registry,
+                "thread_metadata": self._thread_metadata,
+            }
+            self._state_file.write_text(
+                json.dumps(payload, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception as err:  # noqa: BLE001
+            logger.warning("Failed to persist state to %s: %s", self._state_file, err)
 
     def get_projects(self) -> dict[str, Any]:
         """Get all projects with active threads summary."""
@@ -238,6 +208,7 @@ class SessionManager:
         self._projects_registry[proj_id] = proj_info
         self._current_project_id = proj_id
         self._current_project_path = target_dir
+        self._save_state()
         return proj_info
 
     def update_project(
@@ -268,6 +239,7 @@ class SessionManager:
             )
             proj["primary_path"] = primary
 
+        self._save_state()
         return proj
 
     def delete_project(self, project_id: str) -> bool:
@@ -276,6 +248,7 @@ class SessionManager:
             del self._projects_registry[project_id]
             if self._current_project_id == project_id and self._projects_registry:
                 self._current_project_id = next(iter(self._projects_registry.keys()))
+            self._save_state()
             return True
         return False
 
@@ -284,6 +257,7 @@ class SessionManager:
         if not proj:
             raise KeyError(f"Project '{project_id}' not found")
         proj["pinned"] = not proj.get("pinned", False)
+        self._save_state()
         return proj
 
     def switch_project(self, project_id_or_path: str) -> dict[str, Any]:
@@ -292,6 +266,7 @@ class SessionManager:
             self._current_project_id = project_id_or_path
             proj = self._projects_registry[project_id_or_path]
             self._current_project_path = Path(proj["primary_path"])
+            self._save_state()
             return proj
 
         # 2. Match by path
@@ -301,6 +276,7 @@ class SessionManager:
             ):
                 self._current_project_id = pid
                 self._current_project_path = Path(p["primary_path"])
+                self._save_state()
                 return p
 
         # 3. Arbitrary new directory path
@@ -318,6 +294,7 @@ class SessionManager:
         }
         self._projects_registry[proj_id] = proj_info
         self._current_project_id = proj_id
+        self._save_state()
         return proj_info
 
     @property
@@ -384,11 +361,13 @@ class SessionManager:
         if thread_id not in self._thread_metadata:
             self._thread_metadata[thread_id] = {
                 "title": f"会话 {thread_id}",
+                "project": self._current_project_id,
                 "summary": "",
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
                 "pinned": False,
             }
+            self._save_state()
         return self._thread_metadata[thread_id]
 
     def set_thread_meta(
@@ -399,6 +378,7 @@ class SessionManager:
         meta.update(updates)
         meta["updated_at"] = datetime.now(timezone.utc).isoformat()
         self._thread_metadata[thread_id] = meta
+        self._save_state()
         return meta
 
     def list_all_thread_meta(self) -> dict[str, dict[str, Any]]:

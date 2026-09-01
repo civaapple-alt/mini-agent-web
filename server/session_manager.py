@@ -69,7 +69,7 @@ class SessionManager:
             "approval_policy": "per_action",  # per_action | auto_approve | strict
             "default_mode": "chat",  # chat | plan | goal
             "reasoning_effort": "medium",
-            "theme": "dark",
+            "theme": "light",
             "auto_scroll": True,
             "word_wrap": True,
             "font_size": 13,

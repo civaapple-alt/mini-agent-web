@@ -4,8 +4,8 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
+  background-color: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(2px);
   z-index: 100;
   display: flex;
   justify-content: flex-end;
@@ -18,7 +18,7 @@
   height: 100vh;
   background-color: var(--bg-surface);
   border-left: 1px solid var(--border-color);
-  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+  box-shadow: -6px 0 24px rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
   animation: slideInRight 0.2s ease;
@@ -39,9 +39,9 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  height: 52px;
+  height: 50px;
   border-bottom: 1px solid var(--border-color);
-  background-color: var(--bg-card);
+  background-color: var(--bg-surface);
 }
 
 .sidepanel-tabs {
@@ -54,8 +54,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
-  border-radius: 6px;
+  padding: 5px 10px;
+  border-radius: 5px;
   font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
@@ -66,15 +66,14 @@
 }
 
 .panel-tab-btn:hover {
-  background-color: var(--bg-hover);
+  background-color: var(--bg-card-hover);
   color: var(--text-primary);
 }
 
 .panel-tab-btn.active {
-  background-color: var(--bg-surface);
+  background-color: var(--bg-card-hover);
   color: var(--text-primary);
   font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .panel-close-btn {
@@ -82,13 +81,13 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 6px;
-  border-radius: 6px;
+  padding: 5px;
+  border-radius: 4px;
   transition: all 0.15s ease;
 }
 
 .panel-close-btn:hover {
-  background-color: var(--bg-hover);
+  background-color: var(--bg-card-hover);
   color: var(--text-primary);
 }
 
@@ -124,17 +123,17 @@
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  background-color: var(--bg-card);
+  background-color: var(--bg-surface);
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
-  border-radius: 6px;
+  border-radius: 5px;
   font-size: 11px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .btn-action-small:hover {
-  background-color: var(--bg-hover);
+  background-color: var(--bg-card-hover);
   color: var(--text-primary);
 }
 
@@ -146,13 +145,14 @@
 }
 
 .detail-card {
-  background-color: var(--bg-card);
+  background-color: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .detail-card.full-width {
@@ -188,9 +188,9 @@
 }
 
 .cmd-tag.available {
-  background-color: rgba(34, 197, 94, 0.1);
-  color: #4ade80;
-  border: 1px solid rgba(34, 197, 94, 0.2);
+  background-color: rgba(16, 163, 127, 0.08);
+  color: #10a37f;
+  border: 1px solid rgba(16, 163, 127, 0.2);
 }
 
 .xml-preview {
@@ -199,7 +199,7 @@
   border-radius: 6px;
   padding: 8px;
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   max-height: 180px;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -207,13 +207,14 @@
 
 /* Workflows & Goals */
 .workflow-card {
-  background-color: var(--bg-card);
+  background-color: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .workflow-card-header {
@@ -241,8 +242,8 @@
 }
 
 .btn-toggle-switch {
-  padding: 6px 14px;
-  border-radius: 20px;
+  padding: 4px 12px;
+  border-radius: 16px;
   font-size: 11px;
   font-weight: 600;
   border: none;
@@ -251,13 +252,12 @@
 }
 
 .btn-toggle-switch.on {
-  background-color: #fbbf24;
-  color: #030712;
-  box-shadow: 0 0 10px rgba(251, 191, 36, 0.4);
+  background-color: #d97706;
+  color: #ffffff;
 }
 
 .btn-toggle-switch.off {
-  background-color: var(--bg-hover);
+  background-color: var(--bg-card-hover);
   color: var(--text-muted);
   border: 1px solid var(--border-color);
 }
@@ -286,20 +286,20 @@
 }
 
 .goal-badge.running {
-  background-color: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
+  background-color: rgba(16, 163, 127, 0.1);
+  color: #10a37f;
 }
 
 .milestone-progress-bar {
   height: 6px;
-  background-color: var(--bg-surface);
+  background-color: var(--border-color);
   border-radius: 3px;
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #38bdf8, #4ade80);
+  background: linear-gradient(90deg, #0284c7, #10a37f);
   transition: width 0.3s ease;
 }
 
@@ -315,25 +315,29 @@
 
 .goal-input {
   flex: 1;
-  background-color: var(--bg-app);
+  background-color: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 6px 10px;
+  border-radius: 5px;
+  padding: 5px 8px;
   font-size: 12px;
   color: var(--text-primary);
   outline: none;
+}
+
+.goal-input:focus {
+  border-color: var(--border-focus);
 }
 
 .btn-start-goal {
   display: flex;
   align-items: center;
   gap: 6px;
-  background-color: var(--accent-sky);
-  color: #030712;
+  background-color: var(--accent-green);
+  color: #ffffff;
   font-weight: 600;
   border: none;
-  padding: 6px 12px;
-  border-radius: 6px;
+  padding: 5px 12px;
+  border-radius: 5px;
   font-size: 11px;
   cursor: pointer;
 }
@@ -356,13 +360,13 @@
 
 .files-layout {
   display: grid;
-  grid-template-columns: 200px 1fr;
+  grid-template-columns: 190px 1fr;
   gap: 8px;
   height: 220px;
 }
 
 .files-list {
-  background-color: var(--bg-card);
+  background-color: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   overflow-y: auto;
@@ -376,7 +380,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 8px;
+  padding: 5px 8px;
   border-radius: 4px;
   font-size: 11px;
   color: var(--text-secondary);
@@ -385,15 +389,15 @@
 }
 
 .file-item:hover {
-  background-color: var(--bg-hover);
+  background-color: var(--bg-card-hover);
   color: var(--text-primary);
 }
 
 .file-item.active {
-  background-color: var(--bg-surface);
-  color: var(--accent-sky);
+  background-color: var(--bg-card-hover);
+  color: var(--accent-green);
   font-weight: 600;
-  border-left: 2px solid var(--accent-sky);
+  border-left: 2px solid var(--accent-green);
 }
 
 .file-name {
@@ -414,7 +418,7 @@
   border-radius: 6px;
   padding: 10px;
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
@@ -440,18 +444,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
-  background-color: var(--bg-card);
+  padding: 8px 12px;
+  background-color: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 12px;
 }
 
 .git-file-list-card {
-  background-color: var(--bg-card);
+  background-color: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 12px;
+  border-radius: 6px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -489,11 +493,11 @@
 }
 
 .git-dot.mod {
-  background-color: rgba(251, 191, 36, 0.2);
-  color: #fbbf24;
+  background-color: rgba(217, 119, 6, 0.15);
+  color: #d97706;
 }
 
 .git-dot.untr {
-  background-color: rgba(56, 189, 248, 0.2);
-  color: #38bdf8;
+  background-color: rgba(2, 132, 199, 0.15);
+  color: #0284c7;
 }

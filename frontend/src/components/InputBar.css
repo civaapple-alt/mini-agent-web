@@ -1,6 +1,6 @@
 .input-bar-container {
   padding: 12px 20px 16px;
-  background-color: var(--bg-surface);
+  background-color: var(--bg-app);
   border-top: 1px solid var(--border-color);
   position: relative;
 }
@@ -12,8 +12,8 @@
   justify-content: space-between;
   padding: 6px 12px;
   margin-bottom: 8px;
-  background-color: rgba(14, 165, 233, 0.1);
-  border: 1px solid rgba(14, 165, 233, 0.25);
+  background-color: rgba(2, 132, 199, 0.06);
+  border: 1px solid rgba(2, 132, 199, 0.2);
   border-radius: 6px;
   font-size: 11px;
 }
@@ -36,8 +36,8 @@
 
 .btn-interrupt-small {
   background: transparent;
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  color: #f87171;
+  border: 1px solid rgba(225, 29, 72, 0.4);
+  color: #e11d48;
   font-size: 10px;
   padding: 2px 8px;
   border-radius: 4px;
@@ -46,20 +46,20 @@
 }
 
 .btn-interrupt-small:hover {
-  background-color: rgba(239, 68, 68, 0.2);
+  background-color: rgba(225, 29, 72, 0.1);
 }
 
 /* Slash Command Popup */
 .slash-popup-menu {
   position: absolute;
-  bottom: 85px;
+  bottom: 82px;
   left: 20px;
-  width: 340px;
-  background-color: var(--bg-card);
+  width: 320px;
+  background-color: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 6px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  padding: 5px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -72,8 +72,8 @@
   color: var(--text-muted);
   text-transform: uppercase;
   padding: 4px 8px;
-  border-bottom: 1px solid var(--border-color);
-  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 2px;
 }
 
 .slash-item {
@@ -81,14 +81,14 @@
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: 5px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .slash-item:hover,
 .slash-item.active {
-  background-color: var(--bg-hover);
+  background-color: var(--bg-card-hover);
 }
 
 .slash-icon {
@@ -99,8 +99,8 @@
 .slash-cmd {
   font-size: 12px;
   font-weight: 600;
-  color: var(--accent-sky);
-  width: 60px;
+  color: var(--accent-green);
+  width: 55px;
 }
 
 .slash-desc {
@@ -113,20 +113,20 @@
 .input-form {
   display: flex;
   flex-direction: column;
-  background-color: var(--bg-card);
+  background-color: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 10px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  transition: border-color 0.15s ease;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+  transition: all 0.15s ease;
 }
 
 .input-form:focus-within {
-  border-color: var(--accent-sky);
-  box-shadow: 0 4px 16px rgba(14, 165, 233, 0.15);
+  border-color: var(--border-focus);
+  box-shadow: 0 2px 10px rgba(16, 163, 127, 0.12);
 }
 
 .textarea-wrapper {
-  padding: 10px 14px 4px;
+  padding: 10px 12px 4px;
 }
 
 .chat-textarea {
@@ -149,7 +149,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 12px 8px;
+  padding: 4px 10px 8px;
 }
 
 .input-hints {
@@ -169,9 +169,9 @@
 }
 
 .hint-pill.plan {
-  background-color: rgba(251, 191, 36, 0.2);
-  color: #fbbf24;
-  border: 1px solid rgba(251, 191, 36, 0.3);
+  background-color: rgba(217, 119, 6, 0.12);
+  color: #d97706;
+  border: 1px solid rgba(217, 119, 6, 0.25);
 }
 
 .hint-kbd {
@@ -187,9 +187,9 @@
 .btn-action {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: 7px;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -198,27 +198,27 @@
 }
 
 .btn-action.send {
-  background-color: var(--accent-sky);
-  color: #030712;
+  background-color: var(--accent-green);
+  color: #ffffff;
 }
 
 .btn-action.send:hover:not(:disabled) {
   opacity: 0.9;
-  box-shadow: 0 2px 8px rgba(14, 165, 233, 0.4);
+  box-shadow: 0 2px 6px rgba(16, 163, 127, 0.3);
 }
 
 .btn-action.send:disabled {
-  background-color: var(--bg-hover);
+  background-color: var(--border-subtle);
   color: var(--text-muted);
   cursor: not-allowed;
 }
 
 .btn-action.stop {
-  background-color: rgba(239, 68, 68, 0.2);
-  color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.4);
+  background-color: rgba(225, 29, 72, 0.1);
+  color: #e11d48;
+  border: 1px solid rgba(225, 29, 72, 0.3);
 }
 
 .btn-action.stop:hover {
-  background-color: rgba(239, 68, 68, 0.3);
+  background-color: rgba(225, 29, 72, 0.2);
 }

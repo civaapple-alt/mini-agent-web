@@ -18,16 +18,16 @@
 }
 
 .welcome-icon-box {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #0ea5e9, #38bdf8);
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background-color: var(--accent-green);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #030712;
-  margin-bottom: 20px;
-  box-shadow: 0 4px 24px rgba(14, 165, 233, 0.3);
+  color: #ffffff;
+  margin-bottom: 18px;
+  box-shadow: 0 4px 16px rgba(16, 163, 127, 0.2);
 }
 
 .welcome-title {
@@ -42,7 +42,7 @@
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-secondary);
-  margin-bottom: 30px;
+  margin-bottom: 28px;
 }
 
 .quick-prompts-grid {
@@ -60,12 +60,16 @@
   padding: 8px 14px;
   border-radius: 8px;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   transition: all 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
 .quick-chip:hover {
-  background-color: var(--bg-hover);
-  border-color: var(--accent-sky);
+  background-color: var(--bg-card-hover);
+  border-color: var(--text-muted);
   color: var(--text-primary);
   transform: translateY(-1px);
 }
@@ -77,12 +81,12 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 22px;
 }
 
 .message-row {
   display: flex;
-  gap: 14px;
+  gap: 12px;
   width: 100%;
 }
 
@@ -99,15 +103,16 @@
 }
 
 .user-bubble {
-  background: linear-gradient(135deg, #0284c7, #0369a1);
-  color: #fff;
+  background-color: var(--bg-card-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
   padding: 10px 16px;
   border-radius: 16px 16px 4px 16px;
   font-size: 13.5px;
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
-  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.25);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .user-actions {
@@ -123,17 +128,17 @@
 }
 
 .avatar-bot {
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  background: linear-gradient(135deg, #0ea5e9, #38bdf8);
-  color: #030712;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background-color: var(--accent-green);
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   margin-top: 2px;
-  box-shadow: 0 2px 8px rgba(14, 165, 233, 0.25);
+  box-shadow: 0 1px 4px rgba(16, 163, 127, 0.2);
 }
 
 .assistant-container {
@@ -165,7 +170,7 @@
 }
 
 .msg-action-btn:hover {
-  background-color: var(--bg-hover);
+  background-color: var(--bg-card-hover);
   color: var(--text-primary);
 }
 

@@ -18,7 +18,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved }) {
     approval_policy: 'per_action',
     default_mode: 'chat',
     reasoning_effort: 'medium',
-    theme: 'dark',
+    theme: 'light',
     auto_scroll: true,
     word_wrap: true,
     font_size: 13,
@@ -61,7 +61,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved }) {
       approval_policy: 'per_action',
       default_mode: 'chat',
       reasoning_effort: 'medium',
-      theme: 'dark',
+      theme: 'light',
       auto_scroll: true,
       word_wrap: true,
       font_size: 13,
@@ -76,11 +76,11 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved }) {
         {/* Header */}
         <div className="settings-modal-header">
           <div className="modal-title-group">
-            <Settings size={16} className="text-sky" />
-            <h3>系统与偏好设置 (System Settings)</h3>
+            <Settings size={15} className="text-emerald" />
+            <h3>系统与偏好设置 (Settings)</h3>
           </div>
           <button className="modal-close-btn" onClick={onClose}>
-            <X size={16} />
+            <X size={15} />
           </button>
         </div>
 
@@ -89,7 +89,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved }) {
           {/* Section 1: Security & Governance */}
           <div className="settings-section">
             <div className="section-label">
-              <Shield size={14} className="text-amber" />
+              <Shield size={13} className="text-amber" />
               <span>安全审批与运行模式 (Security & Policy)</span>
             </div>
 
@@ -129,14 +129,14 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved }) {
           {/* Section 2: Model & Reasoning */}
           <div className="settings-section">
             <div className="section-label">
-              <Sliders size={14} className="text-sky" />
+              <Sliders size={13} className="text-sky" />
               <span>模型与推理偏好 (Reasoning & Workflow)</span>
             </div>
 
             <div className="setting-item">
               <div className="setting-text">
                 <span className="setting-title">思考深度 (Reasoning Effort)</span>
-                <span className="setting-desc">调整 OpenAI o1/o3 / Anthropic 思考预算</span>
+                <span className="setting-desc">调整 o1/o3/Claude 思维预算</span>
               </div>
               <select
                 className="setting-select"
@@ -169,7 +169,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved }) {
           {/* Section 3: UI & Appearance */}
           <div className="settings-section">
             <div className="section-label">
-              <Palette size={14} className="text-purple" />
+              <Palette size={13} className="text-purple" />
               <span>界面外观与交互 (UI & Appearance)</span>
             </div>
 
@@ -183,7 +183,8 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved }) {
                 value={settings.theme}
                 onChange={(e) => setSettings({ ...settings, theme: e.target.value })}
               >
-                <option value="dark">Cursor Obsidian (深邃黑)</option>
+                <option value="light">Codex Light (浅色简约 - 默认)</option>
+                <option value="dark">Codex Obsidian (深邃黑)</option>
                 <option value="midnight">Midnight Blue (极夜蓝)</option>
                 <option value="cyberpunk">Cyberpunk Neon (霓虹)</option>
               </select>
@@ -192,7 +193,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved }) {
             <div className="setting-item checkbox">
               <div className="setting-text">
                 <span className="setting-title">自动滚动流式输出</span>
-                <span className="setting-desc">模型输出新 Token 时保持窗口始终在最下方</span>
+                <span className="setting-desc">模型输出新 Token 时保持窗口在最下方</span>
               </div>
               <input
                 type="checkbox"
@@ -218,7 +219,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved }) {
         {/* Footer */}
         <div className="settings-modal-footer">
           <button className="btn-reset" onClick={handleReset} title="恢复默认设置">
-            <RotateCcw size={13} />
+            <RotateCcw size={12} />
             <span>恢复默认</span>
           </button>
 
@@ -229,12 +230,12 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved }) {
             <button className="btn-save" onClick={handleSave} disabled={isSaving}>
               {savedSuccess ? (
                 <>
-                  <Check size={13} />
+                  <Check size={12} />
                   <span>已保存</span>
                 </>
               ) : (
                 <>
-                  <Save size={13} />
+                  <Save size={12} />
                   <span>{isSaving ? '保存中...' : '保存配置'}</span>
                 </>
               )}

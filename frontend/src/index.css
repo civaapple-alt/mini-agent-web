@@ -1,7 +1,32 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-  /* Codex Signature Pure Black & Obsidian Palette */
+  /* Codex Signature Light Canvas (Default) */
+  --bg-app: #f7f7f8;
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f4f4f5;
+  --bg-input: #ffffff;
+  
+  --border-color: #e5e7eb;
+  --border-subtle: #f0f0f2;
+  --border-focus: #10a37f;
+  
+  --text-primary: #0d0d0d;
+  --text-secondary: #4b5563;
+  --text-muted: #8e8ea0;
+  
+  --accent-sky: #0284c7;
+  --accent-amber: #d97706;
+  --accent-green: #10a37f;
+  --accent-rose: #e11d48;
+  --accent-purple: #7c3aed;
+
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* Codex Dark Theme */
+body.theme-dark {
   --bg-app: #000000;
   --bg-surface: #09090b;
   --bg-card: #121215;
@@ -21,25 +46,33 @@
   --accent-green: #10b981;
   --accent-rose: #f43f5e;
   --accent-purple: #a855f7;
-
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-/* Theme Variations */
+/* Midnight Blue Theme */
 body.theme-midnight {
   --bg-app: #030712;
   --bg-surface: #0b0f19;
   --bg-card: #111827;
   --bg-card-hover: #1f2937;
   --border-color: #1f2937;
+  --border-subtle: #162032;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --accent-sky: #38bdf8;
 }
 
+/* Cyberpunk Theme */
 body.theme-cyberpunk {
   --bg-app: #08031a;
   --bg-surface: #12072b;
   --bg-card: #1f0d45;
   --bg-card-hover: #32166e;
   --border-color: #3d1b82;
+  --border-subtle: #291054;
+  --text-primary: #f8fafc;
+  --text-secondary: #a78bfa;
+  --text-muted: #6b21a8;
   --accent-sky: #00f0ff;
   --accent-amber: #ffe600;
   --accent-green: #00ff66;
@@ -79,20 +112,26 @@ code, pre, .font-mono {
 
 ::-webkit-scrollbar-thumb,
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.15);
   border-radius: 9999px;
+}
+
+body.theme-dark ::-webkit-scrollbar-thumb,
+body.theme-midnight ::-webkit-scrollbar-thumb,
+body.theme-cyberpunk ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
 }
 
 ::-webkit-scrollbar-thumb:hover,
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(0, 0, 0, 0.25);
 }
 
 /* Markdown Content Styling */
 .markdown-content {
   font-size: 13.5px;
   line-height: 1.65;
-  color: #d4d4d8;
+  color: var(--text-primary);
 }
 
 .markdown-content p {
@@ -107,7 +146,7 @@ code, pre, .font-mono {
 .markdown-content h2,
 .markdown-content h3,
 .markdown-content h4 {
-  color: #f4f4f5;
+  color: var(--text-primary);
   font-weight: 600;
   margin-top: 14px;
   margin-bottom: 6px;
@@ -129,16 +168,16 @@ code, pre, .font-mono {
 }
 
 .markdown-content code:not(pre code) {
-  background-color: rgba(255, 255, 255, 0.06);
-  color: #f4f4f5;
+  background-color: var(--border-subtle);
+  color: var(--text-primary);
   padding: 2px 5px;
   border-radius: 4px;
   font-size: 0.88em;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
 }
 
 .markdown-content pre {
-  background-color: #0c0c0e;
+  background-color: #f8fafc;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 10px 12px;
@@ -146,17 +185,23 @@ code, pre, .font-mono {
   overflow-x: auto;
 }
 
+body.theme-dark .markdown-content pre,
+body.theme-midnight .markdown-content pre,
+body.theme-cyberpunk .markdown-content pre {
+  background-color: #0c0c0e;
+}
+
 .markdown-content pre code {
-  color: #e4e4e7;
+  color: var(--text-primary);
   font-size: 12px;
   background: transparent;
   padding: 0;
 }
 
 .markdown-content blockquote {
-  border-left: 2px solid #52525b;
+  border-left: 2px solid var(--border-color);
   padding-left: 10px;
-  color: #a1a1aa;
+  color: var(--text-secondary);
   margin: 8px 0;
 }
 
@@ -175,8 +220,8 @@ code, pre, .font-mono {
 }
 
 .markdown-content th {
-  background-color: var(--bg-card);
-  color: #f4f4f5;
+  background-color: var(--bg-card-hover);
+  color: var(--text-primary);
   font-weight: 600;
 }
 
@@ -188,7 +233,7 @@ code, pre, .font-mono {
 
 .cursor-blink::after {
   content: '▋';
-  color: var(--accent-sky);
+  color: var(--accent-green);
   display: inline-block;
   margin-left: 2px;
   animation: blink 1s infinite;

@@ -1,93 +1,53 @@
 import React, { useState } from 'react';
-import { ShieldAlert, Check, X, CheckCheck, Terminal, AlertTriangle } from 'lucide-react';
+import { ShieldAlert, Check, CheckCheck, X, ChevronRight } from 'lucide-react';
 import './ApprovalDialog.css';
 
 export default function ApprovalDialog({ request, onRespond }) {
-  const [denyReason, setDenyReason] = useState('');
-  const [showDenyReasonInput, setShowDenyReasonInput] = useState(false);
-
   if (!request) return null;
 
   const { requestId, data } = request;
-  const actionText = typeof data === 'object' && data !== null
-    ? data.action || JSON.stringify(data, null, 2)
-    : String(data);
-
-  const handleDeny = () => {
-    if (!showDenyReasonInput) {
-      setShowDenyReasonInput(true);
-      return;
-    }
-    onRespond(requestId, 'denied', denyReason.trim(), false);
-  };
+  const actionText =
+    typeof data === 'object' && data !== null
+      ? data.action || JSON.stringify(data)
+      : String(data);
 
   return (
-    <div className="approval-modal-overlay">
-      <div className="approval-dialog">
-        <div className="approval-header">
-          <div className="approval-icon-box">
-            <ShieldAlert size={20} className="approval-icon" />
-          </div>
-          <div className="approval-header-text">
-            <h4>安全权限审批请求 (Security Approval Required)</h4>
-            <span className="request-id font-mono">Request ID: {requestId}</span>
-          </div>
+    <div className="approval-floating-toast">
+      <div className="toast-left">
+        <ShieldAlert size={15} className="toast-icon" />
+        <div className="toast-info">
+          <span className="toast-title font-mono">待审批操作 (Approval Required)</span>
+          <span className="toast-action font-mono" title={actionText}>
+            {actionText.length > 60 ? `${actionText.slice(0, 60)}...` : actionText}
+          </span>
         </div>
+      </div>
 
-        <div className="approval-body">
-          <div className="action-warning-banner">
-            <AlertTriangle size={14} className="text-amber" />
-            <span>Agent 尝试在系统环境中执行敏感工具或 Shell 命令，请审阅下方操作：</span>
-          </div>
-
-          <div className="approval-code-box font-mono custom-scrollbar">
-            <pre>{actionText}</pre>
-          </div>
-
-          {showDenyReasonInput && (
-            <div className="deny-reason-box">
-              <input
-                type="text"
-                className="deny-input font-mono"
-                placeholder="输入拒绝原因 (可选，模型将根据此原因调整行动)..."
-                value={denyReason}
-                onChange={(e) => setDenyReason(e.target.value)}
-                autoFocus
-              />
-            </div>
-          )}
-        </div>
-
-        <div className="approval-actions">
-          <button
-            className="btn-decision deny"
-            onClick={handleDeny}
-            title="拒绝该操作"
-          >
-            <X size={14} />
-            <span>{showDenyReasonInput ? '确认拒绝 (Confirm Deny)' : '拒绝 (Deny)'}</span>
-          </button>
-
-          <div className="allow-group">
-            <button
-              className="btn-decision allow-remember"
-              onClick={() => onRespond(requestId, 'approved', '', true)}
-              title="允许并在此会话中记住此操作放行"
-            >
-              <CheckCheck size={14} />
-              <span>始终允许 (Always Allow)</span>
-            </button>
-
-            <button
-              className="btn-decision allow-primary"
-              onClick={() => onRespond(requestId, 'approved', '', false)}
-              title="仅允许执行本次操作"
-            >
-              <Check size={14} />
-              <span>允许一次 (Allow)</span>
-            </button>
-          </div>
-        </div>
+      <div className="toast-actions">
+        <button
+          className="toast-btn allow"
+          onClick={() => onRespond(requestId, 'approved', '', false)}
+          title="允许执行本次操作"
+        >
+          <Check size={12} />
+          <span>允许 (Allow)</span>
+        </button>
+        <button
+          className="toast-btn always"
+          onClick={() => onRespond(requestId, 'approved', '', true)}
+          title="本会话始终允许此类操作"
+        >
+          <CheckCheck size={12} />
+          <span>始终允许</span>
+        </button>
+        <button
+          className="toast-btn deny"
+          onClick={() => onRespond(requestId, 'denied', 'Denied by user', false)}
+          title="拒绝执行"
+        >
+          <X size={12} />
+          <span>拒绝</span>
+        </button>
       </div>
     </div>
   );

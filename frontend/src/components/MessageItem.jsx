@@ -1,11 +1,18 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Copy, Check, Sparkles, User, RotateCcw } from 'lucide-react';
+import { Copy, Check, Sparkles, RotateCcw } from 'lucide-react';
 import ThinkingBlock from './ThinkingBlock';
 import ToolCard from './ToolCard';
 
-export default function MessageItem({ message, isLast, isGenerating, onRetryPrompt }) {
+export default function MessageItem({
+  message,
+  isLast,
+  isGenerating,
+  pendingApproval,
+  onRespondApproval,
+  onRetryPrompt,
+}) {
   const { role, text, thinking, tools = [], blocks = [], usage } = message;
   const [copied, setCopied] = useState(false);
 
@@ -53,7 +60,7 @@ export default function MessageItem({ message, isLast, isGenerating, onRetryProm
   return (
     <div className="message-row assistant">
       <div className="avatar-bot">
-        <Sparkles size={14} />
+        <Sparkles size={13} />
       </div>
 
       <div className="assistant-container">
@@ -74,6 +81,8 @@ export default function MessageItem({ message, isLast, isGenerating, onRetryProm
                 <ToolCard
                   key={block.id || `tool_${idx}`}
                   tool={block}
+                  pendingApproval={isLast ? pendingApproval : null}
+                  onRespondApproval={onRespondApproval}
                 />
               );
             }
@@ -104,7 +113,12 @@ export default function MessageItem({ message, isLast, isGenerating, onRetryProm
             {tools.length > 0 && (
               <div className="tools-list">
                 {tools.map((t, idx) => (
-                  <ToolCard key={t.id || idx} tool={t} />
+                  <ToolCard
+                    key={t.id || idx}
+                    tool={t}
+                    pendingApproval={isLast ? pendingApproval : null}
+                    onRespondApproval={onRespondApproval}
+                  />
                 ))}
               </div>
             )}
@@ -123,7 +137,7 @@ export default function MessageItem({ message, isLast, isGenerating, onRetryProm
         {!isStreamingThis && fullResponseText && (
           <div className="assistant-footer">
             <button
-              className="msg-action-btn"
+              className="msg-action-btn font-mono"
               onClick={() => handleCopyText(fullResponseText)}
               title="复制回复 Markdown"
             >

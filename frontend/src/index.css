@@ -1,42 +1,44 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-  --bg-app: #030712;
-  --bg-surface: #0b0f19;
-  --bg-card: #111827;
-  --bg-hover: #1f2937;
+  /* Codex Signature Pure Black & Obsidian Palette */
+  --bg-app: #000000;
+  --bg-surface: #09090b;
+  --bg-card: #121215;
+  --bg-card-hover: #18181c;
+  --bg-input: #111114;
   
-  --border-color: #1f2937;
-  --border-focus: #38bdf8;
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-focus: rgba(255, 255, 255, 0.22);
   
-  --text-primary: #f9fafb;
-  --text-secondary: #9ca3af;
-  --text-muted: #6b7280;
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
   
   --accent-sky: #38bdf8;
-  --accent-amber: #fbbf24;
-  --accent-green: #4ade80;
-  --accent-rose: #f87171;
-  --accent-purple: #c084fc;
+  --accent-amber: #f59e0b;
+  --accent-green: #10b981;
+  --accent-rose: #f43f5e;
+  --accent-purple: #a855f7;
 
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 /* Theme Variations */
 body.theme-midnight {
-  --bg-app: #070b19;
-  --bg-surface: #0f172a;
-  --bg-card: #1e293b;
-  --bg-hover: #334155;
-  --border-color: #334155;
-  --accent-sky: #60a5fa;
+  --bg-app: #030712;
+  --bg-surface: #0b0f19;
+  --bg-card: #111827;
+  --bg-card-hover: #1f2937;
+  --border-color: #1f2937;
 }
 
 body.theme-cyberpunk {
   --bg-app: #08031a;
   --bg-surface: #12072b;
   --bg-card: #1f0d45;
-  --bg-hover: #32166e;
+  --bg-card-hover: #32166e;
   --border-color: #3d1b82;
   --accent-sky: #00f0ff;
   --accent-amber: #ffe600;
@@ -56,6 +58,7 @@ body {
   min-height: 100vh;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
 }
 
 code, pre, .font-mono {
@@ -65,8 +68,8 @@ code, pre, .font-mono {
 /* Custom Scrollbars */
 ::-webkit-scrollbar,
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track,
@@ -76,20 +79,20 @@ code, pre, .font-mono {
 
 ::-webkit-scrollbar-thumb,
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover,
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.22);
 }
 
 /* Markdown Content Styling */
 .markdown-content {
-  font-size: 13px;
+  font-size: 13.5px;
   line-height: 1.65;
-  color: #e5e7eb;
+  color: #d4d4d8;
 }
 
 .markdown-content p {
@@ -104,15 +107,16 @@ code, pre, .font-mono {
 .markdown-content h2,
 .markdown-content h3,
 .markdown-content h4 {
-  color: #f9fafb;
+  color: #f4f4f5;
   font-weight: 600;
   margin-top: 14px;
   margin-bottom: 6px;
+  letter-spacing: -0.02em;
 }
 
 .markdown-content h1 { font-size: 16px; }
 .markdown-content h2 { font-size: 14px; }
-.markdown-content h3 { font-size: 13px; }
+.markdown-content h3 { font-size: 13.5px; }
 
 .markdown-content ul,
 .markdown-content ol {
@@ -125,36 +129,35 @@ code, pre, .font-mono {
 }
 
 .markdown-content code:not(pre code) {
-  background-color: var(--bg-card);
-  color: var(--accent-sky);
+  background-color: rgba(255, 255, 255, 0.06);
+  color: #f4f4f5;
   padding: 2px 5px;
   border-radius: 4px;
-  font-size: 0.9em;
-  border: 1px solid var(--border-color);
+  font-size: 0.88em;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .markdown-content pre {
-  background-color: var(--bg-app);
+  background-color: #0c0c0e;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin: 10px 0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 8px 0;
   overflow-x: auto;
 }
 
 .markdown-content pre code {
-  color: #e5e7eb;
+  color: #e4e4e7;
   font-size: 12px;
   background: transparent;
   padding: 0;
 }
 
 .markdown-content blockquote {
-  border-left: 3px solid var(--accent-sky);
+  border-left: 2px solid #52525b;
   padding-left: 10px;
-  color: var(--text-secondary);
+  color: #a1a1aa;
   margin: 8px 0;
-  font-style: italic;
 }
 
 .markdown-content table {
@@ -173,7 +176,7 @@ code, pre, .font-mono {
 
 .markdown-content th {
   background-color: var(--bg-card);
-  color: #f9fafb;
+  color: #f4f4f5;
   font-weight: 600;
 }
 

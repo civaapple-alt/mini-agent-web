@@ -171,11 +171,16 @@ export const api = {
     return res.json();
   },
 
-  async createProject(name, path = null, initReadme = true) {
+  async createProject(name, path = null, sourceFolders = null, initReadme = true) {
     const res = await fetch(`${API_BASE}/api/projects/new`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, path, init_readme: initReadme }),
+      body: JSON.stringify({
+        name,
+        path,
+        source_folders: sourceFolders,
+        init_readme: initReadme,
+      }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

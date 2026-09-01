@@ -39,6 +39,9 @@ class StartGoalRequest(BaseModel):
 class CreateProjectRequest(BaseModel):
     name: str = Field(..., description="Project folder name or identifier")
     path: str | None = Field(default=None, description="Optional custom directory path")
+    source_folders: list[dict[str, Any]] | None = Field(
+        default=None, description="List of source folders with is_primary flag"
+    )
     init_readme: bool = Field(
         default=True, description="Create initial README.md and AGENTS.md"
     )
@@ -72,7 +75,10 @@ async def create_project_endpoint(req: CreateProjectRequest) -> dict[str, Any]:
     """Create a new project workspace directory with initial scaffold."""
     try:
         proj = session_manager.create_project(
-            name=req.name, path=req.path, init_readme=req.init_readme
+            name=req.name,
+            path=req.path,
+            source_folders=req.source_folders,
+            init_readme=req.init_readme,
         )
         return {"project": proj, "status": "created"}
     except Exception as err:

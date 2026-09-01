@@ -93,13 +93,21 @@ export default function Sidebar({
     }
   };
 
-  const currentProject = projectsData?.current_project;
-  const currentProjectName = currentProject?.name || 'codex-re';
+  // Open New Project Modal
+  const handleOpenNewProject = () => {
+    setActiveProjectPopover(null);
+    setEditingProject({ is_new: true, name: '', source_folders: [] });
+    setEditProjectName('');
+    setEditSourceFolders([]);
+    setShowAddFolderInput(false);
+    setNewFolderNameInput('');
+    setNewFolderPathInput('');
+  };
 
   // Open Edit Modal (Image 2)
   const handleOpenEditProject = (proj) => {
     setActiveProjectPopover(null);
-    setEditingProject(proj);
+    setEditingProject({ ...proj, is_new: false });
     setEditProjectName(proj.name || proj.id);
     const folders = proj.source_folders && proj.source_folders.length > 0
       ? proj.source_folders.map((f) => ({ ...f }))
@@ -110,16 +118,36 @@ export default function Sidebar({
     setNewFolderPathInput('');
   };
 
-  // Save Project Edits
+  // Save Project Edits (Create or Update)
   const handleSaveProjectEdits = async (e) => {
     if (e) e.preventDefault();
     if (!editingProject || !editProjectName.trim()) return;
     setIsSavingProject(true);
     try {
-      await api.updateProject(editingProject.id || editingProject.name, {
-        name: editProjectName.trim(),
-        source_folders: editSourceFolders,
-      });
+      const cleanName = editProjectName.trim();
+      if (editingProject.is_new) {
+        const folders =
+          editSourceFolders.length > 0
+            ? editSourceFolders
+            : [{ name: cleanName, path: cleanName, is_primary: true }];
+        const res = await api.createProject(cleanName, null, folders, true);
+        const newProj = res.project || { id: cleanName.toLowerCase().replace(/\s+/g, '-') };
+        
+        // Start default thread for this project
+        const newThreadId = 't-' + Date.now().toString(36);
+        await api.startThread(newThreadId, '默认会话');
+        setExpandedProjects((prev) => ({
+          ...prev,
+          [newProj.id]: true,
+          [cleanName]: true,
+        }));
+        onSelectThread(newThreadId);
+      } else {
+        await api.updateProject(editingProject.id || editingProject.name, {
+          name: cleanName,
+          source_folders: editSourceFolders,
+        });
+      }
       setEditingProject(null);
       await loadProjects();
       if (onRefreshThreads) onRefreshThreads();
@@ -290,8 +318,8 @@ export default function Sidebar({
           <span className="section-title-label">项目</span>
           <button
             className="btn-add-project-mini"
-            onClick={() => handleOpenEditProject({ name: '', source_folders: [] })}
-            title="新建项目工作区"
+            onClick={handleOpenNewProject}
+            title="新建工作区项目"
           >
             <Plus size={13} />
           </button>
@@ -558,7 +586,9 @@ export default function Sidebar({
           >
             {/* Modal Header */}
             <div className="modal-edit-header">
-              <span className="modal-edit-title">编辑项目</span>
+              <span className="modal-edit-title">
+                {editingProject.is_new ? '新建工作区项目' : '编辑项目'}
+              </span>
               <button
                 className="modal-edit-close"
                 onClick={() => setEditingProject(null)}
@@ -574,7 +604,7 @@ export default function Sidebar({
                 <input
                   type="text"
                   className="project-name-input"
-                  placeholder="项目名称"
+                  placeholder="项目名称 (例如: my-ai-service)"
                   value={editProjectName}
                   onChange={(e) => setEditProjectName(e.target.value)}
                   autoFocus
@@ -587,6 +617,12 @@ export default function Sidebar({
                 <span className="source-folders-title">源文件夹</span>
 
                 <div className="source-folders-card-list">
+                  {editSourceFolders.length === 0 && (
+                    <div className="empty-source-folders-hint">
+                      <span>默认将以项目名称创建主工作目录，或点击下方添加自定义文件夹</span>
+                    </div>
+                  )}
+
                   {editSourceFolders.map((folder, idx) => (
                     <div key={idx} className="source-folder-row">
                       <div className="folder-row-left">
@@ -674,13 +710,17 @@ export default function Sidebar({
 
               {/* Modal Footer Actions (Image 2) */}
               <div className="modal-edit-footer">
-                <button
-                  type="button"
-                  className="btn-danger-remove-project"
-                  onClick={handleDeleteProject}
-                >
-                  移除本地项目
-                </button>
+                {!editingProject.is_new ? (
+                  <button
+                    type="button"
+                    className="btn-danger-remove-project"
+                    onClick={handleDeleteProject}
+                  >
+                    移除本地项目
+                  </button>
+                ) : (
+                  <div />
+                )}
 
                 <div className="footer-right-buttons">
                   <button
@@ -695,7 +735,13 @@ export default function Sidebar({
                     className="btn-save-project-primary"
                     disabled={!editProjectName.trim() || isSavingProject}
                   >
-                    {isSavingProject ? '保存中...' : '保存'}
+                    {isSavingProject
+                      ? editingProject.is_new
+                        ? '创建中...'
+                        : '保存中...'
+                      : editingProject.is_new
+                        ? '创建项目'
+                        : '保存'}
                   </button>
                 </div>
               </div>

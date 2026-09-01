@@ -751,6 +751,14 @@ body.theme-cyberpunk .nested-thread-item.selected {
   overflow: hidden;
 }
 
+.empty-source-folders-hint {
+  padding: 12px 14px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: var(--bg-app);
+}
+
 .source-folder-row {
   display: flex;
   align-items: center;

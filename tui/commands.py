@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -108,6 +109,14 @@ async def handle_slash_command(
         console.print(f"[dim]⚡ Executing shell command: [bold cyan]{cmd_to_run}[/bold cyan][/dim]")
         try:
             def _run_shell() -> int:
+                if sys.platform == "win32":
+                    shell_exe = shutil.which("pwsh") or shutil.which("powershell")
+                    if shell_exe:
+                        res = subprocess.run(
+                            [shell_exe, "-NoProfile", "-Command", cmd_to_run],
+                            check=False,
+                        )
+                        return res.returncode
                 res = subprocess.run(
                     cmd_to_run,
                     shell=True,

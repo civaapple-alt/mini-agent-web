@@ -22,10 +22,8 @@ class SlashCommandCompleter(Completer):
         text = document.text_before_cursor
         stripped = text.lstrip()
 
-        # If user hasn't typed anything or not starting with slash or exit commands
-        if not stripped.startswith("/") and not any(
-            stripped.startswith(w) for w in ["exit", "quit", ":q"]
-        ):
+        # If user hasn't typed anything or not starting with slash
+        if not stripped.startswith("/"):
             return
 
         words = stripped.split(maxsplit=1)
@@ -58,9 +56,6 @@ class SlashCommandCompleter(Completer):
                 ("/help", "显示完整命令参考大全"),
                 ("/exit", "退出 TUI 交互终端"),
                 ("/quit", "退出 TUI 交互终端"),
-                ("exit", "退出 TUI 交互终端"),
-                ("quit", "退出 TUI 交互终端"),
-                (":q", "退出 TUI 交互终端"),
             ]
             for cmd, desc in commands:
                 if cmd.lower().startswith(prefix):

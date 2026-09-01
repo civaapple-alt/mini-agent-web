@@ -97,7 +97,7 @@ uv run mini-agent-tui --profile auto --policy auto_approve --effort high --threa
 | | `/files [query]` | 快速检索当前工作区代码文件路径 |
 | **通用控制** | `/clear` | 清空终端屏幕 |
 | | `/help` | 显示完整命令参考大全 |
-| | `exit` / `quit` / `:q` | 优雅退出 TUI 交互终端 |
+| | `/exit` / `/quit` | 退出 TUI 交互终端 |
 
 ---
 

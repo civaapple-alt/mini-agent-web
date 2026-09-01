@@ -84,7 +84,7 @@ def print_help_table(state: TUIState) -> None:
     # 6. 通用控制
     table.add_row("通用控制", "/clear", "清空终端屏幕")
     table.add_row("", "/help", "显示本命令参考大全")
-    table.add_row("", "exit / quit / :q", "退出 TUI 交互终端 (防误触: 单独 q 不退出)")
+    table.add_row("", "/exit / /quit", "退出 TUI 交互终端")
 
     console.print(table)
 
@@ -98,7 +98,7 @@ async def handle_slash_command(
     """
     lower_text = text.lower().strip()
 
-    if lower_text in ("/exit", "/quit", "/q"):
+    if lower_text in ("/exit", "/quit"):
         console.print("[dim]Goodbye![/dim]")
         sys.exit(0)
 

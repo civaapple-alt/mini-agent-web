@@ -28,7 +28,7 @@ async def run_tui(state: TUIState) -> None:
         Panel.fit(
             "[bold sky_blue1]Mini Agent Terminal Studio (TUI)[/bold sky_blue1]\n"
             f"[dim]Profile: [cyan]{state.profile}[/cyan] | Approval Policy: [yellow]{state.approval_policy}[/yellow] | Effort: [green]{state.effort}[/green][/dim]\n"
-            "[dim]Type '/help' for commands. Supports [bold yellow]Tab Autocomplete[/bold yellow]. Type 'exit' to leave.[/dim]",
+            "[dim]Type '/help' for commands. Supports [bold yellow]Tab Autocomplete[/bold yellow]. Type '/exit' to leave.[/dim]",
             border_style="cyan",
         )
     )
@@ -175,12 +175,12 @@ async def run_tui(state: TUIState) -> None:
                 continue
 
             norm_text = text.lower().strip()
-            if norm_text in ("exit", "quit", ":q", "/exit", "/quit", "/q"):
+            if norm_text in ("/exit", "/quit"):
                 console.print("[dim]Goodbye![/dim]")
                 break
-            if norm_text == "q":
+            if norm_text in ("exit", "quit", ":q", "q"):
                 console.print(
-                    "[dim yellow]To exit Mini Agent TUI, please type '[bold]exit[/bold]', '[bold]quit[/bold]', or '[bold]:q[/bold]'.[/dim yellow]"
+                    "[dim yellow]Tip: Use '[bold]/exit[/bold]' or '[bold]/quit[/bold]' to leave Mini Agent TUI.[/dim yellow]"
                 )
                 continue
 

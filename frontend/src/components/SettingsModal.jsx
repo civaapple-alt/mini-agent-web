@@ -12,6 +12,21 @@ import {
 import { api } from '../api';
 import './SettingsModal.css';
 
+const PROFILE_DEFAULTS = {
+  interactive: {
+    approval_policy: 'per_action',
+    default_mode: 'chat',
+  },
+  autonomous: {
+    approval_policy: 'auto_approve',
+    default_mode: 'goal',
+  },
+  strict: {
+    approval_policy: 'strict',
+    default_mode: 'plan',
+  },
+};
+
 export default function SettingsModal({ isOpen, onClose, onSettingsSaved }) {
   const [settings, setSettings] = useState({
     profile: 'interactive',
@@ -39,6 +54,16 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved }) {
     } catch (err) {
       console.error('Failed to load settings:', err);
     }
+  };
+
+  const handleProfileChange = (newProfile) => {
+    const defaults = PROFILE_DEFAULTS[newProfile] || {};
+    setSettings((prev) => ({
+      ...prev,
+      profile: newProfile,
+      approval_policy: defaults.approval_policy || prev.approval_policy,
+      default_mode: defaults.default_mode || prev.default_mode,
+    }));
   };
 
   const handleSave = async () => {
@@ -96,16 +121,16 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved }) {
             <div className="setting-item">
               <div className="setting-text">
                 <span className="setting-title">客户端运行 Profile</span>
-                <span className="setting-desc">控制 Agent 的自主任命与能力协商模式</span>
+                <span className="setting-desc">切换 Profile 会联动调整默认审批策略与工作流</span>
               </div>
               <select
                 className="setting-select"
                 value={settings.profile}
-                onChange={(e) => setSettings({ ...settings, profile: e.target.value })}
+                onChange={(e) => handleProfileChange(e.target.value)}
               >
                 <option value="interactive">交互模式 (Interactive - 推荐)</option>
-                <option value="autonomous">自治模式 (Autonomous)</option>
-                <option value="strict">严格模式 (Strict)</option>
+                <option value="autonomous">自治模式 (Autonomous - 目标驱动)</option>
+                <option value="strict">严格模式 (Strict - 只读审计)</option>
               </select>
             </div>
 

@@ -297,6 +297,20 @@ class MiniAgentClient:
                 fut.set_exception(RuntimeError("App Server stopped"))
         self._pending_requests.clear()
 
+    @property
+    def is_running(self) -> bool:
+        """Return True if the underlying mini-agent-app-server subprocess is active."""
+        return self._proc is not None and self._proc.returncode is None
+
+    async def restart(self, profile: str = "interactive") -> dict[str, Any]:
+        """Restart the server process and re-initialize session."""
+        await self.stop()
+        await self.start()
+        res: dict[str, Any] = await self.initialize(profile=profile)
+        if self._active_thread_id:
+            await self.start_thread(self._active_thread_id)
+        return res
+
     # -------------------------------------------------------------------------
     # JSON-RPC Low-level Communication
     # -------------------------------------------------------------------------

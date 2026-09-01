@@ -344,6 +344,16 @@ async def run_tui(state: TUIState) -> None:
         )
         await client.start_thread(state.current_thread_id)
 
+        async def _ensure_connected() -> None:
+            if not client.is_running:
+                console.print(
+                    "[dim yellow]⚡ App Server disconnected, auto-reconnecting...[/dim yellow]"
+                )
+                await client.restart(profile=state.profile)
+                console.print(
+                    f"[dim green]✓ Reconnected to App Server (Profile: {state.profile})[/dim green]"
+                )
+
         while True:
             try:
                 user_input = await prompt_session.prompt_async(
@@ -707,6 +717,7 @@ async def run_tui(state: TUIState) -> None:
             current_mode = None  # None | "thinking" | "text"
 
             try:
+                await _ensure_connected()
                 async for item in client.stream_turn(
                     user_input,
                     thread_id=state.current_thread_id,

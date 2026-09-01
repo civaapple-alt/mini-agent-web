@@ -95,6 +95,7 @@ uv run mini-agent-tui --profile auto --policy auto_approve --effort high --threa
 | | `/mcp` | 查看已启用的 MCP 服务与扩展工具状态 |
 | | `/git` | 查看当前工作区 Git 分支及未提交变更 |
 | | `/files [query]` | 快速检索当前工作区代码文件路径 |
+| | `!<command>` | 直接在宿主终端执行本地 Shell 命令 (如 `!git status`, `!cargo test`) |
 | **通用控制** | `/clear` | 清空终端屏幕 |
 | | `/help` | 显示完整命令参考大全 |
 | | `/exit` / `/quit` | 退出 TUI 交互终端 |

@@ -243,6 +243,17 @@ async def test_handle_slash_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "Thread Checkpoint" in output_buffer.getvalue()
     assert "Bug fixed successfully" in output_buffer.getvalue()
 
+    # 8. ! shell command execution
+    handled = await handle_slash_command("!echo test_shell_output", state, mock_client)
+    assert handled is True
+    assert "Executing shell command: echo test_shell_output" in output_buffer.getvalue()
+    assert "Command succeeded" in output_buffer.getvalue()
+
+    # 9. ! empty command
+    handled = await handle_slash_command("!", state, mock_client)
+    assert handled is True
+    assert "Usage: !<shell_command>" in output_buffer.getvalue()
+
 
 def test_ask_approval_sync(monkeypatch: pytest.MonkeyPatch) -> None:
     output_buffer = io.StringIO()

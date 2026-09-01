@@ -22,11 +22,33 @@ class SlashCommandCompleter(Completer):
         text = document.text_before_cursor
         stripped = text.lstrip()
 
-        # If user hasn't typed anything or not starting with slash
-        if not stripped.startswith("/"):
+        # If user hasn't typed anything or not starting with slash or exclamation mark
+        if not stripped.startswith("/") and not stripped.startswith("!"):
             return
 
         words = stripped.split(maxsplit=1)
+
+        # 0. Shell command prefix (!cmd)
+        if stripped.startswith("!"):
+            prefix = words[0].lower()
+            shell_hints = [
+                ("!git status", "执行 git status 查看仓库工作区状态"),
+                ("!git diff", "执行 git diff 查看未暂存文件差异"),
+                ("!git log -n 5", "查看最近 5 次 Git 提交记录"),
+                ("!pytest", "运行 Python 自动化单元测试"),
+                ("!cargo test", "运行 Rust 单元与集成测试"),
+                ("!uv run", "使用 uv 运行指定脚本或命令"),
+            ]
+            for cmd, desc in shell_hints:
+                if cmd.lower().startswith(prefix):
+                    yield Completion(
+                        cmd,
+                        start_position=-len(prefix),
+                        display=cmd,
+                        display_meta=desc,
+                    )
+            return
+
         # 1. Completing the top-level slash command itself
         if len(words) == 1 and not stripped.endswith(" "):
             prefix = words[0].lower()

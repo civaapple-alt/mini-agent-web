@@ -80,6 +80,7 @@ def print_help_table(state: TUIState) -> None:
     table.add_row("", "/mcp", "查看已启用的 MCP 服务与扩展工具状态")
     table.add_row("", "/git", "查看当前工作区 Git 分支及未提交变更 (别名: /diff)")
     table.add_row("", "/files [query]", "检索当前工作区代码文件路径 (别名: /ls)")
+    table.add_row("", "!<command>", "直接在宿主环境执行本地 Shell 命令 (如 !git status, !cargo test)")
 
     # 6. 通用控制
     table.add_row("通用控制", "/clear", "清空终端屏幕")
@@ -93,9 +94,36 @@ async def handle_slash_command(
     text: str, state: TUIState, client: MiniAgentClient, init_res: dict[str, str] | None = None
 ) -> bool:
     """
-    Check if the user input is a slash command and handle it.
+    Check if the user input is a slash command or shell escape (!cmd) and handle it.
     Returns True if handled, False if it should proceed as a model turn prompt.
     """
+    if text.startswith("!"):
+        cmd_to_run = text[1:].strip()
+        if not cmd_to_run:
+            console.print(
+                "[dim yellow]Usage: !<shell_command> (e.g. !git status, !pytest, !cargo test)[/dim yellow]"
+            )
+            return True
+
+        console.print(f"[dim]⚡ Executing shell command: [bold cyan]{cmd_to_run}[/bold cyan][/dim]")
+        try:
+            def _run_shell() -> int:
+                res = subprocess.run(
+                    cmd_to_run,
+                    shell=True,
+                    check=False,
+                )
+                return res.returncode
+
+            code = await asyncio.to_thread(_run_shell)
+            if code != 0:
+                console.print(f"[dim red]Command exited with code {code}[/dim red]\n")
+            else:
+                console.print("[dim green]✓ Command succeeded (exit 0)[/dim green]\n")
+        except Exception as err:  # noqa: BLE001
+            console.print(f"[bold red]Failed to execute shell command: {err}[/bold red]\n")
+        return True
+
     lower_text = text.lower().strip()
 
     if lower_text in ("/exit", "/quit"):

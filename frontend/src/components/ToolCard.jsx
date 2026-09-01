@@ -36,10 +36,12 @@ export default function ToolCard({
   const isAwaitingApproval =
     Boolean(pendingApproval) &&
     isRunning &&
-    (pendingApproval.data?.action?.includes(name) ||
-      pendingApproval.data?.tool === name ||
-      pendingApproval.requestId === id ||
-      true); // If pendingApproval exists and this tool is running, bind to it
+    Boolean(
+      (pendingApproval.data?.action && pendingApproval.data.action.includes(name)) ||
+        pendingApproval.data?.tool === name ||
+        pendingApproval.data?.name === name ||
+        pendingApproval.requestId === id
+    );
 
   const getToolIcon = (toolName) => {
     const n = (toolName || '').toLowerCase();

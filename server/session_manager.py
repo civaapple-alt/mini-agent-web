@@ -48,6 +48,7 @@ class SessionManager:
         self._client: MiniAgentClient | None = None
         self._active_connections: list[WebSocket] = []
         self._pending_approvals: dict[str, asyncio.Future[dict[str, Any]]] = {}
+        self._pending_approval_details: dict[str, dict[str, Any]] = {}
         self._remembered_approvals: set[str] = set()
         self._lock = asyncio.Lock()
         self._initialized = False
@@ -66,9 +67,6 @@ class SessionManager:
         self._active_turns: dict[str, str] = {}
         self._active_tasks: dict[str, asyncio.Task[Any]] = {}
 
-        # Load persisted state or initialize clean default with only the active workspace
-        self._load_state()
-
         # Runtime system settings
         self._settings: dict[str, Any] = {
             "host": settings.host,
@@ -83,6 +81,9 @@ class SessionManager:
             "font_size": 13,
         }
 
+        # Load persisted state or initialize clean default with only the active workspace
+        self._load_state()
+
     def _load_state(self) -> None:
         """Load projects and session metadata from persistent JSON file."""
         if self._state_file.is_file():
@@ -90,6 +91,8 @@ class SessionManager:
                 data = json.loads(self._state_file.read_text(encoding="utf-8"))
                 self._projects_registry = data.get("projects", {})
                 self._thread_metadata = data.get("thread_metadata", {})
+                if "settings" in data and isinstance(data["settings"], dict):
+                    self._settings.update(data["settings"])
                 persisted_cur_id = data.get("current_project_id")
                 if persisted_cur_id and persisted_cur_id in self._projects_registry:
                     self._current_project_id = persisted_cur_id
@@ -99,7 +102,11 @@ class SessionManager:
                         )
                     )
             except Exception as err:  # noqa: BLE001
-                logger.warning("Failed to parse %s, initializing clean state: %s", self._state_file, err)
+                logger.warning(
+                    "Failed to parse %s, initializing clean state: %s",
+                    self._state_file,
+                    err,
+                )
 
         # If no projects exist, initialize ONLY the current active workspace directory
         cur_name = self._current_project_path.name
@@ -136,13 +143,14 @@ class SessionManager:
         self._save_state()
 
     def _save_state(self) -> None:
-        """Persist current projects and session metadata to disk."""
+        """Persist current projects, settings, and session metadata to disk."""
         try:
             self._state_dir.mkdir(parents=True, exist_ok=True)
             payload = {
                 "current_project_id": self._current_project_id,
                 "projects": self._projects_registry,
                 "thread_metadata": self._thread_metadata,
+                "settings": self._settings,
             }
             self._state_file.write_text(
                 json.dumps(payload, indent=2, ensure_ascii=False),
@@ -157,7 +165,9 @@ class SessionManager:
         for p in self._projects_registry.values():
             proj_id = p["id"]
             p_threads = [
-                t for t in self._thread_metadata.values() if t.get("project") == proj_id or t.get("project") == p.get("name")
+                t
+                for t in self._thread_metadata.values()
+                if t.get("project") == proj_id or t.get("project") == p.get("name")
             ]
             projects_list.append(
                 {
@@ -184,7 +194,13 @@ class SessionManager:
         source_folders: list[dict[str, Any]] | None = None,
         init_readme: bool = True,
     ) -> dict[str, Any]:
-        proj_id = name.lower().replace(" ", "-")
+        base_id = name.lower().replace(" ", "-")
+        proj_id = base_id
+        count = 1
+        while proj_id in self._projects_registry:
+            proj_id = f"{base_id}-{count}"
+            count += 1
+
         target_dir = (
             Path(path).resolve()
             if path
@@ -212,19 +228,8 @@ class SessionManager:
         self._projects_registry[proj_id] = proj_info
         self._current_project_id = proj_id
         self._current_project_path = target_dir
-        self._sync_cwd()
         self._save_state()
         return proj_info
-
-    def _sync_cwd(self) -> None:
-        """Synchronize process working directory with active project path."""
-        try:
-            import os
-            if self._current_project_path.is_dir():
-                os.chdir(self._current_project_path)
-                logger.info("Synchronized process cwd to project: %s", self._current_project_path)
-        except Exception as err:  # noqa: BLE001
-            logger.warning("Failed to chdir to project path %s: %s", self._current_project_path, err)
 
     def update_project(
         self, project_id: str, updates: dict[str, Any]
@@ -250,12 +255,13 @@ class SessionManager:
             # Find primary folder
             primary = next(
                 (f["path"] for f in proj["source_folders"] if f.get("is_primary")),
-                proj["source_folders"][0]["path"] if proj["source_folders"] else proj["primary_path"],
+                proj["source_folders"][0]["path"]
+                if proj["source_folders"]
+                else proj["primary_path"],
             )
             proj["primary_path"] = primary
             if self._current_project_id == project_id:
                 self._current_project_path = Path(primary)
-                self._sync_cwd()
 
         self._save_state()
         return proj
@@ -268,7 +274,6 @@ class SessionManager:
                 self._current_project_id = next(iter(self._projects_registry.keys()))
                 next_proj = self._projects_registry[self._current_project_id]
                 self._current_project_path = Path(next_proj["primary_path"])
-                self._sync_cwd()
             self._save_state()
             return True
         return False
@@ -287,7 +292,6 @@ class SessionManager:
             self._current_project_id = project_id_or_path
             proj = self._projects_registry[project_id_or_path]
             self._current_project_path = Path(proj["primary_path"])
-            self._sync_cwd()
             self._save_state()
             return proj
 
@@ -298,16 +302,16 @@ class SessionManager:
             ):
                 self._current_project_id = pid
                 self._current_project_path = Path(p["primary_path"])
-                self._sync_cwd()
                 self._save_state()
                 return p
 
         # 3. Arbitrary new directory path
         p = Path(project_id_or_path).resolve()
         if not p.is_dir():
-            raise FileNotFoundError(f"Project directory not found: {project_id_or_path}")
+            raise FileNotFoundError(
+                f"Project directory not found: {project_id_or_path}"
+            )
         self._current_project_path = p
-        self._sync_cwd()
         proj_id = p.name.lower()
         proj_info = {
             "id": proj_id,
@@ -330,7 +334,11 @@ class SessionManager:
     def current_source_folders(self) -> list[dict[str, Any]]:
         """Active project configured multi-source folders."""
         proj = self._projects_registry.get(self._current_project_id)
-        if proj and "source_folders" in proj and isinstance(proj["source_folders"], list):
+        if (
+            proj
+            and "source_folders" in proj
+            and isinstance(proj["source_folders"], list)
+        ):
             return proj["source_folders"]
         return [
             {
@@ -439,6 +447,7 @@ class SessionManager:
     def update_settings(self, updates: dict[str, Any]) -> dict[str, Any]:
         """Update system settings."""
         self._settings.update(updates)
+        self._save_state()
         logger.info("Updated system settings: %s", updates)
         return dict(self._settings)
 
@@ -458,7 +467,17 @@ class SessionManager:
             req_id = str(
                 req.get("id") or req.get("actionId") or req.get("requestId", "req")
             )
-            action_name = str(req.get("action") or req.get("tool") or "")
+            action_name = str(
+                req.get("action")
+                or req.get("tool")
+                or req.get("name")
+                or (
+                    req.get("call", {}).get("name")
+                    if isinstance(req.get("call"), dict)
+                    else ""
+                )
+                or ""
+            )
         else:
             req_data = {"requestId": req, "action": action or ""}
             req_id = str(req)
@@ -487,6 +506,10 @@ class SessionManager:
         loop = asyncio.get_running_loop()
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
         self._pending_approvals[req_id] = future
+        self._pending_approval_details[req_id] = {
+            "action_name": action_name,
+            "data": req_data,
+        }
 
         # Broadcast approval request to all connected UI clients
         payload = {
@@ -509,6 +532,7 @@ class SessionManager:
             }
         finally:
             self._pending_approvals.pop(req_id, None)
+            self._pending_approval_details.pop(req_id, None)
 
     def resolve_approval(
         self,
@@ -519,8 +543,11 @@ class SessionManager:
         action_name: str | None = None,
     ) -> bool:
         """Resolve a pending approval future with human decision."""
-        if remember and action_name and decision.lower() in ("approved", "allow"):
-            self._remembered_approvals.add(action_name)
+        details = self._pending_approval_details.get(request_id, {})
+        target_action = (action_name or details.get("action_name") or "").strip()
+        if remember and target_action and decision.lower() in ("approved", "allow"):
+            self._remembered_approvals.add(target_action)
+            logger.info("Remembered approval for action: '%s'", target_action)
 
         fut = self._pending_approvals.get(request_id)
         if fut and not fut.done():

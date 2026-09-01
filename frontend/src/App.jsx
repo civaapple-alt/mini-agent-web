@@ -141,19 +141,11 @@ export default function App() {
   const handleServerEvent = (data) => {
     if (!data) return;
 
-    // 1. Capture Turn ID from submission or response
+    // 1. Capture Turn ID from submission
     if (data.type === '_turn_submission') {
       const turnId = data.data?.turn_id || data.submission?.turn_id;
       if (turnId) {
         setActiveTurnId(turnId);
-        setIsGenerating(true);
-      }
-      return;
-    }
-
-    if (data.type === 'response') {
-      if (data.action === 'turn' && data.turnId) {
-        setActiveTurnId(data.turnId);
         setIsGenerating(true);
       }
       return;
@@ -373,6 +365,27 @@ export default function App() {
       referencedFiles = inputPayload.referencedFiles || [];
     }
 
+    if (!promptText.trim() && images.length === 0) return;
+
+    if (!wsRef.current || !wsRef.current.send) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'user',
+          text: promptText,
+          images,
+          referencedFiles,
+          blocks: [{ type: 'text', content: promptText }],
+        },
+        {
+          role: 'assistant',
+          text: '⚠️ 无法发送消息：当前与服务端的 WebSocket 连接尚未就绪，请稍候重试。',
+          blocks: [{ type: 'text', content: '⚠️ 无法发送消息：当前与服务端的 WebSocket 连接尚未就绪，请稍候重试。' }],
+        },
+      ]);
+      return;
+    }
+
     setMessages((prev) => [
       ...prev,
       {
@@ -386,14 +399,47 @@ export default function App() {
       },
     ]);
 
-    if (wsRef.current) {
-      wsRef.current.send({
-        action: 'turn',
-        prompt: promptText,
-        images,
-        referencedFiles,
-        threadId: currentThread,
-      });
+    wsRef.current.send({
+      action: 'turn',
+      prompt: promptText,
+      images,
+      referencedFiles,
+      threadId: currentThread,
+    });
+  };
+
+  const handleClearChat = () => {
+    setMessages([]);
+  };
+
+  const handleOpenStatus = () => {
+    setSidePanelTab('world');
+    setSidePanelOpen(true);
+  };
+
+  const handleCopyLastResponse = async () => {
+    const assistantMessages = messages.filter((m) => m.role === 'assistant');
+    if (assistantMessages.length === 0) {
+      alert('当前会话暂无模型回复可复制。');
+      return;
+    }
+    const lastMsg = assistantMessages[assistantMessages.length - 1];
+    let fullText = lastMsg.text || '';
+    if (!fullText && lastMsg.blocks) {
+      fullText = lastMsg.blocks
+        .filter((b) => b.type === 'text')
+        .map((b) => b.content)
+        .join('\n\n');
+    }
+    if (!fullText) {
+      alert('当前模型回复暂无文本内容。');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(fullText);
+      alert(`✓ 已复制模型最新回复 (${fullText.length} 字符, Markdown) 到系统剪贴板！`);
+    } catch (err) {
+      console.warn('Clipboard write failed:', err);
     }
   };
 
@@ -619,6 +665,10 @@ export default function App() {
             onSendMessage={handleSendMessage}
             onSteerMessage={handleSteerMessage}
             onInterrupt={handleInterrupt}
+            onClearChat={handleClearChat}
+            onOpenStatus={handleOpenStatus}
+            onCopyLastResponse={handleCopyLastResponse}
+            onTogglePlanMode={handleTogglePlan}
           />
         </main>
       </div>

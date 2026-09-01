@@ -21,17 +21,17 @@ import { api } from '../api';
 import './InputBar.css';
 
 const SLASH_COMMANDS = [
-  { cmd: '/plan', desc: '开启/切换只读规划探索模式', icon: <Compass size={13} className="text-amber" /> },
-  { cmd: '/goal', desc: '启动目标驱动多里程碑收敛模式', icon: <Target size={13} className="text-green" /> },
-  { cmd: '/clear', desc: '清空当前页面消息', icon: <Sparkles size={13} className="text-sky" /> },
-  { cmd: '/steer', desc: '发送运行时纠偏指令', icon: <Navigation size={13} className="text-purple" /> },
-  { cmd: '/status', desc: '查看环境探测与状态', icon: <Command size={13} className="text-emerald" /> },
+  { cmd: '/plan', desc: '开启/切换只读规划探索模式 (Ask Profile)', icon: <Compass size={13} className="text-amber" /> },
+  { cmd: '/clear', desc: '清空当前聊天记录', icon: <Sparkles size={13} className="text-sky" /> },
+  { cmd: '/status', desc: '打开工作区探测与环境状态面板', icon: <Command size={13} className="text-emerald" /> },
+  { cmd: '/copy', desc: '复制模型最新回复/文档 Markdown 到剪贴板', icon: <Sparkles size={13} className="text-purple" /> },
+  { cmd: '/steer', desc: '向运行中的 Agent 发送实时纠偏指令', icon: <Navigation size={13} className="text-purple" /> },
 ];
 
 const PROFILES = [
   { id: 'interactive', label: '交互协作 (Interactive)', icon: <MessageSquare size={11} className="text-sky" />, desc: '日常人机结对对话与单步工具把控 (推荐)' },
-  { id: 'autonomous', label: '自治目标 (Autonomous)', icon: <Target size={11} className="text-green" />, desc: '目标驱动多里程碑无人值守收敛' },
-  { id: 'strict', label: '严格只读 (Strict)', icon: <Compass size={11} className="text-amber" />, desc: '只读规划探索与高安全审计，禁止写操作' },
+  { id: 'auto', label: '自治目标 (Auto)', icon: <Target size={11} className="text-green" />, desc: '目标驱动多里程碑无人值守收敛' },
+  { id: 'ask', label: '严格只读 (Ask)', icon: <Compass size={11} className="text-amber" />, desc: '只读规划探索与高安全审计，禁止写操作' },
 ];
 
 const APPROVAL_POLICIES = [
@@ -51,6 +51,10 @@ export default function InputBar({
   onSendMessage,
   onSteerMessage,
   onInterrupt,
+  onClearChat,
+  onOpenStatus,
+  onCopyLastResponse,
+  onTogglePlanMode,
 }) {
   const [prompt, setPrompt] = useState('');
   const [showSlashPopup, setShowSlashPopup] = useState(false);
@@ -157,12 +161,40 @@ export default function InputBar({
     }, 10);
   };
 
-  const handleSelectSlashCommand = (cmdObj) => {
-    if (cmdObj.cmd === '/plan') {
-      if (onChangeProfile) onChangeProfile(profile === 'strict' ? 'interactive' : 'strict');
+  const executeSlashCommand = (cmdStr) => {
+    const cleanCmd = cmdStr.trim().toLowerCase();
+    if (cleanCmd === '/plan') {
+      if (onTogglePlanMode) {
+        onTogglePlanMode();
+      } else if (onChangeProfile) {
+        onChangeProfile(profile === 'ask' ? 'interactive' : 'ask');
+      }
       setPrompt('');
+      return true;
+    }
+    if (cleanCmd === '/clear') {
+      if (onClearChat) onClearChat();
+      setPrompt('');
+      return true;
+    }
+    if (cleanCmd === '/status') {
+      if (onOpenStatus) onOpenStatus();
+      setPrompt('');
+      return true;
+    }
+    if (cleanCmd === '/copy' || cleanCmd === '/cp') {
+      if (onCopyLastResponse) onCopyLastResponse();
+      setPrompt('');
+      return true;
+    }
+    return false;
+  };
+
+  const handleSelectSlashCommand = (cmdObj) => {
+    if (cmdObj.cmd === '/steer') {
+      setPrompt('/steer ');
     } else {
-      setPrompt(`${cmdObj.cmd} `);
+      executeSlashCommand(cmdObj.cmd);
     }
     setShowSlashPopup(false);
     if (textareaRef.current) textareaRef.current.focus();
@@ -224,10 +256,12 @@ export default function InputBar({
     const text = prompt.trim();
     if (!text && attachedImages.length === 0) return;
 
-    if (text === '/plan') {
-      if (onChangeProfile) onChangeProfile(profile === 'strict' ? 'interactive' : 'strict');
-      setPrompt('');
-      return;
+    if (text.startsWith('/')) {
+      const handled = executeSlashCommand(text);
+      if (handled) {
+        setShowSlashPopup(false);
+        return;
+      }
     }
 
     const payload = {

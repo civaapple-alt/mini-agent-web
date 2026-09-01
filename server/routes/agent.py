@@ -54,6 +54,12 @@ class ApprovalResponseRequest(BaseModel):
     reason: str | None = Field(
         default=None, description="Optional explanation or restriction"
     )
+    remember: bool = Field(
+        default=False, description="Remember approval decision for this tool"
+    )
+    action: str | None = Field(
+        default=None, description="Optional tool/action name to remember"
+    )
 
 
 def _process_attachments(
@@ -117,9 +123,7 @@ def _process_attachments(
 @router.post("/agent/turn", summary="Start and execute a turn synchronously")
 async def execute_turn(req: StartTurnRequest) -> dict[str, Any]:
     """Submit a prompt and wait for turn completion."""
-    enriched_prompt = _process_attachments(
-        req.prompt, req.images, req.referenced_files
-    )
+    enriched_prompt = _process_attachments(req.prompt, req.images, req.referenced_files)
     try:
         sub = await session_manager.client.start_turn(
             prompt=enriched_prompt,
@@ -217,6 +221,8 @@ async def respond_approval(req: ApprovalResponseRequest) -> dict[str, Any]:
         request_id=req.request_id,
         decision=req.decision,
         reason=req.reason,
+        remember=req.remember,
+        action_name=req.action,
     )
     if not resolved:
         raise HTTPException(
@@ -272,9 +278,7 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 images = data.get("images")
                 referenced_files = data.get("referencedFiles")
 
-                enriched_prompt = _process_attachments(
-                    prompt, images, referenced_files
-                )
+                enriched_prompt = _process_attachments(prompt, images, referenced_files)
 
                 # Background task to stream turn events back over WebSocket
                 asyncio.create_task(
@@ -300,7 +304,9 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
 
             elif action == "interrupt":
                 thread_id = data.get("threadId") or "default"
-                turn_id = data.get("turnId") or session_manager.get_active_turn(thread_id)
+                turn_id = data.get("turnId") or session_manager.get_active_turn(
+                    thread_id
+                )
                 logger.info(
                     "Interrupt requested for thread %s, turn %s", thread_id, turn_id
                 )
@@ -311,35 +317,22 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 # 2. Notify App Server engine
                 if turn_id:
                     try:
-                        await session_manager.client.interrupt_turn(
-                            turn_id, thread_id
-                        )
+                        await session_manager.client.interrupt_turn(turn_id, thread_id)
                     except Exception as err:  # noqa: BLE001
-                        logger.warning(
-                            "Failed to call client.interrupt_turn: %s", err
-                        )
+                        logger.warning("Failed to call client.interrupt_turn: %s", err)
 
-                # 3. Send immediate interrupt ack & turn_finished to client
-                await websocket.send_json(
-                    {"type": "interrupt_ack", "turnId": turn_id}
-                )
-                await websocket.send_json(
-                    {
-                        "type": "event",
-                        "threadId": thread_id,
-                        "turnId": turn_id,
-                        "event": {
-                            "type": "turn_finished",
-                            "stop_reason": "interrupted",
-                        },
-                    }
-                )
+                # Send immediate interrupt ack to client (stream CancelledError will emit turn_finished)
+                await websocket.send_json({"type": "interrupt_ack", "turnId": turn_id})
 
             elif action == "approval_response":
                 req_id = data.get("requestId", "")
                 decision = data.get("decision", "denied")
                 reason = data.get("reason")
-                session_manager.resolve_approval(req_id, decision, reason)
+                remember = bool(data.get("remember", False))
+                action_name = data.get("action") or data.get("tool")
+                session_manager.resolve_approval(
+                    req_id, decision, reason, remember=remember, action_name=action_name
+                )
                 await websocket.send_json({"type": "approval_ack", "requestId": req_id})
 
             elif action == "ping":
@@ -362,11 +355,13 @@ async def _stream_turn_to_ws(
     """Stream events from MiniAgentClient directly to the initiating WebSocket."""
     target_thread = thread_id or "default"
     current_task = asyncio.current_task()
+    effort = session_manager.get_settings().get("reasoning_effort", "medium")
     try:
         async for item in session_manager.client.stream_turn(
             prompt=prompt,
             mode=mode,
             thread_id=target_thread,
+            effort=effort,
         ):
             # Capture active turn id from submission or event
             if item.get("type") == "_turn_submission":
@@ -387,9 +382,7 @@ async def _stream_turn_to_ws(
             safe_item = to_json_serializable(item)
             await websocket.send_json(safe_item)
     except asyncio.CancelledError:
-        logger.info(
-            "WebSocket stream turn cancelled for thread: %s", target_thread
-        )
+        logger.info("WebSocket stream turn cancelled for thread: %s", target_thread)
         try:
             await websocket.send_json(
                 {

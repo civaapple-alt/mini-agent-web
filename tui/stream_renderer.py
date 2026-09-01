@@ -39,7 +39,9 @@ def _format_args_preview(args: Any) -> str:
     return preview
 
 
-def _format_output_preview(content: str, max_lines: int = 3, max_chars: int = 240) -> str:
+def _format_output_preview(
+    content: str, max_lines: int = 3, max_chars: int = 240
+) -> str:
     """Format tool execution result preview."""
     if not content:
         return ""
@@ -90,13 +92,9 @@ async def render_turn_stream(
                 elif evt_type == "assistant_reasoning_delta":
                     delta = evt.get("delta", "")
                     if current_mode != "thinking":
-                        console.print(
-                            "\n[bold cyan]💭 Thinking:[/bold cyan] ", end=""
-                        )
+                        console.print("\n[bold cyan]💭 Thinking:[/bold cyan] ", end="")
                         current_mode = "thinking"
-                    console.print(
-                        delta, style="dim italic", markup=False, end=""
-                    )
+                    console.print(delta, style="dim italic", markup=False, end="")
 
                 elif evt_type == "assistant_text_delta":
                     delta = evt.get("delta", "")
@@ -111,9 +109,17 @@ async def render_turn_stream(
                 elif evt_type == "model_responded":
                     usage = evt.get("usage")
                     if isinstance(usage, dict):
-                        metrics.input_tokens = usage.get("input_tokens", usage.get("prompt_tokens", metrics.input_tokens))
-                        metrics.output_tokens = usage.get("output_tokens", usage.get("completion_tokens", metrics.output_tokens))
-                        metrics.total_tokens = usage.get("total_tokens", metrics.input_tokens + metrics.output_tokens)
+                        metrics.input_tokens = usage.get(
+                            "input_tokens",
+                            usage.get("prompt_tokens", metrics.input_tokens),
+                        )
+                        metrics.output_tokens = usage.get(
+                            "output_tokens",
+                            usage.get("completion_tokens", metrics.output_tokens),
+                        )
+                        metrics.total_tokens = usage.get(
+                            "total_tokens", metrics.input_tokens + metrics.output_tokens
+                        )
 
                 elif evt_type == "tool_started":
                     if current_mode == "thinking":
@@ -141,7 +147,9 @@ async def render_turn_stream(
                     truncated = bool(evt.get("truncated"))
                     content = str(evt.get("content") or "")
 
-                    trunc_tag = " [dim yellow](truncated)[/dim yellow]" if truncated else ""
+                    trunc_tag = (
+                        " [dim yellow](truncated)[/dim yellow]" if truncated else ""
+                    )
 
                     if is_error:
                         console.print(
@@ -155,7 +163,9 @@ async def render_turn_stream(
                     preview = _format_output_preview(content)
                     if preview:
                         output_color = "red" if is_error else "dim"
-                        console.print(f"[{output_color}]       Output: {preview}[/{output_color}]")
+                        console.print(
+                            f"[{output_color}]       Output: {preview}[/{output_color}]"
+                        )
 
                 elif evt_type == "context_compaction_started":
                     before = evt.get("before_bytes", 0)
@@ -171,7 +181,9 @@ async def render_turn_stream(
                     )
 
                 elif evt_type == "run_finished":
-                    metrics.stop_reason = evt.get("stop_reason") or evt.get("stopReason") or "completed"
+                    metrics.stop_reason = (
+                        evt.get("stop_reason") or evt.get("stopReason") or "completed"
+                    )
                     if evt.get("steps"):
                         metrics.steps = evt.get("steps")
 
@@ -204,7 +216,9 @@ async def render_turn_stream(
         if metrics.stop_reason:
             parts.append(f"Stop: {metrics.stop_reason}")
         if metrics.total_tokens > 0:
-            parts.append(f"Tokens: {metrics.input_tokens} in / {metrics.output_tokens} out")
+            parts.append(
+                f"Tokens: {metrics.input_tokens} in / {metrics.output_tokens} out"
+            )
         summary_str = " | ".join(parts)
         console.print(f"[dim]─── Turn Settled ({summary_str}) ───[/dim]\n")
 

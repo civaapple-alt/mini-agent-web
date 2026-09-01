@@ -69,14 +69,16 @@ async def run_tui(state: TUIState) -> None:
                 auto_suggest=AutoSuggestFromHistory(),
                 completer=SlashCommandCompleter(state),
                 key_bindings=kb,
-                style=Style.from_dict({
-                    "prompt": "bold #88c0d0",
-                    "completion-menu.completion": "bg:#2e3440 #d8dee9",
-                    "completion-menu.completion.current": "bg:#434c5e #88c0d0 bold",
-                    "completion-menu.meta.completion": "bg:#2e3440 #81a1c1 italic",
-                    "completion-menu.meta.completion.current": "bg:#434c5e #eceff4",
-                    "auto-suggestion": "#4c566a italic",
-                }),
+                style=Style.from_dict(
+                    {
+                        "prompt": "bold #88c0d0",
+                        "completion-menu.completion": "bg:#2e3440 #d8dee9",
+                        "completion-menu.completion.current": "bg:#434c5e #88c0d0 bold",
+                        "completion-menu.meta.completion": "bg:#2e3440 #81a1c1 italic",
+                        "completion-menu.meta.completion.current": "bg:#434c5e #eceff4",
+                        "auto-suggestion": "#4c566a italic",
+                    }
+                ),
                 complete_while_typing=True,
             )
         except Exception:  # noqa: BLE001
@@ -100,9 +102,7 @@ async def run_tui(state: TUIState) -> None:
         return {"decision": decision}
 
     console.print("[dim]Connecting to App Server...[/dim]")
-    async with MiniAgentClient(
-        log_dir="logs", approval_handler=_handler
-    ) as client:
+    async with MiniAgentClient(log_dir="logs", approval_handler=_handler) as client:
         init_res = await client.initialize(profile=state.profile)
         console.print(
             f"[green]✓ Connected to {init_res.get('serverName')} v{init_res.get('serverVersion')} (Profile: {state.profile})[/green]\n"
@@ -132,14 +132,19 @@ async def run_tui(state: TUIState) -> None:
                     except KeyboardInterrupt:
                         consecutive_interrupts += 1
                         if consecutive_interrupts >= 2:
-                            console.print("\n[dim]Exiting Mini Agent TUI... Goodbye![/dim]")
+                            console.print(
+                                "\n[dim]Exiting Mini Agent TUI... Goodbye![/dim]"
+                            )
                             break
-                        console.print("\n[dim yellow](Press Ctrl+C again or type '/exit' to quit)[/dim yellow]")
+                        console.print(
+                            "\n[dim yellow](Press Ctrl+C again or type '/exit' to quit)[/dim yellow]"
+                        )
                         continue
                     except EOFError:
                         console.print("\n[dim]Session terminated.[/dim]")
                         break
                     except Exception:  # noqa: BLE001
+
                         def _read_std_input() -> str:
                             while True:
                                 if sys.stdin.isatty():
@@ -159,6 +164,7 @@ async def run_tui(state: TUIState) -> None:
 
                         user_input = await asyncio.to_thread(_read_std_input)
                 else:
+
                     def _read_std_input() -> str:
                         while True:
                             if sys.stdin.isatty():
@@ -182,9 +188,13 @@ async def run_tui(state: TUIState) -> None:
                     except KeyboardInterrupt:
                         consecutive_interrupts += 1
                         if consecutive_interrupts >= 2:
-                            console.print("\n[dim]Exiting Mini Agent TUI... Goodbye![/dim]")
+                            console.print(
+                                "\n[dim]Exiting Mini Agent TUI... Goodbye![/dim]"
+                            )
                             break
-                        console.print("\n[dim yellow](Press Ctrl+C again or type '/exit' to quit)[/dim yellow]")
+                        console.print(
+                            "\n[dim yellow](Press Ctrl+C again or type '/exit' to quit)[/dim yellow]"
+                        )
                         continue
                     except EOFError:
                         console.print("\n[dim]Session terminated.[/dim]")
@@ -209,9 +219,7 @@ async def run_tui(state: TUIState) -> None:
 
             await _ensure_connected()
 
-            handled = await handle_slash_command(
-                text, state, client, init_res
-            )
+            handled = await handle_slash_command(text, state, client, init_res)
             if handled:
                 continue
 

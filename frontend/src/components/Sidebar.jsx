@@ -223,7 +223,7 @@ export default function Sidebar({
   const handleAddSourceFolder = () => {
     if (!newFolderNameInput.trim()) return;
     const name = newFolderNameInput.trim();
-    const path = newFolderPathInput.trim() || `D:\\gh-ws\\${name}`;
+    const path = newFolderPathInput.trim() || `./${name}`;
     setEditSourceFolders((prev) => [
       ...prev,
       {

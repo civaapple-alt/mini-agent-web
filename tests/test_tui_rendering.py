@@ -47,9 +47,13 @@ def test_format_output_preview() -> None:
 
 
 @pytest.mark.asyncio
-async def test_render_turn_stream_successful_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_render_turn_stream_successful_flow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     output_buffer = io.StringIO()
-    test_con = Console(file=output_buffer, width=120, force_terminal=False, color_system=None)
+    test_con = Console(
+        file=output_buffer, width=120, force_terminal=False, color_system=None
+    )
     monkeypatch.setattr("tui.stream_renderer.console", test_con)
 
     state = TUIState(current_thread_id="test-thread")
@@ -68,7 +72,10 @@ async def test_render_turn_stream_successful_flow(monkeypatch: pytest.MonkeyPatc
         yield {
             "type": "event",
             "turnId": "turn-123",
-            "event": {"type": "assistant_reasoning_delta", "delta": "Analyzing the issue..."},
+            "event": {
+                "type": "assistant_reasoning_delta",
+                "delta": "Analyzing the issue...",
+            },
         }
         yield {
             "type": "event",
@@ -103,7 +110,11 @@ async def test_render_turn_stream_successful_flow(monkeypatch: pytest.MonkeyPatc
             "turnId": "turn-123",
             "event": {
                 "type": "model_responded",
-                "usage": {"input_tokens": 150, "output_tokens": 45, "total_tokens": 195},
+                "usage": {
+                    "input_tokens": 150,
+                    "output_tokens": 45,
+                    "total_tokens": 195,
+                },
             },
         }
         yield {
@@ -138,9 +149,13 @@ async def test_render_turn_stream_successful_flow(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.asyncio
-async def test_render_turn_stream_tool_failure_and_run_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_render_turn_stream_tool_failure_and_run_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     output_buffer = io.StringIO()
-    test_con = Console(file=output_buffer, width=120, force_terminal=False, color_system=None)
+    test_con = Console(
+        file=output_buffer, width=120, force_terminal=False, color_system=None
+    )
     monkeypatch.setattr("tui.stream_renderer.console", test_con)
 
     state = TUIState(current_thread_id="test-fail-thread")
@@ -163,7 +178,10 @@ async def test_render_turn_stream_tool_failure_and_run_failure(monkeypatch: pyte
             "turnId": "turn-fail",
             "event": {
                 "type": "run_failed",
-                "reason": {"type": "ExecutionLimit", "detail": "Recursion depth exceeded"},
+                "reason": {
+                    "type": "ExecutionLimit",
+                    "detail": "Recursion depth exceeded",
+                },
             },
         }
         yield {
@@ -198,7 +216,12 @@ async def test_handle_slash_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_client = AsyncMock()
 
     # 1. /status
-    handled = await handle_slash_command("/status", state, mock_client, {"serverName": "test-srv", "serverVersion": "1.0"})
+    handled = await handle_slash_command(
+        "/status",
+        state,
+        mock_client,
+        {"serverName": "test-srv", "serverVersion": "1.0"},
+    )
     assert handled is True
     assert "Mini Agent Runtime Status" in output_buffer.getvalue()
     assert "Completed Turns" in output_buffer.getvalue()

@@ -20,7 +20,9 @@ if sys.platform == "win32":
         pass
 
 console = Console(
-    force_terminal=True if (hasattr(sys.stdout, "isatty") and sys.stdout.isatty()) else None,
+    force_terminal=True
+    if (hasattr(sys.stdout, "isatty") and sys.stdout.isatty())
+    else None,
     legacy_windows=False,
 )
 
@@ -55,7 +57,3 @@ class TUIState:
         """Increment turn count for the specified thread."""
         tid = thread_id or self.current_thread_id
         self.turn_counts[tid] = self.turn_counts.get(tid, 0) + 1
-
-
-
-

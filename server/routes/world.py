@@ -380,9 +380,9 @@ async def read_workflow_file_content(
     path: str = Query(..., description="Relative file path"),
 ) -> dict[str, Any]:
     """Read full text content of a workflow/plan file."""
-    cwd = session_manager.current_project_path
+    cwd = session_manager.current_project_path.resolve()
     target = (cwd / path).resolve()
-    if not str(target).startswith(str(cwd.resolve())):
+    if not target.is_relative_to(cwd):
         raise HTTPException(status_code=403, detail="File path is outside workspace")
     if not target.is_file():
         raise HTTPException(status_code=404, detail="File not found")
@@ -459,13 +459,15 @@ async def get_git_status() -> dict[str, Any]:
     return await asyncio.to_thread(_get_git_status_sync)
 
 
-@router.get("/world/workspace-files", summary="List files in workspace for autocomplete")
+@router.get(
+    "/world/workspace-files", summary="List files in workspace for autocomplete"
+)
 async def list_workspace_files(
     query: str = Query("", description="Optional search filter"),
     limit: int = Query(80, description="Max files to return"),
 ) -> dict[str, Any]:
     """Fast list of workspace relative file paths for @-mention autocomplete."""
-    cwd = session_manager.current_project_path
+    cwd = session_manager.current_project_path.resolve()
     ignore_dirs = {
         ".git",
         "node_modules",
@@ -481,31 +483,40 @@ async def list_workspace_files(
         ".mini-agent",
     }
 
-    results: list[dict[str, Any]] = []
     q = query.lower().strip()
 
-    def _scan_dir(base_dir: Path, prefix: str = "", depth: int = 0) -> None:
-        if depth > 7 or not base_dir.is_dir():
-            return
-        try:
-            for entry in base_dir.iterdir():
-                if entry.name in ignore_dirs or (entry.name.startswith(".") and entry.name not in [".env.example"]):
-                    continue
-                rel_path = f"{prefix}/{entry.name}" if prefix else entry.name
-                if entry.is_dir():
-                    _scan_dir(entry, rel_path, depth + 1)
-                elif entry.is_file() and (not q or q in rel_path.lower() or q in entry.name.lower()):
-                    results.append(
-                        {
-                            "name": entry.name,
-                            "path": rel_path,
-                            "abs_path": str(entry.resolve()),
-                        }
-                    )
-                    if len(results) >= limit:
-                        return
-        except Exception:  # noqa: BLE001, S110
-            pass
+    def _scan_sync() -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
 
-    _scan_dir(cwd)
-    return {"files": results[:limit], "workspace": str(cwd)}
+        def _scan_dir(base_dir: Path, prefix: str = "", depth: int = 0) -> None:
+            if depth > 7 or not base_dir.is_dir():
+                return
+            try:
+                for entry in base_dir.iterdir():
+                    if entry.name in ignore_dirs or (
+                        entry.name.startswith(".") and entry.name != ".env.example"
+                    ):
+                        continue
+                    rel_path = f"{prefix}/{entry.name}" if prefix else entry.name
+                    if entry.is_dir():
+                        _scan_dir(entry, rel_path, depth + 1)
+                    elif entry.is_file() and (
+                        not q or q in rel_path.lower() or q in entry.name.lower()
+                    ):
+                        results.append(
+                            {
+                                "name": entry.name,
+                                "path": rel_path,
+                                "abs_path": str(entry.resolve()),
+                            }
+                        )
+                        if len(results) >= limit:
+                            return
+            except Exception:  # noqa: BLE001, S110
+                pass
+
+        _scan_dir(cwd)
+        return results[:limit]
+
+    files = await asyncio.to_thread(_scan_sync)
+    return {"files": files, "workspace": str(cwd)}

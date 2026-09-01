@@ -22,9 +22,7 @@ def _ask_approval_sync(
     """Prompt user synchronously on a dedicated thread with approval policies and session memory."""
     # 1. Policy check: Auto-approve
     if state.approval_policy == "auto_approve":
-        console.print(
-            f"[dim]⚡ Auto-approved: {tool_name or request_id}[/dim]"
-        )
+        console.print(f"[dim]⚡ Auto-approved: {tool_name or request_id}[/dim]")
         return "approved"
 
     # 2. Policy check: Strict deny
@@ -36,9 +34,7 @@ def _ask_approval_sync(
 
     # 3. Check remembered approvals for this session
     if tool_name and tool_name in state.remembered_approvals:
-        console.print(
-            f"[dim green]⚡ Remembered approval: {tool_name}[/dim green]"
-        )
+        console.print(f"[dim green]⚡ Remembered approval: {tool_name}[/dim green]")
         return "approved"
 
     if sys.platform == "win32":
@@ -50,9 +46,7 @@ def _ask_approval_sync(
         except Exception:  # noqa: BLE001, S110
             pass
 
-    title = (
-        f"[bold red]Action Intercepted ({request_id or tool_name})[/bold red]"
-    )
+    title = f"[bold red]Action Intercepted ({request_id or tool_name})[/bold red]"
     console.print("\n[bold yellow]⚠️  SECURITY APPROVAL REQUIRED[/bold yellow]")
     console.print(
         Panel(
@@ -61,12 +55,16 @@ def _ask_approval_sync(
             border_style="yellow",
         )
     )
-    choice = Prompt.ask(
-        "[bold yellow]Allow execution? [y]es / [n]o / [a]lways (本会话始终放行此工具)[/bold yellow]",
-        choices=["y", "n", "a", "yes", "no", "always"],
-        default="n",
-        show_choices=True,
-    ).strip().lower()
+    choice = (
+        Prompt.ask(
+            "[bold yellow]Allow execution? [y]es / [n]o / [a]lways (本会话始终放行此工具)[/bold yellow]",
+            choices=["y", "n", "a", "yes", "no", "always"],
+            default="n",
+            show_choices=True,
+        )
+        .strip()
+        .lower()
+    )
 
     if choice in ("a", "always"):
         if tool_name:

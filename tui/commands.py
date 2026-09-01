@@ -35,7 +35,9 @@ def print_help_table(state: TUIState) -> None:
     table.add_column("功能说明与当前配置", style="white")
 
     # 1. 工作流模式
-    table.add_row("工作流模式", "/plan [on|off]", "开启/切换只读 Plan Mode (只读架构探索)")
+    table.add_row(
+        "工作流模式", "/plan [on|off]", "开启/切换只读 Plan Mode (只读架构探索)"
+    )
     table.add_row("", "/goal <目标描述>", "启动目标驱动多里程碑无人值守收敛任务")
     table.add_row("", "/goal", "查看当前活动 Goal 进度与各里程碑收敛状态")
     table.add_row("", "/workflows", "探测工作区内规范与计划文件 (plan.md, AGENTS.md)")
@@ -74,17 +76,27 @@ def print_help_table(state: TUIState) -> None:
     table.add_row("", "/new [thread_id]", "新建并切换至新会话线程")
     table.add_row("", "/fork <new_id>", "分叉当前会话历史为新的实验分支")
     table.add_row("", "/switch <thread_id>", "切换当前活跃会话线程")
-    table.add_row("", "/history [n|all]", "查看当前会话已结算 Checkpoint 与消息回放 (别名: /checkpoint)")
+    table.add_row(
+        "",
+        "/history [n|all]",
+        "查看当前会话已结算 Checkpoint 与消息回放 (别名: /checkpoint)",
+    )
 
     # 5. 工作区与环境探测
     table.add_row("工作区探测", "/status", "查看运行时环境、Server 状态与轮次遥测总览")
     table.add_row("", "/mcp", "查看已启用的 MCP 服务与扩展工具状态")
     table.add_row("", "/git", "查看当前工作区 Git 分支及未提交变更 (别名: /diff)")
     table.add_row("", "/files [query]", "检索当前工作区代码文件路径 (别名: /ls)")
-    table.add_row("", "!<command>", "直接在宿主环境执行本地 Shell 命令 (如 !git status, !cargo test)")
+    table.add_row(
+        "",
+        "!<command>",
+        "直接在宿主环境执行本地 Shell 命令 (如 !git status, !cargo test)",
+    )
 
     # 6. 通用控制
-    table.add_row("通用控制", "/copy", "复制模型最新回复/文档 Markdown 到系统剪贴板 (别名: /cp)")
+    table.add_row(
+        "通用控制", "/copy", "复制模型最新回复/文档 Markdown 到系统剪贴板 (别名: /cp)"
+    )
     table.add_row("", "/clear", "清空终端屏幕")
     table.add_row("", "/help", "显示本命令参考大全")
     table.add_row("", "/exit / /quit", "退出 TUI 交互终端")
@@ -93,7 +105,10 @@ def print_help_table(state: TUIState) -> None:
 
 
 async def handle_slash_command(
-    text: str, state: TUIState, client: MiniAgentClient, init_res: dict[str, str] | None = None
+    text: str,
+    state: TUIState,
+    client: MiniAgentClient,
+    init_res: dict[str, str] | None = None,
 ) -> bool:
     """
     Check if the user input is a slash command or shell escape (!cmd) and handle it.
@@ -107,8 +122,11 @@ async def handle_slash_command(
             )
             return True
 
-        console.print(f"[dim]⚡ Executing shell command: [bold cyan]{cmd_to_run}[/bold cyan][/dim]")
+        console.print(
+            f"[dim]⚡ Executing shell command: [bold cyan]{cmd_to_run}[/bold cyan][/dim]"
+        )
         try:
+
             def _run_shell() -> int:
                 if sys.platform == "win32":
                     shell_exe = shutil.which("pwsh") or shutil.which("powershell")
@@ -131,7 +149,9 @@ async def handle_slash_command(
             else:
                 console.print("[dim green]✓ Command succeeded (exit 0)[/dim green]\n")
         except Exception as err:  # noqa: BLE001
-            console.print(f"[bold red]Failed to execute shell command: {err}[/bold red]\n")
+            console.print(
+                f"[bold red]Failed to execute shell command: {err}[/bold red]\n"
+            )
         return True
 
     lower_text = text.lower().strip()
@@ -167,7 +187,9 @@ async def handle_slash_command(
                 pass
 
         if not text_to_copy:
-            console.print("[yellow]No assistant response or summary available to copy yet.[/yellow]")
+            console.print(
+                "[yellow]No assistant response or summary available to copy yet.[/yellow]"
+            )
             return True
 
         from tui.clipboard import copy_to_clipboard
@@ -215,9 +237,7 @@ async def handle_slash_command(
                         thread_id=state.current_thread_id,
                     )
                     action_id = (
-                        res.get("actionId", "ok")
-                        if isinstance(res, dict)
-                        else "ok"
+                        res.get("actionId", "ok") if isinstance(res, dict) else "ok"
                     )
                     console.print(
                         f"[green]✓ Steer instruction injected into active turn {state.active_turn_id} (Action: {action_id}):[/green]\n"
@@ -243,9 +263,7 @@ async def handle_slash_command(
             if init_res
             else "mini-agent-app-server"
         )
-        table = Table(
-            title="Mini Agent Runtime Status", border_style="cyan"
-        )
+        table = Table(title="Mini Agent Runtime Status", border_style="cyan")
         table.add_column("Property", style="bold sky_blue1", width=22)
         table.add_column("Value", style="white")
         table.add_row("Server", server_info)
@@ -273,6 +291,7 @@ async def handle_slash_command(
 
     if lower_text in ("/git", "/diff"):
         try:
+
             def _get_git_info() -> tuple[str, list[str]]:
                 b_proc = subprocess.run(
                     ["git", "branch", "--show-current"],
@@ -288,9 +307,7 @@ async def handle_slash_command(
                     check=False,
                 )
                 out_lines = [
-                    ln.strip()
-                    for ln in s_proc.stdout.splitlines()
-                    if ln.strip()
+                    ln.strip() for ln in s_proc.stdout.splitlines() if ln.strip()
                 ]
                 return branch_name, out_lines
 
@@ -334,18 +351,14 @@ async def handle_slash_command(
         matches = []
         for root, dirs, files in os.walk(Path.cwd()):
             dirs[:] = [
-                d
-                for d in dirs
-                if d not in ignore_dirs and not d.startswith(".")
+                d for d in dirs if d not in ignore_dirs and not d.startswith(".")
             ]
             rel_root = Path(root).relative_to(Path.cwd())
             for f in files:
                 if f.startswith(".") and f != ".env.example":
                     continue
                 rel_p = (
-                    str(rel_root / f).replace("\\", "/")
-                    if str(rel_root) != "."
-                    else f
+                    str(rel_root / f).replace("\\", "/") if str(rel_root) != "." else f
                 )
                 if not query or query in rel_p.lower():
                     matches.append(rel_p)
@@ -459,7 +472,9 @@ async def handle_slash_command(
 
     if lower_text == "/clear-approvals":
         state.remembered_approvals.clear()
-        console.print("[green]✓ Cleared all remembered tool approvals for this session.[/green]")
+        console.print(
+            "[green]✓ Cleared all remembered tool approvals for this session.[/green]"
+        )
         return True
 
     if lower_text.startswith("/plan"):
@@ -497,9 +512,7 @@ async def handle_slash_command(
                     f"[sky_blue1]Active Goal ({wf.goal.goal_id}): milestone {wf.goal.current_milestone}/{wf.goal.total_milestones}, status={wf.goal.status}[/sky_blue1]"
                 )
             else:
-                console.print(
-                    "[dim]No active goal. Usage: /goal <objective>[/dim]"
-                )
+                console.print("[dim]No active goal. Usage: /goal <objective>[/dim]")
         return True
 
     if lower_text == "/threads":
@@ -508,9 +521,7 @@ async def handle_slash_command(
         table.add_column("Thread ID", style="bold sky_blue1")
         table.add_column("Active", style="green")
         for tid in res.data:
-            table.add_row(
-                tid, "✓ Current" if tid == state.current_thread_id else ""
-            )
+            table.add_row(tid, "✓ Current" if tid == state.current_thread_id else "")
         console.print(table)
         return True
 

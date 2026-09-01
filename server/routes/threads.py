@@ -51,12 +51,14 @@ async def list_threads(
 
         # Ensure all discovered threads have metadata records
         enriched_threads: list[dict[str, Any]] = []
+        cur_project_name = session_manager._current_project_path.name
         for tid in thread_ids:
             meta = session_manager.get_thread_meta(tid)
             enriched_threads.append(
                 {
                     "thread_id": tid,
                     "title": meta.get("title") or f"会话 {tid}",
+                    "project": meta.get("project") or cur_project_name,
                     "summary": meta.get("summary", ""),
                     "created_at": meta.get("created_at"),
                     "updated_at": meta.get("updated_at"),

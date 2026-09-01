@@ -530,6 +530,7 @@ export default function App() {
         <Sidebar
           threads={threads}
           currentThread={currentThread}
+          isGenerating={isGenerating}
           onSelectThread={handleSelectThread}
           onNewThread={handleNewThread}
           onForkThread={handleForkThread}
@@ -537,6 +538,8 @@ export default function App() {
           onRenameThread={handleRenameThread}
           onUpdateSummary={handleUpdateSummary}
           onRefreshThreads={loadThreads}
+          onOpenSidePanel={handleOpenSidePanel}
+          onOpenSettings={() => setSettingsModalOpen(true)}
         />
 
         <main className="app-content">

@@ -6,6 +6,7 @@ Provides an interactive, visually rich CLI chat with thinking panels, tool cards
 from __future__ import annotations
 
 import asyncio
+import sys
 from typing import Any
 
 from mini_agent import MiniAgentClient
@@ -16,16 +17,16 @@ from rich.prompt import Prompt
 console = Console()
 
 
-async def terminal_approval_handler(
-    req: dict[str, Any] | str, action: str | None = None
-) -> dict[str, Any]:
-    """Terminal approval prompt when sensitive actions occur."""
-    if isinstance(req, dict):
-        action_desc = req.get("action") or str(req)
-        request_id = req.get("requestId") or req.get("request_id") or ""
-    else:
-        action_desc = action or req
-        request_id = req
+def _ask_approval_sync(action_desc: str, request_id: str) -> str:
+    """Prompt user synchronously on a dedicated thread, clearing any residual stdin input."""
+    if sys.platform == "win32":
+        try:
+            import msvcrt
+
+            while msvcrt.kbhit():
+                msvcrt.getch()
+        except Exception:  # noqa: BLE001, S110
+            pass
 
     title = (
         f"[bold red]Action Intercepted ({request_id})[/bold red]"
@@ -40,10 +41,27 @@ async def terminal_approval_handler(
             border_style="yellow",
         )
     )
+    # Require explicit confirmation without auto-accepting defaults
     choice = Prompt.ask(
-        "Allow this execution?", choices=["y", "n", "yes", "no"], default="y"
+        "[bold yellow]Allow this execution?[/bold yellow]",
+        choices=["y", "n", "yes", "no"],
+        show_choices=True,
     )
-    decision = "approved" if choice in ("y", "yes") else "denied"
+    return "approved" if choice.strip().lower() in ("y", "yes") else "denied"
+
+
+async def terminal_approval_handler(
+    req: dict[str, Any] | str, action: str | None = None
+) -> dict[str, Any]:
+    """Terminal approval prompt when sensitive actions occur."""
+    if isinstance(req, dict):
+        action_desc = req.get("action") or str(req)
+        request_id = req.get("requestId") or req.get("request_id") or ""
+    else:
+        action_desc = action or req
+        request_id = req
+
+    decision = await asyncio.to_thread(_ask_approval_sync, action_desc, request_id)
     return {"decision": decision}
 
 
@@ -88,8 +106,7 @@ async def run_tui() -> None:
 
                 console.print("\n[bold green]Mini Agent[/bold green]:")
 
-                thinking_buffer = ""
-                output_buffer = ""
+                current_mode = None  # None | "thinking" | "text"
 
                 async for item in client.stream_turn(
                     user_input, thread_id="tui-session"
@@ -99,32 +116,40 @@ async def run_tui() -> None:
                         evt_type = evt.get("type")
 
                         if evt_type == "assistant_reasoning_delta":
-                            thinking_buffer += evt.get("delta", "")
+                            delta = evt.get("delta", "")
+                            if current_mode != "thinking":
+                                console.print("\n[dim italic]💭 Thinking: ", end="")
+                                current_mode = "thinking"
+                            console.print(f"[dim italic]{delta}[/dim italic]", end="")
+
                         elif evt_type == "assistant_text_delta":
                             delta = evt.get("delta", "")
-                            output_buffer += delta
+                            if current_mode != "text":
+                                if current_mode == "thinking":
+                                    console.print("[/dim italic]\n")
+                                current_mode = "text"
                             console.print(delta, end="")
+
                         elif evt_type == "tool_started":
+                            if current_mode == "thinking":
+                                console.print("[/dim italic]\n")
+                            current_mode = None
                             call = evt.get("call", {})
                             tool_name = evt.get("name") or call.get("name") or "tool"
                             console.print(
                                 f"\n[dim cyan]⚡ Tool started: {tool_name}[/dim cyan]"
                             )
+
                         elif evt_type == "tool_finished":
+                            current_mode = None
                             tool_name = evt.get("name") or "tool"
                             console.print(
                                 f"[dim green]✓ Tool finished: {tool_name}[/dim green]"
                             )
 
+                if current_mode == "thinking":
+                    console.print("[/dim italic]")
                 console.print("\n")
-                if thinking_buffer:
-                    console.print(
-                        Panel(
-                            thinking_buffer.strip(),
-                            title="[dim]Reasoning Process[/dim]",
-                            border_style="dim",
-                        )
-                    )
 
             except (KeyboardInterrupt, EOFError):
                 console.print("\n[dim]Session terminated.[/dim]")

@@ -102,6 +102,51 @@
   gap: 4px;
 }
 
+.user-attached-images-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.user-img-preview-wrap {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+.user-msg-image {
+  max-width: 240px;
+  max-height: 180px;
+  display: block;
+  cursor: pointer;
+  object-fit: cover;
+  transition: transform 0.15s ease;
+}
+
+.user-msg-image:hover {
+  transform: scale(1.02);
+}
+
+.user-referenced-files-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.user-ref-file-chip {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #2563eb;
+}
+
 .user-bubble {
   background-color: var(--bg-card-hover);
   color: var(--text-primary);

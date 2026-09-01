@@ -23,9 +23,41 @@ export default function MessageItem({
   };
 
   if (role === 'user') {
+    const { images = [], referencedFiles = [] } = message;
     return (
       <div className="message-row user">
         <div className="user-bubble-container">
+          {/* Render Attached Images in User Bubble */}
+          {images && images.length > 0 && (
+            <div className="user-attached-images-grid">
+              {images.map((imgUrl, i) => (
+                <div key={i} className="user-img-preview-wrap">
+                  <img
+                    src={imgUrl}
+                    alt={`Attached ${i + 1}`}
+                    className="user-msg-image"
+                    onClick={() => {
+                      const w = window.open('');
+                      w.document.write(`<img src="${imgUrl}" style="max-width:100%;height:auto;margin:auto;display:block;" />`);
+                    }}
+                    title="点击在新窗口查看大图"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Render Referenced Files */}
+          {referencedFiles && referencedFiles.length > 0 && (
+            <div className="user-referenced-files-row">
+              {referencedFiles.map((rf, i) => (
+                <span key={i} className="user-ref-file-chip font-mono">
+                  @{rf}
+                </span>
+              ))}
+            </div>
+          )}
+
           <div className="user-bubble">{text}</div>
           <div className="user-actions">
             <button

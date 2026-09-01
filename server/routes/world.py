@@ -352,7 +352,7 @@ async def get_goal_criteria() -> dict[str, Any]:
 @router.get("/workflows/files", summary="List workflow and plan files")
 async def list_workflow_files() -> dict[str, Any]:
     """Scan workspace for plan/goal files like plan.md, goal/plan.md, etc."""
-    cwd = Path.cwd()
+    cwd = session_manager.current_project_path
     candidate_paths = [
         "plan.md",
         "goal/plan.md",
@@ -380,7 +380,7 @@ async def read_workflow_file_content(
     path: str = Query(..., description="Relative file path"),
 ) -> dict[str, Any]:
     """Read full text content of a workflow/plan file."""
-    cwd = Path.cwd()
+    cwd = session_manager.current_project_path
     target = (cwd / path).resolve()
     if not str(target).startswith(str(cwd.resolve())):
         raise HTTPException(status_code=403, detail="File path is outside workspace")
@@ -402,9 +402,11 @@ async def read_workflow_file_content(
 
 
 def _get_git_status_sync() -> dict[str, Any]:
+    cwd = str(session_manager.current_project_path)
     try:
         branch_proc = subprocess.run(
             ["git", "branch", "--show-current"],
+            cwd=cwd,
             capture_output=True,
             text=True,
             timeout=2.0,
@@ -414,6 +416,7 @@ def _get_git_status_sync() -> dict[str, Any]:
 
         status_proc = subprocess.run(
             ["git", "status", "--porcelain"],
+            cwd=cwd,
             capture_output=True,
             text=True,
             timeout=2.0,
@@ -437,6 +440,7 @@ def _get_git_status_sync() -> dict[str, Any]:
             "modified": modified,
             "untracked": untracked,
             "total_changes": len(lines),
+            "workspace": cwd,
         }
     except Exception as err:  # noqa: BLE001
         return {
@@ -445,6 +449,7 @@ def _get_git_status_sync() -> dict[str, Any]:
             "modified": [],
             "untracked": [],
             "error": str(err),
+            "workspace": cwd,
         }
 
 
@@ -452,3 +457,55 @@ def _get_git_status_sync() -> dict[str, Any]:
 async def get_git_status() -> dict[str, Any]:
     """Retrieve Git repository status, current branch, and changed files."""
     return await asyncio.to_thread(_get_git_status_sync)
+
+
+@router.get("/world/workspace-files", summary="List files in workspace for autocomplete")
+async def list_workspace_files(
+    query: str = Query("", description="Optional search filter"),
+    limit: int = Query(80, description="Max files to return"),
+) -> dict[str, Any]:
+    """Fast list of workspace relative file paths for @-mention autocomplete."""
+    cwd = session_manager.current_project_path
+    ignore_dirs = {
+        ".git",
+        "node_modules",
+        "__pycache__",
+        ".venv",
+        "venv",
+        ".pytest_cache",
+        ".ruff_cache",
+        "dist",
+        "build",
+        "target",
+        ".gemini",
+        ".mini-agent",
+    }
+
+    results: list[dict[str, Any]] = []
+    q = query.lower().strip()
+
+    def _scan_dir(base_dir: Path, prefix: str = "", depth: int = 0) -> None:
+        if depth > 7 or not base_dir.is_dir():
+            return
+        try:
+            for entry in base_dir.iterdir():
+                if entry.name in ignore_dirs or (entry.name.startswith(".") and entry.name not in [".env.example"]):
+                    continue
+                rel_path = f"{prefix}/{entry.name}" if prefix else entry.name
+                if entry.is_dir():
+                    _scan_dir(entry, rel_path, depth + 1)
+                elif entry.is_file() and (not q or q in rel_path.lower() or q in entry.name.lower()):
+                    results.append(
+                        {
+                            "name": entry.name,
+                            "path": rel_path,
+                            "abs_path": str(entry.resolve()),
+                        }
+                    )
+                    if len(results) >= limit:
+                        return
+        except Exception:  # noqa: BLE001, S110
+            pass
+
+    _scan_dir(cwd)
+    return {"files": results[:limit], "workspace": str(cwd)}

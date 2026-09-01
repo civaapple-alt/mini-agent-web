@@ -215,6 +215,223 @@ body.theme-dark .btn-dock-deny {
   background-color: rgba(225, 29, 72, 0.08);
 }
 
+/* @ Mention File Autocomplete Popup */
+.mention-popup-menu {
+  position: absolute;
+  bottom: 82px;
+  left: 20px;
+  width: 380px;
+  max-height: 240px;
+  overflow-y: auto;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 5px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mention-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 2px;
+}
+
+.mention-popup-count {
+  font-size: 10px;
+  color: var(--accent-green);
+}
+
+.mention-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mention-item:hover,
+.mention-item.active {
+  background-color: var(--bg-card-hover);
+}
+
+.mention-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.mention-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+  flex: 1;
+}
+
+.mention-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mention-path {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Attached Images Preview Bar */
+.attached-images-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: var(--bg-app);
+  overflow-x: auto;
+}
+
+.attached-image-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 8px 4px 4px;
+  flex-shrink: 0;
+  max-width: 220px;
+}
+
+.attached-image-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  object-fit: cover;
+  border: 1px solid var(--border-subtle);
+}
+
+.attached-image-meta {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+}
+
+.attached-image-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attached-image-size {
+  font-size: 9.5px;
+  color: var(--text-muted);
+}
+
+.btn-remove-attached-image {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+}
+
+.btn-remove-attached-image:hover {
+  color: var(--accent-rose);
+  background-color: rgba(225, 29, 72, 0.08);
+}
+
+/* Referenced Files Chips */
+.referenced-files-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: var(--bg-app);
+}
+
+.referenced-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  font-size: 11px;
+  color: #2563eb;
+}
+
+.chip-file-icon {
+  color: var(--text-muted);
+}
+
+.chip-file-name {
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-remove-chip {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 1px;
+  display: flex;
+  align-items: center;
+}
+
+.btn-remove-chip:hover {
+  color: var(--accent-rose);
+}
+
+.composer-icon-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  padding: 4px 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.composer-icon-btn:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-card-hover);
+  border-color: var(--text-muted);
+}
+
 /* Slash Command Popup */
 .slash-popup-menu {
   position: absolute;

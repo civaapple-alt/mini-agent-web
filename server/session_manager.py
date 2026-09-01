@@ -208,8 +208,19 @@ class SessionManager:
         self._projects_registry[proj_id] = proj_info
         self._current_project_id = proj_id
         self._current_project_path = target_dir
+        self._sync_cwd()
         self._save_state()
         return proj_info
+
+    def _sync_cwd(self) -> None:
+        """Synchronize process working directory with active project path."""
+        try:
+            import os
+            if self._current_project_path.is_dir():
+                os.chdir(self._current_project_path)
+                logger.info("Synchronized process cwd to project: %s", self._current_project_path)
+        except Exception as err:  # noqa: BLE001
+            logger.warning("Failed to chdir to project path %s: %s", self._current_project_path, err)
 
     def update_project(
         self, project_id: str, updates: dict[str, Any]
@@ -238,6 +249,9 @@ class SessionManager:
                 proj["source_folders"][0]["path"] if proj["source_folders"] else proj["primary_path"],
             )
             proj["primary_path"] = primary
+            if self._current_project_id == project_id:
+                self._current_project_path = Path(primary)
+                self._sync_cwd()
 
         self._save_state()
         return proj
@@ -248,6 +262,9 @@ class SessionManager:
             del self._projects_registry[project_id]
             if self._current_project_id == project_id and self._projects_registry:
                 self._current_project_id = next(iter(self._projects_registry.keys()))
+                next_proj = self._projects_registry[self._current_project_id]
+                self._current_project_path = Path(next_proj["primary_path"])
+                self._sync_cwd()
             self._save_state()
             return True
         return False
@@ -266,6 +283,7 @@ class SessionManager:
             self._current_project_id = project_id_or_path
             proj = self._projects_registry[project_id_or_path]
             self._current_project_path = Path(proj["primary_path"])
+            self._sync_cwd()
             self._save_state()
             return proj
 
@@ -276,6 +294,7 @@ class SessionManager:
             ):
                 self._current_project_id = pid
                 self._current_project_path = Path(p["primary_path"])
+                self._sync_cwd()
                 self._save_state()
                 return p
 
@@ -284,6 +303,7 @@ class SessionManager:
         if not p.is_dir():
             raise FileNotFoundError(f"Project directory not found: {project_id_or_path}")
         self._current_project_path = p
+        self._sync_cwd()
         proj_id = p.name.lower()
         proj_info = {
             "id": proj_id,
@@ -296,6 +316,25 @@ class SessionManager:
         self._current_project_id = proj_id
         self._save_state()
         return proj_info
+
+    @property
+    def current_project_path(self) -> Path:
+        """Active project working directory path."""
+        return self._current_project_path
+
+    @property
+    def current_source_folders(self) -> list[dict[str, Any]]:
+        """Active project configured multi-source folders."""
+        proj = self._projects_registry.get(self._current_project_id)
+        if proj and "source_folders" in proj and isinstance(proj["source_folders"], list):
+            return proj["source_folders"]
+        return [
+            {
+                "name": self._current_project_path.name,
+                "path": str(self._current_project_path),
+                "is_primary": True,
+            }
+        ]
 
     @property
     def client(self) -> MiniAgentClient:

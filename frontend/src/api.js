@@ -245,6 +245,12 @@ export const api = {
     return res.json();
   },
 
+  async getWorkspaceFiles(query = '') {
+    const res = await fetch(`${API_BASE}/api/world/workspace-files?query=${encodeURIComponent(query)}`);
+    if (!res.ok) throw new Error('Failed to list workspace files');
+    return res.json();
+  },
+
   // ---------------------------------------------------------------------------
   // Settings Management
   // ---------------------------------------------------------------------------

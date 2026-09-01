@@ -341,16 +341,38 @@ export default function App() {
   // Action Handlers
   // ---------------------------------------------------------------------------
 
-  const handleSendMessage = (prompt) => {
+  const handleSendMessage = (inputPayload) => {
+    let promptText = '';
+    let images = [];
+    let referencedFiles = [];
+
+    if (typeof inputPayload === 'string') {
+      promptText = inputPayload;
+    } else if (typeof inputPayload === 'object' && inputPayload !== null) {
+      promptText = inputPayload.prompt || '';
+      images = inputPayload.images || [];
+      referencedFiles = inputPayload.referencedFiles || [];
+    }
+
     setMessages((prev) => [
       ...prev,
-      { role: 'user', text: prompt, thinking: '', tools: [], blocks: [{ type: 'text', content: prompt }] },
+      {
+        role: 'user',
+        text: promptText,
+        images,
+        referencedFiles,
+        thinking: '',
+        tools: [],
+        blocks: [{ type: 'text', content: promptText }],
+      },
     ]);
 
     if (wsRef.current) {
       wsRef.current.send({
         action: 'turn',
-        prompt,
+        prompt: promptText,
+        images,
+        referencedFiles,
         threadId: currentThread,
       });
     }

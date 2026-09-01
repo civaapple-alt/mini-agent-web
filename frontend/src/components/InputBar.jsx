@@ -14,7 +14,10 @@ import {
   X,
   ChevronDown,
   MessageSquare,
+  Image as ImageIcon,
+  FileCode,
 } from 'lucide-react';
+import { api } from '../api';
 import './InputBar.css';
 
 const SLASH_COMMANDS = [
@@ -56,6 +59,18 @@ export default function InputBar({
   const [showPolicyMenu, setShowPolicyMenu] = useState(false);
   const [denyReason, setDenyReason] = useState('');
   const [showDenyInput, setShowDenyInput] = useState(false);
+
+  // Image & File Attachments
+  const [attachedImages, setAttachedImages] = useState([]);
+  const [referencedFiles, setReferencedFiles] = useState([]);
+  const fileInputRef = useRef(null);
+
+  // @ Mention Autocomplete
+  const [showMentionPopup, setShowMentionPopup] = useState(false);
+  const [mentionFiles, setMentionFiles] = useState([]);
+  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
+  const [mentionCursorPos, setMentionCursorPos] = useState(null);
+
   const textareaRef = useRef(null);
 
   useEffect(() => {
@@ -70,17 +85,47 @@ export default function InputBar({
     const handleDocumentClick = () => {
       setShowProfileMenu(false);
       setShowPolicyMenu(false);
+      setShowMentionPopup(false);
     };
-    if (showProfileMenu || showPolicyMenu) {
+    if (showProfileMenu || showPolicyMenu || showMentionPopup) {
       window.addEventListener('click', handleDocumentClick);
     }
     return () => {
       window.removeEventListener('click', handleDocumentClick);
     };
-  }, [showProfileMenu, showPolicyMenu]);
+  }, [showProfileMenu, showPolicyMenu, showMentionPopup]);
+
+  const loadWorkspaceFiles = async (q) => {
+    try {
+      const data = await api.getWorkspaceFiles(q);
+      setMentionFiles(data?.files || []);
+    } catch (err) {
+      console.warn('Failed to load workspace files:', err);
+    }
+  };
+
+  const checkMentionTrigger = (text, cursorPos) => {
+    const textBeforeCursor = text.slice(0, cursorPos);
+    const lastAtIdx = textBeforeCursor.lastIndexOf('@');
+    if (lastAtIdx !== -1) {
+      const charBeforeAt = lastAtIdx > 0 ? textBeforeCursor[lastAtIdx - 1] : ' ';
+      if (charBeforeAt === ' ' || charBeforeAt === '\n' || charBeforeAt === '\t') {
+        const query = textBeforeCursor.slice(lastAtIdx + 1);
+        if (!query.includes(' ') && !query.includes('\n')) {
+          setMentionCursorPos(lastAtIdx);
+          setShowMentionPopup(true);
+          setSelectedMentionIndex(0);
+          loadWorkspaceFiles(query);
+          return;
+        }
+      }
+    }
+    setShowMentionPopup(false);
+  };
 
   const handleInputChange = (e) => {
     const val = e.target.value;
+    const pos = e.target.selectionStart;
     setPrompt(val);
 
     if (val.startsWith('/') && !val.includes(' ') && !isGenerating) {
@@ -89,6 +134,27 @@ export default function InputBar({
     } else {
       setShowSlashPopup(false);
     }
+
+    checkMentionTrigger(val, pos);
+  };
+
+  const handleSelectMentionFile = (file) => {
+    if (mentionCursorPos === null) return;
+    const textBeforeAt = prompt.slice(0, mentionCursorPos);
+    const textAfterCursor = prompt.slice(textareaRef.current?.selectionEnd || prompt.length);
+    const newText = `${textBeforeAt}@${file.path} ${textAfterCursor}`;
+    setPrompt(newText);
+    if (!referencedFiles.includes(file.path)) {
+      setReferencedFiles((prev) => [...prev, file.path]);
+    }
+    setShowMentionPopup(false);
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        const newPos = mentionCursorPos + file.path.length + 2;
+        textareaRef.current.setSelectionRange(newPos, newPos);
+      }
+    }, 10);
   };
 
   const handleSelectSlashCommand = (cmdObj) => {
@@ -102,10 +168,61 @@ export default function InputBar({
     if (textareaRef.current) textareaRef.current.focus();
   };
 
+  const handlePaste = (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (uploadEvent) => {
+            const dataUrl = uploadEvent.target.result;
+            setAttachedImages((prev) => [
+              ...prev,
+              {
+                id: 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                name: file.name || `剪贴板截图_${new Date().toLocaleTimeString().replace(/:/g, '-')}.png`,
+                dataUrl,
+                size: file.size,
+              },
+            ]);
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+    }
+  };
+
+  const handleFileInputChange = (e) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach((file) => {
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (uploadEvent) => {
+          setAttachedImages((prev) => [
+            ...prev,
+            {
+              id: 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+              name: file.name,
+              dataUrl: uploadEvent.target.result,
+              size: file.size,
+            },
+          ]);
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+    e.target.value = '';
+  };
+
   const handleSubmit = (e) => {
     if (e) e.preventDefault();
     const text = prompt.trim();
-    if (!text) return;
+    if (!text && attachedImages.length === 0) return;
 
     if (text === '/plan') {
       if (onChangeProfile) onChangeProfile(profile === 'strict' ? 'interactive' : 'strict');
@@ -113,16 +230,48 @@ export default function InputBar({
       return;
     }
 
+    const payload = {
+      prompt: text,
+      images: attachedImages.map((img) => img.dataUrl),
+      referencedFiles,
+    };
+
     if (isGenerating) {
       onSteerMessage(text);
     } else {
-      onSendMessage(text);
+      onSendMessage(payload);
     }
+
     setPrompt('');
+    setAttachedImages([]);
+    setReferencedFiles([]);
     setShowSlashPopup(false);
+    setShowMentionPopup(false);
   };
 
   const handleKeyDown = (e) => {
+    if (showMentionPopup && mentionFiles.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedMentionIndex((prev) => (prev + 1) % mentionFiles.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedMentionIndex((prev) => (prev - 1 + mentionFiles.length) % mentionFiles.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        handleSelectMentionFile(mentionFiles[selectedMentionIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setShowMentionPopup(false);
+        return;
+      }
+    }
+
     if (showSlashPopup) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -252,6 +401,29 @@ export default function InputBar({
         </div>
       )}
 
+      {/* @ Mention Autocomplete Popup */}
+      {showMentionPopup && mentionFiles.length > 0 && (
+        <div className="mention-popup-menu custom-scrollbar" onClick={(e) => e.stopPropagation()}>
+          <div className="mention-popup-header">
+            <span>工作区文件引用 (@)</span>
+            <span className="mention-popup-count font-mono">{mentionFiles.length} 个匹配</span>
+          </div>
+          {mentionFiles.map((file, idx) => (
+            <div
+              key={file.path}
+              className={`mention-item ${idx === selectedMentionIndex ? 'active' : ''}`}
+              onClick={() => handleSelectMentionFile(file)}
+            >
+              <FileCode size={13} className="mention-icon" />
+              <div className="mention-info">
+                <span className="mention-name font-mono">{file.name}</span>
+                <span className="mention-path font-mono">{file.path}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Slash command popup */}
       {showSlashPopup && (
         <div className="slash-popup-menu custom-scrollbar">
@@ -272,6 +444,59 @@ export default function InputBar({
 
       {/* Main Composer Box */}
       <form className="input-form" onSubmit={handleSubmit}>
+        {/* Hidden Image File Input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          style={{ display: 'none' }}
+          accept="image/*"
+          multiple
+          onChange={handleFileInputChange}
+        />
+
+        {/* Attached Images Preview Bar */}
+        {attachedImages.length > 0 && (
+          <div className="attached-images-bar custom-scrollbar">
+            {attachedImages.map((img, idx) => (
+              <div key={img.id} className="attached-image-card">
+                <img src={img.dataUrl} alt={img.name} className="attached-image-thumb" />
+                <div className="attached-image-meta">
+                  <span className="attached-image-name" title={img.name}>{img.name}</span>
+                  <span className="attached-image-size font-mono">{(img.size / 1024).toFixed(1)} KB</span>
+                </div>
+                <button
+                  type="button"
+                  className="btn-remove-attached-image"
+                  onClick={() => setAttachedImages((prev) => prev.filter((_, i) => i !== idx))}
+                  title="移除截图"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Referenced Files Chips */}
+        {referencedFiles.length > 0 && (
+          <div className="referenced-files-bar">
+            {referencedFiles.map((path, idx) => (
+              <div key={path} className="referenced-file-chip font-mono">
+                <FileCode size={11} className="chip-file-icon" />
+                <span className="chip-file-name" title={path}>@{path}</span>
+                <button
+                  type="button"
+                  className="btn-remove-chip"
+                  onClick={() => setReferencedFiles((prev) => prev.filter((_, i) => i !== idx))}
+                  title="移除引用"
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Textarea Input: Direct, Spacious & Uncluttered */}
         <div className="textarea-wrapper">
           <textarea
@@ -280,6 +505,7 @@ export default function InputBar({
             value={prompt}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={
               pendingApproval
                 ? '⚠️ 等待上方安全权限审批确认后继续...'
@@ -289,7 +515,7 @@ export default function InputBar({
                 ? '📋 Strict Mode: 输入规划任务需求... (只读探索与计划制定)'
                 : profile === 'autonomous'
                 ? '🎯 Autonomous Mode: 输入宏观目标需求... (多里程碑无人值守收敛)'
-                : '输入任务、指令或问题... (输入 / 查看快捷命令)'
+                : '输入任务、指令或问题... (支持 Ctrl+V 粘贴截图、输入 @ 引用文件、输入 / 查看快捷命令)'
             }
             className="chat-textarea"
           />
@@ -297,8 +523,17 @@ export default function InputBar({
 
         {/* Bottom Composer Footer */}
         <div className="input-footer-bar">
-          {/* Bottom-Left Controls: Profile Selector + Approval Policy Selector */}
+          {/* Bottom-Left Controls: Profile Selector + Approval Policy Selector + Image Upload */}
           <div className="input-hints">
+            {/* Image Upload Button */}
+            <button
+              type="button"
+              className="composer-icon-btn"
+              onClick={() => fileInputRef.current?.click()}
+              title="上传图片或截图 (支持直接在输入框按 Ctrl+V 粘贴截图)"
+            >
+              <ImageIcon size={14} />
+            </button>
             {/* 1. Profile Dropdown Selector (Left of Approval Policy) */}
             <div className="composer-popover-wrapper" onClick={(e) => e.stopPropagation()}>
               <button

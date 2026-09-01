@@ -27,6 +27,12 @@ class StartTurnRequest(BaseModel):
         default="start", description="Input mode: start, steer, follow_up"
     )
     thread_id: str | None = Field(default=None, description="Target thread ID")
+    images: list[str] | None = Field(
+        default=None, description="Optional Base64 data URLs for attached images"
+    )
+    referenced_files: list[str] | None = Field(
+        default=None, description="Optional relative file paths referenced in prompt"
+    )
 
 
 class SteerTurnRequest(BaseModel):
@@ -50,6 +56,59 @@ class ApprovalResponseRequest(BaseModel):
     )
 
 
+def _process_attachments(
+    prompt: str,
+    images: list[str] | None = None,
+    referenced_files: list[str] | None = None,
+) -> str:
+    """Save image attachments to workspace .mini-agent/attachments/ and enrich prompt context."""
+    extra_context_parts = []
+
+    if images:
+        import base64
+        import time
+
+        attach_dir = (
+            session_manager.current_project_path / ".mini-agent" / "attachments"
+        )
+        attach_dir.mkdir(parents=True, exist_ok=True)
+
+        for idx, img_data in enumerate(images):
+            try:
+                if "," in img_data:
+                    header, b64_str = img_data.split(",", 1)
+                    ext = "png"
+                    if "image/jpeg" in header or "image/jpg" in header:
+                        ext = "jpg"
+                    elif "image/webp" in header:
+                        ext = "webp"
+                else:
+                    b64_str = img_data
+                    ext = "png"
+
+                img_bytes = base64.b64decode(b64_str)
+                fname = f"clipboard_{int(time.time())}_{idx + 1}.{ext}"
+                file_path = attach_dir / fname
+                file_path.write_bytes(img_bytes)
+                rel_path = f".mini-agent/attachments/{fname}"
+                extra_context_parts.append(
+                    f"[User Attached Image: {rel_path} (Local path: {file_path})]"
+                )
+            except Exception as err:  # noqa: BLE001
+                logger.warning("Failed to save attached image: %s", err)
+
+    if referenced_files:
+        clean_refs = [f.strip() for f in referenced_files if f.strip()]
+        if clean_refs:
+            extra_context_parts.append(
+                f"[User Referenced Files: {', '.join(clean_refs)}]"
+            )
+
+    if extra_context_parts:
+        return f"{prompt}\n\n" + "\n".join(extra_context_parts)
+    return prompt
+
+
 # -----------------------------------------------------------------------------
 # REST & SSE Endpoints
 # -----------------------------------------------------------------------------
@@ -58,9 +117,12 @@ class ApprovalResponseRequest(BaseModel):
 @router.post("/agent/turn", summary="Start and execute a turn synchronously")
 async def execute_turn(req: StartTurnRequest) -> dict[str, Any]:
     """Submit a prompt and wait for turn completion."""
+    enriched_prompt = _process_attachments(
+        req.prompt, req.images, req.referenced_files
+    )
     try:
         sub = await session_manager.client.start_turn(
-            prompt=req.prompt,
+            prompt=enriched_prompt,
             mode=req.mode,
             thread_id=req.thread_id,
         )
@@ -207,10 +269,16 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 prompt = data.get("prompt", "")
                 thread_id = data.get("threadId")
                 mode = data.get("mode", "start")
+                images = data.get("images")
+                referenced_files = data.get("referencedFiles")
+
+                enriched_prompt = _process_attachments(
+                    prompt, images, referenced_files
+                )
 
                 # Background task to stream turn events back over WebSocket
                 asyncio.create_task(
-                    _stream_turn_to_ws(websocket, prompt, mode, thread_id)
+                    _stream_turn_to_ws(websocket, enriched_prompt, mode, thread_id)
                 )
 
             elif action == "steer":

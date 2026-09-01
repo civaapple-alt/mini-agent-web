@@ -7,7 +7,10 @@ import {
   Target,
   Sparkles,
   Command,
-  HelpCircle,
+  ShieldAlert,
+  Check,
+  CheckCheck,
+  X,
 } from 'lucide-react';
 import './InputBar.css';
 
@@ -22,6 +25,8 @@ const SLASH_COMMANDS = [
 export default function InputBar({
   isGenerating,
   planActive,
+  pendingApproval,
+  onRespondApproval,
   onSendMessage,
   onSteerMessage,
   onInterrupt,
@@ -30,6 +35,8 @@ export default function InputBar({
   const [prompt, setPrompt] = useState('');
   const [showSlashPopup, setShowSlashPopup] = useState(false);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
+  const [denyReason, setDenyReason] = useState('');
+  const [showDenyInput, setShowDenyInput] = useState(false);
   const textareaRef = useRef(null);
 
   useEffect(() => {
@@ -39,7 +46,6 @@ export default function InputBar({
     }
   }, [prompt]);
 
-  // Handle Slash command triggers
   const handleInputChange = (e) => {
     const val = e.target.value;
     setPrompt(val);
@@ -112,10 +118,106 @@ export default function InputBar({
     }
   };
 
+  const handleApprove = (remember = false) => {
+    if (onRespondApproval && pendingApproval) {
+      onRespondApproval(pendingApproval.requestId, 'approved', '', remember);
+      setShowDenyInput(false);
+      setDenyReason('');
+    }
+  };
+
+  const handleDeny = () => {
+    if (!showDenyInput) {
+      setShowDenyInput(true);
+      return;
+    }
+    if (onRespondApproval && pendingApproval) {
+      onRespondApproval(pendingApproval.requestId, 'denied', denyReason.trim(), false);
+      setShowDenyInput(false);
+      setDenyReason('');
+    }
+  };
+
+  // Format pending approval action text
+  const approvalActionText = pendingApproval
+    ? typeof pendingApproval.data === 'object' && pendingApproval.data !== null
+      ? pendingApproval.data.action || JSON.stringify(pendingApproval.data, null, 2)
+      : String(pendingApproval.data)
+    : '';
+
   return (
     <div className="input-bar-container">
+      {/* Attached Composer Approval Dock */}
+      {pendingApproval && (
+        <div className="composer-approval-dock">
+          <div className="dock-header">
+            <div className="dock-title-group">
+              <ShieldAlert size={14} className="dock-alert-icon" />
+              <span className="dock-title font-mono">待审批操作 (Action Intercepted)</span>
+            </div>
+            <span className="dock-request-id font-mono">
+              ID: {pendingApproval.requestId}
+            </span>
+          </div>
+
+          <div className="dock-action-content font-mono custom-scrollbar">
+            <pre>{approvalActionText}</pre>
+          </div>
+
+          {showDenyInput && (
+            <div className="dock-deny-box">
+              <input
+                type="text"
+                className="dock-deny-input font-mono"
+                placeholder="输入拒绝原因 (可选，模型将根据此原因调整计划)..."
+                value={denyReason}
+                onChange={(e) => setDenyReason(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleDeny()}
+                autoFocus
+              />
+            </div>
+          )}
+
+          <div className="dock-actions-row">
+            <span className="dock-left-hint">该操作需要您的授权方可执行</span>
+
+            <div className="dock-btn-group">
+              <button
+                type="button"
+                className="btn-dock-approve"
+                onClick={() => handleApprove(false)}
+                title="允许执行本次操作"
+              >
+                <Check size={12} />
+                <span>允许 (Allow)</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn-dock-remember"
+                onClick={() => handleApprove(true)}
+                title="在此会话中始终允许此类操作"
+              >
+                <CheckCheck size={12} />
+                <span>始终允许 (Always)</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn-dock-deny"
+                onClick={handleDeny}
+                title="拒绝执行"
+              >
+                <X size={12} />
+                <span>{showDenyInput ? '确认拒绝' : '拒绝 (Deny)'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Steer instruction banner */}
-      {isGenerating && (
+      {isGenerating && !pendingApproval && (
         <div className="steer-hint-banner">
           <div className="steer-hint-text">
             <Navigation size={13} className="steer-icon pulse" />
@@ -154,7 +256,9 @@ export default function InputBar({
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             placeholder={
-              isGenerating
+              pendingApproval
+                ? '⚠️ 等待上方安全权限审批确认后继续...'
+                : isGenerating
                 ? 'Agent 执行中... 输入内容并按回车可动态纠偏 (Steer)'
                 : planActive
                 ? '📋 Plan Mode: 输入规划任务需求... (只读探索与计划制定)'
@@ -189,7 +293,7 @@ export default function InputBar({
               <button
                 type="submit"
                 className="btn-action send"
-                disabled={!prompt.trim()}
+                disabled={!prompt.trim() || !!pendingApproval}
                 title="发送"
               >
                 <Send size={13} />

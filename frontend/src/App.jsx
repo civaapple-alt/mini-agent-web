@@ -3,7 +3,6 @@ import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import InputBar from './components/InputBar';
-import ApprovalDialog from './components/ApprovalDialog';
 import SidePanel from './components/SidePanel';
 import SettingsModal from './components/SettingsModal';
 import { api, createAgentWebSocket } from './api';
@@ -499,6 +498,8 @@ export default function App() {
           <ChatArea
             messages={messages}
             isGenerating={isGenerating}
+            pendingApproval={pendingApproval}
+            onRespondApproval={handleRespondApproval}
             onQuickPrompt={handleSendMessage}
             onRetryPrompt={handleSendMessage}
           />
@@ -506,6 +507,8 @@ export default function App() {
           <InputBar
             isGenerating={isGenerating}
             planActive={planActive}
+            pendingApproval={pendingApproval}
+            onRespondApproval={handleRespondApproval}
             onSendMessage={handleSendMessage}
             onSteerMessage={handleSteerMessage}
             onInterrupt={handleInterrupt}
@@ -513,12 +516,6 @@ export default function App() {
           />
         </main>
       </div>
-
-      {/* Security Approval Interception Modal */}
-      <ApprovalDialog
-        request={pendingApproval}
-        onRespond={handleRespondApproval}
-      />
 
       {/* Multi-Tab Side Panel */}
       <SidePanel

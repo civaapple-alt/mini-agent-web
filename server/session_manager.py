@@ -62,6 +62,10 @@ class SessionManager:
         self._projects_registry: dict[str, dict[str, Any]] = {}
         self._thread_metadata: dict[str, dict[str, Any]] = {}
 
+        # Active turn & task tracking for responsive interrupts
+        self._active_turns: dict[str, str] = {}
+        self._active_tasks: dict[str, asyncio.Task[Any]] = {}
+
         # Load persisted state or initialize clean default with only the active workspace
         self._load_state()
 
@@ -567,6 +571,43 @@ class SessionManager:
 
         for ws in disconnected:
             self.disconnect_ws(ws)
+
+    # -------------------------------------------------------------------------
+    # Active Turn & Stream Task Tracking
+    # -------------------------------------------------------------------------
+
+    def set_active_turn(
+        self, thread_id: str, turn_id: str, task: asyncio.Task[Any] | None = None
+    ) -> None:
+        """Track active turn ID and optional streaming task for responsive interrupts."""
+        self._active_turns[thread_id] = turn_id
+        if task:
+            self._active_tasks[thread_id] = task
+
+    def clear_active_turn(self, thread_id: str) -> None:
+        """Clear active turn tracking upon turn settlement."""
+        self._active_turns.pop(thread_id, None)
+        self._active_tasks.pop(thread_id, None)
+
+    def get_active_turn(self, thread_id: str | None = None) -> str | None:
+        """Retrieve current active turn ID for thread."""
+        if thread_id and thread_id in self._active_turns:
+            return self._active_turns[thread_id]
+        if self._active_turns:
+            return next(iter(self._active_turns.values()))
+        return None
+
+    def cancel_active_task(self, thread_id: str | None = None) -> None:
+        """Cancel background stream tasks for thread or all threads."""
+        if thread_id and thread_id in self._active_tasks:
+            task = self._active_tasks.pop(thread_id)
+            if not task.done():
+                task.cancel()
+        elif not thread_id:
+            for task in list(self._active_tasks.values()):
+                if not task.done():
+                    task.cancel()
+            self._active_tasks.clear()
 
 
 # Global singleton instance

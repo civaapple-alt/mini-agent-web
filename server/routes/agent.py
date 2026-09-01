@@ -299,18 +299,41 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                         )
 
             elif action == "interrupt":
-                turn_id = data.get("turnId")
-                thread_id = data.get("threadId")
+                thread_id = data.get("threadId") or "default"
+                turn_id = data.get("turnId") or session_manager.get_active_turn(thread_id)
+                logger.info(
+                    "Interrupt requested for thread %s, turn %s", thread_id, turn_id
+                )
+
+                # 1. Cancel background stream task
+                session_manager.cancel_active_task(thread_id)
+
+                # 2. Notify App Server engine
                 if turn_id:
                     try:
-                        await session_manager.client.interrupt_turn(turn_id, thread_id)
-                        await websocket.send_json(
-                            {"type": "interrupt_ack", "turnId": turn_id}
+                        await session_manager.client.interrupt_turn(
+                            turn_id, thread_id
                         )
                     except Exception as err:  # noqa: BLE001
-                        await websocket.send_json(
-                            {"type": "error", "message": str(err)}
+                        logger.warning(
+                            "Failed to call client.interrupt_turn: %s", err
                         )
+
+                # 3. Send immediate interrupt ack & turn_finished to client
+                await websocket.send_json(
+                    {"type": "interrupt_ack", "turnId": turn_id}
+                )
+                await websocket.send_json(
+                    {
+                        "type": "event",
+                        "threadId": thread_id,
+                        "turnId": turn_id,
+                        "event": {
+                            "type": "turn_finished",
+                            "stop_reason": "interrupted",
+                        },
+                    }
+                )
 
             elif action == "approval_response":
                 req_id = data.get("requestId", "")
@@ -337,14 +360,51 @@ async def _stream_turn_to_ws(
     thread_id: str | None,
 ) -> None:
     """Stream events from MiniAgentClient directly to the initiating WebSocket."""
+    target_thread = thread_id or "default"
+    current_task = asyncio.current_task()
     try:
         async for item in session_manager.client.stream_turn(
             prompt=prompt,
             mode=mode,
-            thread_id=thread_id,
+            thread_id=target_thread,
         ):
+            # Capture active turn id from submission or event
+            if item.get("type") == "_turn_submission":
+                turn_id = item.get("data", {}).get("turn_id") or getattr(
+                    item.get("submission"), "turn_id", None
+                )
+                if turn_id:
+                    session_manager.set_active_turn(
+                        target_thread, str(turn_id), current_task
+                    )
+            elif item.get("type") == "event":
+                turn_id = item.get("turnId")
+                if turn_id:
+                    session_manager.set_active_turn(
+                        target_thread, str(turn_id), current_task
+                    )
+
             safe_item = to_json_serializable(item)
             await websocket.send_json(safe_item)
+    except asyncio.CancelledError:
+        logger.info(
+            "WebSocket stream turn cancelled for thread: %s", target_thread
+        )
+        try:
+            await websocket.send_json(
+                {
+                    "type": "event",
+                    "threadId": target_thread,
+                    "event": {
+                        "type": "turn_finished",
+                        "stop_reason": "interrupted",
+                    },
+                }
+            )
+        except Exception:  # noqa: BLE001, S110
+            pass
     except Exception as err:
         logger.exception("WebSocket stream error")
         await websocket.send_json({"type": "error", "message": str(err)})
+    finally:
+        session_manager.clear_active_turn(target_thread)

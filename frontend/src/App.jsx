@@ -141,11 +141,27 @@ export default function App() {
   const handleServerEvent = (data) => {
     if (!data) return;
 
-    // 1. Correlated Action Responses
-    if (data.type === 'response') {
-      if (data.action === 'turn') {
-        setActiveTurnId(data.turnId);
+    // 1. Capture Turn ID from submission or response
+    if (data.type === '_turn_submission') {
+      const turnId = data.data?.turn_id || data.submission?.turn_id;
+      if (turnId) {
+        setActiveTurnId(turnId);
+        setIsGenerating(true);
       }
+      return;
+    }
+
+    if (data.type === 'response') {
+      if (data.action === 'turn' && data.turnId) {
+        setActiveTurnId(data.turnId);
+        setIsGenerating(true);
+      }
+      return;
+    }
+
+    if (data.type === 'interrupt_ack') {
+      setIsGenerating(false);
+      setActiveTurnId(null);
       return;
     }
 
@@ -160,6 +176,9 @@ export default function App() {
 
     // 3. Engine Typed Events
     if (data.type === 'event') {
+      if (data.turnId) {
+        setActiveTurnId(data.turnId);
+      }
       const evt = data.event || {};
       const type = evt.type;
 
@@ -379,7 +398,6 @@ export default function App() {
   };
 
   const handleSteerMessage = (text) => {
-    if (!activeTurnId) return;
     if (wsRef.current) {
       wsRef.current.send({
         action: 'steer',
@@ -391,7 +409,7 @@ export default function App() {
   };
 
   const handleInterrupt = () => {
-    if (!activeTurnId) return;
+    setIsGenerating(false);
     if (wsRef.current) {
       wsRef.current.send({
         action: 'interrupt',
@@ -399,6 +417,22 @@ export default function App() {
         threadId: currentThread,
       });
     }
+    setActiveTurnId(null);
+    setMessages((prev) => {
+      if (prev.length === 0) return prev;
+      const copy = [...prev];
+      const last = { ...copy[copy.length - 1] };
+      if (last.blocks) {
+        last.blocks = last.blocks.map((b) => {
+          if (b.type === 'thinking') return { ...b, isStreaming: false };
+          if (b.type === 'tool' && b.status === 'running')
+            return { ...b, status: 'failed', error: 'User stopped' };
+          return b;
+        });
+      }
+      copy[copy.length - 1] = last;
+      return copy;
+    });
   };
 
   const handleRespondApproval = async (requestId, decision, reason = '', remember = false) => {

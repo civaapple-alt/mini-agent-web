@@ -34,20 +34,25 @@ async def run_tui(state: TUIState) -> None:
         )
     )
 
-    prompt_session: PromptSession[str] = PromptSession(
-        history=InMemoryHistory(),
-        auto_suggest=AutoSuggestFromHistory(),
-        completer=SlashCommandCompleter(state),
-        style=Style.from_dict({
-            "prompt": "bold #88c0d0",
-            "completion-menu.completion": "bg:#2e3440 #d8dee9",
-            "completion-menu.completion.current": "bg:#434c5e #88c0d0 bold",
-            "completion-menu.meta.completion": "bg:#2e3440 #81a1c1 italic",
-            "completion-menu.meta.completion.current": "bg:#434c5e #eceff4",
-            "auto-suggestion": "#4c566a italic",
-        }),
-        complete_while_typing=True,
-    )
+    prompt_session: PromptSession[str] | None = None
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        try:
+            prompt_session = PromptSession(
+                history=InMemoryHistory(),
+                auto_suggest=AutoSuggestFromHistory(),
+                completer=SlashCommandCompleter(state),
+                style=Style.from_dict({
+                    "prompt": "bold #88c0d0",
+                    "completion-menu.completion": "bg:#2e3440 #d8dee9",
+                    "completion-menu.completion.current": "bg:#434c5e #88c0d0 bold",
+                    "completion-menu.meta.completion": "bg:#2e3440 #81a1c1 italic",
+                    "completion-menu.meta.completion.current": "bg:#434c5e #eceff4",
+                    "auto-suggestion": "#4c566a italic",
+                }),
+                complete_while_typing=True,
+            )
+        except Exception:  # noqa: BLE001
+            prompt_session = None
 
     async def _handler(
         req: dict[str, Any] | str, action: str | None = None
@@ -87,9 +92,35 @@ async def run_tui(state: TUIState) -> None:
 
         while True:
             try:
-                user_input = await prompt_session.prompt_async(
-                    [("class:prompt", f"\nYou ({state.current_thread_id}) > ")]
-                )
+                if prompt_session is not None:
+                    try:
+                        user_input = await prompt_session.prompt_async(
+                            [("class:prompt", f"\nYou ({state.current_thread_id}) > ")]
+                        )
+                    except Exception:  # noqa: BLE001
+                        def _read_std_input() -> str:
+                            console.print(
+                                f"\n[bold cyan]You ({state.current_thread_id}) > [/bold cyan]",
+                                end="",
+                            )
+                            line = sys.stdin.readline()
+                            if not line:
+                                raise EOFError
+                            return line
+
+                        user_input = await asyncio.to_thread(_read_std_input)
+                else:
+                    def _read_std_input() -> str:
+                        console.print(
+                            f"\n[bold cyan]You ({state.current_thread_id}) > [/bold cyan]",
+                            end="",
+                        )
+                        line = sys.stdin.readline()
+                        if not line:
+                            raise EOFError
+                        return line
+
+                    user_input = await asyncio.to_thread(_read_std_input)
             except (KeyboardInterrupt, EOFError):
                 console.print("\n[dim]Session terminated.[/dim]")
                 break

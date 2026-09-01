@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -28,11 +29,11 @@ def print_help_table(state: TUIState) -> None:
         show_lines=False,
     )
     table.add_column("分类", style="bold yellow", width=14)
-    table.add_column("命令 / 格式", style="bold sky_blue1", width=26)
+    table.add_column("命令 / 格式", style="bold sky_blue1", width=28)
     table.add_column("功能说明与当前配置", style="white")
 
     # 1. 工作流模式
-    table.add_row("工作流模式", "/plan [on|off]", "开启/切换只读 Plan Mode (只读架构与方案探索)")
+    table.add_row("工作流模式", "/plan [on|off]", "开启/切换只读 Plan Mode (只读架构探索)")
     table.add_row("", "/goal <目标描述>", "启动目标驱动多里程碑无人值守收敛任务")
     table.add_row("", "/goal", "查看当前活动 Goal 进度与各里程碑收敛状态")
     table.add_row("", "/workflows", "探测工作区内规范与计划文件 (plan.md, AGENTS.md)")
@@ -41,19 +42,19 @@ def print_help_table(state: TUIState) -> None:
     table.add_row(
         "模型与思考",
         "/effort [low|med|high]",
-        f"查看或切换思考链强度 (当前: [bold cyan]{state.effort}[/bold cyan])",
+        f"切换思考链强度 (别名: /reasoning | 当前: [bold cyan]{state.effort}[/bold cyan])",
     )
     table.add_row(
         "",
         "/steer <纠偏指令>",
-        "向当前轮次注入实时纠偏或发送引导指令",
+        "向当前正在执行的轮次注入实时纠偏指令 (别名: /guide)",
     )
 
     # 3. 安全与审批策略
     table.add_row(
         "安全与审批",
         "/policy [mode]",
-        f"切换审批策略: per_action, auto_approve, strict (当前: [bold cyan]{state.approval_policy}[/bold cyan])",
+        f"切换审批策略: per_action, auto_approve, strict (别名: /approve | 当前: [bold cyan]{state.approval_policy}[/bold cyan])",
     )
     table.add_row(
         "",
@@ -71,18 +72,18 @@ def print_help_table(state: TUIState) -> None:
     table.add_row("", "/new [thread_id]", "新建并切换至新会话线程")
     table.add_row("", "/fork <new_id>", "分叉当前会话历史为新的实验分支")
     table.add_row("", "/switch <thread_id>", "切换当前活跃会话线程")
-    table.add_row("", "/history", "查看当前会话已结算 Checkpoint 与轮次")
+    table.add_row("", "/history [n|all]", "查看当前会话已结算 Checkpoint 与消息回放 (别名: /checkpoint)")
 
     # 5. 工作区与环境探测
-    table.add_row("工作区探测", "/status", "查看运行时环境、Server 状态与配置总览")
+    table.add_row("工作区探测", "/status", "查看运行时环境、Server 状态与轮次遥测总览")
     table.add_row("", "/mcp", "查看已启用的 MCP 服务与扩展工具状态")
-    table.add_row("", "/git", "查看当前工作区 Git 分支及未提交变更")
-    table.add_row("", "/files [query]", "快速检索当前工作区代码文件路径")
+    table.add_row("", "/git", "查看当前工作区 Git 分支及未提交变更 (别名: /diff)")
+    table.add_row("", "/files [query]", "检索当前工作区代码文件路径 (别名: /ls)")
 
     # 6. 通用控制
     table.add_row("通用控制", "/clear", "清空终端屏幕")
     table.add_row("", "/help", "显示本命令参考大全")
-    table.add_row("", "exit / quit / :q / q", "退出 TUI 交互终端")
+    table.add_row("", "exit / quit / :q", "退出 TUI 交互终端 (防误触: 单独 q 不退出)")
 
     console.print(table)
 
@@ -94,7 +95,7 @@ async def handle_slash_command(
     Check if the user input is a slash command and handle it.
     Returns True if handled, False if it should proceed as a model turn prompt.
     """
-    lower_text = text.lower()
+    lower_text = text.lower().strip()
 
     if lower_text == "/clear":
         console.clear()
@@ -123,7 +124,7 @@ async def handle_slash_command(
             )
         return True
 
-    if lower_text.startswith("/steer"):
+    if lower_text.startswith(("/steer", "/guide")):
         parts = text.split(maxsplit=1)
         if len(parts) > 1:
             instruction = parts[1].strip()
@@ -147,13 +148,8 @@ async def handle_slash_command(
                     console.print(f"[red]Failed to steer active turn: {err}[/red]")
             else:
                 console.print(
-                    f"[cyan]⚡ Injected steering instruction as follow-up guidance:[/cyan] [bold]{instruction}[/bold]"
-                )
-                from tui.stream_renderer import render_turn_stream
-
-                steer_prompt = f"[Steering Directive]: {instruction}"
-                await render_turn_stream(
-                    client, steer_prompt, state, mode="start"
+                    "[yellow]No active turn is currently running to steer.\n"
+                    "[dim]Tip: Enter your instruction as normal text to start a new turn, or type '/help'.[/dim][/yellow]"
                 )
         else:
             console.print(
@@ -278,6 +274,7 @@ async def handle_slash_command(
                         break
             if len(matches) >= 30:
                 break
+        matches.sort()
         table = Table(
             title=f"Workspace Files ({len(matches)} matches)",
             border_style="sky_blue1",
@@ -300,19 +297,17 @@ async def handle_slash_command(
             title="Workflow & Architecture Files",
             border_style="cyan",
         )
-        table.add_column("File", style="bold sky_blue1", width=25)
-        table.add_column("Status", style="green", width=12)
-        table.add_column("Size / Note", style="white")
+        table.add_column("File", style="bold sky_blue1", width=24)
+        table.add_column("Exists", style="green", width=10)
+        table.add_column("Path", style="dim")
         for c in candidates:
             p = Path.cwd() / c
-            if p.is_file():
-                table.add_row(
-                    c, "✓ Present", f"{p.stat().st_size} bytes"
-                )
-            else:
-                table.add_row(
-                    c, "[dim]Absent[/dim]", "[dim]Not found[/dim]"
-                )
+            exists = p.exists()
+            table.add_row(
+                c,
+                "✓ Yes" if exists else "No",
+                str(p.resolve()) if exists else "-",
+            )
         console.print(table)
         return True
 
@@ -410,10 +405,11 @@ async def handle_slash_command(
     if lower_text.startswith("/goal"):
         parts = text.split(maxsplit=1)
         if len(parts) > 1:
-            obj = parts[1].strip()
-            res = await client.start_goal(obj)
+            target_goal = parts[1].strip()
+            res = await client.start_goal(target_goal)
             console.print(
-                f"[green]✓ Goal started (ID: {res.goal_id}): {obj}[/green]"
+                f"[green]✓ Goal started ({res.goal.goal_id}): [bold]{res.goal.objective}[/bold]\n"
+                f"Milestones: {res.goal.total_milestones} | Status: {res.goal.status}[/green]"
             )
         else:
             wf = await client.get_workflow_state()
@@ -444,7 +440,7 @@ async def handle_slash_command(
         new_thread = (
             parts[1].strip()
             if len(parts) > 1
-            else f"session-{int(asyncio.get_running_loop().time())}"
+            else f"session-{datetime.now(timezone.utc).strftime('%m%d-%H%M%S')}"
         )
         await client.start_thread(new_thread)
         state.current_thread_id = new_thread
@@ -496,26 +492,59 @@ async def handle_slash_command(
             console.print(f"[red]Failed to query MCP status: {err}[/red]")
         return True
 
-    if lower_text in ("/history", "/checkpoint"):
+    if lower_text.startswith(("/history", "/checkpoint")):
+        parts = text.split(maxsplit=1)
+        limit = 5
+        if len(parts) > 1:
+            arg = parts[1].strip().lower()
+            if arg in ("all", "full"):
+                limit = 100
+            elif arg.isdigit():
+                limit = int(arg)
+
         try:
             cp = await client.read_thread(state.current_thread_id)
             table = Table(
                 title=f"Thread Checkpoint: {state.current_thread_id}",
                 border_style="sky_blue1",
             )
-            table.add_column(
-                "Property", style="bold sky_blue1", width=22
-            )
+            table.add_column("Property", style="bold sky_blue1", width=22)
             table.add_column("Value", style="white")
-            table.add_row("Turn ID", str(cp.turn_id or "N/A"))
-            table.add_row("Sequence", str(cp.sequence))
-            table.add_row("Status", str(cp.status or "active"))
-            table.add_row("Model Visible Turns", str(len(cp.turns)))
-            console.print(table)
-        except Exception as err:  # noqa: BLE001
-            console.print(
-                f"[red]Failed to read thread history: {err}[/red]"
+            table.add_row("Status", str(cp.status or "idle"))
+            table.add_row(
+                "Completed Turns",
+                f"{state.turn_counts.get(state.current_thread_id, 0)} turns",
             )
+            table.add_row("Total Messages", str(len(cp.messages)))
+            console.print(table)
+
+            if cp.messages:
+                recent_msgs = cp.messages[-limit:]
+                console.print(
+                    f"\n[bold sky_blue1]Recent Conversation History (Last {len(recent_msgs)} messages):[/bold sky_blue1]"
+                )
+                for msg in recent_msgs:
+                    role = msg.get("role") or msg.get("type", "unknown")
+                    content = msg.get("text") or msg.get("content") or ""
+                    if isinstance(content, list):
+                        content = " ".join(str(c) for c in content)
+                    preview = str(content).strip()
+                    if len(preview) > 200:
+                        preview = preview[:197] + "..."
+                    role_color = "cyan" if role in ("user", "human") else "green"
+                    console.print(
+                        f"[{role_color}][bold]{role.capitalize()}:[/bold] {preview}[/{role_color}]"
+                    )
+        except Exception as err:  # noqa: BLE001
+            console.print(f"[red]Failed to read thread history: {err}[/red]")
+        return True
+
+    # Intercept unknown slash commands to avoid accidental costly model prompts
+    if text.startswith("/"):
+        cmd_name = text.split()[0]
+        console.print(
+            f"[yellow]Unknown command: [bold]{cmd_name}[/bold]. Type '[bold]/help[/bold]' to see available commands.[/yellow]"
+        )
         return True
 
     return False

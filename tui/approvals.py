@@ -23,7 +23,7 @@ def _ask_approval_sync(
     # 1. Policy check: Auto-approve
     if state.approval_policy == "auto_approve":
         console.print(
-            f"[dim green]⚡ Auto-approved by policy: {tool_name or request_id}[/dim green]"
+            f"[dim]⚡ Auto-approved: {tool_name or request_id}[/dim]"
         )
         return "approved"
 
@@ -64,7 +64,7 @@ def _ask_approval_sync(
     choice = Prompt.ask(
         "[bold yellow]Allow execution? [y]es / [n]o / [a]lways (本会话始终放行此工具)[/bold yellow]",
         choices=["y", "n", "a", "yes", "no", "always"],
-        default="y",
+        default="n",
         show_choices=True,
     ).strip().lower()
 

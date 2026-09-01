@@ -219,6 +219,30 @@ async def test_handle_slash_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     assert handled is True
     assert len(state.remembered_approvals) == 0
 
+    # 5. Unknown slash command interception
+    handled = await handle_slash_command("/hepl", state, mock_client)
+    assert handled is True
+    assert "Unknown command: /hepl" in output_buffer.getvalue()
+
+    # 6. /steer while idle
+    state.active_turn_id = None
+    handled = await handle_slash_command("/steer focus on auth", state, mock_client)
+    assert handled is True
+    assert "No active turn is currently running to steer" in output_buffer.getvalue()
+
+    # 7. /history with message playback
+    mock_checkpoint = AsyncMock()
+    mock_checkpoint.status = "idle"
+    mock_checkpoint.messages = [
+        {"role": "user", "text": "Fix bug"},
+        {"role": "assistant", "text": "Bug fixed successfully in auth.py"},
+    ]
+    mock_client.read_thread = AsyncMock(return_value=mock_checkpoint)
+    handled = await handle_slash_command("/history 5", state, mock_client)
+    assert handled is True
+    assert "Thread Checkpoint" in output_buffer.getvalue()
+    assert "Bug fixed successfully" in output_buffer.getvalue()
+
 
 def test_ask_approval_sync(monkeypatch: pytest.MonkeyPatch) -> None:
     output_buffer = io.StringIO()

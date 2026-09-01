@@ -12,7 +12,6 @@ from typing import Any
 from mini_agent import MiniAgentClient
 from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.styles import Style
 from rich.panel import Panel
 
@@ -37,6 +36,9 @@ async def run_tui(state: TUIState) -> None:
     prompt_session: PromptSession[str] | None = None
     if sys.stdin.isatty() and sys.stdout.isatty():
         try:
+            from pathlib import Path
+
+            from prompt_toolkit.history import FileHistory
             from prompt_toolkit.key_binding import KeyBindings
 
             kb = KeyBindings()
@@ -50,8 +52,11 @@ async def run_tui(state: TUIState) -> None:
                 else:
                     event.app.exit(exception=KeyboardInterrupt())
 
+            hist_file = Path.home() / ".mini-agent" / "tui_history"
+            hist_file.parent.mkdir(parents=True, exist_ok=True)
+
             prompt_session = PromptSession(
-                history=InMemoryHistory(),
+                history=FileHistory(str(hist_file)),
                 auto_suggest=AutoSuggestFromHistory(),
                 completer=SlashCommandCompleter(state),
                 key_bindings=kb,
@@ -85,6 +90,7 @@ async def run_tui(state: TUIState) -> None:
         )
         return {"decision": decision}
 
+    console.print("[dim]Connecting to App Server...[/dim]")
     async with MiniAgentClient(
         log_dir="logs", approval_handler=_handler
     ) as client:
@@ -112,16 +118,6 @@ async def run_tui(state: TUIState) -> None:
                             [("class:prompt", f"\nYou ({state.current_thread_id}) > ")]
                         )
                     except Exception:  # noqa: BLE001
-                        def _read_std_input() -> str:
-                            console.print(
-                                f"\n[bold cyan]You ({state.current_thread_id}) > [/bold cyan]",
-                                end="",
-                            )
-                            line = sys.stdin.readline()
-                            if not line:
-                                raise EOFError
-                            return line
-
                         def _read_std_input() -> str:
                             console.print(
                                 f"\n[bold cyan]You ({state.current_thread_id}) > [/bold cyan]",
@@ -153,9 +149,15 @@ async def run_tui(state: TUIState) -> None:
             if not text:
                 continue
 
-            if text.lower().strip() in ("exit", "quit", ":q", "q"):
+            norm_text = text.lower().strip()
+            if norm_text in ("exit", "quit", ":q"):
                 console.print("[dim]Goodbye![/dim]")
                 break
+            if norm_text == "q":
+                console.print(
+                    "[dim yellow]To exit Mini Agent TUI, please type '[bold]exit[/bold]', '[bold]quit[/bold]', or '[bold]:q[/bold]'.[/dim yellow]"
+                )
+                continue
 
             await _ensure_connected()
 

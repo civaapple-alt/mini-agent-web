@@ -243,8 +243,12 @@ export default function Sidebar({
     }));
   };
 
+  const currentProject = projectsData?.current_project;
+  const currentProjectName =
+    currentProject?.name || currentProject?.id || 'mini-agent-web';
+
   const normalizedThreads = useMemo(() => {
-    return threads.map((t) => {
+    return (threads || []).map((t) => {
       if (typeof t === 'string') {
         return {
           thread_id: t,

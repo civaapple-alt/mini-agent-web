@@ -117,21 +117,21 @@ def print_help_table(state: TUIState) -> None:
     table.add_column("功能说明与当前配置", style="white")
 
     # 1. 工作流模式
-    table.add_row("🎯 工作流模式", "/plan", "开启/切换只读 Plan Mode (只读架构与方案探索)")
+    table.add_row("工作流模式", "/plan", "开启/切换只读 Plan Mode (只读架构与方案探索)")
     table.add_row("", "/goal <目标描述>", "启动目标驱动多里程碑无人值守收敛任务")
     table.add_row("", "/goal", "查看当前活动 Goal 进度与各里程碑收敛状态")
     table.add_row("", "/workflows", "探测工作区内规范与计划文件 (plan.md, AGENTS.md)")
 
     # 2. 模型与思考控制
     table.add_row(
-        "💭 模型与思考",
+        "模型与思考",
         "/effort [low|med|high]",
         f"查看或切换思考链强度 (当前: [bold cyan]{state.effort}[/bold cyan])",
     )
 
     # 3. 安全与审批策略
     table.add_row(
-        "🛡️ 安全与审批",
+        "安全与审批",
         "/policy [mode]",
         f"切换审批策略: per_action, auto_approve, strict (当前: [bold cyan]{state.approval_policy}[/bold cyan])",
     )
@@ -147,18 +147,18 @@ def print_help_table(state: TUIState) -> None:
     )
 
     # 4. 会话与多分支管理
-    table.add_row("🧵 会话管理", "/threads", "列出所有历史会话与分支列表")
+    table.add_row("会话管理", "/threads", "列出所有历史会话与分支列表")
     table.add_row("", "/new [thread_id]", "新建并切换至新会话线程")
     table.add_row("", "/switch <thread_id>", "切换当前活跃会话线程")
     table.add_row("", "/history", "查看当前会话已结算 Checkpoint 与轮次")
 
     # 5. 工作区与环境探测
-    table.add_row("📂 工作区探测", "/status", "查看运行时环境、Server 状态与配置总览")
+    table.add_row("工作区探测", "/status", "查看运行时环境、Server 状态与配置总览")
     table.add_row("", "/git", "查看当前工作区 Git 分支及未提交变更")
     table.add_row("", "/files [query]", "快速检索当前工作区代码文件路径")
 
     # 6. 通用控制
-    table.add_row("⚡ 通用控制", "/clear", "清空终端屏幕")
+    table.add_row("通用控制", "/clear", "清空终端屏幕")
     table.add_row("", "/help", "显示本命令参考大全")
     table.add_row("", "exit / quit / :q / q", "退出 TUI 交互终端")
 

@@ -165,15 +165,144 @@ def print_help_table(state: TUIState) -> None:
     console.print(table)
 
 
+from prompt_toolkit import PromptSession
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.styles import Style
+
+
+class SlashCommandCompleter(Completer):
+    """Dynamic, contextual autocompleter for TUI slash commands, policies, and parameters."""
+
+    def __init__(self, state: TUIState) -> None:
+        self.state = state
+
+    def get_completions(self, document: Any, complete_event: Any) -> Any:
+        text = document.text_before_cursor
+        stripped = text.lstrip()
+
+        # If user hasn't typed anything or not starting with slash or exit commands
+        if not stripped.startswith("/") and not any(
+            stripped.startswith(w) for w in ["exit", "quit", ":q"]
+        ):
+            return
+
+        words = stripped.split(maxsplit=1)
+        # 1. Completing the top-level slash command itself
+        if len(words) == 1 and not stripped.endswith(" "):
+            prefix = words[0].lower()
+            commands = [
+                ("/plan", "开启/切换只读 Plan Mode (架构与规划探索)"),
+                ("/goal", "启动/查看目标驱动多里程碑收敛任务"),
+                ("/policy", "查看/切换安全审批策略 (per_action|auto_approve|strict)"),
+                ("/approve", "切换安全审批策略别名"),
+                ("/effort", "查看/切换思考链强度 (low|medium|high)"),
+                ("/reasoning", "切换思考链强度别名"),
+                ("/profile", "查看系统 Profile 对照表与说明"),
+                ("/clear-approvals", "清空已记住的工具放行缓存"),
+                ("/threads", "列出所有历史会话与分支列表"),
+                ("/new", "新建并切换至新会话线程"),
+                ("/switch", "切换当前活跃会话线程分支"),
+                ("/history", "查看当前会话已结算 Checkpoint 与轮次"),
+                ("/checkpoint", "查看会话 Checkpoint 别名"),
+                ("/status", "查看运行时环境、Server 状态与配置总览"),
+                ("/git", "查看当前工作区 Git 分支及未提交变更"),
+                ("/diff", "查看 Git 变更别名"),
+                ("/files", "快速检索当前工作区代码文件路径"),
+                ("/workflows", "探测工作区内规范与计划文件"),
+                ("/clear", "清空终端屏幕"),
+                ("/help", "显示完整命令参考大全"),
+                ("exit", "退出 TUI 交互终端"),
+                ("quit", "退出 TUI 交互终端"),
+                (":q", "退出 TUI 交互终端"),
+            ]
+            for cmd, desc in commands:
+                if cmd.lower().startswith(prefix):
+                    yield Completion(
+                        cmd,
+                        start_position=-len(prefix),
+                        display=cmd,
+                        display_meta=desc,
+                    )
+            return
+
+        # 2. Sub-command arguments / options autocomplete
+        cmd = words[0].lower()
+        sub_text = words[1] if len(words) > 1 else ""
+        if stripped.endswith(" ") and len(words) == 1:
+            sub_prefix = ""
+        else:
+            sub_prefix = sub_text.lower()
+
+        if cmd in ("/policy", "/approve"):
+            policies = [
+                ("per_action", "每次敏感操作单独弹窗确认 (默认/推荐)"),
+                ("auto_approve", "全自动放行工具执行 (Dev/高速)"),
+                ("strict", "严格拒绝一切敏感写操作"),
+            ]
+            for p_name, p_desc in policies:
+                if p_name.startswith(sub_prefix):
+                    yield Completion(
+                        p_name,
+                        start_position=-len(sub_prefix),
+                        display=p_name,
+                        display_meta=p_desc,
+                    )
+        elif cmd in ("/effort", "/reasoning"):
+            efforts = [
+                ("low", "轻量快速响应"),
+                ("medium", "标准中等深度推理思考 (推荐)"),
+                ("high", "多步深度强化推理思考"),
+            ]
+            for e_name, e_desc in efforts:
+                if e_name.startswith(sub_prefix):
+                    yield Completion(
+                        e_name,
+                        start_position=-len(sub_prefix),
+                        display=e_name,
+                        display_meta=e_desc,
+                    )
+        elif cmd == "/profile":
+            profiles = [
+                ("interactive", "日常人机结对协作与单步工具把控 (默认/推荐)"),
+                ("autonomous", "目标驱动多里程碑无人值守收敛"),
+                ("strict", "严格只读审计与架构探索 (支持 /plan)"),
+            ]
+            for pr_name, pr_desc in profiles:
+                if pr_name.startswith(sub_prefix):
+                    yield Completion(
+                        pr_name,
+                        start_position=-len(sub_prefix),
+                        display=pr_name,
+                        display_meta=pr_desc,
+                    )
+
+
 async def run_tui(state: TUIState) -> None:
     """Main interactive TUI loop."""
     console.print(
         Panel.fit(
             "[bold sky_blue1]Mini Agent Terminal Studio (TUI)[/bold sky_blue1]\n"
-            f"[dim]Profile: [cyan]{state.profile}[/cyan] | Approval Policy: [yellow]{state.approval_policy}[/yellow][/dim]\n"
-            "[dim]Type '/help' for commands. Type 'exit' to leave.[/dim]",
+            f"[dim]Profile: [cyan]{state.profile}[/cyan] | Approval Policy: [yellow]{state.approval_policy}[/yellow] | Effort: [green]{state.effort}[/green][/dim]\n"
+            "[dim]Type '/help' for commands. Supports [bold yellow]Tab Autocomplete[/bold yellow]. Type 'exit' to leave.[/dim]",
             border_style="cyan",
         )
+    )
+
+    prompt_session: PromptSession[str] = PromptSession(
+        history=InMemoryHistory(),
+        auto_suggest=AutoSuggestFromHistory(),
+        completer=SlashCommandCompleter(state),
+        style=Style.from_dict({
+            "prompt": "bold #88c0d0",
+            "completion-menu.completion": "bg:#2e3440 #d8dee9",
+            "completion-menu.completion.current": "bg:#434c5e #88c0d0 bold",
+            "completion-menu.meta.completion": "bg:#2e3440 #81a1c1 italic",
+            "completion-menu.meta.completion.current": "bg:#434c5e #eceff4",
+            "auto-suggestion": "#4c566a italic",
+        }),
+        complete_while_typing=True,
     )
 
     async def _handler(
@@ -204,8 +333,8 @@ async def run_tui(state: TUIState) -> None:
 
         while True:
             try:
-                user_input = Prompt.ask(
-                    f"\n[bold cyan]You ({state.current_thread_id})[/bold cyan]"
+                user_input = await prompt_session.prompt_async(
+                    [("class:prompt", f"\nYou ({state.current_thread_id}) > ")]
                 )
             except (KeyboardInterrupt, EOFError):
                 console.print("\n[dim]Session terminated.[/dim]")

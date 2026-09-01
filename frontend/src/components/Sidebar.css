@@ -862,6 +862,29 @@ body.theme-cyberpunk .nested-thread-item.selected {
 }
 
 /* Add Folder Trigger & Inline Inputs */
+.add-folder-trigger-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 12px;
+}
+
+.btn-text-manual {
+  background: transparent;
+  border: none;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.btn-text-manual:hover {
+  background-color: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
 .btn-add-folder-row {
   display: flex;
   align-items: center;

@@ -135,6 +135,47 @@ async def switch_project_endpoint(req: SwitchProjectRequest) -> dict[str, Any]:
         ) from err
 
 
+def _ask_directory_dialog() -> str:
+    """Prompt native Windows/OS directory dialog."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected = filedialog.askdirectory(title="Select Project Root")
+        root.destroy()
+        return selected or ""
+    except Exception:  # noqa: BLE001
+        import subprocess
+
+        ps_cmd = (
+            "Add-Type -AssemblyName System.Windows.Forms; "
+            "$f = New-Object System.Windows.Forms.FolderBrowserDialog; "
+            "$f.Description = 'Select Project Root'; "
+            "if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $f.SelectedPath }"
+        )
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_cmd],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return res.stdout.strip()
+
+
+@router.post("/world/browse-folder", summary="Open native OS folder picker dialog")
+async def browse_folder_endpoint() -> dict[str, Any]:
+    """Open native OS directory picker dialog on local host."""
+    loop = asyncio.get_running_loop()
+    selected_path = await loop.run_in_executor(None, _ask_directory_dialog)
+    if not selected_path:
+        return {"selected": False, "path": "", "name": ""}
+    p = Path(selected_path).resolve()
+    return {"selected": True, "path": str(p), "name": p.name}
+
+
 # -----------------------------------------------------------------------------
 # World & MCP Endpoints
 # -----------------------------------------------------------------------------

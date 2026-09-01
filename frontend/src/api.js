@@ -237,6 +237,14 @@ export const api = {
     return res.json();
   },
 
+  async browseFolder() {
+    const res = await fetch(`${API_BASE}/api/world/browse-folder`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to open native folder dialog');
+    return res.json();
+  },
+
   // ---------------------------------------------------------------------------
   // Settings Management
   // ---------------------------------------------------------------------------

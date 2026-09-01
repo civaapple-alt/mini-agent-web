@@ -184,7 +184,42 @@ export default function Sidebar({
     }
   };
 
-  // Add Source Folder to Edit List
+  // Native OS Folder Picker
+  const handlePickNativeFolder = async () => {
+    try {
+      const res = await api.browseFolder();
+      if (res && res.selected && res.path) {
+        const folderName = res.name || 'workspace';
+        const folderPath = res.path;
+
+        // Auto-fill project name if empty
+        if (!editProjectName.trim()) {
+          setEditProjectName(folderName);
+        }
+
+        // Add to source folders if not already present
+        setEditSourceFolders((prev) => {
+          if (prev.some((f) => f.path === folderPath)) {
+            return prev;
+          }
+          return [
+            ...prev,
+            {
+              name: folderName,
+              path: folderPath,
+              is_primary: prev.length === 0,
+            },
+          ];
+        });
+        setShowAddFolderInput(false);
+      }
+    } catch (err) {
+      console.warn('Native folder picker error, falling back to manual input:', err);
+      setShowAddFolderInput(true);
+    }
+  };
+
+  // Add Source Folder to Edit List manually
   const handleAddSourceFolder = () => {
     if (!newFolderNameInput.trim()) return;
     const name = newFolderNameInput.trim();
@@ -625,12 +660,12 @@ export default function Sidebar({
                   {editSourceFolders.length === 0 && !showAddFolderInput ? (
                     <div
                       className="create-project-empty-folder-box"
-                      onClick={() => setShowAddFolderInput(true)}
-                      title="点击添加文件夹"
+                      onClick={handlePickNativeFolder}
+                      title="点击调起本地系统文件夹选择窗口"
                     >
-                      <FolderPlus size={22} className="empty-folder-icon" />
+                      <FolderPlus size={24} className="empty-folder-icon" />
                       <span className="empty-folder-text">
-                        添加 Codex 可读取和编辑的文件夹
+                        添加 Mini-Agent 可读取和编辑的文件夹
                       </span>
                     </div>
                   ) : null}
@@ -670,7 +705,7 @@ export default function Sidebar({
                     </div>
                   ))}
 
-                  {/* Add Folder Inline Input or Trigger */}
+                  {/* Add Folder Inline Input or Native Trigger */}
                   {showAddFolderInput ? (
                     <div className="add-folder-inline-box">
                       <div className="inline-inputs-row">
@@ -709,12 +744,23 @@ export default function Sidebar({
                       </div>
                     </div>
                   ) : (
-                    <div
-                      className="btn-add-folder-row"
-                      onClick={() => setShowAddFolderInput(true)}
-                    >
-                      <FolderPlus size={14} className="add-folder-icon" />
-                      <span>添加文件夹</span>
+                    <div className="add-folder-trigger-container">
+                      <div
+                        className="btn-add-folder-row"
+                        onClick={handlePickNativeFolder}
+                        title="打开系统文件夹选择窗口"
+                      >
+                        <FolderPlus size={14} className="add-folder-icon" />
+                        <span>添加文件夹</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-text-manual"
+                        onClick={() => setShowAddFolderInput(true)}
+                        title="手动输入路径"
+                      >
+                        手动输入
+                      </button>
                     </div>
                   )}
                 </div>

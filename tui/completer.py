@@ -56,6 +56,8 @@ class SlashCommandCompleter(Completer):
                 ("/workflows", "探测工作区内规范与计划文件"),
                 ("/clear", "清空终端屏幕"),
                 ("/help", "显示完整命令参考大全"),
+                ("/exit", "退出 TUI 交互终端"),
+                ("/quit", "退出 TUI 交互终端"),
                 ("exit", "退出 TUI 交互终端"),
                 ("quit", "退出 TUI 交互终端"),
                 (":q", "退出 TUI 交互终端"),

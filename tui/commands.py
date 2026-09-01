@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -96,6 +97,10 @@ async def handle_slash_command(
     Returns True if handled, False if it should proceed as a model turn prompt.
     """
     lower_text = text.lower().strip()
+
+    if lower_text in ("/exit", "/quit", "/q"):
+        console.print("[dim]Goodbye![/dim]")
+        sys.exit(0)
 
     if lower_text == "/clear":
         console.clear()

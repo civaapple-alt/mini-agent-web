@@ -110,6 +110,8 @@ async def run_tui(state: TUIState) -> None:
                     f"[dim green]✓ Reconnected to App Server (Profile: {state.profile})[/dim green]"
                 )
 
+        consecutive_interrupts = 0
+
         while True:
             try:
                 if prompt_session is not None:
@@ -117,6 +119,17 @@ async def run_tui(state: TUIState) -> None:
                         user_input = await prompt_session.prompt_async(
                             [("class:prompt", f"\nYou ({state.current_thread_id}) > ")]
                         )
+                        consecutive_interrupts = 0
+                    except KeyboardInterrupt:
+                        consecutive_interrupts += 1
+                        if consecutive_interrupts >= 2:
+                            console.print("\n[dim]Exiting Mini Agent TUI... Goodbye![/dim]")
+                            break
+                        console.print("\n[dim yellow](Press Ctrl+C again or type 'exit' to quit)[/dim yellow]")
+                        continue
+                    except EOFError:
+                        console.print("\n[dim]Session terminated.[/dim]")
+                        break
                     except Exception:  # noqa: BLE001
                         def _read_std_input() -> str:
                             console.print(
@@ -140,7 +153,19 @@ async def run_tui(state: TUIState) -> None:
                             raise EOFError
                         return line
 
-                    user_input = await asyncio.to_thread(_read_std_input)
+                    try:
+                        user_input = await asyncio.to_thread(_read_std_input)
+                        consecutive_interrupts = 0
+                    except KeyboardInterrupt:
+                        consecutive_interrupts += 1
+                        if consecutive_interrupts >= 2:
+                            console.print("\n[dim]Exiting Mini Agent TUI... Goodbye![/dim]")
+                            break
+                        console.print("\n[dim yellow](Press Ctrl+C again or type 'exit' to quit)[/dim yellow]")
+                        continue
+                    except EOFError:
+                        console.print("\n[dim]Session terminated.[/dim]")
+                        break
             except (KeyboardInterrupt, EOFError):
                 console.print("\n[dim]Session terminated.[/dim]")
                 break
@@ -150,7 +175,7 @@ async def run_tui(state: TUIState) -> None:
                 continue
 
             norm_text = text.lower().strip()
-            if norm_text in ("exit", "quit", ":q"):
+            if norm_text in ("exit", "quit", ":q", "/exit", "/quit", "/q"):
                 console.print("[dim]Goodbye![/dim]")
                 break
             if norm_text == "q":
@@ -167,7 +192,12 @@ async def run_tui(state: TUIState) -> None:
             if handled:
                 continue
 
-            await render_turn_stream(client, user_input, state)
+            try:
+                await render_turn_stream(client, user_input, state)
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                pass
+            except Exception as err:  # noqa: BLE001
+                console.print(f"\n[bold red]Error during turn: {err}[/bold red]\n")
 
 
 def main() -> None:

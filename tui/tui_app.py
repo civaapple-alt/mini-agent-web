@@ -117,7 +117,7 @@ async def run_tui(state: TUIState) -> None:
                 if prompt_session is not None:
                     try:
                         user_input = await prompt_session.prompt_async(
-                            [("class:prompt", f"\nYou ({state.current_thread_id}) > ")]
+                            [("class:prompt", f"You ({state.current_thread_id}) > ")]
                         )
                         consecutive_interrupts = 0
                     except KeyboardInterrupt:
@@ -133,7 +133,7 @@ async def run_tui(state: TUIState) -> None:
                     except Exception:  # noqa: BLE001
                         def _read_std_input() -> str:
                             console.print(
-                                f"\n[bold cyan]You ({state.current_thread_id}) > [/bold cyan]",
+                                f"[bold cyan]You ({state.current_thread_id}) > [/bold cyan]",
                                 end="" if sys.stdin.isatty() else "\n",
                             )
                             line = sys.stdin.readline()
@@ -145,7 +145,7 @@ async def run_tui(state: TUIState) -> None:
                 else:
                     def _read_std_input() -> str:
                         console.print(
-                            f"\n[bold cyan]You ({state.current_thread_id}) > [/bold cyan]",
+                            f"[bold cyan]You ({state.current_thread_id}) > [/bold cyan]",
                             end="" if sys.stdin.isatty() else "\n",
                         )
                         line = sys.stdin.readline()

@@ -71,6 +71,10 @@ uv run python cookbook/python-demo/01_basic_turn.py
 ```bash
 uv run python cookbook/python-demo/02_streaming_events.py
 ```
+Demo 02 未传入自定义 `approval_handler`，SDK 收到敏感工具的
+`approval/request` 后会默认自动批准，因此不会出现人工输入提示。需要逐次
+确认 Shell 或写文件操作时，请运行 Demo 03，或为 `MiniAgentClient` 传入自己的
+审批回调；不要在不受信任的工作区使用默认自动批准策略。
 
 ### Demo 03: 敏感操作安全审批拦截
 演示当 Agent 尝试执行写文件或 Shell 敏感命令时，客户端如何收到 `approval/request` 通知，并在控制台/Web 弹窗中由用户授权决策。

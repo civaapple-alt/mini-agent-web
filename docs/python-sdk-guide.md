@@ -113,6 +113,12 @@ async for envelope in client.stream_turn("Explain quantum computing"):
 ### 4.2 Security Approval Interception (`approval_handler`)
 Sensitive actions (shell execution, workspace file modification, web fetching) trigger an `approval/request` notification from the backend. You can intercept these programmatically:
 
+If `approval_handler` is omitted, the SDK uses its default auto-approve handler.
+This is why Cookbook Demo 02 can execute its inspection Shell calls without a
+manual prompt. Use a custom callback, as in Demo 03, when every sensitive action
+must require an explicit human decision; do not use the default in an untrusted
+workspace.
+
 ```python
 async def custom_approver(
     request_id: str, action: str, params: dict

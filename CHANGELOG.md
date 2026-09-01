@@ -11,14 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Web Studio Full-Fidelity Upgrade**:
-  - **Header & Workflows**: segmented mode switcher for Chat, Plan Mode (`/plan`), and Goal Mode (`/goal`); real-time thread title and summary inline editor.
-  - **Sidebar Multi-Thread Organization**: chronological date grouping (Today, Yesterday, Previous 7 Days, Older), instant search/filter, action popup menu (Rename, Set Summary, Fork, Close).
-  - **4-Tab SidePanel**: comprehensive inspector covering WorldState & Environment, Plan & Goal (with live Markdown preview of `plan.md` / `goal/plan.md`), MCP Server tools & connectivity, and Git status & modified files.
-  - **System Settings Modal**: runtime configuration for client profiles (`interactive`, `autonomous`, `strict`), approval policies (`per_action`, `auto_approve`, `strict`), reasoning effort, themes (Dark, Midnight, Cyberpunk), and editor preferences.
-  - **Interactive Security Approval Modal**: floating backdrop modal with "Allow Once", "Always Allow (Remember)", and "Deny" with optional custom reason.
-  - **Input Bar Slash Commands**: quick slash command popup (`/plan`, `/goal`, `/clear`, `/steer`, `/status`), mode badges, mid-turn steer input, and stop generation.
-  - **TUI Command Alignment**: enhanced terminal studio supporting `/plan`, `/goal`, `/threads`, `/switch`, `/clear`, and `/help` slash command workflows.
+- **Multi-Root Project & Workspace Management (Codex 1:1 Parity)**:
+  - **Native OS Folder Picker**: Integrated local OS directory dialog (`POST /api/world/browse-folder` via Tkinter & PowerShell `FolderBrowserDialog`), allowing 1-click folder selection for workspace roots directly from the browser.
+  - **3-Tier Interactive Layer Alignment**:
+    - **Hover Context Popover**: Hovering on project folders displays `⋯` and `✏️`; clicking `⋯` reveals project title, pin state (`📌`), active task statistics (`X 个任务 · 1 个已开启`), multi-source directory list, and `⚙️ 编辑项目` trigger.
+    - **“编辑项目” Modal**: Modify project name, manage multi-root folders, switch the `[主要]` primary working directory, add/remove local directories, and safely unbind local projects.
+    - **“创建项目” Modal**: Features official empty-state container (`📁+ 添加 Mini-Agent 可读取和编辑的文件夹`), auto-fills folder names, scaffolds initial `README.md`, and auto-creates an initial default session thread.
+- **Durable State Persistence (`~/.mini-agent/state.json`)**:
+  - Local atomic file-backed persistence for workspace projects, multi-root source directories, primary directory bindings, pin statuses, and enriched session thread metadata (titles, summaries, project associations).
+  - **Clean Single-Project Boot**: Server startup strictly defaults to a single project matching the current working directory (`Path.cwd()`); mock placeholder projects completely eliminated.
+- **Composer UX & Control Redesign**:
+  - **Streamlined Mode & Profile Switchers**: Replaced top tab bar with inline top-left dropdown in Composer (`默认模式 / 计划模式 / 目标模式`), and moved Profile dropdown (`交互模式 / 自主模式 / 严格模式`) to the bottom-left beside security approvals.
+  - **Simplified Mid-Execution Steer**: Unified real-time instruction steering with the composer input and stop button, removing redundant on-screen prompt banners during generation.
+- **Graceful Shutdown & Connection Teardown**:
+  - Added `timeout_graceful_shutdown=1.0` in Uvicorn runner and explicit WebSocket disconnect cleanup on Ctrl+C to eliminate lingering connection hangs on Windows.
 
 ### Documentation
 

@@ -22,6 +22,8 @@ export default function MessageItem({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const [previewImg, setPreviewImg] = useState(null);
+
   if (role === 'user') {
     const { images = [], referencedFiles = [] } = message;
     return (
@@ -36,14 +38,44 @@ export default function MessageItem({
                     src={imgUrl}
                     alt={`Attached ${i + 1}`}
                     className="user-msg-image"
-                    onClick={() => {
-                      const w = window.open('');
-                      w.document.write(`<img src="${imgUrl}" style="max-width:100%;height:auto;margin:auto;display:block;" />`);
-                    }}
-                    title="点击在新窗口查看大图"
+                    onClick={() => setPreviewImg(imgUrl)}
+                    title="点击放大预览图片"
                   />
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Image Lightbox Modal */}
+          {previewImg && (
+            <div
+              className="img-lightbox-overlay"
+              onClick={() => setPreviewImg(null)}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000,
+                cursor: 'zoom-out',
+              }}
+            >
+              <img
+                src={previewImg}
+                alt="Preview"
+                style={{
+                  maxWidth: '90vw',
+                  maxHeight: '90vh',
+                  borderRadius: '8px',
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
             </div>
           )}
 

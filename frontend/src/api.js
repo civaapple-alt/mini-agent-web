@@ -335,7 +335,12 @@ export function createAgentWebSocket(onMessage, onOpen, onClose) {
     send(data) {
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(typeof data === 'string' ? data : JSON.stringify(data));
+        return true;
       }
+      return false;
+    },
+    isOpen() {
+      return Boolean(socket && socket.readyState === WebSocket.OPEN);
     },
     close() {
       shouldReconnect = false;

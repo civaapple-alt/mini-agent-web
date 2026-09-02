@@ -25,6 +25,16 @@ export default function App() {
   const [planActive, setPlanActive] = useState(false);
   const [goalState, setGoalState] = useState(null);
   const [approvalPolicy, setApprovalPolicy] = useState('per_action');
+  const [userSettings, setUserSettings] = useState({
+    profile: 'interactive',
+    approval_policy: 'per_action',
+    default_mode: 'chat',
+    reasoning_effort: 'medium',
+    theme: 'light',
+    auto_scroll: true,
+    word_wrap: true,
+    font_size: 13,
+  });
 
   // Panels & Modals
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
@@ -62,6 +72,7 @@ export default function App() {
   const loadSettings = async () => {
     try {
       const data = await api.getSettings();
+      setUserSettings((prev) => ({ ...prev, ...data }));
       if (data.profile) setProfile(data.profile);
       if (data.approval_policy) setApprovalPolicy(data.approval_policy);
       if (data.theme) document.body.className = `theme-${data.theme}`;
@@ -140,6 +151,18 @@ export default function App() {
 
   const handleServerEvent = (data) => {
     if (!data) return;
+
+    // A2: Isolate stream events by active thread to prevent cross-thread pollution
+    const eventThreadId = data.threadId || data.thread_id;
+    if (eventThreadId && eventThreadId !== currentThreadRef.current) {
+      if (data.type === 'event') {
+        const evtType = data.event?.type;
+        if (evtType === 'turn_finished' || evtType === 'run_failed') {
+          loadThreads();
+        }
+      }
+      return;
+    }
 
     // 1. Capture Turn ID from submission
     if (data.type === '_turn_submission') {
@@ -405,10 +428,15 @@ export default function App() {
       images,
       referencedFiles,
       threadId: currentThread,
+      effort: userSettings.reasoning_effort || 'medium',
+      mode: userSettings.default_mode || 'chat',
     });
   };
 
   const handleClearChat = () => {
+    if (isGenerating) {
+      handleInterrupt();
+    }
     setMessages([]);
   };
 
@@ -498,6 +526,9 @@ export default function App() {
 
   const handleSelectThread = (threadId) => {
     if (threadId === currentThread) return;
+    setIsGenerating(false);
+    setActiveTurnId(null);
+    setPendingApproval(null);
     setCurrentThread(threadId);
     loadThreadHistory(threadId);
   };
@@ -543,7 +574,7 @@ export default function App() {
   const handleRenameThread = async (threadId, newTitle) => {
     try {
       const targetId = typeof threadId === 'string' ? threadId : currentThread;
-      const res = await api.renameThread(targetId, newTitle);
+      await api.renameThread(targetId, newTitle);
       if (targetId === currentThread) {
         setCurrentThreadMeta((prev) => ({ ...prev, title: newTitle }));
       }
@@ -583,8 +614,8 @@ export default function App() {
 
   const PROFILE_DEFAULTS = {
     interactive: { approval_policy: 'per_action' },
-    autonomous: { approval_policy: 'auto_approve' },
-    strict: { approval_policy: 'strict' },
+    auto: { approval_policy: 'auto_approve' },
+    ask: { approval_policy: 'strict' },
   };
 
   const handleUpdateProfile = async (newProfile) => {
@@ -594,7 +625,7 @@ export default function App() {
     setApprovalPolicy(nextPolicy);
     try {
       await api.updateSettings({ profile: newProfile, approval_policy: nextPolicy });
-      if (newProfile === 'strict') {
+      if (newProfile === 'ask') {
         await api.setPlanMode(true);
         setPlanActive(true);
       } else if (planActive) {
@@ -640,8 +671,6 @@ export default function App() {
           onRenameThread={handleRenameThread}
           onUpdateSummary={handleUpdateSummary}
           onRefreshThreads={loadThreads}
-          onOpenSidePanel={handleOpenSidePanel}
-          onOpenSettings={() => setSettingsModalOpen(true)}
         />
 
         <main className="app-content">
@@ -652,6 +681,9 @@ export default function App() {
             onRespondApproval={handleRespondApproval}
             onQuickPrompt={handleSendMessage}
             onRetryPrompt={handleSendMessage}
+            autoScroll={userSettings.auto_scroll}
+            wordWrap={userSettings.word_wrap}
+            fontSize={userSettings.font_size}
           />
 
           <InputBar

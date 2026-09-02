@@ -1,5 +1,5 @@
-import React, { useRef, useEffect } from 'react';
-import { Sparkles, Terminal, Compass, TestTube2, GitBranch } from 'lucide-react';
+import React, { useRef, useEffect, useState } from 'react';
+import { Sparkles, Terminal, Compass, TestTube2, ArrowDown } from 'lucide-react';
 import MessageItem from './MessageItem';
 import './ChatArea.css';
 
@@ -10,17 +10,43 @@ export default function ChatArea({
   onRespondApproval,
   onQuickPrompt,
   onRetryPrompt,
+  autoScroll = true,
+  wordWrap = true,
+  fontSize = 13,
 }) {
   const scrollRef = useRef(null);
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
+
+  const handleScroll = () => {
+    if (!scrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    setIsScrolledUp(distanceFromBottom > 80);
+  };
+
+  const scrollToBottom = () => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
+      setIsScrolledUp(false);
+    }
+  };
 
   useEffect(() => {
-    if (scrollRef.current) {
+    if (autoScroll && !isScrolledUp && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isGenerating, pendingApproval]);
+  }, [messages, isGenerating, pendingApproval, autoScroll, isScrolledUp]);
 
   return (
-    <div className="chat-area custom-scrollbar" ref={scrollRef}>
+    <div
+      className={`chat-area custom-scrollbar ${wordWrap ? 'wrap-content' : 'nowrap-content'}`}
+      style={{ fontSize: fontSize ? `${fontSize}px` : undefined }}
+      ref={scrollRef}
+      onScroll={handleScroll}
+    >
       {messages.length === 0 ? (
         <div className="welcome-container">
           <div className="welcome-icon-box">
@@ -69,6 +95,37 @@ export default function ChatArea({
             />
           ))}
         </div>
+      )}
+
+      {/* Floating Scroll-to-Bottom Pill Button */}
+      {isScrolledUp && (
+        <button
+          className="btn-scroll-bottom"
+          onClick={scrollToBottom}
+          title="回到底部最新消息"
+          style={{
+            position: 'sticky',
+            bottom: '16px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 12px',
+            borderRadius: '20px',
+            background: 'var(--accent-color, #10B981)',
+            color: '#FFFFFF',
+            border: 'none',
+            fontSize: '11px',
+            fontWeight: 500,
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            zIndex: 10,
+          }}
+        >
+          <ArrowDown size={12} />
+          <span>回到底部</span>
+        </button>
       )}
     </div>
   );

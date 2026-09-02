@@ -1,19 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  SquarePen,
   Plus,
-  GitPullRequest,
-  Clock,
-  Puzzle,
   MoreHorizontal,
   Folder,
-  FolderOpen,
-  FolderPlus,
   Search,
-  Bell,
-  ChevronDown,
   ChevronRight,
-  Check,
   X,
   Edit2,
   FileText,
@@ -24,7 +15,6 @@ import {
   Loader2,
   Pin,
   Settings,
-  GitBranch,
 } from 'lucide-react';
 import { api } from '../api';
 import './Sidebar.css';
@@ -40,8 +30,6 @@ export default function Sidebar({
   onRenameThread,
   onUpdateSummary,
   onRefreshThreads,
-  onOpenSidePanel,
-  onOpenSettings,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchBox, setShowSearchBox] = useState(false);
@@ -349,20 +337,70 @@ export default function Sidebar({
     }
   };
 
+  const recentSortedThreads = useMemo(() => {
+    return [...normalizedThreads].sort((a, b) => {
+      const dateA = new Date(a.updated_at || 0).getTime();
+      const dateB = new Date(b.updated_at || 0).getTime();
+      return dateB - dateA;
+    });
+  }, [normalizedThreads]);
+
   return (
     <aside className="codex-sidebar">
       {/* 1. Projects Section */}
       <div className="sidebar-projects-section custom-scrollbar">
         <div className="section-header-row">
-          <span className="section-title-label">项目</span>
-          <button
-            className="btn-add-project-mini"
-            onClick={handleOpenNewProject}
-            title="新建工作区项目"
-          >
-            <Plus size={13} />
-          </button>
+          <span className="section-title-label">项目与会话</span>
+          <div className="section-header-actions" style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+            <button
+              className={`btn-add-project-mini ${showSearchBox ? 'active' : ''}`}
+              onClick={() => {
+                setShowSearchBox(!showSearchBox);
+                if (showSearchBox) setSearchQuery('');
+              }}
+              title="搜索会话"
+            >
+              <Search size={12} />
+            </button>
+            <button
+              className="btn-add-project-mini"
+              onClick={handleOpenNewProject}
+              title="新建工作区项目"
+            >
+              <Plus size={13} />
+            </button>
+          </div>
         </div>
+
+        {showSearchBox && (
+          <div className="sidebar-search-box" style={{ padding: '4px 8px 8px', display: 'flex', gap: '4px', alignItems: 'center' }}>
+            <input
+              type="text"
+              className="sidebar-search-input"
+              style={{
+                width: '100%',
+                fontSize: '11px',
+                padding: '4px 6px',
+                borderRadius: '4px',
+                border: '1px solid var(--border-color, #e5e7eb)',
+                background: 'var(--bg-secondary, #f9fafb)',
+                color: 'inherit',
+              }}
+              placeholder="搜索会话标题/ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              autoFocus
+            />
+            {searchQuery && (
+              <button
+                style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}
+                onClick={() => setSearchQuery('')}
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="project-tree-list">
           {displayedProjects.map((proj) => {
@@ -599,7 +637,7 @@ export default function Sidebar({
 
           {showRecentSection && (
             <div className="recent-items-list">
-              {normalizedThreads.slice(0, 8).map((t) => (
+              {recentSortedThreads.slice(0, 8).map((t) => (
                 <div
                   key={t.thread_id}
                   className={`recent-thread-item ${t.thread_id === currentThread ? 'active' : ''}`}

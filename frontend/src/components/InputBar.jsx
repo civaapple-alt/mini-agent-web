@@ -162,8 +162,10 @@ export default function InputBar({
   };
 
   const executeSlashCommand = (cmdStr) => {
-    const cleanCmd = cmdStr.trim().toLowerCase();
-    if (cleanCmd === '/plan') {
+    const cleanCmd = cmdStr.trim();
+    const lowerCmd = cleanCmd.toLowerCase();
+
+    if (lowerCmd === '/plan') {
       if (onTogglePlanMode) {
         onTogglePlanMode();
       } else if (onChangeProfile) {
@@ -172,18 +174,35 @@ export default function InputBar({
       setPrompt('');
       return true;
     }
-    if (cleanCmd === '/clear') {
+    if (lowerCmd === '/clear') {
       if (onClearChat) onClearChat();
       setPrompt('');
       return true;
     }
-    if (cleanCmd === '/status') {
+    if (lowerCmd === '/status') {
       if (onOpenStatus) onOpenStatus();
       setPrompt('');
       return true;
     }
-    if (cleanCmd === '/copy' || cleanCmd === '/cp') {
+    if (lowerCmd === '/copy' || lowerCmd === '/cp') {
       if (onCopyLastResponse) onCopyLastResponse();
+      setPrompt('');
+      return true;
+    }
+    if (lowerCmd.startsWith('/steer')) {
+      const steerText = cleanCmd.slice(6).trim();
+      if (!isGenerating) {
+        alert('⚠️ 无法纠偏：当前没有正在执行的任务。请在 Agent 运行时使用 /steer 注入实时纠偏指令。');
+        setPrompt('');
+        return true;
+      }
+      if (!steerText) {
+        setPrompt('/steer ');
+        return true;
+      }
+      if (onSteerMessage) {
+        onSteerMessage(steerText);
+      }
       setPrompt('');
       return true;
     }
@@ -284,6 +303,11 @@ export default function InputBar({
   };
 
   const handleKeyDown = (e) => {
+    // Guard against IME composition on Enter (e.g. Chinese/Japanese candidate selection)
+    if (e.nativeEvent?.isComposing || e.keyCode === 229) {
+      return;
+    }
+
     if (showMentionPopup && mentionFiles.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -545,10 +569,10 @@ export default function InputBar({
                 ? '⚠️ 等待上方安全权限审批确认后继续...'
                 : isGenerating
                 ? 'Agent 执行中... 输入内容并按回车可动态纠偏 (Steer)'
-                : profile === 'strict'
-                ? '📋 Strict Mode: 输入规划任务需求... (只读探索与计划制定)'
-                : profile === 'autonomous'
-                ? '🎯 Autonomous Mode: 输入宏观目标需求... (多里程碑无人值守收敛)'
+                : profile === 'ask'
+                ? '📋 Ask Mode: 输入规划任务需求... (只读探索与计划制定)'
+                : profile === 'auto'
+                ? '🎯 Auto Mode: 输入宏观目标需求... (多里程碑自治收敛)'
                 : '输入任务、指令或问题... (支持 Ctrl+V 粘贴截图、输入 @ 引用文件、输入 / 查看快捷命令)'
             }
             className="chat-textarea"

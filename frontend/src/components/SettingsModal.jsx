@@ -17,11 +17,11 @@ const PROFILE_DEFAULTS = {
     approval_policy: 'per_action',
     default_mode: 'chat',
   },
-  autonomous: {
+  auto: {
     approval_policy: 'auto_approve',
     default_mode: 'goal',
   },
-  strict: {
+  ask: {
     approval_policy: 'strict',
     default_mode: 'plan',
   },
@@ -129,8 +129,8 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved }) {
                 onChange={(e) => handleProfileChange(e.target.value)}
               >
                 <option value="interactive">交互模式 (Interactive - 推荐)</option>
-                <option value="autonomous">自治模式 (Autonomous - 目标驱动)</option>
-                <option value="strict">严格模式 (Strict - 只读审计)</option>
+                <option value="auto">自治模式 (Auto - 目标驱动)</option>
+                <option value="ask">严格只读模式 (Ask - 规划探索)</option>
               </select>
             </div>
 

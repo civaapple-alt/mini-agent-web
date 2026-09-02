@@ -271,8 +271,10 @@ mini-agent-web/
 ## 📚 模块文档中心与索引
 
 * 📟 [**终端 TUI 工作室文档 (`tui/README.md`)**](tui/README.md)：架构分层、Tab 补全、`/steer` 实时纠偏、`/fork` 分支与命令参考。
-* 🎨 [**Web UI 前端工程文档 (`frontend/README.md`)**](frontend/README.md)：React 组件树、ThinkingBlock、ToolCard 与 WebSocket API。
-* 🌐 [**FastAPI 网关服务文档 (`server/README.md`)**](server/README.md)：RESTful API、`/ws/events` 实时分发与 `SessionManager` 子进程池。
+* 🎨 [**Web UI 前端工程文档 (`frontend/README.md`)**](frontend/README.md)：React 19 组件树、ThinkingBlock、ToolCard、Toast 通知与 WebSocket API。
+* 🌐 [**FastAPI 网关服务文档 (`server/README.md`)**](server/README.md)：RESTful API、`/ws/agent` 双向全双工通道与 `SessionManager` 连接管理。
+* 📈 [**客户端架构与性能全景对比 (`docs/client-architectures-and-performance-comparison.md`)**](docs/client-architectures-and-performance-comparison.md)：Rust REPL、Python TUI 与 Web Studio 多维度深度对比分析。
+* 💡 [**Tauri 2.0 原生桌面 App 提案 (`docs/adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md`)**](docs/adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md)：基于 App Server 的极轻量桌面应用方案。
 * 🧪 [**自动化测试套件文档 (`tests/README.md`)**](tests/README.md)：零 Token 消耗、AST 语法编译、网关与事件测试。
 * 📘 [**Python SDK 开发者指南 (`docs/python-sdk-guide.md`)**](docs/python-sdk-guide.md)：完整 API 说明、流式事件、审批拦截与错误处理。
 * 📊 [**SDK 成熟度与协议覆盖报告 (`docs/sdk-maturity-and-protocol-coverage.md`)**](docs/sdk-maturity-and-protocol-coverage.md)：JSON-RPC 2.0 接口覆盖矩阵与测试验收。
@@ -347,7 +349,9 @@ uv build --package mini-agent
 | :--- | :--- | :--- |
 | **基础环境同步** | `uv sync` | 安装 SDK 基础依赖 |
 | **全量开发环境** | `uv sync --all-extras` | 安装 web + tui + dev 全套工具链 |
-| **运行单元测试** | `uv run pytest tests/ -v` | 执行自动化测试套件 |
+| **运行后端测试** | `uv run pytest tests/ -v` | 执行 43 项后端 API / 网关 / 契约自动化测试 |
+| **运行前端测试** | `cd frontend && npm test` | 执行 7 项前端模块与流式状态机单元测试 |
+| **前端打包构建** | `cd frontend && npm run build` | Vite 生产打包并生成 `frontend/dist/` |
 | **代码格式与 Lint** | `uv run ruff check .` | 静态检查代码质量 |
 | **执行 Cookbook 示例**| `uv run python cookbook/python-demo/01_basic_turn.py` | 运行实战演示 |
 | **SDK 独立构建** | `uv build --package mini-agent` | 生成 wheel 与 tar.gz |

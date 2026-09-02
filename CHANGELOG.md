@@ -11,25 +11,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Multi-Root Project & Workspace Management (Codex 1:1 Parity)**:
-  - **Native OS Folder Picker**: Integrated local OS directory dialog (`POST /api/world/browse-folder` via Tkinter & PowerShell `FolderBrowserDialog`), allowing 1-click folder selection for workspace roots directly from the browser.
-  - **3-Tier Interactive Layer Alignment**:
-    - **Hover Context Popover**: Hovering on project folders displays `⋯` and `✏️`; clicking `⋯` reveals project title, pin state (`📌`), active task statistics (`X 个任务 · 1 个已开启`), multi-source directory list, and `⚙️ 编辑项目` trigger.
-    - **“编辑项目” Modal**: Modify project name, manage multi-root folders, switch the `[主要]` primary working directory, add/remove local directories, and safely unbind local projects.
-    - **“创建项目” Modal**: Features official empty-state container (`📁+ 添加 Mini-Agent 可读取和编辑的文件夹`), auto-fills folder names, scaffolds initial `README.md`, and auto-creates an initial default session thread.
-- **Durable State Persistence (`~/.mini-agent/state.json`)**:
-  - Local atomic file-backed persistence for workspace projects, multi-root source directories, primary directory bindings, pin statuses, and enriched session thread metadata (titles, summaries, project associations).
-  - **Clean Single-Project Boot**: Server startup strictly defaults to a single project matching the current working directory (`Path.cwd()`); mock placeholder projects completely eliminated.
-- **Composer UX & Control Redesign**:
-  - **Streamlined Mode & Profile Switchers**: Replaced top tab bar with inline top-left dropdown in Composer (`默认模式 / 计划模式 / 目标模式`), and moved Profile dropdown (`交互模式 / 自主模式 / 严格模式`) to the bottom-left beside security approvals.
-  - **Simplified Mid-Execution Steer**: Unified real-time instruction steering with the composer input and stop button, removing redundant on-screen prompt banners during generation.
-- **Graceful Shutdown & Connection Teardown**:
-  - Added `timeout_graceful_shutdown=1.0` in Uvicorn runner and explicit WebSocket disconnect cleanup on Ctrl+C to eliminate lingering connection hangs on Windows.
+- **Lightweight Native Toast Notification System**:
+  - Replaced native browser `alert()` and `confirm()` dialogs across Sidebar, InputBar, SettingsModal, and SidePanel with smooth, non-blocking, auto-dismissing Toast notifications (`Toast.jsx`).
+- **Pure Utility Modules & Direct Test Coupling**:
+  - Extracted pure stream reducer (`src/utils/messageState.js`) and command parser (`src/utils/slashCommands.js`), eliminating golden-copy test drift by having both production UI and Node unit tests import the exact same implementations.
+- **UI Polish, Skeleton Loading & Word Wrap**:
+  - Added CSS rules for `.wrap-content` and `.nowrap-content` in `ChatArea.css`, enabling active toggling of word wrapping.
+  - Implemented `@keyframes pulse` animated skeleton loading screen during thread history retrieval.
+  - Added global `Escape` key handling to close modals, SidePanel drawers, and popovers.
+- **Tauri 2.0 Desktop Application Proposal**:
+  - Drafted ADR proposal for Mini Agent Native Desktop Application (`docs/adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md`).
+- **Client Architecture & Performance Analysis Doc**:
+  - Published multi-dimensional comparison analyzing Rust REPL, Python TUI, and Web Studio (`docs/client-architectures-and-performance-comparison.md`).
+
+### Fixed
+
+- **Turn Mode Protocol Contract Compliance (R1)**:
+  - Removed UI-specific `default_mode` (`chat` / `plan` / `goal`) from WebSocket `turn` action payload to strictly preserve standard `start` / `continue` / `steer` / `follow_up` wire protocol.
+  - Added server-side validation in `server/routes/agent.py` ensuring non-standard mode strings automatically sanitize to `"start"`.
+- **WebSocket Ready-State Guard & Zero Message Loss (A1)**:
+  - Added `.isOpen()` ready-state check in `handleSendMessage` before message dispatch; prevents silent message drops and rolling back optimistic bubbles when reconnecting.
+- **Cross-Thread Stream Event Isolation (A2)**:
+  - Enforced `shouldAcceptEventForThread` filtering, rejecting foreign thread stream deltas while allowing thread lifecycle finish notifications.
+- **Profile System Alignment (A3)**:
+  - Aligned client profile values to `interactive` / `auto` / `ask` across Settings, InputBar, and server schemas.
+- **Chinese IME Composition Enter Guard (A4)**:
+  - Added `e.nativeEvent.isComposing || e.keyCode === 229` guard in InputBar to prevent accidental sends during IME candidate selection.
+- **Native `/steer` Command Execution (A5)**:
+  - Connected `/steer <instruction>` directly to server steering API with active generation runtime checks.
 
 ### Documentation
 
-- Added `AGENTS.md` and synchronized the README, SDK guide, Cookbook guide,
-  ADRs, and validation notes with the 0.6.0 release surface.
+- Synchronized `README.md`, `docs/README.md`, `frontend/README.md`, and indexed new comparison docs and proposed ADRs.
 
 ## [0.6.0] - 2026-09-01
 

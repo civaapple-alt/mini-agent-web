@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conversation threads.
 - **Plan Mode Shell guidance**: documents that the App Server permits bounded
   read-only Shell inspection in Plan Mode while continuing to lock mutations.
+- **TUI model failure diagnostics**: after `run_failed`, reads the settled
+  `turn/read.error` projection and displays bounded Provider/model details instead
+  of exposing only the generic `model` classification.
 
 ---
 

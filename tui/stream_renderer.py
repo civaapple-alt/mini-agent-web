@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
 from tui.state import TurnMetrics, console
@@ -67,6 +68,7 @@ async def render_turn_stream(
     metrics = TurnMetrics()
     current_mode: str | None = None
     assistant_text_chunks: list[str] = []
+    failed_turn_id: str | None = None
 
     try:
         async for item in client.stream_turn(
@@ -215,6 +217,7 @@ async def render_turn_stream(
                         metrics.steps = evt.get("steps")
 
                 elif evt_type == "run_failed":
+                    failed_turn_id = item.get("turnId") or state.active_turn_id
                     reason = evt.get("reason", "unknown error")
                     if isinstance(reason, dict):
                         r_type = reason.get("type", "unknown")
@@ -240,6 +243,20 @@ async def render_turn_stream(
                     )
                 elif method == "thread/goal/cleared":
                     console.print("\n[dim blue]◎ Goal cleared[/dim blue]")
+
+        if failed_turn_id:
+            settled = None
+            with suppress(Exception):
+                settled = await client.read_turn(failed_turn_id)
+            if settled is not None:
+                detail = getattr(settled, "error", None)
+                if detail:
+                    detail_text = (
+                        str(detail).strip().replace("\r", " ").replace("\n", " ")
+                    )
+                    if len(detail_text) > 480:
+                        detail_text = detail_text[:477] + "..."
+                    console.print(f"[red]       Detail: {detail_text}[/red]")
 
         if assistant_text_chunks:
             state.last_assistant_response = "".join(assistant_text_chunks).strip()

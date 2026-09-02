@@ -6,6 +6,7 @@ All tests run with zero token consumption against deterministic mock streams.
 from __future__ import annotations
 
 import io
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -244,6 +245,9 @@ async def test_render_turn_stream_tool_failure_and_run_failure(
         }
 
     mock_client.stream_turn = mock_stream
+    mock_client.read_turn.return_value = SimpleNamespace(
+        error="model request failed: provider returned HTTP 503"
+    )
 
     await render_turn_stream(mock_client, "Do failing task", state)
     rendered = output_buffer.getvalue()
@@ -252,6 +256,8 @@ async def test_render_turn_stream_tool_failure_and_run_failure(
     assert "(truncated)" in rendered
     assert "FileNotFoundError: missing.txt" in rendered
     assert "Run failed: ExecutionLimit: Recursion depth exceeded" in rendered
+    assert "Detail: model request failed: provider returned HTTP 503" in rendered
+    mock_client.read_turn.assert_awaited_once_with("turn-fail")
     assert "Turn Settled" in rendered
     assert "Status: failed" in rendered
     assert state.last_turn_metrics is not None

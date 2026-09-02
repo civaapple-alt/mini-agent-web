@@ -276,6 +276,7 @@ mini-agent-web/
 * 📈 [**客户端架构与性能全景对比 (`docs/client-architectures-and-performance-comparison.md`)**](docs/client-architectures-and-performance-comparison.md)：Rust REPL、Python TUI 与 Web Studio 多维度深度对比分析。
 * 💡 [**Tauri 2.0 原生桌面 App 提案 (`docs/adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md`)**](docs/adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md)：基于 App Server 的极轻量桌面应用方案。
 * 📟 [**Rust 原生 TUI 架构提案 (`docs/adr/proposed/2026-09-02-rust-native-tui-ratatui-architecture.md`)**](docs/adr/proposed/2026-09-02-rust-native-tui-ratatui-architecture.md)：基于 Ratatui + Tokio + TEA 状态机的零依赖全屏 TUI 方案。
+* 🌐 [**本地 Web Studio 演进路线提案 (`docs/adr/proposed/2026-09-02-local-web-studio-evolution-and-roadmap.md`)**](docs/adr/proposed/2026-09-02-local-web-studio-evolution-and-roadmap.md)：Monaco Diff 审查、流式文件树、端口内嵌预览与 Goal DAG 看板方案。
 * 🧪 [**自动化测试套件文档 (`tests/README.md`)**](tests/README.md)：零 Token 消耗、AST 语法编译、网关与事件测试。
 * 📘 [**Python SDK 开发者指南 (`docs/python-sdk-guide.md`)**](docs/python-sdk-guide.md)：完整 API 说明、流式事件、审批拦截与错误处理。
 * 📊 [**SDK 成熟度与协议覆盖报告 (`docs/sdk-maturity-and-protocol-coverage.md`)**](docs/sdk-maturity-and-protocol-coverage.md)：JSON-RPC 2.0 接口覆盖矩阵与测试验收。

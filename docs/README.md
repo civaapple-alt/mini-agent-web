@@ -30,6 +30,7 @@
 | 2026-08-31 | Accepted | [FastAPI Gateway & Web Studio UI](adr/2026-08-31-fastapi-gateway-and-web-studio-ui.md) | 基于 FastAPI、WebSocket/SSE 与零构建轻量 Web 前端构建 Web Studio 交互控制台与终端 TUI |
 | 2026-09-02 | Proposed | [Tauri Desktop App & App Server Integration](adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md) | 基于 Tauri 2.0 与 App Server 构建轻量原生桌面应用，提供全局快捷唤醒与原生审批通知 |
 | 2026-09-02 | Proposed | [Rust Native TUI Architecture](adr/proposed/2026-09-02-rust-native-tui-ratatui-architecture.md) | 基于 Ratatui、Tokio 异步双环与 Elm (TEA) 架构构建零依赖、高性能 (< 15MB 内存) 的原生全屏 TUI 终端客户端 |
+| 2026-09-02 | Proposed | [Local Web Studio Evolution & Roadmap](adr/proposed/2026-09-02-local-web-studio-evolution-and-roadmap.md) | 规划 Local Web Studio 工业级演进：Monaco Diff 变更审查、流式 Artifact 状态机、本地端口预览与 Goal DAG 看板 |
 
 ---
 

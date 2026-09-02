@@ -29,12 +29,14 @@
 | 2026-08-31 | Accepted | [Python SDK Architecture & App Server Integration](adr/2026-08-31-python-sdk-architecture-and-app-server-integration.md) | 建立官方 `mini-agent` Python SDK，采用强类型事件体系与异步上下文管理器，对齐 Codex 架构分层 |
 | 2026-08-31 | Accepted | [FastAPI Gateway & Web Studio UI](adr/2026-08-31-fastapi-gateway-and-web-studio-ui.md) | 基于 FastAPI、WebSocket/SSE 与零构建轻量 Web 前端构建 Web Studio 交互控制台与终端 TUI |
 | 2026-09-02 | Proposed | [Tauri Desktop App & App Server Integration](adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md) | 基于 Tauri 2.0 与 App Server 构建轻量原生桌面应用，提供全局快捷唤醒与原生审批通知 |
+| 2026-09-02 | Proposed | [Rust Native TUI Architecture](adr/proposed/2026-09-02-rust-native-tui-ratatui-architecture.md) | 基于 Ratatui、Tokio 异步双环与 Elm (TEA) 架构构建零依赖、高性能 (< 15MB 内存) 的原生全屏 TUI 终端客户端 |
 
 ---
 
 ## 当前发布验证
 
-- `uv run pytest -q`：21 个测试通过；默认套件验证 SDK 与匹配的 0.6.0 App Server 管理面。
+- `uv run pytest tests/ -v`：43 个测试通过；覆盖网关、WebSocket、线程分支、审批流与事件契约。
+- `cd frontend && npm test`：7 个测试通过；覆盖 API 请求构造、WebSocket 发送守卫、流式事件状态机与斜杠命令解析。
 - `uv run pytest tests/test_cookbook_validation.py -q`：编译全部 Cookbook，并运行 Demo 06 的无 Provider、无 Token 事件协议验证。
 - Demo 01–05 仍是需要显式 Provider 的 live 示例，不作为默认 CI 依赖。
 - 贡献者规则见仓库根目录的 [`AGENTS.md`](../AGENTS.md)。

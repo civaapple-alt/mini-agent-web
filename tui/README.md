@@ -82,7 +82,7 @@ bound runtime Thread so switching conversations does not break workflow control.
 
 | 分类 | 命令 / 格式 | 功能说明 |
 | :--- | :--- | :--- |
-| **工作流模式** | `/plan [on\|off]` | 设置 runtime Thread collaboration mode（Plan 为只读架构与方案探索） |
+| **工作流模式** | `/plan [on\|off]` | 设置 runtime Thread collaboration mode（Plan 为只读架构与方案探索；Shell 仅允许受控只读探查） |
 | | `/goal <目标描述>` | 设置 runtime Thread Goal，由 Goal Runtime 自动推进 |
 | | `/goal` | 查看当前 Goal 状态、Token 与时间预算 |
 | | `/workflows` | 探测工作区内规范与计划文件（`plan.md`, `AGENTS.md`） |

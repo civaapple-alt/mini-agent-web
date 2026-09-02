@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **TUI workflow thread binding**: routes `/profile`, `/plan`, and `/goal` to
   the App Server's bound runtime Thread while preserving independently switchable
   conversation threads.
+- **Plan Mode Shell guidance**: documents that the App Server permits bounded
+  read-only Shell inspection in Plan Mode while continuing to lock mutations.
 
 ---
 

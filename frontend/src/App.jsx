@@ -5,6 +5,7 @@ import ChatArea from './components/ChatArea';
 import InputBar from './components/InputBar';
 import SidePanel from './components/SidePanel';
 import SettingsModal from './components/SettingsModal';
+import Toast from './components/Toast';
 import { api, createAgentWebSocket } from './api';
 import './App.css';
 
@@ -19,6 +20,8 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState(null);
   const [pendingApproval, setPendingApproval] = useState(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [toasts, setToasts] = useState([]);
 
   // Workflow & Environment
   const [profile, setProfile] = useState('interactive');
@@ -46,9 +49,32 @@ export default function App() {
   const currentThreadRef = useRef(currentThread);
   currentThreadRef.current = currentThread;
 
+  const showToast = (message, type = 'info', duration = 3000) => {
+    const id = 'toast_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, duration);
+  };
+
+  const dismissToast = (id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
   // ---------------------------------------------------------------------------
   // Lifecycle & Initial Fetch
   // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setSettingsModalOpen(false);
+        setSidePanelOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
 
   useEffect(() => {
     loadSettings();
@@ -59,8 +85,14 @@ export default function App() {
     // Establish WebSocket Connection
     const wsClient = createAgentWebSocket(
       handleServerEvent,
-      () => setIsConnected(true),
-      () => setIsConnected(false)
+      () => {
+        setIsConnected(true);
+        showToast('✓ 已连接到 Agent Gateway 服务端', 'success', 2000);
+      },
+      () => {
+        setIsConnected(false);
+        showToast('⚠️ 与 Agent Gateway 连接断开，尝试重连中...', 'warning', 2500);
+      }
     );
     wsRef.current = wsClient;
 
@@ -110,6 +142,7 @@ export default function App() {
   };
 
   const loadThreadHistory = async (threadId) => {
+    setIsLoadingHistory(true);
     try {
       const cp = await api.readThread(threadId);
       if (cp.metadata) {
@@ -126,7 +159,8 @@ export default function App() {
           if (text.startsWith('<world_state') || text.includes('</world_state>')) return false;
           return true;
         })
-        .map((m) => ({
+        .map((m, idx) => ({
+          id: m.id || `hist_${threadId}_${idx}`,
           role: m.role,
           text: m.text || '',
           thinking: '',
@@ -141,7 +175,10 @@ export default function App() {
       setMessages(formatted);
     } catch (err) {
       console.error(`Failed to load thread ${threadId}:`, err);
+      showToast(`加载会话历史失败: ${err.message}`, 'error');
       setMessages([]);
+    } finally {
+      setIsLoadingHistory(false);
     }
   };
 
@@ -391,27 +428,14 @@ export default function App() {
     if (!promptText.trim() && images.length === 0) return;
 
     if (!wsRef.current || !wsRef.current.send) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'user',
-          text: promptText,
-          images,
-          referencedFiles,
-          blocks: [{ type: 'text', content: promptText }],
-        },
-        {
-          role: 'assistant',
-          text: '⚠️ 无法发送消息：当前与服务端的 WebSocket 连接尚未就绪，请稍候重试。',
-          blocks: [{ type: 'text', content: '⚠️ 无法发送消息：当前与服务端的 WebSocket 连接尚未就绪，请稍候重试。' }],
-        },
-      ]);
+      showToast('⚠️ 无法发送消息：当前与服务端的 WebSocket 连接尚未就绪，请稍候重试。', 'warning');
       return;
     }
 
     setMessages((prev) => [
       ...prev,
       {
+        id: 'user_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
         role: 'user',
         text: promptText,
         images,
@@ -438,6 +462,7 @@ export default function App() {
       handleInterrupt();
     }
     setMessages([]);
+    showToast('已清空当前会话界面消息', 'info', 1800);
   };
 
   const handleOpenStatus = () => {
@@ -448,7 +473,7 @@ export default function App() {
   const handleCopyLastResponse = async () => {
     const assistantMessages = messages.filter((m) => m.role === 'assistant');
     if (assistantMessages.length === 0) {
-      alert('当前会话暂无模型回复可复制。');
+      showToast('当前会话暂无模型回复可复制', 'warning');
       return;
     }
     const lastMsg = assistantMessages[assistantMessages.length - 1];
@@ -460,14 +485,15 @@ export default function App() {
         .join('\n\n');
     }
     if (!fullText) {
-      alert('当前模型回复暂无文本内容。');
+      showToast('当前模型回复暂无文本内容', 'warning');
       return;
     }
     try {
       await navigator.clipboard.writeText(fullText);
-      alert(`✓ 已复制模型最新回复 (${fullText.length} 字符, Markdown) 到系统剪贴板！`);
+      showToast(`✓ 已复制模型最新回复 (${fullText.length} 字符, Markdown) 到系统剪贴板！`, 'success');
     } catch (err) {
       console.warn('Clipboard write failed:', err);
+      showToast('复制到剪贴板失败，请手动选择复制', 'error');
     }
   };
 
@@ -479,6 +505,7 @@ export default function App() {
         text,
         threadId: currentThread,
       });
+      showToast('已发送实时纠偏指令 (Steer)', 'info', 2000);
     }
   };
 
@@ -492,6 +519,7 @@ export default function App() {
       });
     }
     setActiveTurnId(null);
+    showToast('已发送停止生成请求', 'info', 1800);
     setMessages((prev) => {
       if (prev.length === 0) return prev;
       const copy = [...prev];
@@ -522,6 +550,7 @@ export default function App() {
       await api.respondApproval(requestId, decision, reason, remember);
     }
     setPendingApproval(null);
+    showToast(`已提交安全审批决定: ${decision === 'allow' ? '允许执行' : '拒绝'}`, 'info', 2000);
   };
 
   const handleSelectThread = (threadId) => {
@@ -541,8 +570,9 @@ export default function App() {
       setCurrentThread(tid);
       setCurrentThreadMeta({ title: `新会话 ${tid}`, summary: '' });
       setMessages([]);
+      showToast(`已创建新会话: ${tid}`, 'success');
     } catch (err) {
-      alert(`创建新会话失败: ${err.message}`);
+      showToast(`创建新会话失败: ${err.message}`, 'error');
     }
   };
 
@@ -553,8 +583,9 @@ export default function App() {
       await loadThreads();
       setCurrentThread(newId);
       loadThreadHistory(newId);
+      showToast(`已派生分支会话: ${newId}`, 'success');
     } catch (err) {
-      alert(`派生分支失败: ${err.message}`);
+      showToast(`派生分支失败: ${err.message}`, 'error');
     }
   };
 
@@ -566,8 +597,9 @@ export default function App() {
         setCurrentThread('default');
         loadThreadHistory('default');
       }
+      showToast(`已关闭并归档会话: ${threadId}`, 'info');
     } catch (err) {
-      alert(`关闭会话失败: ${err.message}`);
+      showToast(`关闭会话失败: ${err.message}`, 'error');
     }
   };
 
@@ -579,8 +611,9 @@ export default function App() {
         setCurrentThreadMeta((prev) => ({ ...prev, title: newTitle }));
       }
       loadThreads();
+      showToast(`已重命名会话为: ${newTitle}`, 'success');
     } catch (err) {
-      alert(`重命名失败: ${err.message}`);
+      showToast(`重命名失败: ${err.message}`, 'error');
     }
   };
 
@@ -592,8 +625,9 @@ export default function App() {
         setCurrentThreadMeta((prev) => ({ ...prev, summary: newSummary }));
       }
       loadThreads();
+      showToast('已更新阶段摘要', 'success');
     } catch (err) {
-      alert(`设置摘要失败: ${err.message}`);
+      showToast(`设置摘要失败: ${err.message}`, 'error');
     }
   };
 
@@ -602,8 +636,9 @@ export default function App() {
     try {
       const res = await api.setPlanMode(nextState);
       setPlanActive(Boolean(res.plan_active));
+      showToast(`Plan Mode 已${res.plan_active ? '开启 (只读规划)' : '关闭'}`, 'info');
     } catch (err) {
-      alert(`切换 Plan Mode 失败: ${err.message}`);
+      showToast(`切换 Plan Mode 失败: ${err.message}`, 'error');
     }
   };
 
@@ -684,6 +719,7 @@ export default function App() {
             autoScroll={userSettings.auto_scroll}
             wordWrap={userSettings.word_wrap}
             fontSize={userSettings.font_size}
+            isLoadingHistory={isLoadingHistory}
           />
 
           <InputBar
@@ -728,8 +764,12 @@ export default function App() {
           if (newSettings.approval_policy) {
             setApprovalPolicy(newSettings.approval_policy);
           }
+          showToast('偏好设置已保存并生效', 'success', 2000);
         }}
       />
+
+      {/* Toast Notification Container */}
+      <Toast toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

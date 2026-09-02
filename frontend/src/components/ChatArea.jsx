@@ -13,6 +13,7 @@ export default function ChatArea({
   autoScroll = true,
   wordWrap = true,
   fontSize = 13,
+  isLoadingHistory = false,
 }) {
   const scrollRef = useRef(null);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
@@ -47,7 +48,13 @@ export default function ChatArea({
       ref={scrollRef}
       onScroll={handleScroll}
     >
-      {messages.length === 0 ? (
+      {isLoadingHistory ? (
+        <div className="history-loading-container" style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '32px 16px', alignItems: 'center' }}>
+          <div className="skeleton-line" style={{ width: '40%', height: '14px', borderRadius: '4px', background: 'var(--border-color)', opacity: 0.5, animation: 'pulse 1.5s infinite' }} />
+          <div className="skeleton-bubble" style={{ width: '80%', height: '48px', borderRadius: '8px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', opacity: 0.6 }} />
+          <div className="skeleton-bubble" style={{ width: '70%', height: '64px', borderRadius: '8px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', opacity: 0.6 }} />
+        </div>
+      ) : messages.length === 0 ? (
         <div className="welcome-container">
           <div className="welcome-icon-box">
             <Sparkles size={24} />
@@ -85,7 +92,7 @@ export default function ChatArea({
         <div className="messages-list">
           {messages.map((msg, index) => (
             <MessageItem
-              key={index}
+              key={msg.id || `msg_${index}`}
               message={msg}
               isLast={index === messages.length - 1}
               isGenerating={isGenerating}

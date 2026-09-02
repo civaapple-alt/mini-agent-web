@@ -90,6 +90,9 @@ uv run python cookbook/python-demo/04_steering_and_interrupt.py
 
 ### Demo 05: 工作流与状态检查点
 演示查询 `WorldState` 环境快照、开启/关闭只读探索的 `Plan Mode`，以及读取 `ThreadCheckpoint` 检查点。
+Goal Runtime 会在 App Server 启动时恢复持久化 Goal；本示例通过
+`thread/goal/updated` 获取自动续跑的 `turnId`，在启动时清理遗留 turn，并在结束时
+中断和清除本次 Goal，因而可以连续重复运行。
 ```bash
 uv run python cookbook/python-demo/05_workflows_and_inspection.py
 ```

@@ -12,7 +12,55 @@ from mini_agent import AppServerError, MiniAgentClient
 async def main():
     print("=== Demo 05: Workflows and Management APIs ===", flush=True)
 
-    async with MiniAgentClient(log_dir="logs") as client:
+    goal_turn_id: str | None = None
+    goal_turn_started = asyncio.Event()
+
+    async def observe_notification(notification: dict) -> None:
+        nonlocal goal_turn_id
+        if notification.get("method") != "thread/goal/updated":
+            return
+        data = notification.get("data", {})
+        turn_id = data.get("turnId")
+        if data.get("threadId") == "default" and turn_id:
+            goal_turn_id = str(turn_id)
+            goal_turn_started.set()
+
+    async with MiniAgentClient(
+        log_dir="logs", notification_handler=observe_notification
+    ) as client:
+
+        async def clear_goal_runtime(label: str) -> bool:
+            nonlocal goal_turn_id
+            current = await client.get_goal(thread_id="default")
+            if current.goal is None:
+                return False
+
+            if current.goal.status == "active":
+                if goal_turn_id is None:
+                    try:
+                        await asyncio.wait_for(goal_turn_started.wait(), timeout=10)
+                    except asyncio.TimeoutError:
+                        pass
+                if goal_turn_id is not None:
+                    try:
+                        await client.interrupt_turn(goal_turn_id, thread_id="default")
+                        await client.wait_for_turn(
+                            goal_turn_id, timeout=30, poll_interval=0.2
+                        )
+                    except AppServerError as err:
+                        message = str(err).lower()
+                        if (
+                            "no active turn" not in message
+                            and "not active" not in message
+                        ):
+                            raise
+
+            cleared = await client.clear_goal(thread_id="default")
+            goal_turn_id = None
+            goal_turn_started.clear()
+            print(f"[{label}] Goal Cleared: {cleared.cleared}", flush=True)
+            return cleared.cleared
+
         # 1. Initialize
         init_res = await client.initialize(profile="interactive")
         print(
@@ -20,6 +68,7 @@ async def main():
             flush=True,
         )
         runtime_thread_id = await client.start_thread()
+        await clear_goal_runtime("Startup cleanup")
         await client.start_thread("main-thread")
 
         # 2. Thread Lifecycle & Branching
@@ -80,6 +129,8 @@ async def main():
         # 6. Thread-owned Goal Runtime
         print("\n--- 5. Thread Goal Runtime ---", flush=True)
         try:
+            goal_turn_id = None
+            goal_turn_started.clear()
             goal_res = await client.set_goal(
                 objective="Implement High-Performance Caching Layer",
                 token_budget=4096,
@@ -99,6 +150,8 @@ async def main():
             )
         except AppServerError as err:
             print(f"(thread/goal error: {err})", flush=True)
+        finally:
+            await clear_goal_runtime("Shutdown cleanup")
 
         print("\n=== Demo 05 Completed Successfully ===", flush=True)
 

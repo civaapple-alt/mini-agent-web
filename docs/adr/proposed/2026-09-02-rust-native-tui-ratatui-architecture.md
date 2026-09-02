@@ -1,197 +1,291 @@
-# ADR: Native High-Performance Rust TUI for Mini Agent based on Ratatui, Tokio and Elm Architecture
+# ADR: Rust Native TUI for Mini Agent
 
 ## Status
+
 Proposed
 
 ## Date
+
 2026-09-02
+
+## Scope and Ownership
+
+本提案描述 Rust TUI 的架构和与 `mini-agent-app-server` 的接入边界。当前
+`mini-agent-web` 仓库没有 Rust TUI 源码；实现应归属拥有 Rust App Server 客户端
+与发布流水线的 Rust workspace（例如 `mini-agent-harness`），不在本仓库复制一套
+JSON-RPC 协议或安全执行器。`mini-agent-web/tui/` 继续作为 Python TUI 基线，直到
+Rust 客户端达到明确的功能和可用性门槛。
 
 ## Context
 
-随着 Mini Agent Harness（Rust Core / App Server）与 Web Studio（React 19 + FastAPI Gateway）的演进，开发者交互形态逐步成熟。目前终端场景存在两种实现：
-1. **Rust 原生 CLI REPL (`mini-agent-cli`)**：基于标准行式输入输出（Line-based REPL），体积轻量但缺乏全屏多窗格（Multi-pane）、流式思维折叠、工具树展开与实时交互看板能力；
-2. **Python TUI (`mini-agent-tui`)**：基于 `Rich` + `prompt_toolkit` + Python SDK 构建，通过 Stdio 管道直连 App Server（无需 Web Server / FastAPI 网关），开发迭代迅速；但需要完整的 Python 3.10+ 解释器环境与三方依赖库，且在纯 SSH、无 Python 运行时或极低资源环境（如嵌入式设备、轻量容器）中分发受限（冷启动 ~200ms，内存 ~45MB）。
+### 当前基线
 
-在 2026 年现代 AI 终端工程实践中（如 DeepSeek-TUI、Zerostack、K9s、Lazygit 等顶级终端工具），**“Tokio 异步双环 + Elm (TEA) 单向状态机 + Ratatui 帧渲染 + 细粒度沙箱与审批”** 已经成为行业标准。
+现有 Python TUI 位于 `tui/`，通过零依赖核心的 `mini-agent` SDK 连接 App Server，
+已经支持：
 
-为了提供极致性能、零环境依赖、冷启动 < 10ms、常驻内存 < 15MB 且支持全屏多窗格的终端 Agent 体验，我们提议构建 **Rust 原生高性能 TUI 客户端**。
+- Rich 输出、Thinking/文本/工具状态和截断提示；
+- `per_action`、`auto_approve`、`strict` 审批策略，以及会话级工具记忆；
+- `/steer`、中断、Plan/Goal、线程新建/切换/fork、历史读取、World/MCP/Git/文件
+  检索和非 TTY 降级；
+- SDK protocol version `1`、Thread/Turn 事件隔离、未知事件 `GenericEvent` 保留。
 
----
+Rust TUI 的价值不是再做一个模型客户端，而是给 SSH、无 Python 环境和资源受限
+场景提供全屏、多窗格、可持续交互的原生外壳。当前提案中的“Rust CLI 已有全屏
+REPL”“冷启动 10ms”“内存 15MB”等说法没有本仓库的测量证据，均不作为现状或
+保证；它们只能作为待验证的目标。
+
+### 设计目标
+
+1. 对 App Server 的协议和事件语义保持兼容，直接复用已有 Rust transport/client
+   抽象（若上游没有，则先补一个最小、可复用的 transport crate）。
+2. 在模型推理、工具执行、审批等待和网络断开期间，终端仍可重绘、滚动和退出。
+3. 将状态更新、渲染和副作用分开，使事件乱序、重复、截断和恢复都有明确行为。
+4. 通过 PTY/fixture 测试覆盖键盘、窗口大小、中文宽字符、非 TTY 和终端恢复。
+
+### 非目标
+
+- 不在 TUI 内嵌模型推理、重做 Core、重做 MCP 执行器或实现另一套沙箱；
+- 不追求与 Web Studio 像素级一致；
+- 不把 `Arc<Mutex<AppState>>` 扩散到整个应用，也不把审批 responder 存入可持久化
+  的 UI 状态；
+- 不因 Rust TUI 的需要修改 protocol version `1` 的公共字段。新能力先走已有方法
+  或单独的协议提案。
 
 ## Decision
 
-### 1. 核心技术栈选型
+### 1. 技术栈与依赖策略
 
-| 逻辑分层 | 选型技术 / Crate | 选型理由与核心优势 |
+以 Rust workspace 已锁定的兼容版本为准，不在本 ADR 固定一个脱离上游的版本号：
+
+| 层 | 选型 | 约束 |
 | :--- | :--- | :--- |
-| **TUI 渲染引擎** | `ratatui` (0.28+) | 行业绝对标准。提供丰富组件（Block、Paragraph、List、Tree、Tabs、Gauge 等），支持跨平台与双缓冲防闪烁。 |
-| **终端事件与底座** | `crossterm` (0.28+) | 跨平台捕获按键、鼠标、窗口 Resize 事件，支持 Raw Mode 与 Alternate Screen。 |
-| **异步运行时** | `tokio` (1.x, multi-thread) | 驱动网络 I/O、SSE 流式 Token 接收、子进程与 MCP 插件调度。 |
-| **状态机模式** | **Elm / TEA (The Elm Architecture)** | 单向数据流、纯函数状态转移（`update(state, msg)`），彻底避免 `Arc<Mutex<State>>` 死锁与状态漂移。 |
-| **通信通道** | `tokio::sync::mpsc` + `oneshot` | 双环解耦通信：MPSC 传递流式事件与按键指令，Oneshot 实现非阻塞交互审批通道。 |
-| **多行编辑与输入** | `tui-textarea` / `tui-input` | 专门处理多行换行（Shift+Enter）、光标移动、历史翻页与中文 IME 候选词输入。 |
-| **流式 Markdown 解析** | `pulldown-cmark` + 行级增量缓存 | 逐 Token 增量语法高亮与折叠，避免全屏全量重解析造成的终端跳动与闪烁。 |
+| 终端绘制 | `ratatui` | 双缓冲绘制、组件布局和可测试的纯渲染函数 |
+| 终端事件 | `crossterm` | Raw mode、alternate screen、resize、鼠标和跨平台输入 |
+| 异步运行时 | workspace 现有 Tokio | 只承载 I/O、定时器、子进程和 channel；不在 render 函数阻塞 |
+| 输入编辑 | 现有兼容的 textarea/input crate | 中文输入、历史、粘贴和多行行为先以目标平台验证 |
+| 协议 | 共享 App Server client/transport | JSONL Stdio、protocol version `1`、request/notification 分流 |
 
----
+新增依赖必须说明体积、平台支持和维护状态；不为单一 Markdown 语法或视觉效果
+引入重量级运行时。
 
-### 2. 双环解耦架构（Dual-Loop Architecture）
+### 2. 单一 Tokio 驱动的 UI/Agent 双环
 
-UI 渲染主线程与后台 Agent Worker 完全隔离，保证大模型慢 I/O 与长耗时工具执行时，终端界面依然保持 **60 FPS / 实时无阻断响应**：
+应用只有一个负责终端所有权的 UI task；Agent transport、stderr、审批和重连在
+后台 task 中运行，通过 bounded channel 发送到 UI。UI task 每个 tick 处理有限数量
+输入/通知，然后执行 `update` 和 `render`：
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                       UI 渲染主线程 (Main Event Loop)                        │
-│                                                                             │
-│  crossterm (键盘/窗口事件)                                                   │
-│         │                                                                   │
-│         ▼                                                                   │
-│  ┌──────────────┐    纯函数状态转移     ┌──────────────┐   帧缓冲绘制 (60fps) │
-│  │   AppEvent   ├────────────────────>│   AppState   ├─────────────────┐    │
-│  └──────────────┘ update(state, msg)  └──────▲───────┘ ratatui::render │    │
-│         │ (用户输入/Steer/审批决策)          │                          │    │
-└─────────┼────────────────────────────────────┼──────────────────────────┼────┘
-          │ tokio::sync::mpsc (UserCmd)        │ tokio::sync::mpsc (StateDelta)
-┌─────────┼────────────────────────────────────┼──────────────────────────┼────┘
-│         ▼                                    │                          │    │
-│  ┌───────────────────────────────────────────┴───────────────────────┐  │    │
-│  │                   后台 Agent 异步运行时 (Tokio Tasks)              │  │    │
-│  │                                                                   │  │    │
-│  │   ┌─────────────────────────┐       ┌─────────────────────────┐   │  │    │
-│  │   │   Stream Event Worker   │       │   Tool Executor Worker  │   │  │    │
-│  │   │ (Stdio JSON-RPC Client) │       │   (MCP / 本地安全沙箱)   │   │  │    │
-│  │   └────────────┬────────────┘       └────────────┬────────────┘   │  │    │
-│  └────────────────┼─────────────────────────────────┼────────────────┘  │    │
-│                   ▼                                 ▼                   │    │
-│     ┌───────────────────────────┐     ┌───────────────────────────┐     │    │
-│     │   mini-agent-app-server   │     │  Linux Landlock / Win Job │     │    │
-│     │ (Stdio JSON-RPC 2.0 管道) │     │      (子进程沙箱隔离)     │     │    │
-│     └───────────────────────────┘     └───────────────────────────┘     │    │
-└─────────────────────────────────────────────────────────────────────────┴────┘
+crossterm input ─┐
+                 ├─> UiMessage ─> update(AppState) ─> ratatui render
+App Server event ┘          ▲
+                            │
+             bounded channel│
+                            │
+     JSON-RPC reader ─> ProtocolAdapter ─> approval broker / reconnect
 ```
 
----
+建议默认 30 FPS，并在有输入或事件时即时重绘；60 FPS 只有在基准证明有必要时才
+启用。Token delta 和大型工具输出按窗口合并，队列溢出时丢弃中间 delta、保留最终
+结算和 `resync_required`，不能静默伪造完整文本。
 
-### 3. Elm 状态机模式（TEA）在 Rust 中的设计
+### 3. 数据型事件、确定性 reducer 和副作用命令
+
+UI 事件必须是可记录、可测试的数据，不携带 Tokio channel sender。示意模型：
 
 ```rust
-// 1. 统一应用事件
-pub enum AppEvent {
-    // 终端用户交互
-    Key(crossterm::event::KeyEvent),
-    Resize(u16, u16),
-    
-    // 来自 App Server 的推流协议事件
-    TurnStarted { turn_id: String },
-    ReasoningDelta(String),
-    TextDelta(String),
-    ToolStarted { call_id: String, tool: String, args: serde_json::Value },
-    ToolFinished { call_id: String, output: String, is_error: bool },
-    TurnFinished { stop_reason: String },
-    
-    // 安全审批请求与挂起通道
-    ApprovalRequest {
-        request_id: String,
-        action: String,
-        responder: tokio::sync::oneshot::Sender<bool>,
-    },
-    
-    // 系统错误与通知
-    Toast(String, ToastLevel),
+enum UiMessage {
+    Key(KeyEvent),
+    Resize { width: u16, height: u16 },
+    Agent(AgentEnvelope),
+    ApprovalRequested(ApprovalView),
+    Transport(TransportStatus),
+    Tick,
 }
 
-// 2. 集中化应用状态
-pub struct AppState {
-    pub current_thread: String,
-    pub messages: Vec<UiMessage>,
-    pub input: TextArea<'static>,
-    pub is_generating: bool,
-    pub active_turn_id: Option<String>,
-    pub pending_approval: Option<PendingApprovalState>,
-    pub side_panel_tab: SidePanelTab, // World / Plan / Goal / Git / MCP
-    pub scroll_offset: usize,
-    pub auto_scroll: bool,
-    pub theme: TuiTheme,
-}
-
-// 3. 无锁纯函数状态转移
-pub fn update(state: &mut AppState, event: AppEvent) -> Option<AppCommand> {
-    match event {
-        AppEvent::ReasoningDelta(delta) => {
-            state.append_reasoning(&delta);
-            None
-        }
-        AppEvent::TextDelta(delta) => {
-            state.append_text(&delta);
-            None
-        }
-        AppEvent::ApprovalRequest { request_id, action, responder } => {
-            state.pending_approval = Some(PendingApprovalState { request_id, action, responder });
-            None
-        }
-        AppEvent::Key(key) if state.pending_approval.is_some() => {
-            // 审批模态框按键拦截 (y: 放行 / n: 拒绝)
-            handle_approval_key(state, key)
-        }
-        AppEvent::Key(key) => {
-            handle_normal_key(state, key)
-        }
-        _ => None,
-    }
+enum UiCommand {
+    StartTurn { thread_id: String, prompt: String },
+    Steer { thread_id: String, turn_id: String, text: String },
+    Interrupt { thread_id: String, turn_id: String },
+    ResolveApproval { request_id: String, decision: ApprovalDecision },
 }
 ```
 
----
+`update` 根据 `UiMessage` 修改内存状态并返回 `UiCommand`；命令由 effect runner
+执行，结果再次作为消息回到 UI。所谓 TEA 在此处指单向、可复演的数据流，不要求
+把每个状态字段包装成真正的函数式不可变对象。
 
-### 4. 关键深水区痛点与解决方案
+状态至少包含：当前 Project/Thread、活动 Turn、有限消息 ring buffer、当前输入、
+待审批请求表、滚动/折叠状态、布局模式、连接状态、最近错误和资源上限。禁止只用
+一个 `Option<PendingApproval>`，因为多连接或多个工具可能同时产生请求；每个请求
+必须保留 request ID、工具名、脱敏参数、创建时间和 settled 状态。
 
-#### A. 流式 Markdown 增量渲染与防闪烁
-* **问题**：Agent 逐 Token 吐出 Markdown 内容。每次收到 Token 时若直接全量重新解析整个消息历史，会导致 CPU 暴涨、滚动位置跳动和终端界面剧烈闪烁。
-* **方案**：
-  1. **行缓冲机制（Line-buffering）**：已闭合换行的历史行转换为不可变的 `ratatui::text::Line<'static>` 缓存池；
-  2. **活动行增量修补**：仅对当前正在生成的最后一行进行流式高亮修补；
-  3. **代码块状态机**：维护一个轻量扫描器记录当前是否处于 ```` ``` ```` 代码块内部，代码块内应用语法高亮样式，代码块闭合后固化。
+所有 `AgentEnvelope` 先按 `project/thread/turn` 校验，再按 sequence 去重；切换
+Thread 时清理活动流的 UI 投影，但不取消其他 Thread 的后台任务，除非用户明确
+中断。
 
-#### B. 异步安全审批与实时纠偏（Human-in-the-Loop & Steer）
-* **审批挂起**：当工具涉及写文件或执行 Shell 时，后台 Worker 创建 `oneshot::channel` 并发送 `AppEvent::ApprovalRequest`；后台任务进入 `rx.await` 优雅挂起，不占用 CPU 且不阻塞 UI。
-* **即时决议**：用户在 TUI 模态框中按下 `y`（允许）或 `n`（拒绝）后，主线程通过 `responder.send(decision)` 瞬间恢复后台执行。
-* **实时纠偏（`/steer`）**：在 Agent 运行中，用户直接输入 `/steer <指令>` 并回车，主线程向后台发送抢占信号，App Server 即可在下一个 Tool Step 注入引导上下文。
+### 4. App Server 接入和协议映射
 
-#### C. 多窗格布局（Multi-Pane Layout）与响应式适配
-* 采用 `ratatui::layout::Layout` 弹性划分：
-  * **主视窗（左/中）**：流式思维链（可折叠）、文本打字机与工具调用树卡片；
-  * **辅助侧栏（右）**：Tab 切换查看 WorldState 环境探测、Plan 计划树、Goal 进度条与 Git 状态；
-  * **底部区域**：多行输入框、模式切换器（Interactive / Auto / Ask）与审批悬浮 Dock；
-  * **极小终端适配**：当终端列宽 `< 100` 或行高 `< 25` 时，自动收起右侧栏并转为底部单行状态提示。
+Rust TUI 作为 Stdio JSON-RPC 客户端，使用以下生命周期：
 
----
+1. 启动单一 App Server 子进程，显式隔离 stdin/stdout/stderr；stdout 只由一个
+   reader 解析 JSONL，stderr 进入有界日志缓冲；
+2. 发送 `initialize`，协商 protocol version `1` 和能力，失败时给出可行动错误；
+3. 通过 `thread/start`、`thread/list`、`thread/read`、`thread/fork`、`thread/close`
+   和 `thread/resume`（仅当语义可用）管理会话；
+4. 通过 `turn/start`、`turn/steer`、`turn/interrupt` 和通知 `turn/event` 运行轮次；
+5. 通过 SDK/transport 的 approval broker 转发 `approval/request` 和
+   `approval/respond`，不在 TUI 自己执行工具；
+6. 读到 `turn_finished` 或 `run_failed` 后保留结算状态，再允许新的 turn。
 
-### 5. 客户端接入方案：对齐 App Server 协议
+事件适配器必须覆盖当前 SDK fixture 中的生命周期：turn/run/model、reasoning/text
+delta、model response、tool started/finished、context compaction、run finished、
+turn finished 和 structured run failure。未知 `type` 保存原始有界 JSON 并显示
+“未知事件”，不能让 reader 崩溃。
 
-Rust TUI **作为 `mini-agent-app-server` 的原生 Stdio JSON-RPC 客户端**接入，而非直接内嵌重型内核：
-1. **协议完全统一**：复用同一套 Stdio JSON-RPC 2.0 规范（`turn/start`、`turn/steer`、`turn/interrupt`、`thread/checkpoint`）；
-2. **会话无缝共享**：在 Rust TUI 中开启的会话，其 Checkpoint 与项目状态持久化在 `~/.mini-agent/state.json` 中，随时可以无缝切到 Web Studio 或 IDE 插件中继续工作；
-3. **极简代码行数控制**：符合 `mini-agent-harness` 严苛的代码行数预算（TUI 客户端作为独立可插拔外壳，不挤占 Core 运行时代金券）。
+### 5. 渲染策略：可读优先、增量有界
 
----
+主布局包含消息区、输入区和可收起的状态侧栏；侧栏只展示 World、Plan、Goal、Git
+和 MCP 的快照，不在每帧主动发起同步 RPC。终端宽度不足时采用明确的布局降级：
+
+- 宽度不足以容纳侧栏时收起侧栏；
+- 高度不足时只保留最近状态、审批和输入；
+- 极小终端仍能显示错误和退出提示，不让布局 panic。
+
+Markdown 采用两阶段渲染：已闭合的行进入不可变缓存，当前行以纯文本/轻量标记
+渲染；代码块只在 fence 状态确定后做语法着色。大段历史按行数和字节数截断，用户
+可以通过 `/history` 或 `thread/read` 查看有界回放。不要在每个 token 到达时重解析
+全部历史，也不要把未闭合 Markdown 当成安全或结构化数据。
+
+### 6. 审批、Steer、中断与终端恢复
+
+- `per_action`、`auto_approve`、`strict` 的策略含义与 Python TUI 一致；Remember
+  只保存在当前 UI 会话，除非底层明确提供持久化策略。
+- 审批弹层显示 request ID、工具、脱敏参数、Project/Thread/Turn 和超时状态；
+  `y`/`n`/`a` 是快捷键，同时提供可发现的完整按键说明。UI 只发结构化决策。
+- `/steer` 必须绑定当前活动 Turn；空闲时作为 follow-up 或显示“没有活动 Turn”，
+  不能把 steer 伪装成已执行。
+- `Ctrl-C` 分三种情况：输入非空先清空；运行中发送协作中断并等待结算；空闲时
+  退出。第二次中断才考虑强制终止，并明确显示可能未结算。
+- Raw mode、alternate screen、鼠标和 panic hook 都必须有 guard；正常退出、错误、
+  `SIGINT`/窗口关闭和子进程崩溃都恢复终端。恢复失败时将诊断写入 stderr/日志。
+
+### 7. 失败恢复和可观测性
+
+App Server 退出、JSON 解析失败、请求超时、审批超时和协议版本不匹配是不同状态，
+分别展示原因和下一步。重连采用退避并限制次数；重连后先重新读取 Thread checkpoint
+和 active state，再接受新事件。已显示的文本标记为 stale，不能在无快照时继续追加
+到不确定的消息。
+
+日志默认不打印完整 prompt、工具参数、环境变量或 secret；支持用户开启有界 debug
+日志。每轮显示 status、steps、stop reason 和 usage（若有），与 Python TUI 的
+telemetry 语义对齐。
+
+## Module Allocation
+
+实现时建议按职责拆分，而不是把所有逻辑放进 `main.rs`：
+
+| 模块 | 责任 |
+| :--- | :--- |
+| `app_state` | 有界 UI 状态、消息/工具/审批视图模型 |
+| `update` | `UiMessage -> (AppState, UiCommand)` 的确定性转移 |
+| `effects` | 启动/停止 transport、执行 command、重连和超时 |
+| `protocol` | 共享 client 或最小 JSON-RPC 适配、事件身份/sequence 校验 |
+| `render` | ratatui 布局、窄屏降级、文本和工具卡片渲染 |
+| `input` | crossterm/prompt 输入、快捷键、粘贴和终端能力探测 |
+| `commands` | `/help`、`/steer`、`/plan`、`/goal`、`/fork` 等命令解析 |
+| `terminal_guard` | raw/alternate screen/panic/signal 的资源恢复 |
+
+共享的 App Server client、事件类型或审批抽象优先放到已有 Rust crate；不要将
+`mini-agent-web` 的 Python SDK 代码机械翻译成第二套不共享实现。
+
+## Performance and Compatibility Targets
+
+以下是 reference machine 上的验收目标，不是跨平台保证：
+
+- 处理 1,000 条/秒的合并后 delta 时，UI 仍能以至少 20 FPS 重绘，且队列有界；
+- 10,000 行历史和大工具输出不会无限增长内存，截断状态可见；
+- TTY 与非 TTY 都能安全退出，Windows Terminal、常见 Unix terminal 和 SSH 至少
+  有 smoke coverage；
+- 启动耗时、二进制体积和常驻内存各自测量，并报告是否包含 App Server 子进程。
+  不在未测量前宣称“单一 8MB 二进制”或“<10ms 冷启动”；
+- 中英文混排、emoji、窄宽终端和 resize 不产生 panic 或不可恢复的光标错位。
+
+## Security Considerations
+
+- TUI 不是工具执行安全边界；审批和沙箱仍由 App Server/执行器负责。
+- 所有路径和工具参数仅展示为脱敏、有限长度的文本；TUI 不自行拼接 shell 命令。
+- 子进程必须显式设置 stdin 策略并继承与 Python 客户端一致的非交互环境，避免 pager
+  或子进程抢读 JSON-RPC 管道。
+- 日志、history 和回放文件不能默认保存 secret；用户选择复制时也要明确复制的
+  内容范围。
+- 多 Thread 事件隔离和 sequence 去重是安全/正确性约束，不只是 UI 优化。
+
+## Testing and Acceptance Evidence
+
+交付每个阶段至少提供：
+
+1. reducer 单元测试：事件顺序、重复/乱序、未知事件、delta 合并、队列溢出、审批
+   多请求、Thread 切换和窄屏布局；
+2. 协议 fixture 测试：复用 `06_protocol_compatibility.py` 的 0.6.0 事件样本，并
+   验证 protocol version、Turn/Thread 过滤和错误映射；
+3. mock App Server 集成测试：启动、流式 turn、steer、interrupt、approval、崩溃
+   重连、checkpoint 回放和 fork；禁止默认连接真实 Provider；
+4. PTY 测试或人工脚本：raw/alternate screen 恢复、Ctrl-C 三态、resize、中文输入、
+   管道重定向和 Unicode 宽度；
+5. 在 Rust workspace 中运行 formatter、clippy、项目测试和目标平台构建；同时继续
+   运行本仓库 Python TUI/SDK 测试，证明共享协议没有回归。
+
+## Roadmap
+
+### M0 — Ownership and protocol adapter
+
+- 确认 Rust crate 归属、发布目标和现有 App Server client 是否可复用；
+- 先实现单独的 JSONL mock transport、事件 identity/sequence 校验和 fixture；
+- 固定依赖、资源上限、错误分类和终端恢复策略。
+
+### M1 — Terminal shell and read-only stream
+
+- 完成 terminal guard、ratatui 布局、消息/Thinking/Tool 渲染和窄屏降级；
+- 接入 initialize、thread/read 和只读流式事件；
+- 达到无 Provider 的 mock/PTY 验收后再启用真实 App Server。
+
+### M2 — Interactive controls
+
+- 接入 turn start、Steer、协作中断、审批队列表和 `/help`/`/threads`/`/fork`；
+- 与 Python TUI 对齐策略、状态和 telemetry；
+- 增加断线重连、checkpoint 回放和非 TTY 行式降级。
+
+### M3 — Workflow and distribution
+
+- 接入 Plan/Goal/World/MCP/Git 快照和明确的 capability fallback；
+- 完成 Windows/macOS/Linux 目标构建、签名/分发方案和性能报告；
+- Rust TUI 达到 Python TUI 核心能力等价后，才讨论将其设为默认入口。
 
 ## Consequences
 
-### 优势 (Pros)
-1. **极限轻量与无依赖**：编译为单一静态二进制文件（~8 MB），零 Python / Node.js 运行时依赖，`cargo install` 或 1-click curl 即可在任何 Linux / macOS / Windows 环境运行；
-2. **超快响应与低内存**：冷启动 `< 10 ms`，运行时内存占用仅 **8 MB ~ 15 MB**，60 FPS 流畅无卡顿；
-3. **无缝多端协同**：基于 App Server 标准协议，与 Web Studio 共享相同的 Thread CAS 状态机与 MCP 插件体系。
+### Positive
 
-### 权衡与挑战 (Cons & Mitigations)
-1. **Markdown 渲染能力受限**：终端无法像浏览器那样原生渲染复杂 HTML/SVG 图表。
-   * *缓解措施*：针对图表降级为 ASCII/Unicode 树形渲染，数学公式降级为规范文本展示。
-2. **终端兼容性差异**：不同终端模拟器（Windows Terminal、iTerm2、Alacritty、Kitty、PuTTY）对颜色、鼠标及按键支持度不一。
-   * *缓解措施*：基于 `crossterm` 标准能力层，默认启用通用 16/256 色回退策略。
+- 以 App Server 为唯一执行与协议来源，减少 Web、Python、Rust 客户端之间的语义漂移；
+- bounded channels、可复演 reducer 和 terminal guard 能把流式故障变成可诊断状态；
+- Rust 二进制可覆盖无 Python 的 SSH/容器场景，同时保留现有 Python TUI 作为兼容基线。
 
----
+### Trade-offs
 
-## Implementation Roadmap
+- 需要维护 Rust workspace 的跨平台终端和打包测试；
+- full-screen UI 的输入法、宽字符和 terminal emulator 差异明显，测试成本高于 Rich
+  行式输出；
+- 为了不阻塞 UI，事件合并会增加一点显示延迟，且队列超限时必须依赖 checkpoint
+  resync；
+- 在 App Server 不支持历史选择 resume 或文件快照时，TUI 只能准确展示会话状态，
+  不能承诺磁盘回滚。
 
-- [ ] **Phase 1: TEA 状态机与 Ratatui 骨架**：完成 `AppEvent`、`AppState` 与多窗格主布局渲染。
-- [ ] **Phase 2: App Server JSON-RPC 管道接入**：实现流式 Token、Thinking 过程与 Tool Call 事件的高性能增量解析与更新。
-- [ ] **Phase 3: 审批模态框与快捷指令**：实现内联审批（`y/n`）、`/steer` 纠偏、`/plan` 切换与 `/fork` 分支。
-- [ ] **Phase 4: 打包与分发**：支持直接通过 `mini-agent-cli repl --tui` 启动或作为独立 `mini-agent-tui` 二进制运行。
+## Reconsideration Triggers
+
+以下情况出现时，暂停扩大 Rust TUI 范围并重新评审：
+
+1. Rust client 无法共享协议/审批实现，导致与 Python SDK 的字段或事件语义持续分叉；
+2. 目标平台无法稳定恢复 terminal state，或 resource budget 只能靠无界队列维持；
+3. 实际用户主要在已有 Web/Tauri 环境使用，Rust TUI 的维护成本超过 SSH/无 Python
+   场景带来的收益；
+4. 需要新增公共 App Server 方法、历史 checkpoint 语义或文件快照时，先建立对应的
+   独立协议 ADR。

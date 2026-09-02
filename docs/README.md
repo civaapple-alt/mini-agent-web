@@ -28,9 +28,9 @@
 | :--- | :---: | :--- | :--- |
 | 2026-08-31 | Accepted | [Python SDK Architecture & App Server Integration](adr/2026-08-31-python-sdk-architecture-and-app-server-integration.md) | 建立官方 `mini-agent` Python SDK，采用强类型事件体系与异步上下文管理器，对齐 Codex 架构分层 |
 | 2026-08-31 | Accepted | [FastAPI Gateway & Web Studio UI](adr/2026-08-31-fastapi-gateway-and-web-studio-ui.md) | 基于 FastAPI、WebSocket/SSE 与零构建轻量 Web 前端构建 Web Studio 交互控制台与终端 TUI |
-| 2026-09-02 | Proposed | [Tauri Desktop App & App Server Integration](adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md) | 基于 Tauri 2.0 与 App Server 构建轻量原生桌面应用，提供全局快捷唤醒与原生审批通知 |
-| 2026-09-02 | Proposed | [Rust Native TUI Architecture](adr/proposed/2026-09-02-rust-native-tui-ratatui-architecture.md) | 基于 Ratatui、Tokio 异步双环与 Elm (TEA) 架构构建零依赖、高性能 (< 15MB 内存) 的原生全屏 TUI 终端客户端 |
-| 2026-09-02 | Proposed | [Local Web Studio Evolution & Roadmap](adr/proposed/2026-09-02-local-web-studio-evolution-and-roadmap.md) | 规划 Local Web Studio 工业级演进：Monaco Diff 变更审查、流式 Artifact 状态机、本地端口预览与 Goal DAG 看板 |
+| 2026-09-02 | Proposed | [Tauri Desktop Shell for Mini Agent](adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md) | 以 sidecar-first 方式复用 React UI，规划桌面 transport、窗口/托盘、通知、工作区约束与跨平台 fallback |
+| 2026-09-02 | Proposed | [Rust Native TUI for Mini Agent](adr/proposed/2026-09-02-rust-native-tui-ratatui-architecture.md) | 规划由 Rust workspace 负责的 Ratatui 全屏 TUI，明确 App Server 复用、TEA reducer、终端恢复、性能测量与测试门槛 |
+| 2026-09-02 | Proposed | [Local Web Studio Evolution](adr/proposed/2026-09-02-local-web-studio-evolution-and-roadmap.md) | 分阶段交付有界的 Diff/Artifact、工作区树、loopback 预览、Goal 投影、Mention、预算提示与结构化审批 |
 
 ---
 

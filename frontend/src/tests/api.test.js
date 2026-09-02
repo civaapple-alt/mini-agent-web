@@ -1,0 +1,114 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { api, createAgentWebSocket } from '../api.js';
+
+test('api client methods construct expected fetch endpoints and payloads', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, options });
+    if (url.includes('/api/threads') && options.method === 'POST') {
+      return {
+        ok: true,
+        json: async () => ({ thread_id: 't-123', title: 'Test Thread' }),
+      };
+    }
+    if (url.includes('/api/settings') && options.method === 'POST') {
+      return {
+        ok: true,
+        json: async () => ({
+          settings: { profile: 'auto', approval_policy: 'auto_approve' },
+        }),
+      };
+    }
+    if (url.includes('/api/approval/respond')) {
+      return {
+        ok: true,
+        json: async () => ({ status: 'resolved' }),
+      };
+    }
+    return {
+      ok: true,
+      json: async () => ({ success: true }),
+    };
+  };
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  // 1. Thread APIs
+  const startRes = await api.startThread('t-123', 'Test Thread');
+  assert.equal(startRes.thread_id, 't-123');
+  assert.equal(calls[0].url, '/api/threads');
+  assert.equal(JSON.parse(calls[0].options.body).title, 'Test Thread');
+
+  // 2. Settings APIs
+  const setRes = await api.updateSettings({ profile: 'auto' });
+  assert.equal(setRes.settings.profile, 'auto');
+
+  // 3. Approval response
+  const appRes = await api.respondApproval('req-1', 'allow', '', true);
+  assert.equal(appRes.status, 'resolved');
+  const lastCall = calls[calls.length - 1];
+  const parsedBody = JSON.parse(lastCall.options.body);
+  assert.equal(parsedBody.request_id, 'req-1');
+  assert.equal(parsedBody.decision, 'allow');
+  assert.equal(parsedBody.remember, true);
+});
+
+test('createAgentWebSocket provides safe send and isOpen status', (t) => {
+  // Mock WebSocket class
+  class MockWebSocket {
+    static OPEN = 1;
+    static CLOSED = 3;
+
+    constructor(url) {
+      this.url = url;
+      this.readyState = MockWebSocket.OPEN;
+      this.sentData = [];
+      setTimeout(() => {
+        if (this.onopen) this.onopen();
+      }, 0);
+    }
+
+    send(data) {
+      this.sentData.push(data);
+    }
+
+    close() {
+      this.readyState = MockWebSocket.CLOSED;
+      if (this.onclose) this.onclose();
+    }
+  }
+
+  const originalWS = globalThis.WebSocket;
+  const originalLocation = globalThis.window?.location;
+  globalThis.WebSocket = MockWebSocket;
+  globalThis.window = {
+    location: { protocol: 'http:', host: 'localhost:8000' },
+  };
+
+  t.after(() => {
+    globalThis.WebSocket = originalWS;
+    globalThis.window = originalLocation;
+  });
+
+  let opened = false;
+  const client = createAgentWebSocket(
+    () => {},
+    () => {
+      opened = true;
+    }
+  );
+
+  assert.equal(client.isOpen(), true);
+  const success = client.send({ action: 'ping' });
+  assert.equal(success, true);
+
+  client.close();
+  assert.equal(client.isOpen(), false);
+  const fail = client.send({ action: 'ping' });
+  assert.equal(fail, false);
+});

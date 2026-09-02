@@ -285,9 +285,13 @@ async def test_handle_slash_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     assert state.approval_policy == "auto_approve"
 
     # 3. /profile switch
+    state.runtime_thread_id = "runtime-thread"
     handled = await handle_slash_command("/profile auto", state, mock_client)
     assert handled is True
     assert state.profile == "auto"
+    mock_client.set_collaboration_mode.assert_awaited_once_with(
+        "default", thread_id="runtime-thread"
+    )
 
     # 4. /clear-approvals
     state.remembered_approvals.add("shell")

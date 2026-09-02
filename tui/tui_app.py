@@ -107,7 +107,9 @@ async def run_tui(state: TUIState) -> None:
         console.print(
             f"[green]✓ Connected to {init_res.get('serverName')} v{init_res.get('serverVersion')} (Profile: {state.profile})[/green]\n"
         )
-        await client.start_thread(state.current_thread_id)
+        await client.start_thread(state.runtime_thread_id)
+        if state.current_thread_id != state.runtime_thread_id:
+            await client.start_thread(state.current_thread_id)
 
         async def _ensure_connected() -> None:
             if not client.is_running:
@@ -262,8 +264,8 @@ def main() -> None:
         "-t",
         "--thread",
         dest="thread_id",
-        default="tui-session",
-        help="Initial conversation thread ID (default: tui-session)",
+        default="default",
+        help="Initial conversation thread ID (default: default)",
     )
 
     args = parser.parse_args()

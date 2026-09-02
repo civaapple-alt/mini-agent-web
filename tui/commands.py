@@ -408,14 +408,22 @@ async def handle_slash_command(
         if len(parts) > 1:
             target_profile = parts[1].strip().lower()
             if target_profile in ("interactive", "auto", "ask"):
-                state.profile = target_profile
-                if target_profile == "ask":
-                    await client.set_collaboration_mode("plan")
+                try:
+                    if target_profile == "ask":
+                        await client.set_collaboration_mode(
+                            "plan", thread_id=state.runtime_thread_id
+                        )
+                    else:
+                        await client.set_collaboration_mode(
+                            "default", thread_id=state.runtime_thread_id
+                        )
+                except Exception as err:  # noqa: BLE001
+                    console.print(f"[red]Failed to switch profile: {err}[/red]")
                 else:
-                    await client.set_collaboration_mode("default")
-                console.print(
-                    f"[green]✓ System Profile switched to: [bold]{state.profile}[/bold][/green]"
-                )
+                    state.profile = target_profile
+                    console.print(
+                        f"[green]✓ System Profile switched to: [bold]{state.profile}[/bold][/green]"
+                    )
             else:
                 console.print(
                     "[yellow]Invalid profile. Choose from: interactive, auto, ask[/yellow]"
@@ -482,19 +490,27 @@ async def handle_slash_command(
         if len(parts) > 1:
             arg = parts[1].strip().lower()
             if arg in ("on", "true", "1", "enable"):
-                res = await client.set_collaboration_mode("plan")
+                res = await client.set_collaboration_mode(
+                    "plan", thread_id=state.runtime_thread_id
+                )
             elif arg in ("off", "false", "0", "disable"):
-                res = await client.set_collaboration_mode("default")
+                res = await client.set_collaboration_mode(
+                    "default", thread_id=state.runtime_thread_id
+                )
             else:
                 wf = await client.get_workflow_state()
                 next_mode = (
                     "default" if wf.collaboration_mode.mode == "plan" else "plan"
                 )
-                res = await client.set_collaboration_mode(next_mode)
+                res = await client.set_collaboration_mode(
+                    next_mode, thread_id=state.runtime_thread_id
+                )
         else:
             wf = await client.get_workflow_state()
             next_mode = "default" if wf.collaboration_mode.mode == "plan" else "plan"
-            res = await client.set_collaboration_mode(next_mode)
+            res = await client.set_collaboration_mode(
+                next_mode, thread_id=state.runtime_thread_id
+            )
         active = res.collaboration_mode.mode == "plan"
         console.print(
             f"[yellow]Plan Mode is now: {'ACTIVE (Read-Only 探索模式)' if active else 'OFF'}[/yellow]"
@@ -505,7 +521,9 @@ async def handle_slash_command(
         parts = text.split(maxsplit=1)
         if len(parts) > 1:
             target_goal = parts[1].strip()
-            res = await client.set_goal(objective=target_goal)
+            res = await client.set_goal(
+                objective=target_goal, thread_id=state.runtime_thread_id
+            )
             console.print(
                 f"[green]✓ Thread Goal set ({res.goal.thread_id}): [bold]{res.goal.objective}[/bold]\n"
                 f"Status: {res.goal.status} | Token budget: {res.goal.token_budget or 'unlimited'}[/green]"

@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cookbook Demo 05 rerun safety**: observes Goal Runtime `turnId` notifications,
   interrupts resumed automatic turns, and clears Goal state during startup and
   shutdown so a previous run cannot block `thread/start` on the next run.
+- **TUI workflow thread binding**: routes `/profile`, `/plan`, and `/goal` to
+  the App Server's bound runtime Thread while preserving independently switchable
+  conversation threads.
 
 ---
 

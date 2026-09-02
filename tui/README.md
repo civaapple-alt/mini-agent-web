@@ -69,7 +69,12 @@ uv run mini-agent-tui --profile auto --policy auto_approve --effort high --threa
 | `--profile` | `-p` | `interactive`, `auto`, `ask` | `interactive` | 启动系统 Profile |
 | `--policy` / `--approval-policy` | `-a` | `per_action`, `auto_approve`, `strict` | `per_action` | 工具安全审批策略 |
 | `--effort` | `-e` | `low`, `medium`, `high` | `medium` | 模型思考链强度 |
-| `--thread` | `-t` | `<字符串>` | `tui-session` | 初始会话线程 ID |
+| `--thread` | `-t` | `<字符串>` | `default` | 初始会话线程 ID |
+
+Bundled App Server 0.7.0 binds `thread/settings/update` and Goal Runtime to the
+`default` runtime Thread. The TUI may still use `--thread` or `/switch` for
+conversation history; `/profile`, `/plan`, and `/goal` explicitly target the
+bound runtime Thread so switching conversations does not break workflow control.
 
 ---
 
@@ -77,8 +82,8 @@ uv run mini-agent-tui --profile auto --policy auto_approve --effort high --threa
 
 | 分类 | 命令 / 格式 | 功能说明 |
 | :--- | :--- | :--- |
-| **工作流模式** | `/plan [on\|off]` | 设置 Thread collaboration mode（Plan 为只读架构与方案探索） |
-| | `/goal <目标描述>` | 设置 Thread Goal，由 Goal Runtime 自动推进 |
+| **工作流模式** | `/plan [on\|off]` | 设置 runtime Thread collaboration mode（Plan 为只读架构与方案探索） |
+| | `/goal <目标描述>` | 设置 runtime Thread Goal，由 Goal Runtime 自动推进 |
 | | `/goal` | 查看当前 Goal 状态、Token 与时间预算 |
 | | `/workflows` | 探测工作区内规范与计划文件（`plan.md`, `AGENTS.md`） |
 | **模型与思考** | `/effort [low\|med\|high]` | 查看或切换思考链强度 |

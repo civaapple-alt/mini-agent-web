@@ -47,7 +47,10 @@ class TUIState:
     approval_policy: str = "per_action"  # per_action | auto_approve | strict
     effort: str = "medium"  # low | medium | high
     remembered_approvals: set[str] = field(default_factory=set)
-    current_thread_id: str = "tui-session"
+    # The bundled App Server binds settings and Goal Runtime to its default
+    # runtime Thread. Conversation threads may still be switched independently.
+    runtime_thread_id: str = "default"
+    current_thread_id: str = "default"
     turn_counts: dict[str, int] = field(default_factory=dict)
     active_turn_id: str | None = None
     last_turn_metrics: TurnMetrics | None = None

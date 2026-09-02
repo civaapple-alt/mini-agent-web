@@ -10,7 +10,7 @@ Proposed
 
 随着 Mini Agent Harness（Rust Core / App Server）与 Web Studio（React 19 + FastAPI Gateway）的演进，开发者交互形态逐步成熟。目前终端场景存在两种实现：
 1. **Rust 原生 CLI REPL (`mini-agent-cli`)**：基于标准行式输入输出（Line-based REPL），体积轻量但缺乏全屏多窗格（Multi-pane）、流式思维折叠、工具树展开与实时交互看板能力；
-2. **Python TUI (`mini-agent-tui`)**：基于 `Rich` + `prompt_toolkit` + Python SDK 构建，开发迭代迅速，但需要完整的 Python 3.10+ 环境与 FastAPI 网关依赖，且在纯 SSH、无 Python 运行时或极低资源环境（如嵌入式设备、轻量容器）中分发受限。
+2. **Python TUI (`mini-agent-tui`)**：基于 `Rich` + `prompt_toolkit` + Python SDK 构建，通过 Stdio 管道直连 App Server（无需 Web Server / FastAPI 网关），开发迭代迅速；但需要完整的 Python 3.10+ 解释器环境与三方依赖库，且在纯 SSH、无 Python 运行时或极低资源环境（如嵌入式设备、轻量容器）中分发受限（冷启动 ~200ms，内存 ~45MB）。
 
 在 2026 年现代 AI 终端工程实践中（如 DeepSeek-TUI、Zerostack、K9s、Lazygit 等顶级终端工具），**“Tokio 异步双环 + Elm (TEA) 单向状态机 + Ratatui 帧渲染 + 细粒度沙箱与审批”** 已经成为行业标准。
 

@@ -30,6 +30,7 @@ export default function Sidebar({
   onRenameThread,
   onUpdateSummary,
   onRefreshThreads,
+  onToast,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchBox, setShowSearchBox] = useState(false);
@@ -41,6 +42,7 @@ export default function Sidebar({
   const [expandedThreadLists, setExpandedThreadLists] = useState({});
   const [showAllProjects, setShowAllProjects] = useState(false);
   const [showRecentSection, setShowRecentSection] = useState(false);
+  const [activeProjectMenu, setActiveProjectMenu] = useState(null);
 
   // Project Detail Popover (Image 1)
   const [activeProjectPopover, setActiveProjectPopover] = useState(null);
@@ -139,8 +141,13 @@ export default function Sidebar({
       setEditingProject(null);
       await loadProjects();
       if (onRefreshThreads) onRefreshThreads();
+      if (onToast) {
+        onToast(editingProject.is_new ? `已成功创建项目 "${cleanName}"` : `已保存项目 "${cleanName}"`, 'success');
+      }
     } catch (err) {
-      alert(`保存项目失败: ${err.message}`);
+      if (onToast) {
+        onToast(`保存项目失败: ${err.message}`, 'error');
+      }
     } finally {
       setIsSavingProject(false);
     }
@@ -149,14 +156,18 @@ export default function Sidebar({
   // Delete/Remove Local Project
   const handleDeleteProject = async () => {
     if (!editingProject) return;
-    if (confirm(`确定从工作区移除本地项目 "${editingProject.name}" 吗？（不会删除磁盘物理文件）`)) {
-      try {
-        await api.deleteProject(editingProject.id || editingProject.name);
-        setEditingProject(null);
-        await loadProjects();
-        if (onRefreshThreads) onRefreshThreads();
-      } catch (err) {
-        alert(`移除项目失败: ${err.message}`);
+    try {
+      const projName = editingProject.name;
+      await api.deleteProject(editingProject.id || editingProject.name);
+      setEditingProject(null);
+      await loadProjects();
+      if (onRefreshThreads) onRefreshThreads();
+      if (onToast) {
+        onToast(`已从工作区移除本地项目 "${projName}"`, 'info');
+      }
+    } catch (err) {
+      if (onToast) {
+        onToast(`移除项目失败: ${err.message}`, 'error');
       }
     }
   };
@@ -168,7 +179,9 @@ export default function Sidebar({
       await api.pinProject(proj.id || proj.name);
       await loadProjects();
     } catch (err) {
-      alert(`固定项目失败: ${err.message}`);
+      if (onToast) {
+        onToast(`固定项目失败: ${err.message}`, 'error');
+      }
     }
   };
 
@@ -321,16 +334,14 @@ export default function Sidebar({
     if (action === 'fork') {
       onForkThread(thread.thread_id);
     } else if (action === 'close') {
-      if (confirm(`确认关闭并归档会话 "${thread.title}" 吗？`)) {
-        onCloseThread(thread.thread_id);
-      }
+      onCloseThread(thread.thread_id);
     } else if (action === 'rename') {
-      const newTitle = prompt('重命名会话:', thread.title);
+      const newTitle = window.prompt('重命名会话:', thread.title);
       if (newTitle && newTitle.trim()) {
         onRenameThread(thread.thread_id, newTitle.trim());
       }
     } else if (action === 'summary') {
-      const newSum = prompt('设置阶段摘要:', thread.summary);
+      const newSum = window.prompt('设置阶段摘要:', thread.summary);
       if (newSum !== null) {
         onUpdateSummary(thread.thread_id, newSum.trim());
       }

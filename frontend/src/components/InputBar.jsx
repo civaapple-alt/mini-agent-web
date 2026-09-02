@@ -18,6 +18,7 @@ import {
   FileCode,
 } from 'lucide-react';
 import { api } from '../api';
+import { parseAndExecuteSlashCommand } from '../utils/slashCommands';
 import './InputBar.css';
 
 const SLASH_COMMANDS = [
@@ -55,6 +56,7 @@ export default function InputBar({
   onOpenStatus,
   onCopyLastResponse,
   onTogglePlanMode,
+  onToast,
 }) {
   const [prompt, setPrompt] = useState('');
   const [showSlashPopup, setShowSlashPopup] = useState(false);
@@ -162,47 +164,25 @@ export default function InputBar({
   };
 
   const executeSlashCommand = (cmdStr) => {
-    const cleanCmd = cmdStr.trim();
-    const lowerCmd = cleanCmd.toLowerCase();
+    const cleanCmd = (cmdStr || '').trim();
+    if (cleanCmd.toLowerCase() === '/steer' && isGenerating) {
+      setPrompt('/steer ');
+      return true;
+    }
 
-    if (lowerCmd === '/plan') {
-      if (onTogglePlanMode) {
-        onTogglePlanMode();
-      } else if (onChangeProfile) {
-        onChangeProfile(profile === 'ask' ? 'interactive' : 'ask');
-      }
-      setPrompt('');
-      return true;
-    }
-    if (lowerCmd === '/clear') {
-      if (onClearChat) onClearChat();
-      setPrompt('');
-      return true;
-    }
-    if (lowerCmd === '/status') {
-      if (onOpenStatus) onOpenStatus();
-      setPrompt('');
-      return true;
-    }
-    if (lowerCmd === '/copy' || lowerCmd === '/cp') {
-      if (onCopyLastResponse) onCopyLastResponse();
-      setPrompt('');
-      return true;
-    }
-    if (lowerCmd.startsWith('/steer')) {
-      const steerText = cleanCmd.slice(6).trim();
-      if (!isGenerating) {
-        alert('⚠️ 无法纠偏：当前没有正在执行的任务。请在 Agent 运行时使用 /steer 注入实时纠偏指令。');
-        setPrompt('');
-        return true;
-      }
-      if (!steerText) {
-        setPrompt('/steer ');
-        return true;
-      }
-      if (onSteerMessage) {
-        onSteerMessage(steerText);
-      }
+    const handled = parseAndExecuteSlashCommand(cleanCmd, {
+      isGenerating,
+      onTogglePlanMode,
+      onChangeProfile,
+      onClearChat,
+      onOpenStatus,
+      onCopyLastResponse,
+      onSteerMessage,
+      onToast,
+      profile,
+    });
+
+    if (handled) {
       setPrompt('');
       return true;
     }

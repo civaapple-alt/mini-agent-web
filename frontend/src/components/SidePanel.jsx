@@ -26,11 +26,13 @@ export default function SidePanel({
   onClose,
   planActive,
   onTogglePlan,
+  goalState,
+  onToast,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [worldData, setWorldData] = useState(null);
   const [mcpData, setMcpData] = useState(null);
-  const [workflowState, setWorkflowState] = useState(null);
+  const [workflowState, setWorkflowState] = useState(goalState || null);
   const [workflowFiles, setWorkflowFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedFileContent, setSelectedFileContent] = useState('');
@@ -152,8 +154,13 @@ export default function SidePanel({
       await api.startGoal(goalObjectiveInput.trim());
       setGoalObjectiveInput('');
       await loadWorkflow();
+      if (onToast) {
+        onToast('已启动目标驱动收敛任务 (Goal)', 'success');
+      }
     } catch (err) {
-      alert(`启动 Goal 失败: ${err.message}`);
+      if (onToast) {
+        onToast(`启动 Goal 失败: ${err.message}`, 'error');
+      }
     }
   };
 

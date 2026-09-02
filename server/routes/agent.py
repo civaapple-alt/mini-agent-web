@@ -275,6 +275,8 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 prompt = data.get("prompt", "")
                 thread_id = data.get("threadId")
                 mode = data.get("mode", "start")
+                if mode not in ("start", "continue", "steer", "follow_up"):
+                    mode = "start"
                 images = data.get("images")
                 referenced_files = data.get("referencedFiles")
 

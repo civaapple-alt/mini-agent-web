@@ -2,6 +2,8 @@
 Automated tests for FastAPI Web Gateway endpoints.
 """
 
+from unittest.mock import AsyncMock
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -148,3 +150,65 @@ def test_gateway_websocket(test_app):
         ws.send_json({"action": "ping"})
         data = ws.receive_json()
         assert data.get("type") == "pong"
+
+
+def test_gateway_websocket_turn_mode_sanitation(test_app):
+    from starlette.testclient import TestClient
+
+    captured_modes = []
+
+    async def mock_stream_turn(
+        prompt, mode="start", thread_id="default", effort="medium"
+    ):
+        captured_modes.append(mode)
+        yield {
+            "type": "_turn_submission",
+            "threadId": thread_id,
+            "data": {"turn_id": "turn-test-123"},
+        }
+        yield {
+            "type": "event",
+            "threadId": thread_id,
+            "turnId": "turn-test-123",
+            "event": {"type": "turn_started"},
+        }
+        yield {
+            "type": "event",
+            "threadId": thread_id,
+            "turnId": "turn-test-123",
+            "event": {"type": "turn_finished", "stop_reason": "completed"},
+        }
+
+    mock_client = AsyncMock()
+    mock_client.stream_turn = mock_stream_turn
+    session_manager._client = mock_client
+
+    client = TestClient(test_app)
+    with client.websocket_connect("/ws/agent") as ws:
+        # 1. Send turn without mode (should default to "start")
+        ws.send_json({"action": "turn", "prompt": "Hello", "threadId": "t-1"})
+        sub = ws.receive_json()
+        assert sub.get("type") == "_turn_submission"
+        start_evt = ws.receive_json()
+        assert start_evt.get("event", {}).get("type") == "turn_started"
+        finish_evt = ws.receive_json()
+        assert finish_evt.get("event", {}).get("type") == "turn_finished"
+
+        assert len(captured_modes) == 1
+        assert captured_modes[0] == "start"
+
+        # 2. Send turn with invalid mode "chat" (should be sanitized to "start")
+        ws.send_json(
+            {
+                "action": "turn",
+                "prompt": "Hello again",
+                "mode": "chat",
+                "threadId": "t-1",
+            }
+        )
+        ws.receive_json()
+        ws.receive_json()
+        ws.receive_json()
+
+        assert len(captured_modes) == 2
+        assert captured_modes[1] == "start"

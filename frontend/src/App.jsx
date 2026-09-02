@@ -7,6 +7,7 @@ import SidePanel from './components/SidePanel';
 import SettingsModal from './components/SettingsModal';
 import Toast from './components/Toast';
 import { api, createAgentWebSocket } from './api';
+import { shouldAcceptEventForThread, aggregateStreamEvent } from './utils/messageState';
 import './App.css';
 
 export default function App() {
@@ -190,8 +191,7 @@ export default function App() {
     if (!data) return;
 
     // A2: Isolate stream events by active thread to prevent cross-thread pollution
-    const eventThreadId = data.threadId || data.thread_id;
-    if (eventThreadId && eventThreadId !== currentThreadRef.current) {
+    if (!shouldAcceptEventForThread(data, currentThreadRef.current)) {
       if (data.type === 'event') {
         const evtType = data.event?.type;
         if (evtType === 'turn_finished' || evtType === 'run_failed') {
@@ -232,179 +232,18 @@ export default function App() {
         setActiveTurnId(data.turnId);
       }
       const evt = data.event || {};
-      const type = evt.type;
-
-      if (type === 'turn_started') {
+      if (evt.type === 'turn_started') {
         setIsGenerating(true);
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', text: '', thinking: '', tools: [], blocks: [] },
-        ]);
-      } else if (type === 'assistant_reasoning_delta') {
-        setMessages((prev) => {
-          if (prev.length === 0) return prev;
-          const copy = [...prev];
-          const last = { ...copy[copy.length - 1] };
-          const blocks = [...(last.blocks || [])];
-
-          const lastBlock = blocks[blocks.length - 1];
-          if (!lastBlock || lastBlock.type !== 'thinking') {
-            blocks.push({
-              type: 'thinking',
-              content: evt.delta || '',
-              isStreaming: true,
-            });
-          } else {
-            blocks[blocks.length - 1] = {
-              ...lastBlock,
-              content: (lastBlock.content || '') + (evt.delta || ''),
-              isStreaming: true,
-            };
-          }
-
-          last.blocks = blocks;
-          last.thinking = (last.thinking || '') + (evt.delta || '');
-          copy[copy.length - 1] = last;
-          return copy;
-        });
-      } else if (type === 'assistant_text_delta') {
-        setMessages((prev) => {
-          if (prev.length === 0) return prev;
-          const copy = [...prev];
-          const last = { ...copy[copy.length - 1] };
-          const blocks = [...(last.blocks || [])];
-
-          // Mark previous thinking blocks as completed
-          for (let i = 0; i < blocks.length; i++) {
-            if (blocks[i].type === 'thinking') {
-              blocks[i] = { ...blocks[i], isStreaming: false };
-            }
-          }
-
-          const lastBlock = blocks[blocks.length - 1];
-          if (!lastBlock || lastBlock.type !== 'text') {
-            blocks.push({
-              type: 'text',
-              content: evt.delta || '',
-            });
-          } else {
-            blocks[blocks.length - 1] = {
-              ...lastBlock,
-              content: (lastBlock.content || '') + (evt.delta || ''),
-            };
-          }
-
-          last.blocks = blocks;
-          last.text = (last.text || '') + (evt.delta || '');
-          copy[copy.length - 1] = last;
-          return copy;
-        });
-      } else if (type === 'tool_started') {
-        setMessages((prev) => {
-          if (prev.length === 0) return prev;
-          const copy = [...prev];
-          const last = { ...copy[copy.length - 1] };
-          const blocks = [...(last.blocks || [])];
-
-          for (let i = 0; i < blocks.length; i++) {
-            if (blocks[i].type === 'thinking') {
-              blocks[i] = { ...blocks[i], isStreaming: false };
-            }
-          }
-
-          const call = evt.call || {};
-          const callId =
-            evt.call_id ||
-            evt.callId ||
-            call.id ||
-            call.call_id ||
-            evt.id ||
-            `tool_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-          const name = evt.name || evt.tool || call.name || 'tool';
-          const args = evt.arguments !== undefined ? evt.arguments : call.arguments;
-
-          const toolBlock = {
-            type: 'tool',
-            id: callId,
-            name,
-            arguments: args,
-            status: 'running',
-            output: null,
-            error: null,
-          };
-
-          blocks.push(toolBlock);
-          last.blocks = blocks;
-          last.tools = [...(last.tools || []), toolBlock];
-          copy[copy.length - 1] = last;
-          return copy;
-        });
-      } else if (type === 'tool_finished') {
-        setMessages((prev) => {
-          if (prev.length === 0) return prev;
-          const copy = [...prev];
-          const last = { ...copy[copy.length - 1] };
-          const blocks = [...(last.blocks || [])];
-
-          const callId = evt.call_id || evt.callId || evt.id;
-          const content =
-            evt.content !== undefined
-              ? evt.content
-              : evt.output !== undefined
-              ? evt.output
-              : evt.result;
-          const isError = Boolean(evt.is_error || evt.isError || evt.error);
-
-          last.blocks = blocks.map((b) => {
-            if (
-              b.type === 'tool' &&
-              (b.id === callId || (!callId && b.status === 'running'))
-            ) {
-              return {
-                ...b,
-                status: isError ? 'failed' : 'completed',
-                output: content,
-                error: isError ? evt.error || content : null,
-              };
-            }
-            return b;
-          });
-
-          last.tools = (last.tools || []).map((t) => {
-            if (t.id === callId || (!callId && t.status === 'running')) {
-              return {
-                ...t,
-                status: isError ? 'failed' : 'completed',
-                output: content,
-                error: isError ? evt.error || content : null,
-              };
-            }
-            return t;
-          });
-
-          copy[copy.length - 1] = last;
-          return copy;
-        });
-      } else if (type === 'turn_finished' || type === 'run_failed') {
+      } else if (
+        evt.type === 'turn_finished' ||
+        evt.type === 'run_finished' ||
+        evt.type === 'run_failed'
+      ) {
         setIsGenerating(false);
         setActiveTurnId(null);
-        setMessages((prev) => {
-          if (prev.length === 0) return prev;
-          const copy = [...prev];
-          const last = { ...copy[copy.length - 1] };
-          if (last.blocks) {
-            last.blocks = last.blocks.map((b) => {
-              if (b.type === 'thinking') return { ...b, isStreaming: false };
-              if (b.type === 'tool' && b.status === 'running')
-                return { ...b, status: 'completed' };
-              return b;
-            });
-          }
-          copy[copy.length - 1] = last;
-          return copy;
-        });
         loadThreads();
       }
+      setMessages((prev) => aggregateStreamEvent(prev, data));
     }
   };
 
@@ -427,8 +266,24 @@ export default function App() {
 
     if (!promptText.trim() && images.length === 0) return;
 
-    if (!wsRef.current || !wsRef.current.send) {
+    // A1: Check WebSocket ready state (isOpen) before sending
+    if (!wsRef.current || !wsRef.current.isOpen || !wsRef.current.isOpen()) {
       showToast('⚠️ 无法发送消息：当前与服务端的 WebSocket 连接尚未就绪，请稍候重试。', 'warning');
+      return;
+    }
+
+    // R1: Do not send 'mode: chat' or 'effort' (preserve standard turn contract)
+    const payload = {
+      action: 'turn',
+      prompt: promptText,
+      images,
+      referencedFiles,
+      threadId: currentThread,
+    };
+
+    const sent = wsRef.current.send(payload);
+    if (!sent) {
+      showToast('⚠️ 消息发送失败：底层连接异常断开。', 'error');
       return;
     }
 
@@ -445,16 +300,6 @@ export default function App() {
         blocks: [{ type: 'text', content: promptText }],
       },
     ]);
-
-    wsRef.current.send({
-      action: 'turn',
-      prompt: promptText,
-      images,
-      referencedFiles,
-      threadId: currentThread,
-      effort: userSettings.reasoning_effort || 'medium',
-      mode: userSettings.default_mode || 'chat',
-    });
   };
 
   const handleClearChat = () => {
@@ -706,6 +551,7 @@ export default function App() {
           onRenameThread={handleRenameThread}
           onUpdateSummary={handleUpdateSummary}
           onRefreshThreads={loadThreads}
+          onToast={showToast}
         />
 
         <main className="app-content">
@@ -737,6 +583,7 @@ export default function App() {
             onOpenStatus={handleOpenStatus}
             onCopyLastResponse={handleCopyLastResponse}
             onTogglePlanMode={handleTogglePlan}
+            onToast={showToast}
           />
         </main>
       </div>
@@ -747,13 +594,16 @@ export default function App() {
         initialTab={sidePanelTab}
         onClose={() => setSidePanelOpen(false)}
         planActive={planActive}
+        goalState={goalState}
         onTogglePlan={handleTogglePlan}
+        onToast={showToast}
       />
 
       {/* System Settings Modal */}
       <SettingsModal
         isOpen={settingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
+        onToast={showToast}
         onSettingsSaved={(newSettings) => {
           if (newSettings.theme) {
             document.body.className = `theme-${newSettings.theme}`;

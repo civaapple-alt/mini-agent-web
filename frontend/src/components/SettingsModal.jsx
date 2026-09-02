@@ -27,7 +27,7 @@ const PROFILE_DEFAULTS = {
   },
 };
 
-export default function SettingsModal({ isOpen, onClose, onSettingsSaved }) {
+export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToast }) {
   const [settings, setSettings] = useState({
     profile: 'interactive',
     approval_policy: 'per_action',
@@ -74,7 +74,9 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved }) {
       if (onSettingsSaved) onSettingsSaved(res.settings);
       setTimeout(() => setSavedSuccess(false), 2000);
     } catch (err) {
-      alert(`保存设置失败: ${err.message}`);
+      if (onToast) {
+        onToast(`保存设置失败: ${err.message}`, 'error');
+      }
     } finally {
       setIsSaving(false);
     }

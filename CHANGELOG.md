@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cookbook Demo 04 timing**: replaced fixed steering/interruption sleeps with
   event-driven turn submission and explicit handling for a turn that settles
   before the control request arrives.
+- **Cookbook Demo 05 runtime binding**: reattaches the App Server's bound
+  runtime Thread before exercising collaboration mode and Goal Runtime APIs.
 
 ---
 

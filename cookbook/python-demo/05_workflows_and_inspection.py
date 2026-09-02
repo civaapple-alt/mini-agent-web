@@ -19,6 +19,7 @@ async def main():
             f"[OK] Initialized, server: {init_res.get('serverName')} v{init_res.get('serverVersion')}",
             flush=True,
         )
+        runtime_thread_id = await client.start_thread()
         await client.start_thread("main-thread")
 
         # 2. Thread Lifecycle & Branching
@@ -61,6 +62,12 @@ async def main():
             print(f"Available Tools : {mcp.tool_count}", flush=True)
         except AppServerError as err:
             print(f"(mcp/status error: {err})", flush=True)
+
+        # Thread lifecycle management can inspect other threads, but the
+        # current App Server process exposes runtime settings and Goal APIs
+        # only for its bound runtime thread. Reattach it explicitly here.
+        await client.start_thread(runtime_thread_id)
+        print(f"Runtime Thread : {runtime_thread_id}", flush=True)
 
         # 5. Update collaboration mode (locks workspace mutations)
         print("\n--- 4. Enabling Plan Mode ---", flush=True)

@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-No unreleased changes.
+### Fixed
+
+- **Cookbook Demo 04 timing**: replaced fixed steering/interruption sleeps with
+  event-driven turn submission and explicit handling for a turn that settles
+  before the control request arrives.
 
 ---
 

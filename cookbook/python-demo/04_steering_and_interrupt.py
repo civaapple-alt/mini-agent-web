@@ -7,6 +7,7 @@ and cooperatively cancel/interrupt a long-running execution.
 import asyncio
 
 from mini_agent import MiniAgentClient
+from mini_agent.errors import AppServerError
 
 
 async def main():
@@ -25,23 +26,29 @@ async def main():
         print("\n--- Part 1: Steering Active Turn ---")
         print(f"[Initial Prompt]: {prompt1}\n", flush=True)
 
-        resp1 = await client.start_turn(prompt1)
-        turn_id1 = resp1.turn_id or "turn-1"
+        stream1 = client.stream_turn(prompt1)
+        submission1 = await anext(stream1)
+        turn_id1 = submission1["submission"].turn_id or "turn-1"
         print(f"[Turn 1 Started]: {turn_id1}", flush=True)
-
-        # Let the agent start thinking for 1.5 seconds
-        await asyncio.sleep(1.5)
 
         # Inject runtime steering instruction
         steer_text = "Stop writing the full tutorial. Just give me a 3-bullet-point executive summary instead."
         print(f"\n[Steering Instruction Injected]: {steer_text}", flush=True)
-        steer_resp = await client.steer_turn(turn_id1, steer_text)
-        print(
-            f"[Steer Acknowledged]: actionId={steer_resp.get('actionId')}\n", flush=True
-        )
+        try:
+            steer_resp = await client.steer_turn(turn_id1, steer_text)
+            print(
+                f"[Steer Acknowledged]: actionId={steer_resp.get('actionId')}\n",
+                flush=True,
+            )
+        except AppServerError as err:
+            if "no active turn" not in str(err).lower():
+                raise
+            print("[Steer Window Closed]: Turn settled before steering arrived.\n")
 
         # Wait until turn settles and read result
         print("[Waiting for steered turn to settle...]", flush=True)
+        async for _ in stream1:
+            pass
         result1 = await client.wait_for_turn(turn_id1)
         print("[Turn 1 Settled]:", flush=True)
         print(f"Status     : {result1.status}", flush=True)
@@ -56,15 +63,25 @@ async def main():
         print("\n--- Part 2: Cooperative Turn Interruption ---")
         print(f"[Initial Prompt]: {prompt2}\n", flush=True)
 
-        resp2 = await client.start_turn(prompt2)
-        turn_id2 = resp2.turn_id or "turn-2"
+        stream2 = client.stream_turn(prompt2)
+        submission2 = await anext(stream2)
+        turn_id2 = submission2["submission"].turn_id or "turn-2"
         print(f"[Turn 2 Started]: {turn_id2}", flush=True)
 
-        await asyncio.sleep(1.0)
         print("[Interrupting Turn 2...]", flush=True)
-        await client.interrupt_turn(turn_id2)
+        try:
+            await client.interrupt_turn(turn_id2)
+            print("[Interrupt Acknowledged]", flush=True)
+        except AppServerError as err:
+            if "no active turn" not in str(err).lower():
+                raise
+            print(
+                "[Interrupt Window Closed]: Turn settled before interruption arrived."
+            )
 
         print("[Waiting for turn cancellation checkpoint...]", flush=True)
+        async for _ in stream2:
+            pass
         result2 = await client.wait_for_turn(turn_id2)
         print("[Turn 2 Settled]:", flush=True)
         print(f"Status     : {result2.status}", flush=True)

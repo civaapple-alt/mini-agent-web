@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+No unreleased changes.
+
+---
+
 ## [0.7.0] - 2026-09-02
 
 ### Added
@@ -21,11 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Removed legacy workflow surface**: replaced manual Plan/Goal workflow methods with `thread/settings/update` and Thread Goal Runtime; no compatibility adapter is retained for the removed methods.
 - **Synchronized release metadata**: updated repository, SDK, server, frontend, lockfile, and documentation version references to `0.7.0`.
 
----
+### Pre-release changes included in 0.7.0
 
-## [Unreleased]
-
-### Added
+#### Added
 
 - **Lightweight Native Toast Notification System**:
   - Replaced native browser `alert()` and `confirm()` dialogs across Sidebar, InputBar, SettingsModal, and SidePanel with smooth, non-blocking, auto-dismissing Toast notifications (`Toast.jsx`).
@@ -40,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Client Architecture & Performance Analysis Doc**:
   - Published multi-dimensional comparison analyzing Rust REPL, Python TUI, and Web Studio (`docs/client-architectures-and-performance-comparison.md`).
 
-### Fixed
+#### Fixed
 
 - **Turn Mode Protocol Contract Compliance (R1)**:
   - Removed UI-specific `default_mode` (`chat` / `plan` / `goal`) from WebSocket `turn` action payload to strictly preserve standard `start` / `continue` / `steer` / `follow_up` wire protocol.
@@ -56,7 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Native `/steer` Command Execution (A5)**:
   - Connected `/steer <instruction>` directly to server steering API with active generation runtime checks.
 
-### Documentation
+#### Documentation
 
 - Synchronized `README.md`, `docs/README.md`, `frontend/README.md`, and indexed new comparison docs and proposed ADRs.
 

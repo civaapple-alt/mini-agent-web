@@ -80,6 +80,15 @@ async def test_render_turn_stream_successful_flow(
         yield {
             "type": "event",
             "turnId": "turn-123",
+            "items": [
+                {
+                    "type": "toolCall",
+                    "id": "call-123",
+                    "name": "shell",
+                    "arguments": {"command": "pytest"},
+                    "status": "inProgress",
+                }
+            ],
             "event": {
                 "type": "tool_started",
                 "name": "shell",
@@ -89,6 +98,16 @@ async def test_render_turn_stream_successful_flow(
         yield {
             "type": "event",
             "turnId": "turn-123",
+            "items": [
+                {
+                    "type": "toolCall",
+                    "id": "call-123",
+                    "name": "shell",
+                    "arguments": {"command": "pytest"},
+                    "status": "completed",
+                    "output": "21 passed in 0.8s",
+                }
+            ],
             "event": {
                 "type": "tool_finished",
                 "name": "shell",
@@ -146,6 +165,40 @@ async def test_render_turn_stream_successful_flow(
     assert state.last_turn_metrics.status == "completed"
     assert state.last_turn_metrics.steps == 1
     assert state.last_turn_metrics.total_tokens == 195
+
+
+@pytest.mark.asyncio
+async def test_render_turn_stream_accepts_runtime_notifications(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_buffer = io.StringIO()
+    test_con = Console(
+        file=output_buffer, width=120, force_terminal=False, color_system=None
+    )
+    monkeypatch.setattr("tui.stream_renderer.console", test_con)
+
+    state = TUIState(current_thread_id="goal-thread")
+    mock_client = AsyncMock()
+
+    async def mock_stream(*args: Any, **kwargs: Any):
+        yield {
+            "type": "notification",
+            "method": "thread/goal/updated",
+            "data": {"goal": {"status": "active"}},
+        }
+        yield {
+            "type": "notification",
+            "method": "thread/goal/cleared",
+            "data": {"threadId": "goal-thread"},
+        }
+
+    mock_client.stream_turn = mock_stream
+
+    await render_turn_stream(mock_client, "Observe goal updates", state)
+    rendered = output_buffer.getvalue()
+
+    assert "Goal updated: active" in rendered
+    assert "Goal cleared" in rendered
 
 
 @pytest.mark.asyncio

@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from mini_agent.errors import AppServerError
@@ -23,16 +23,28 @@ class SetExecutionRequest(BaseModel):
     copilot: bool = Field(default=False, description="Enable copilot assistance")
 
 
-class SetPlanModeRequest(BaseModel):
-    active: bool = Field(..., description="Enable or disable read-only plan mode")
-    prompt: str | None = Field(
-        default=None, description="Optional high-level planning prompt"
+class UpdateThreadSettingsRequest(BaseModel):
+    mode: Literal["default", "plan"] = Field(
+        ..., description="Thread collaboration mode: default or plan"
+    )
+    builtin_tools: list[str] | None = Field(
+        default=None,
+        description="Optional bounded Builtin tool selection for this Thread",
     )
 
 
-class StartGoalRequest(BaseModel):
+class SetGoalRequest(BaseModel):
     objective: str = Field(
-        ..., description="High-level goal objective to execute across milestones"
+        ..., min_length=1, max_length=4096, description="Bounded Thread Goal objective"
+    )
+    status: (
+        Literal[
+            "active", "paused", "blocked", "usageLimited", "budgetLimited", "complete"
+        ]
+        | None
+    ) = Field(default=None, description="Optional Goal status")
+    token_budget: int | None = Field(
+        default=None, ge=1, description="Optional total token budget"
     )
 
 
@@ -256,97 +268,97 @@ async def retry_mcp() -> dict[str, Any]:
 
 
 # -----------------------------------------------------------------------------
-# Workflows (Plan Mode & Multi-Milestone Goals) & Artifact Inspection
+# Thread Settings, Goals, and Artifact Inspection
 # -----------------------------------------------------------------------------
 
 
 @router.get("/workflows/state", summary="Get workflow state")
 async def get_workflow_state() -> dict[str, Any]:
-    """Retrieve current Plan Mode and active Goal status."""
+    """Retrieve the current collaboration mode and active Thread Goal."""
     try:
         wf = await session_manager.client.get_workflow_state()
         goal_dict = None
         if wf.goal:
             g = wf.goal
             goal_dict = {
-                "goal_id": g.goal_id,
+                "thread_id": g.thread_id,
+                "objective": g.objective,
                 "status": g.status,
-                "current_milestone": g.current_milestone,
-                "total_milestones": g.total_milestones,
-                "loop_count": g.loop_count,
-                "max_loops": g.max_loops,
+                "token_budget": g.token_budget,
+                "tokens_used": g.tokens_used,
+                "time_used_seconds": g.time_used_seconds,
+                "created_at": g.created_at,
+                "updated_at": g.updated_at,
             }
         return {
-            "plan_active": wf.plan_active,
+            "collaboration_mode": {"mode": wf.collaboration_mode.mode},
             "goal": goal_dict,
         }
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.post("/workflows/plan", summary="Set Plan Mode")
-async def set_plan_mode(req: SetPlanModeRequest) -> dict[str, Any]:
-    """Enable or disable read-only exploration Plan Mode."""
+@router.post("/workflows/settings", summary="Update Thread settings")
+async def update_thread_settings(req: UpdateThreadSettingsRequest) -> dict[str, Any]:
+    """Update collaboration mode and optional Builtin tool selection."""
     try:
-        res = await session_manager.client.set_plan_mode(
-            active=req.active, prompt=req.prompt
+        res = await session_manager.client.update_thread_settings(
+            mode=req.mode,
+            builtin_tools=req.builtin_tools,
         )
         return {
-            "plan_active": res.plan_active,
+            "collaboration_mode": {"mode": res.collaboration_mode.mode},
+            "builtin_tools": res.builtin_tools,
         }
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.post("/workflows/goal/start", summary="Start Goal workflow")
-async def start_goal(req: StartGoalRequest) -> dict[str, Any]:
-    """Start a new multi-milestone goal workflow."""
+@router.post("/workflows/goal", summary="Set Thread Goal")
+async def set_goal(req: SetGoalRequest) -> dict[str, Any]:
+    """Set or replace the active Thread Goal."""
     try:
-        res = await session_manager.client.start_goal(req.objective)
-        return {
-            "goal_id": res.goal_id,
-            "status": res.status,
-            "current_milestone": res.current_milestone,
-            "total_milestones": res.total_milestones,
-        }
+        res = await session_manager.client.set_goal(
+            objective=req.objective,
+            status=req.status,
+            token_budget=req.token_budget,
+        )
+        return {"goal": _goal_dict(res.goal)}
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.post("/workflows/goal/pause", summary="Pause Goal workflow")
-async def pause_goal() -> dict[str, Any]:
-    """Pause active goal execution."""
+@router.get("/workflows/goal", summary="Get Thread Goal")
+async def get_goal() -> dict[str, Any]:
+    """Read the active Thread Goal."""
     try:
-        res = await session_manager.client.pause_goal()
-        return {
-            "goal_id": res.goal_id,
-            "status": res.status,
-        }
+        res = await session_manager.client.get_goal()
+        return {"goal": _goal_dict(res.goal) if res.goal else None}
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.post("/workflows/goal/fail", summary="Fail Goal workflow")
-async def fail_goal() -> dict[str, Any]:
-    """Mark active goal as failed."""
+@router.delete("/workflows/goal", summary="Clear Thread Goal")
+async def clear_goal() -> dict[str, Any]:
+    """Clear the active Thread Goal."""
     try:
-        res = await session_manager.client.fail_goal()
-        return {
-            "goal_id": res.goal_id,
-            "status": res.status,
-        }
+        res = await session_manager.client.clear_goal()
+        return {"cleared": res.cleared}
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.get("/workflows/goal/criteria", summary="Get milestone criteria")
-async def get_goal_criteria() -> dict[str, Any]:
-    """Retrieve evaluation criteria for current milestone."""
-    try:
-        criteria = await session_manager.client.get_goal_criteria()
-        return {"criteria": criteria}
-    except AppServerError as err:
-        raise HTTPException(status_code=400, detail=str(err)) from err
+def _goal_dict(goal: Any) -> dict[str, Any]:
+    return {
+        "thread_id": goal.thread_id,
+        "objective": goal.objective,
+        "status": goal.status,
+        "token_budget": goal.token_budget,
+        "tokens_used": goal.tokens_used,
+        "time_used_seconds": goal.time_used_seconds,
+        "created_at": goal.created_at,
+        "updated_at": goal.updated_at,
+    }
 
 
 @router.get("/workflows/files", summary="List workflow and plan files")

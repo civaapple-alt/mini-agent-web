@@ -48,14 +48,14 @@ tests/
 
 ### 3. `test_sdk_apis.py`
 - **SDK 核心管理接口测试**：
-  - 测试 `fork_thread`、`read_thread`、`resume_thread`、`set_plan_mode` 与 `start_goal`；
+  - 测试 `fork_thread`、`read_thread`、`resume_thread`、`set_collaboration_mode` 与 `set/get/clear_goal`；
   - 校验请求 Payload 结构与 JSON-RPC 2.0 响应映射。
 
 ### 4. `test_sdk_events.py`
 - **强类型事件反序列化**：
   - 覆盖 `AssistantTextDeltaEvent`、`AssistantReasoningDeltaEvent`、`ToolStartedEvent`、`ToolFinishedEvent`、`ContextCompactionStartedEvent`、`ContextCompactionFinishedEvent`、`TurnFinishedEvent`、`RunFinishedEvent` 与 `GenericEvent`；
 - **流式事件过滤器**：
-  - 验证 `stream_turn` 按 `thread_id` 与 `turn_id` 进行精确事件路由。
+  - 验证 `stream_turn` 按 `thread_id` 与 `turn_id` 进行精确事件路由，并解析 `ThreadItem` 投影。
 
 ---
 

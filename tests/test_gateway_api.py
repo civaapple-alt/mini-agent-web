@@ -92,6 +92,10 @@ async def test_gateway_threads_and_workflows(test_app):
             assert resp_read.json().get("thread_id") == "test-gw-thread"
             assert "metadata" in resp_read.json()
 
+            # Thread management is independent from the runtime-bound thread;
+            # attach the default runtime before testing Thread settings.
+            await session_manager.client.start_thread("default")
+
             # 2. World & Workflows
             resp_world = await client.get("/api/world/state")
             assert resp_world.status_code == 200
@@ -99,14 +103,14 @@ async def test_gateway_threads_and_workflows(test_app):
 
             resp_wf = await client.get("/api/workflows/state")
             assert resp_wf.status_code == 200
-            assert "plan_active" in resp_wf.json()
+            assert resp_wf.json()["collaboration_mode"]["mode"] in ("default", "plan")
 
             # Toggle Plan Mode
-            resp_plan = await client.post(
-                "/api/workflows/plan", json={"active": True, "prompt": "GW Plan"}
+            resp_settings = await client.post(
+                "/api/workflows/settings", json={"mode": "plan"}
             )
-            assert resp_plan.status_code == 200
-            assert resp_plan.json().get("plan_active") is True
+            assert resp_settings.status_code == 200
+            assert resp_settings.json()["collaboration_mode"]["mode"] == "plan"
 
             # Workflow files
             resp_wffiles = await client.get("/api/workflows/files")

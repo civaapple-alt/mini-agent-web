@@ -54,10 +54,13 @@ async def test_session_manager_approval_remember_flow(mock_session_manager):
     """Ensure remember=True registers the action name and auto-approves subsequent calls."""
     mock_session_manager._settings["approval_policy"] = "per_action"
     req_payload = {
-        "id": "req-123",
+        "requestId": "req-123",
         "action": "shell:run_command",
         "tool": "shell",
         "description": "Execute tests",
+        "threadId": "thread-1",
+        "turnId": "turn-1",
+        "callId": "call-1",
     }
 
     # 1. First approval request creates a pending future
@@ -68,6 +71,9 @@ async def test_session_manager_approval_remember_flow(mock_session_manager):
 
     assert len(mock_session_manager._pending_approvals) == 1
     assert "req-123" in mock_session_manager._pending_approvals
+    assert (
+        mock_session_manager._pending_approval_details["req-123"]["data"] == req_payload
+    )
 
     # 2. Resolve approval with remember=True
     resolved = mock_session_manager.resolve_approval(

@@ -23,9 +23,7 @@ router = APIRouter(prefix="/api", tags=["Agent"])
 
 class StartTurnRequest(BaseModel):
     prompt: str = Field(..., description="Prompt or instruction for the agent")
-    mode: str = Field(
-        default="start", description="Input mode: start, steer, follow_up"
-    )
+    mode: str = Field(default="start", description="Input mode: start or start_if_idle")
     thread_id: str | None = Field(default=None, description="Target thread ID")
     images: list[str] | None = Field(
         default=None, description="Optional Base64 data URLs for attached images"
@@ -141,6 +139,7 @@ async def execute_turn(req: StartTurnRequest) -> dict[str, Any]:
             "final_text": result.final_text,
             "steps": result.steps,
             "messages": result.messages,
+            "items": to_json_serializable(result.items),
             "error": result.error,
         }
     except AppServerError as err:
@@ -275,7 +274,7 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 prompt = data.get("prompt", "")
                 thread_id = data.get("threadId")
                 mode = data.get("mode", "start")
-                if mode not in ("start", "continue", "steer", "follow_up"):
+                if mode not in ("start", "start_if_idle"):
                     mode = "start"
                 images = data.get("images")
                 referenced_files = data.get("referencedFiles")

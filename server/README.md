@@ -9,7 +9,7 @@
 ## 🌟 核心能力
 
 - **🔄 双向通信桥接**：
-  - **REST API**：提供线程管理、工作流控制（Plan/Goal）、环境探测（WorldState/MCP/Git）、多根项目管理（Projects）、配置变更及审批响应的标准 HTTP 路由。
+  - **REST API**：提供线程管理、Thread 设置与 Goal Runtime 控制、环境探测（WorldState/MCP/Git）、多根项目管理（Projects）、配置变更及审批响应的标准 HTTP 路由。
   - **WebSocket 全双工网关 (`/ws/agent`)**：支持 Turn 提交、实时 Steering 纠偏、Interrupt 中断、审批拦截响应以及 `mini-agent-app-server` 流式 JSON-RPC 2.0 事件分发。
 - **⚙️ 智能子进程与连接池生命周期 (`SessionManager`)**：
   - 管理 `mini-agent-app-server` 进程启动、标准输入输出管道、协议版本协商（Protocol Version 1）；
@@ -35,7 +35,7 @@ server/
     ├── __init__.py      # 路由聚合
     ├── agent.py         # 轮次提交、实时流式推理、WebSocket 端点 (/ws/agent, /api/agent/*)
     ├── threads.py       # 会话线程创建、分支分叉、读取与删除 (/api/threads/*)
-    ├── world.py         # Plan Mode、Goal 任务、WorldState、Git、MCP 与目录选择 (/api/world/*)
+    ├── world.py         # Thread settings、Goal Runtime、WorldState、Git、MCP 与目录选择
     ├── projects.py      # 多根项目 CRUD、置顶与本地目录绑定 (/api/projects/*)
     └── settings.py      # Profile、Effort 与安全审批策略配置 (/api/settings/*)
 ```
@@ -80,8 +80,12 @@ uv run mini-agent-server-dev
 | `/api/world/browse-folder` | `POST` | 触发原生系统文件夹选择窗口 |
 | `/api/projects` | `GET` / `POST` | 列出与创建工作区项目 |
 | `/api/projects/{project_id}` | `PUT` / `DELETE` | 更新或移除工作区本地项目 |
-| `/api/workflows/plan` | `GET` / `POST` | 查询或切换只读 Plan Mode |
-| `/api/workflows/goal` | `GET` / `POST` | 查询或启动多里程碑 Goal 收敛任务 |
+| `/api/workflows/state` | `GET` | 查询 Thread collaboration mode 与 Goal 投影 |
+| `/api/workflows/settings` | `POST` | 设置 collaboration mode 与可选 Builtin tools |
+| `/api/workflows/goal` | `GET` / `POST` / `DELETE` | 读取、设置或清除 Thread Goal |
+
+工作流路由不再提供旧的 `workflow/plan/set` 或手工 milestone/verdict API；Goal
+的 step、timeout、token budget 和自动续跑由 App Server 的 Goal Runtime 负责。
 
 ---
 

@@ -21,7 +21,7 @@
 - **📊 侧边栏工作流面板 (SidePanel)**：
   - **World 环境状态**：工作区环境探测、已安装工具与系统信息。
   - **Plan Mode 规划探索**：一键开启/关闭只读探索模式。
-  - **Goal 目标收敛管理**：多里程碑进度条、验收标准与动态监控。
+  - **Goal 目标收敛管理**：显示 Thread Goal 的状态、Token/时间预算，支持设置与清除目标。
   - **MCP 扩展诊断**：查看 MCP 服务列表、工具状态与连接重试。
   - **Git 工作区**：查看未暂存/暂存变更、分支状态与 Diff 摘要。
 - **⚙️ 全局设置与偏好 (SettingsModal)**：
@@ -94,5 +94,5 @@ npm run build
 
 ## 🔌 API 与通信协议
 
-- **REST API**：通过 `src/api.js` 调用后端 `/api/threads`、`/api/workflows/*`、`/api/world/*`、`/api/projects/*`、`/api/settings`。
-- **WebSocket**：连接 `/ws/agent` 双向全双工通道，传输 Turn 提交、实时 Steering 纠偏、Interrupt 停止生成、安全审批推拉与流式 JSON-RPC 2.0 事件。
+- **REST API**：通过 `src/api.js` 调用后端 `/api/threads`、`/api/workflows/settings`、`/api/workflows/goal`、`/api/world/*`、`/api/projects/*`、`/api/settings`。
+- **WebSocket**：连接 `/ws/agent` 双向全双工通道，传输 Turn 提交、实时 Steering 纠偏、Interrupt 停止生成、安全审批、`ThreadItem` 工具投影和 Goal/settings runtime notifications。

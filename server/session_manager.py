@@ -34,7 +34,7 @@ def to_json_serializable(obj: Any) -> Any:
         return {
             k: to_json_serializable(v)
             for k, v in obj.items()
-            if k not in ("typed_event", "submission")
+            if k not in ("typed_event", "typed_items", "submission")
         }
     if isinstance(obj, (list, tuple)):
         return [to_json_serializable(v) for v in obj]
@@ -366,6 +366,7 @@ class SessionManager:
                 log_dir=settings.log_dir,
                 log_level=settings.log_level,
                 approval_handler=self._handle_approval_request,
+                notification_handler=self._handle_runtime_notification,
             )
             await self._client.__aenter__()
             init_res = await self._client.initialize(profile=self._settings["profile"])
@@ -456,16 +457,36 @@ class SessionManager:
     # -------------------------------------------------------------------------
 
     async def _handle_approval_request(
-        self, req: dict[str, Any] | str, action: str | None = None
+        self,
+        req: dict[str, Any] | str,
+        action: str | None = None,
+        params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Called asynchronously by MiniAgentClient when the App Server encounters
         a sensitive tool invocation requiring human approval.
         """
-        if isinstance(req, dict):
+        if isinstance(params, dict):
+            req_data = params
+            req_id = str(
+                req_data.get("requestId")
+                or req_data.get("request_id")
+                or req_data.get("id")
+                or "req"
+            )
+            action_name = str(
+                req_data.get("action")
+                or req_data.get("tool")
+                or req_data.get("name")
+                or ""
+            )
+        elif isinstance(req, dict):
             req_data = req
             req_id = str(
-                req.get("id") or req.get("actionId") or req.get("requestId", "req")
+                req.get("requestId")
+                or req.get("request_id")
+                or req.get("id")
+                or req.get("actionId", "req")
             )
             action_name = str(
                 req.get("action")
@@ -533,6 +554,10 @@ class SessionManager:
         finally:
             self._pending_approvals.pop(req_id, None)
             self._pending_approval_details.pop(req_id, None)
+
+    async def _handle_runtime_notification(self, notification: dict[str, Any]) -> None:
+        """Relay App Server Goal/settings notifications to connected Studio clients."""
+        await self.broadcast_ws(notification)
 
     def resolve_approval(
         self,

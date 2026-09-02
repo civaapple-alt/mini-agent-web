@@ -1,8 +1,8 @@
 """Demo 06: Protocol Compatibility Smoke Test.
 
 This deterministic example uses no App Server process and no model provider.
-It validates that the 0.6.0 SDK parses every currently public core lifecycle
-event, including context compaction and structured run failures.
+It validates that the 0.7.0 SDK parses public lifecycle events and bounded
+ThreadItem projections, including context compaction and structured run failures.
 """
 
 from mini_agent import (
@@ -11,6 +11,7 @@ from mini_agent import (
     GenericEvent,
     RunFailedEvent,
     RunFinishedEvent,
+    ThreadItem,
     parse_event,
 )
 
@@ -56,6 +57,15 @@ EVENT_FIXTURES = [
     {"type": "future_extension", "value": "preserved"},
 ]
 
+THREAD_ITEM_FIXTURE = {
+    "type": "toolCall",
+    "id": "call-compat-1",
+    "name": "shell",
+    "arguments": {"command": "pwd"},
+    "status": "completed",
+    "output": "workspace",
+}
+
 
 def main() -> None:
     for payload in EVENT_FIXTURES:
@@ -68,6 +78,10 @@ def main() -> None:
     assert isinstance(parse_event(EVENT_FIXTURES[10]), RunFinishedEvent)
     assert isinstance(parse_event(EVENT_FIXTURES[12]), RunFailedEvent)
     assert isinstance(parse_event(EVENT_FIXTURES[13]), GenericEvent)
+    item = ThreadItem.from_dict(THREAD_ITEM_FIXTURE)
+    assert item.id == "call-compat-1"
+    assert item.arguments == {"command": "pwd"}
+    assert item.output == "workspace"
     print(f"Validated {len(EVENT_FIXTURES)} protocol event fixtures.")
 
 

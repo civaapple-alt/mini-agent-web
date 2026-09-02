@@ -7,11 +7,67 @@
  */
 export function shouldAcceptEventForThread(eventData, currentThreadId) {
   if (!eventData) return false;
-  const eventThreadId = eventData.threadId || eventData.thread_id;
+  const notificationData = eventData.data || {};
+  const approvalData = eventData.approval || {};
+  const eventThreadId =
+    eventData.threadId ||
+    eventData.thread_id ||
+    notificationData.threadId ||
+    notificationData.thread_id ||
+    approvalData.threadId ||
+    approvalData.thread_id;
   if (eventThreadId && eventThreadId !== currentThreadId) {
     return false;
   }
   return true;
+}
+
+function projectedStatus(status) {
+  if (status === 'failed') return 'failed';
+  if (status === 'completed') return 'completed';
+  return 'running';
+}
+
+function mergeProjectedToolItems(messages, items) {
+  if (messages.length === 0 || items.length === 0) return messages;
+  const copy = [...messages];
+  const last = { ...copy[copy.length - 1] };
+  const blocks = [...(last.blocks || [])];
+
+  for (const item of items) {
+    const callId = item.id || '';
+    const existingIndex = blocks.findIndex(
+      (block) => block.type === 'tool' && block.call_id === callId
+    );
+    const nextBlock = {
+      type: 'tool',
+      id: callId,
+      call_id: callId,
+      toolName: item.name || 'tool',
+      arguments: item.arguments ?? {},
+      args: item.arguments ?? {},
+      status: projectedStatus(item.status),
+      output: item.output ?? null,
+      error: item.status === 'failed' ? item.output ?? 'Tool failed' : null,
+    };
+
+    if (existingIndex === -1) {
+      blocks.push(nextBlock);
+      continue;
+    }
+
+    blocks[existingIndex] = {
+      ...blocks[existingIndex],
+      ...nextBlock,
+      arguments: item.arguments ?? blocks[existingIndex].arguments ?? {},
+      args: item.arguments ?? blocks[existingIndex].args ?? {},
+      output: item.output ?? blocks[existingIndex].output ?? null,
+    };
+  }
+
+  last.blocks = blocks;
+  copy[copy.length - 1] = last;
+  return copy;
 }
 
 /**
@@ -40,6 +96,15 @@ export function aggregateStreamEvent(messages, data) {
     }
 
     if (messages.length === 0) return messages;
+
+    const projectedTools = (data.items || []).filter(
+      (item) => item.type === 'toolCall' || item.type === 'tool_call'
+    );
+    if (projectedTools.length > 0) {
+      messages = mergeProjectedToolItems(messages, projectedTools);
+      if (type === 'tool_started' || type === 'tool_finished') return messages;
+    }
+
     const copy = [...messages];
     const last = { ...copy[copy.length - 1] };
     const blocks = [...(last.blocks || [])];
@@ -108,7 +173,10 @@ export function aggregateStreamEvent(messages, data) {
 
     if (type === 'tool_finished') {
       for (let i = blocks.length - 1; i >= 0; i--) {
-        if (blocks[i].type === 'tool' && (blocks[i].call_id === evt.call_id || blocks[i].status === 'running')) {
+        if (
+          blocks[i].type === 'tool' &&
+          (blocks[i].call_id === evt.call_id || blocks[i].status === 'running')
+        ) {
           blocks[i] = {
             ...blocks[i],
             status: evt.error ? 'failed' : 'completed',

@@ -226,7 +226,7 @@ telemetry 语义对齐。
 
 1. reducer 单元测试：事件顺序、重复/乱序、未知事件、delta 合并、队列溢出、审批
    多请求、Thread 切换和窄屏布局；
-2. 协议 fixture 测试：复用 `06_protocol_compatibility.py` 的 0.6.0 事件样本，并
+2. 协议 fixture 测试：复用 `06_protocol_compatibility.py` 的 0.7.0 事件样本，并
    验证 protocol version、Turn/Thread 过滤和错误映射；
 3. mock App Server 集成测试：启动、流式 turn、steer、interrupt、approval、崩溃
    重连、checkpoint 回放和 fork；禁止默认连接真实 Provider；

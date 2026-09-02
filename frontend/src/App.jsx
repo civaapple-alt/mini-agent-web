@@ -135,7 +135,7 @@ export default function App() {
   const loadWorkflows = async () => {
     try {
       const wfState = await api.getWorkflowState();
-      setPlanActive(Boolean(wfState.plan_active));
+      setPlanActive(wfState.collaboration_mode?.mode === 'plan');
       setGoalState(wfState.goal || null);
     } catch (err) {
       console.error('Failed to load workflow state:', err);
@@ -223,6 +223,33 @@ export default function App() {
         requestId: data.requestId,
         data: data.data,
       });
+      return;
+    }
+
+    if (data.type === 'approval') {
+      const approval = data.approval || {};
+      if (approval.phase === 'requested') {
+        setPendingApproval({
+          requestId: approval.requestId,
+          data: approval,
+        });
+      } else if (approval.phase === 'resolved') {
+        setPendingApproval((current) =>
+          current?.requestId === approval.requestId ? null : current
+        );
+      }
+      return;
+    }
+
+    if (data.type === 'notification') {
+      const notification = data.data || {};
+      if (data.method === 'thread/settings/updated') {
+        setPlanActive(notification.collaborationMode?.mode === 'plan');
+      } else if (data.method === 'thread/goal/updated') {
+        setGoalState(notification.goal || null);
+      } else if (data.method === 'thread/goal/cleared') {
+        setGoalState(null);
+      }
       return;
     }
 
@@ -479,9 +506,10 @@ export default function App() {
   const handleTogglePlan = async () => {
     const nextState = !planActive;
     try {
-      const res = await api.setPlanMode(nextState);
-      setPlanActive(Boolean(res.plan_active));
-      showToast(`Plan Mode 已${res.plan_active ? '开启 (只读规划)' : '关闭'}`, 'info');
+      const res = await api.setCollaborationMode(nextState ? 'plan' : 'default');
+      const active = res.collaboration_mode?.mode === 'plan';
+      setPlanActive(active);
+      showToast(`Plan Mode 已${active ? '开启 (只读规划)' : '关闭'}`, 'info');
     } catch (err) {
       showToast(`切换 Plan Mode 失败: ${err.message}`, 'error');
     }
@@ -506,10 +534,10 @@ export default function App() {
     try {
       await api.updateSettings({ profile: newProfile, approval_policy: nextPolicy });
       if (newProfile === 'ask') {
-        await api.setPlanMode(true);
+        await api.setCollaborationMode('plan');
         setPlanActive(true);
       } else if (planActive) {
-        await api.setPlanMode(false);
+        await api.setCollaborationMode('default');
         setPlanActive(false);
       }
     } catch (err) {

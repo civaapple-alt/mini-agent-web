@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.0] - 2026-09-02
+
+### Added
+
+- **Codex-aligned Thread protocol**: synchronized the Python SDK, FastAPI Gateway, Web Studio, TUI, and Cookbook with App Server 0.7.0.
+- **ThreadItem projections**: exposed bounded tool-call `ThreadItem` data through `turn/event` and `turn/read`, with stable reconciliation in Studio and direct rendering in TUI.
+- **Thread settings and Goal Runtime APIs**: added collaboration mode settings, `thread/goal/set|get|clear` wrappers, runtime notification forwarding, and Goal status/token/time projections.
+- **Deterministic compatibility coverage**: extended SDK, Gateway, frontend, TUI, and no-provider Cookbook tests for ThreadItem and runtime notifications.
+
+### Changed
+
+- **Removed legacy workflow surface**: replaced manual Plan/Goal workflow methods with `thread/settings/update` and Thread Goal Runtime; no compatibility adapter is retained for the removed methods.
+- **Synchronized release metadata**: updated repository, SDK, server, frontend, lockfile, and documentation version references to `0.7.0`.
+
+---
+
 ## [Unreleased]
 
 ### Added

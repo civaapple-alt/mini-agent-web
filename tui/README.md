@@ -20,7 +20,7 @@
   - `/steer <指令>`：在模型长推理中动态注入纠偏指令（Steering Guidance）。
   - `Ctrl+C` 智能清空：输入框有内容时按 `Ctrl+C` 立即清空当前缓冲行（Reset Buffer）；输入框为空时按 `Ctrl+C` 优雅退出；模型执行中按 `Ctrl+C` 仅中断当前轮次并保留历史。
 - **🌿 会话与多分支管理**：支持 `/threads`（列出会话）、`/new`（新建线程）、`/fork`（分叉当前历史到新分支）、`/switch`（切换线程）与 `/history`（查看 Checkpoint）。
-- **🔍 环境与工作流自省**：支持 `/status`（服务与配置状态）、`/mcp`（MCP 工具诊断）、`/git`（工作区分支与变更）、`/files`（快速文件检索）、`/workflows`（计划探测）、`/plan`（只读探索模式）与 `/goal`（多里程碑任务）。
+- **🔍 环境与工作流自省**：支持 `/status`（服务与配置状态）、`/mcp`（MCP 工具诊断）、`/git`（工作区分支与变更）、`/files`（快速文件检索）、`/workflows`（计划探测）、`/plan`（Thread collaboration mode）与 `/goal`（Thread Goal Runtime）。
 - **🛡️ 双模自适应降级**：在真实终端（TTY）中提供完整 UI 与快捷键；在自动化脚本、管道重定向（Non-TTY / Headless）环境中自动降级为标准输入行读取，稳定不崩溃。
 
 ---
@@ -77,9 +77,9 @@ uv run mini-agent-tui --profile auto --policy auto_approve --effort high --threa
 
 | 分类 | 命令 / 格式 | 功能说明 |
 | :--- | :--- | :--- |
-| **工作流模式** | `/plan [on\|off]` | 开启/切换只读 Plan Mode（只读架构与方案探索） |
-| | `/goal <目标描述>` | 启动目标驱动多里程碑无人值守收敛任务 |
-| | `/goal` | 查看当前活动 Goal 进度与各里程碑收敛状态 |
+| **工作流模式** | `/plan [on\|off]` | 设置 Thread collaboration mode（Plan 为只读架构与方案探索） |
+| | `/goal <目标描述>` | 设置 Thread Goal，由 Goal Runtime 自动推进 |
+| | `/goal` | 查看当前 Goal 状态、Token 与时间预算 |
 | | `/workflows` | 探测工作区内规范与计划文件（`plan.md`, `AGENTS.md`） |
 | **模型与思考** | `/effort [low\|med\|high]` | 查看或切换思考链强度 |
 | | `/steer <纠偏指令>` | 向当前轮次检查点注入实时纠偏，或以 Follow-up 发送引导指令 |

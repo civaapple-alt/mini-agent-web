@@ -259,7 +259,7 @@ async def handle_slash_command(
 
     if lower_text == "/status":
         server_info = (
-            f"{init_res.get('serverName', 'mini-agent-app-server')} v{init_res.get('serverVersion', '0.6.0')}"
+            f"{init_res.get('serverName', 'mini-agent-app-server')} v{init_res.get('serverVersion', '0.7.0')}"
             if init_res
             else "mini-agent-app-server"
         )
@@ -410,9 +410,9 @@ async def handle_slash_command(
             if target_profile in ("interactive", "auto", "ask"):
                 state.profile = target_profile
                 if target_profile == "ask":
-                    await client.set_plan_mode(True)
+                    await client.set_collaboration_mode("plan")
                 else:
-                    await client.set_plan_mode(False)
+                    await client.set_collaboration_mode("default")
                 console.print(
                     f"[green]✓ System Profile switched to: [bold]{state.profile}[/bold][/green]"
                 )
@@ -482,17 +482,22 @@ async def handle_slash_command(
         if len(parts) > 1:
             arg = parts[1].strip().lower()
             if arg in ("on", "true", "1", "enable"):
-                res = await client.set_plan_mode(True)
+                res = await client.set_collaboration_mode("plan")
             elif arg in ("off", "false", "0", "disable"):
-                res = await client.set_plan_mode(False)
+                res = await client.set_collaboration_mode("default")
             else:
                 wf = await client.get_workflow_state()
-                res = await client.set_plan_mode(not wf.plan_active)
+                next_mode = (
+                    "default" if wf.collaboration_mode.mode == "plan" else "plan"
+                )
+                res = await client.set_collaboration_mode(next_mode)
         else:
             wf = await client.get_workflow_state()
-            res = await client.set_plan_mode(not wf.plan_active)
+            next_mode = "default" if wf.collaboration_mode.mode == "plan" else "plan"
+            res = await client.set_collaboration_mode(next_mode)
+        active = res.collaboration_mode.mode == "plan"
         console.print(
-            f"[yellow]Plan Mode is now: {'ACTIVE (Read-Only 探索模式)' if res.plan_active else 'OFF'}[/yellow]"
+            f"[yellow]Plan Mode is now: {'ACTIVE (Read-Only 探索模式)' if active else 'OFF'}[/yellow]"
         )
         return True
 
@@ -500,16 +505,16 @@ async def handle_slash_command(
         parts = text.split(maxsplit=1)
         if len(parts) > 1:
             target_goal = parts[1].strip()
-            res = await client.start_goal(target_goal)
+            res = await client.set_goal(objective=target_goal)
             console.print(
-                f"[green]✓ Goal started ({res.goal.goal_id}): [bold]{res.goal.objective}[/bold]\n"
-                f"Milestones: {res.goal.total_milestones} | Status: {res.goal.status}[/green]"
+                f"[green]✓ Thread Goal set ({res.goal.thread_id}): [bold]{res.goal.objective}[/bold]\n"
+                f"Status: {res.goal.status} | Token budget: {res.goal.token_budget or 'unlimited'}[/green]"
             )
         else:
             wf = await client.get_workflow_state()
             if wf.goal:
                 console.print(
-                    f"[sky_blue1]Active Goal ({wf.goal.goal_id}): milestone {wf.goal.current_milestone}/{wf.goal.total_milestones}, status={wf.goal.status}[/sky_blue1]"
+                    f"[sky_blue1]Thread Goal ({wf.goal.thread_id}): status={wf.goal.status}, tokens={wf.goal.tokens_used}/{wf.goal.token_budget or 'unlimited'}[/sky_blue1]"
                 )
             else:
                 console.print("[dim]No active goal. Usage: /goal <objective>[/dim]")

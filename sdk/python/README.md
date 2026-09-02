@@ -1,4 +1,4 @@
-# Mini Agent Python SDK 0.6.0
+# Mini Agent Python SDK 0.7.0
 
 Official asynchronous Python SDK for interacting with the `mini-agent-app-server` runtime and Harness engine.
 
@@ -42,18 +42,21 @@ if __name__ == "__main__":
 ## Key Features
 
 * **Async Context Manager**: Simple `async with MiniAgentClient()` manages subprocess lifecycle cleanly.
-* **Stream Generator**: `stream_turn()` yields target-Thread/Turn events, real-time reasoning deltas, text tokens, tool start/finish, context compaction, run lifecycle events, and `approval` records (`requested`/`resolved`).
+* **Stream Generator**: `stream_turn()` yields target-Thread/Turn events, real-time reasoning deltas, text tokens, tool start/finish, context compaction, run lifecycle events, `ThreadItem` projections, runtime notifications, and `approval` records (`requested`/`resolved`).
 * **Security & Approval Interceptor**: Native support for `approval/request`, `approval/respond`, and server `approval/resolved`; approval records are visible even when `approval_handler` is omitted and the SDK uses its default auto-approval policy.
 * **Steering & Interrupt**: Mid-turn instruction injection (`turn/steer`) and cooperative cancellation (`turn/interrupt`).
 * **Zero Required Dependencies**: Runs entirely on Python 3.10+ Standard Library (`asyncio`, `json`, `subprocess`).
 
-## 0.6.0 Compatibility
+## 0.7.0 Compatibility
 
-The SDK targets `mini-agent-app-server` 0.6.0 over JSON-RPC wire protocol
-version `1`. It exposes typed context-compaction and run-lifecycle events,
-preserves unknown events as `GenericEvent`, and keeps `stream_turn()` scoped to
-the requested Thread and Turn. Set `MINI_AGENT_APP_SERVER_PATH` when the
-matching App Server binary is not on `PATH`.
+The SDK targets `mini-agent-app-server` 0.7.0 over JSON-RPC wire protocol
+version `1`. Thread settings use `thread/settings/update`; Thread Goals use
+`thread/goal/set`, `thread/goal/get`, and `thread/goal/clear`. `turn/event` and
+`turn/read` expose bounded `ThreadItem` projections. Runtime notifications such
+as `thread/goal/updated` are yielded as notification envelopes, while unknown
+engine events remain available as `GenericEvent`. Set
+`MINI_AGENT_APP_SERVER_PATH` when the matching App Server binary is not on
+`PATH`.
 
 For a deterministic protocol check that does not start the App Server or call a
 model provider, run:

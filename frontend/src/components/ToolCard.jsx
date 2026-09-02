@@ -28,9 +28,11 @@ export default function ToolCard({
   const [denyReason, setDenyReason] = useState('');
   const [showDenyInput, setShowDenyInput] = useState(false);
 
-  const { name, status, arguments: args, output, error, id } = tool;
-  const isRunning = status === 'running';
-  const isFailed = status === 'failed' || !!error;
+  const { name, status, output, error, id } = tool;
+  const args = tool.arguments ?? tool.args;
+  const normalizedStatus = status === 'inProgress' ? 'running' : status;
+  const isRunning = normalizedStatus === 'running';
+  const isFailed = normalizedStatus === 'failed' || !!error;
 
   // Check if this tool is currently awaiting human approval
   const isAwaitingApproval =
@@ -107,7 +109,7 @@ export default function ToolCard({
   };
 
   return (
-    <div className={`tool-card ${status || 'running'} ${isFailed ? 'has-error' : ''} ${isAwaitingApproval ? 'awaiting-approval' : ''}`}>
+    <div className={`tool-card ${normalizedStatus || 'running'} ${isFailed ? 'has-error' : ''} ${isAwaitingApproval ? 'awaiting-approval' : ''}`}>
       {/* Top Tool Header */}
       <div className="tool-header">
         <div className="tool-left-info">

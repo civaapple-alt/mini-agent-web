@@ -87,3 +87,50 @@ test('thread isolation rejects foreign thread events', () => {
   assert.equal(shouldAcceptEventForThread(foreignEvent, activeThread), false);
   assert.equal(shouldAcceptEventForThread(genericEvent, activeThread), true);
 });
+
+test('ThreadItem tool projections update one stable tool block', () => {
+  let messages = aggregateStreamEvent([], {
+    type: 'event',
+    threadId: 'thread-main',
+    turnId: 'turn-items',
+    event: { type: 'turn_started' },
+  });
+
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    threadId: 'thread-main',
+    turnId: 'turn-items',
+    items: [
+      {
+        type: 'toolCall',
+        id: 'call-items-1',
+        name: 'shell',
+        arguments: { command: 'pwd' },
+        status: 'inProgress',
+      },
+    ],
+    event: { type: 'tool_started' },
+  });
+
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    threadId: 'thread-main',
+    turnId: 'turn-items',
+    items: [
+      {
+        type: 'toolCall',
+        id: 'call-items-1',
+        name: 'shell',
+        arguments: { command: 'pwd' },
+        status: 'completed',
+        output: 'C:\\workspace',
+      },
+    ],
+    event: { type: 'tool_finished' },
+  });
+
+  assert.equal(messages[0].blocks.length, 1);
+  assert.equal(messages[0].blocks[0].call_id, 'call-items-1');
+  assert.equal(messages[0].blocks[0].status, 'completed');
+  assert.equal(messages[0].blocks[0].output, 'C:\\workspace');
+});

@@ -1,4 +1,4 @@
-# Mini Agent Official Python SDK (`mini-agent`) 0.6.0 Developer Guide
+# Mini Agent Official Python SDK (`mini-agent`) 0.7.0 Developer Guide
 
 The `mini-agent` Python package is the official, zero-dependency async SDK designed to communicate with the [Mini Agent Harness (`mini-agent-app-server`)](https://github.com/civaapple-alt/mini-agent-harness) over **Stdio JSON-RPC 2.0**.
 
@@ -78,7 +78,7 @@ client = MiniAgentClient(
 ```
 
 ### 3.2 Automated `.env` Discovery
-`MiniAgentClient` automatically locates and parses `.env` files, providing credentials (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, etc.) directly to the backend process environment without modifying global state. Set `MINI_AGENT_APP_SERVER_PATH` to select an explicit 0.6.0 App Server binary.
+`MiniAgentClient` automatically locates and parses `.env` files, providing credentials (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, etc.) directly to the backend process environment without modifying global state. Set `MINI_AGENT_APP_SERVER_PATH` to select an explicit 0.7.0 App Server binary.
 
 ### 3.3 Dynamic File-Based Logging
 Passing `log_dir="logs"` automatically creates script-isolated logs (e.g. `logs/02_streaming_events.log`).
@@ -154,13 +154,32 @@ result = await client.wait_for_turn(turn_id)
 assert result.status == "cancelled"
 ```
 
-### 4.5 Protocol Compatibility and Future Events
+### 4.5 Protocol Compatibility, ThreadItems, and Runtime Notifications
 
-The 0.6.0 SDK targets App Server JSON-RPC protocol version `1`. Parsed event
+The 0.7.0 SDK targets App Server JSON-RPC protocol version `1`. Parsed event
 objects expose `event_type`, and the typed event surface includes context
 compaction (`context_compaction_started` / `context_compaction_finished`) and
 run lifecycle (`run_finished` / structured `run_failed`) events. Unknown future
 event types remain available as `GenericEvent` instead of breaking the stream.
+
+For App Server `turn/event` messages, `stream_turn()` also exposes the raw
+`items` list and typed `ThreadItem` values. This is the stable projection for
+renderers that reconcile a tool call across `inProgress`, `completed`, and
+`failed` states:
+
+```python
+async for envelope in client.stream_turn("Inspect the workspace"):
+    if envelope["type"] == "event":
+        for item in envelope["typed_items"]:
+            if item.type == "toolCall":
+                print(item.id, item.name, item.status, item.arguments, item.output)
+```
+
+Runtime notifications such as `thread/settings/updated`,
+`thread/goal/updated`, and `thread/goal/cleared` are yielded as
+`{"type": "notification", "method": ..., "data": ...}` envelopes. A
+`notification_handler` may be supplied when the application needs to
+broadcast these events outside an active turn stream.
 
 Use the deterministic Cookbook contract check when changing event models:
 
@@ -169,15 +188,16 @@ uv run python cookbook/python-demo/06_protocol_compatibility.py
 uv run pytest tests/test_sdk_events.py tests/test_cookbook_validation.py -q
 ```
 
-### 4.6 Workflows & Plan Mode
+### 4.6 Thread Settings and Plan Mode
 ```python
 # Inspect system environment & available tools
 world_state = await client.get_world_state()
 
 # Enter read-only exploration mode
-await client.set_plan_mode(
-    active=True, prompt="Analyze codebase without modifying files"
-)
+await client.set_collaboration_mode("plan")
+
+# Return to the default collaboration mode
+await client.set_collaboration_mode("default")
 
 # Read settled thread checkpoint
 checkpoint = await client.read_thread()
@@ -198,19 +218,23 @@ forked = await client.fork_thread(
 resumed = await client.resume_thread(thread_id="restored-thread", checkpoint=checkpoint)
 ```
 
-### 4.8 Multi-Milestone Goal Workflows
+### 4.8 Thread Goal Runtime
 ```python
-# Start a multi-stage goal workflow
-goal = await client.start_goal("Implement High-Performance Caching Layer")
+# Set a Thread-owned Goal. The App Server schedules Goal Runtime continuation.
+goal_result = await client.set_goal(
+    "Implement High-Performance Caching Layer", token_budget=4096
+)
+goal = goal_result.goal
 print(
-    f"Goal ID: {goal.goal_id}, Status: {goal.status}, Milestone: {goal.current_milestone}/{goal.total_milestones}"
+    f"Thread: {goal.thread_id}, Status: {goal.status}, "
+    f"Tokens: {goal.tokens_used}/{goal.token_budget or 'unlimited'}"
 )
 
-# Fetch milestone verification criteria
-criteria = await client.get_goal_criteria()
+# Read the current bounded Goal projection
+current = await client.get_goal()
 
-# Pause or advance goal
-await client.pause_goal()
+# Clear the Goal and stop future automatic continuation
+await client.clear_goal()
 ```
 
 ---

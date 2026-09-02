@@ -2,7 +2,7 @@
 
 本文档详细记录了 `mini-agent-web` 中 **FastAPI Web API Gateway**、**Cursor / ChatGPT 风格 Web Studio 前端** 以及 **Rich Terminal TUI** 的设计架构、通信机制与核心技术实现。
 
-当前实现对应 `mini-agent-web` / `mini-agent` `0.6.0`，底层 wire protocol 为 JSON-RPC version `1`。SDK 的 `stream_turn()` 会按 Thread/Turn 过滤 App Server 事件；网关级 SessionManager 的多连接广播和会话隔离仍按本文档的现有边界运行。
+当前实现对应 `mini-agent-web` / `mini-agent` `0.7.0`，底层 wire protocol 为 JSON-RPC version `1`。SDK 的 `stream_turn()` 会按 Thread/Turn 过滤 App Server 事件，并透传有界 `ThreadItem` 与运行时通知；网关级 SessionManager 的多连接广播和会话隔离仍按本文档的现有边界运行。
 
 ---
 
@@ -110,10 +110,10 @@ App Server (Rust)             MiniAgentClient              SessionManager       
 网关核心接口由 `tests/test_gateway_api.py` 进行全面测试保障：
 1. **健康检查与静态托管**：`GET /health`、`GET /`；
 2. **会话全生命周期**：`GET /api/threads`、`POST /api/threads`、`POST /api/threads/fork`、`GET /api/threads/{id}`；
-3. **环境与工作流**：`GET /api/world/state`、`GET /api/workflows/state`、`POST /api/workflows/plan`；
+3. **环境与线程控制**：`GET /api/world/state`、`GET /api/workflows/state`、`POST /api/workflows/settings`、`POST|GET|DELETE /api/workflows/goal`；
 4. **安全审批列表与响应**：`GET /api/approval/pending`、`POST /api/approval/respond`。
 
-0.6.0 发布验证另外覆盖 `tests/test_sdk_events.py` 的事件模型与 Thread/Turn
+0.7.0 发布验证另外覆盖 `tests/test_sdk_events.py` 的事件模型、ThreadItem 与 Thread/Turn
 分流，以及 `tests/test_cookbook_validation.py` 的全部 Cookbook 编译检查和
 Demo 06 无 Provider 协议验证。需要真实模型的 Demo 01–05 只在显式配置
 Provider 后运行。

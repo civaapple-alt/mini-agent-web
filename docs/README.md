@@ -1,6 +1,6 @@
 # Mini Agent Web & Python SDK Documentation
 
-本目录包含 `mini-agent-web` 0.6.0、官方 Python SDK (`mini-agent`) 的架构设计、开发者指南、协议覆盖报告与决策记录（ADR）。当前 wire protocol 为 JSON-RPC version `1`。
+本目录包含 `mini-agent-web` 0.7.0、官方 Python SDK (`mini-agent`) 的架构设计、开发者指南、协议覆盖报告与决策记录（ADR）。当前 wire protocol 为 JSON-RPC version `1`。
 
 ---
 
@@ -8,11 +8,11 @@
 
 ### 1. 开发者指南与技术报告
 * 📘 [**Python SDK 开发者指南 (`docs/python-sdk-guide.md`)**](python-sdk-guide.md)  
-  包含 SDK 0.6.0 快速上手、`MiniAgentClient` 异步生命周期、Thread/Turn 约束的 Token 级流式推流、权限审批拦截与运行时动态控制。
+  包含 SDK 0.7.0 快速上手、`MiniAgentClient` 异步生命周期、Thread/Turn/Item 约束的流式推流、权限审批拦截与运行时动态控制。
 * 🖥️ [**Web API Gateway 与 Web Studio 架构设计 (`docs/web-gateway-and-studio-architecture.md`)**](web-gateway-and-studio-architecture.md)  
   包含 FastAPI 网关架构、WebSocket/SSE 双流式通道、Thinking 思考折叠、工具状态卡片与双向安全审批握手实现。
 * 📊 [**SDK 成熟度与协议覆盖报告 (`docs/sdk-maturity-and-protocol-coverage.md`)**](sdk-maturity-and-protocol-coverage.md)  
-  包含 App Server JSON-RPC 2.0 协议全景覆盖矩阵、SDK 0.6.0 事件覆盖和 Cookbook 确定性/live 验收边界。
+  包含 App Server JSON-RPC 2.0 协议全景覆盖矩阵、SDK 0.7.0 事件/ThreadItem 覆盖和 Cookbook 确定性/live 验收边界。
 * 🧪 [**Python Cookbook (`cookbook/python-demo/README.md`)**](../cookbook/python-demo/README.md)
   包含 Demo 01–05 的 Provider 依赖说明，以及 Demo 06 的无 Provider、无 Token 协议验证。
 * 📈 [**客户端架构与性能全景对比 (`docs/client-architectures-and-performance-comparison.md`)**](client-architectures-and-performance-comparison.md)  

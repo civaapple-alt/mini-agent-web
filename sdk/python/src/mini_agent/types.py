@@ -31,19 +31,16 @@ TurnInputMode = Literal[
     "follow_up",
 ]
 
-WorkflowGoalStatus = Literal[
-    "running",
-    "converged",
-    "failed",
-    "user_paused",
+ThreadGoalStatus = Literal[
+    "active",
+    "paused",
+    "blocked",
+    "usageLimited",
+    "budgetLimited",
+    "complete",
 ]
 
-WorkflowVerdictOutcome = Literal[
-    "approved",
-    "rejected",
-    "needs_clarification",
-    "invalid",
-]
+CollaborationModeKind = Literal["default", "plan"]
 
 
 @dataclass
@@ -64,6 +61,43 @@ class ToolCall:
             id=cid,
             call_id=cid,
         )
+
+
+@dataclass
+class ThreadItem:
+    """Bounded client-facing projection of a Thread item."""
+
+    type: str
+    id: str = ""
+    text: str = ""
+    name: str = ""
+    arguments: Any = None
+    status: str | None = None
+    output: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ThreadItem:
+        return cls(
+            type=str(data.get("type", "unknown")),
+            id=str(data.get("id", "")),
+            text=str(data.get("text", "")),
+            name=str(data.get("name", "")),
+            arguments=data.get("arguments"),
+            status=data.get("status"),
+            output=data.get("output"),
+        )
+
+
+@dataclass
+class CollaborationMode:
+    """Thread collaboration mode returned by the App Server."""
+
+    mode: CollaborationModeKind = "default"
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> CollaborationMode:
+        value = data or {}
+        return cls(mode=value.get("mode", "default"))
 
 
 @dataclass
@@ -132,6 +166,7 @@ class TurnReadResult:
     final_text: str | None = None
     steps: int = 0
     messages: list[dict[str, Any]] = field(default_factory=list)
+    items: list[ThreadItem] = field(default_factory=list)
     error: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -145,6 +180,7 @@ class TurnReadResult:
             final_text=val.get("final_text") or val.get("finalText"),
             steps=val.get("steps", 0),
             messages=val.get("messages", []),
+            items=[ThreadItem.from_dict(item) for item in val.get("items", [])],
             error=val.get("error"),
             raw=data,
         )
@@ -158,6 +194,9 @@ class ThreadCheckpoint:
     status: ThreadStatus
     next_turn_number: int = 1
     messages: list[dict[str, Any]] = field(default_factory=list)
+    context_revision: int = 0
+    last_turn_id: str | None = None
+    next_event_sequence: int = 1
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -170,6 +209,11 @@ class ThreadCheckpoint:
             or val.get("nextTurnNumber", 1),
             messages=val.get("session", {}).get("messages", [])
             or val.get("messages", []),
+            context_revision=val.get("context_revision")
+            or val.get("contextRevision", 0),
+            last_turn_id=val.get("last_turn_id") or val.get("lastTurnId"),
+            next_event_sequence=val.get("next_event_sequence")
+            or val.get("nextEventSequence", 1),
             raw=data,
         )
 
@@ -223,84 +267,120 @@ class ThreadResumeResult:
 
 
 @dataclass
-class WorkflowGoalState:
-    """Current state of a multi-milestone goal."""
+class ThreadGoal:
+    """Bounded public projection of a Thread-owned Goal."""
 
-    goal_id: str
-    status: WorkflowGoalStatus
-    current_milestone: int = 0
-    total_milestones: int = 0
-    loop_count: int = 0
-    max_loops: int = 0
-    milestone_step_budget: int = 0
-    milestone_timeout_secs: int = 0
-    verifier_model: str | None = None
-    last_verifier_score: int | None = None
-    updated_at_ms: int = 0
+    thread_id: str
+    objective: str
+    status: ThreadGoalStatus
+    token_budget: int | None = None
+    tokens_used: int = 0
+    time_used_seconds: int = 0
+    created_at: int = 0
+    updated_at: int = 0
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> WorkflowGoalState:
+    def from_dict(cls, data: dict[str, Any]) -> ThreadGoal:
         val = data.get("value", data) if isinstance(data, dict) else data
         return cls(
-            goal_id=val.get("goalId") or val.get("goal_id", ""),
-            status=val.get("status", "running"),
-            current_milestone=val.get("currentMilestone")
-            or val.get("current_milestone", 0),
-            total_milestones=val.get("totalMilestones")
-            or val.get("total_milestones", 0),
-            loop_count=val.get("loopCount") or val.get("loop_count", 0),
-            max_loops=val.get("maxLoops") or val.get("max_loops", 0),
-            milestone_step_budget=val.get("milestoneStepBudget")
-            or val.get("milestone_step_budget", 0),
-            milestone_timeout_secs=val.get("milestoneTimeoutSecs")
-            or val.get("milestone_timeout_secs", 0),
-            verifier_model=val.get("verifierModel") or val.get("verifier_model"),
-            last_verifier_score=val.get("lastVerifierScore")
-            or val.get("last_verifier_score"),
-            updated_at_ms=val.get("updatedAtMs") or val.get("updated_at_ms", 0),
+            thread_id=val.get("threadId") or val.get("thread_id", ""),
+            objective=val.get("objective", ""),
+            status=val.get("status", "active"),
+            token_budget=val.get("tokenBudget")
+            if "tokenBudget" in val
+            else val.get("token_budget"),
+            tokens_used=val.get("tokensUsed") or val.get("tokens_used", 0),
+            time_used_seconds=val.get("timeUsedSeconds")
+            or val.get("time_used_seconds", 0),
+            created_at=val.get("createdAt") or val.get("created_at", 0),
+            updated_at=val.get("updatedAt") or val.get("updated_at", 0),
             raw=data,
         )
 
 
 @dataclass
 class WorkflowState:
-    """Secret-free workflow state projected by the App Server."""
+    """Read-only workflow projection using the Codex-shaped settings model."""
 
-    plan_active: bool = False
-    goal: WorkflowGoalState | None = None
+    collaboration_mode: CollaborationMode = field(default_factory=CollaborationMode)
+    goal: ThreadGoal | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WorkflowState:
         val = data.get("value", data) if isinstance(data, dict) else data
         goal_data = val.get("goal") if isinstance(val, dict) else None
-        goal = WorkflowGoalState.from_dict(goal_data) if goal_data else None
+        goal = ThreadGoal.from_dict(goal_data) if goal_data else None
+        mode_data = val.get("collaborationMode") or val.get("collaboration_mode")
         return cls(
-            plan_active=val.get("planActive") or val.get("plan_active", False)
-            if isinstance(val, dict)
-            else False,
+            collaboration_mode=CollaborationMode.from_dict(mode_data),
             goal=goal,
             raw=data,
         )
 
 
 @dataclass
-class WorkflowVerifierVerdict:
-    """Structured verdict submitted by an external verifier."""
+class ThreadSettingsResult:
+    """Result returned by ``thread/settings/update``."""
 
-    outcome: WorkflowVerdictOutcome
-    summary: str
-    score: int | None = None
+    collaboration_mode: CollaborationMode
+    builtin_tools: list[str] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
-        res: dict[str, Any] = {
-            "outcome": self.outcome,
-            "summary": self.summary,
-        }
-        if self.score is not None:
-            res["score"] = self.score
-        return res
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ThreadSettingsResult:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        return cls(
+            collaboration_mode=CollaborationMode.from_dict(
+                val.get("collaborationMode") or val.get("collaboration_mode")
+            ),
+            builtin_tools=val.get("builtinTools") or val.get("builtin_tools", []),
+            raw=data,
+        )
+
+
+@dataclass
+class ThreadGoalSetResult:
+    """Result returned by ``thread/goal/set``."""
+
+    goal: ThreadGoal
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ThreadGoalSetResult:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        return cls(goal=ThreadGoal.from_dict(val.get("goal", {})), raw=data)
+
+
+@dataclass
+class ThreadGoalGetResult:
+    """Result returned by ``thread/goal/get``."""
+
+    goal: ThreadGoal | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ThreadGoalGetResult:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        goal_data = val.get("goal") if isinstance(val, dict) else None
+        return cls(
+            goal=ThreadGoal.from_dict(goal_data) if goal_data else None,
+            raw=data,
+        )
+
+
+@dataclass
+class ThreadGoalClearResult:
+    """Result returned by ``thread/goal/clear``."""
+
+    cleared: bool
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ThreadGoalClearResult:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        return cls(cleared=bool(val.get("cleared", False)), raw=data)
 
 
 @dataclass

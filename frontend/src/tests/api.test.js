@@ -48,6 +48,24 @@ test('api client methods construct expected fetch endpoints and payloads', async
   const setRes = await api.updateSettings({ profile: 'auto' });
   assert.equal(setRes.settings.profile, 'auto');
 
+  // 2b. Thread settings and Goal Runtime APIs
+  await api.setCollaborationMode('plan');
+  const settingsCall = calls[calls.length - 1];
+  assert.equal(settingsCall.url, '/api/workflows/settings');
+  assert.equal(JSON.parse(settingsCall.options.body).mode, 'plan');
+
+  await api.setGoal('Ship the next release', 4096);
+  const goalCall = calls[calls.length - 1];
+  assert.equal(goalCall.url, '/api/workflows/goal');
+  assert.equal(JSON.parse(goalCall.options.body).token_budget, 4096);
+
+  await api.getGoal();
+  assert.equal(calls[calls.length - 1].url, '/api/workflows/goal');
+  assert.equal(calls[calls.length - 1].options.method, undefined);
+
+  await api.clearGoal();
+  assert.equal(calls[calls.length - 1].options.method, 'DELETE');
+
   // 3. Approval response
   const appRes = await api.respondApproval('req-1', 'allow', '', true);
   assert.equal(appRes.status, 'resolved');

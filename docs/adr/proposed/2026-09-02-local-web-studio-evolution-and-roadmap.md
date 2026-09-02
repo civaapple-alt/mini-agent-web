@@ -18,16 +18,18 @@ Proposed
 
 ### 当前基线
 
-截至 `0.6.0`，本仓库已经具备一个可工作的本地 Web Studio：
+截至 `0.7.0`，本仓库已经具备一个可工作的本地 Web Studio：
 
 - React 19 + Vite 6 前端，现有组件包括会话侧栏、聊天区、Thinking、ToolCard、
   输入栏、设置和多 Tab SidePanel；
 - FastAPI Gateway 通过 `MiniAgentClient` 连接 App Server，提供 REST、SSE 和
   `/ws/agent` 全双工 WebSocket；
-- 流式事件携带 Thread/Turn 身份与序号，前端会拒绝其他 Thread 的事件；未知
-  事件在 SDK 中保留为 `GenericEvent`；
-- 已有线程列表、读取、fork、关闭、Workflow/Plan/Goal 状态、Git 状态和受限的
-  工作区文件列表 API；SessionManager 持久化项目、设置和线程元数据；
+- 流式事件携带 Thread/Turn 身份、序号和有界的 `ThreadItem` 投影，前端会拒绝
+  其他 Thread 的事件，并按工具调用 ID 合并工具生命周期；未知事件在 SDK 中
+  保留为 `GenericEvent`；
+- 已有线程列表、读取、fork、关闭、`thread/settings/update`、Thread Goal
+  Runtime、Git 状态和受限的工作区文件列表 API；SessionManager 持久化项目、
+  设置和线程元数据，并转发 settings/Goal/approval 运行时通知；
 - 现有审批协议是一次性的 `approved`/`denied` 决策，支持会话级按工具记忆，
   不支持修改待执行命令。
 
@@ -145,9 +147,10 @@ Gateway 为每个 Project 维护有界的工作区树快照。首个实现可以
 
 ### 5. Goal DAG 与 Checkpoint：先做只读投影，回溯默认 fork
 
-当前 Workflow API 只暴露 `plan_active` 和 Goal 的状态、当前里程碑、总数、循环
-计数与预算。第一阶段把这些字段投影为线性节点，并增加验证结果和 criteria 的
-只读展示；不要先引入 Mermaid 作为运行时依赖。
+当前 Workflow API 只读投影 `collaborationMode` 和 Thread Goal 的状态、目标、
+token/time usage 与预算。第一阶段继续把 Goal 投影为线性进度信息；不重新引入
+旧的 `plan_active`、手工 milestone/verdict API，也不要先引入 Mermaid 作为运行时
+依赖。
 
 当底层能够提供稳定的里程碑依赖后，Gateway 使用有界快照：
 

@@ -22,7 +22,7 @@ Tauri 进程属于后续独立评审，不是本提案的默认路线。
 
 ### 当前基线
 
-当前交付形态是 `0.6.0` 的 FastAPI Gateway + React 19/Vite 6 Web Studio：
+当前交付形态是 `0.7.0` 的 FastAPI Gateway + React 19/Vite 6 Web Studio：
 
 - 浏览器通过 REST、SSE 和 `/ws/agent` 与 Gateway 通信；Gateway 通过
   `MiniAgentClient` 连接 protocol version `1` 的 App Server；

@@ -1,7 +1,7 @@
 """
-Demo 05: Management, Workflows, and Thread Checkpoints
-Demonstrates querying WorldState, thread lifecycle & forking, toggling
-Plan Mode (read-only locking), and managing multi-milestone Goal workflows.
+Demo 05: Management, Thread Settings, Goals, and Checkpoints
+Demonstrates querying WorldState, thread lifecycle & forking, updating the
+Codex-shaped collaboration mode, and managing a Thread-owned Goal.
 """
 
 import asyncio
@@ -62,40 +62,36 @@ async def main():
         except AppServerError as err:
             print(f"(mcp/status error: {err})", flush=True)
 
-        # 5. Toggle Plan Mode (locks workspace mutations)
+        # 5. Update collaboration mode (locks workspace mutations)
         print("\n--- 4. Enabling Plan Mode ---", flush=True)
         try:
-            plan_resp = await client.set_plan_mode(
-                active=True,
-                prompt="Drafting high-level architecture before coding.",
-            )
-            print(f"Plan Mode Active: {plan_resp.plan_active}", flush=True)
+            settings = await client.set_collaboration_mode("plan")
+            print(f"Collaboration Mode: {settings.collaboration_mode.mode}", flush=True)
         except AppServerError as err:
-            print(f"(workflow/plan/set error: {err})", flush=True)
+            print(f"(thread/settings/update error: {err})", flush=True)
 
-        # 6. Multi-Milestone Goal Workflow
-        print("\n--- 5. Multi-Milestone Goal Workflow ---", flush=True)
+        # 6. Thread-owned Goal Runtime
+        print("\n--- 5. Thread Goal Runtime ---", flush=True)
         try:
-            goal_res = await client.start_goal(
-                "Implement High-Performance Caching Layer"
+            goal_res = await client.set_goal(
+                objective="Implement High-Performance Caching Layer",
+                token_budget=4096,
             )
-            print(f"Goal ID       : {goal_res.goal_id}", flush=True)
-            print(f"Goal Status   : {goal_res.status}", flush=True)
+            goal = goal_res.goal
+            print(f"Goal Thread   : {goal.thread_id}", flush=True)
+            print(f"Goal Status   : {goal.status}", flush=True)
             print(
-                f"Milestones    : {goal_res.current_milestone}/{goal_res.total_milestones}",
+                f"Token Budget  : {goal.token_budget or 'unlimited'}",
                 flush=True,
             )
 
-            criteria = await client.get_goal_criteria()
+            current = await client.get_goal()
             print(
-                f"Criteria Lines: {len(criteria.splitlines())} lines retrieved",
+                f"Goal Readback : {current.goal.status if current.goal else 'cleared'}",
                 flush=True,
             )
-
-            paused = await client.pause_goal()
-            print(f"Paused Goal   : {paused.status}", flush=True)
         except AppServerError as err:
-            print(f"(goal workflow error: {err})", flush=True)
+            print(f"(thread/goal error: {err})", flush=True)
 
         print("\n=== Demo 05 Completed Successfully ===", flush=True)
 

@@ -11,7 +11,7 @@ import logging
 import os
 import shutil
 import sys
-from collections.abc import AsyncIterator, Callable, Coroutine
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any, Self
 
 from mini_agent.errors import (
@@ -22,18 +22,23 @@ from mini_agent.errors import (
 )
 from mini_agent.events import parse_event
 from mini_agent.types import (
+    CollaborationModeKind,
     McpRetryResult,
     McpStatusResult,
     SessionInfo,
     ThreadCheckpoint,
     ThreadForkResult,
+    ThreadGoalClearResult,
+    ThreadGoalGetResult,
+    ThreadGoalSetResult,
+    ThreadGoalStatus,
+    ThreadItem,
     ThreadListResult,
     ThreadResumeResult,
+    ThreadSettingsResult,
     TurnReadResult,
     TurnSubmissionResult,
-    WorkflowGoalState,
     WorkflowState,
-    WorkflowVerifierVerdict,
     WorldRefreshResult,
     WorldSetExecutionResult,
     WorldStateResult,
@@ -172,7 +177,8 @@ class MiniAgentClient:
         executable: str = "mini-agent-app-server",
         cwd: str | None = None,
         env: dict[str, str] | None = None,
-        approval_handler: Callable[[str, str], Coroutine[Any, Any, bool]] | None = None,
+        approval_handler: Callable[..., Awaitable[Any]] | None = None,
+        notification_handler: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         log_dir: str | None = None,
         log_file: str | None = None,
         log_level: str | int | None = None,
@@ -199,6 +205,7 @@ class MiniAgentClient:
         # Priority: explicit env arg > process os.environ > .env file
         self.env = {**file_env, **os.environ, **(env or {})}
         self.approval_handler = approval_handler
+        self.notification_handler = notification_handler
 
         # Configure file logging if log_dir, log_file or env specified
         eff_dir = log_dir or self.env.get("MINI_AGENT_LOG_DIR")
@@ -412,6 +419,15 @@ class MiniAgentClient:
                     await self._publish_approval(params, "resolved")
 
                 else:
+                    notification = {
+                        "type": "notification",
+                        "method": method,
+                        "data": params,
+                    }
+                    for q in self._event_queues:
+                        await q.put(notification)
+                    if self.notification_handler is not None:
+                        asyncio.create_task(self.notification_handler(notification))
                     logger.debug("Received server notification: %s", method)
 
     async def _stderr_loop(self) -> None:
@@ -446,6 +462,7 @@ class MiniAgentClient:
             or ""
         )
         action = str(params.get("action") or params.get("tool") or "")
+        remember = False
         try:
             if self.approval_handler is not None:
                 import inspect
@@ -466,6 +483,7 @@ class MiniAgentClient:
                     approved = decision in ("approved", "allow", "yes", "true") or bool(
                         res.get("approved")
                     )
+                    remember = bool(res.get("remember", False))
                 elif isinstance(res, str):
                     approved = res.lower() in ("approved", "allow", "yes", "true")
                 else:
@@ -479,7 +497,11 @@ class MiniAgentClient:
         try:
             await self._send_request(
                 "approval/respond",
-                {"requestId": request_id, "approved": approved},
+                {
+                    "requestId": request_id,
+                    "approved": approved,
+                    "remember": remember,
+                },
             )
         except Exception as err:  # noqa: BLE001
             logger.error("Failed to send approval response: %s", err)
@@ -492,7 +514,7 @@ class MiniAgentClient:
         self,
         profile: str | None = "interactive",
         client_name: str = "python-sdk",
-        client_version: str = "0.6.0",
+        client_version: str = "0.7.0",
         providers: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Negotiate protocol version 1 and receive capability manifest."""
@@ -726,6 +748,17 @@ class MiniAgentClient:
                         continue
                     yield envelope
                     continue
+                if envelope.get("type") == "notification":
+                    notification_data = envelope.get("data", {})
+                    notification_thread = None
+                    if isinstance(notification_data, dict):
+                        notification_thread = notification_data.get(
+                            "threadId"
+                        ) or notification_data.get("thread_id")
+                    if notification_thread and notification_thread != target_thread:
+                        continue
+                    yield envelope
+                    continue
                 if envelope.get("threadId") != target_thread:
                     continue
                 turn_id = envelope.get("turnId")
@@ -733,6 +766,8 @@ class MiniAgentClient:
                     continue
                 event_dict = envelope.get("event", {})
                 sequence = envelope.get("sequence", 0)
+                item_dicts = envelope.get("items", [])
+                typed_items = [ThreadItem.from_dict(item) for item in item_dicts]
 
                 yield {
                     "type": "event",
@@ -740,6 +775,8 @@ class MiniAgentClient:
                     "turnId": turn_id,
                     "sequence": sequence,
                     "event": event_dict,
+                    "items": item_dicts,
+                    "typed_items": typed_items,
                     "typed_event": parse_event(event_dict),
                 }
 
@@ -750,78 +787,79 @@ class MiniAgentClient:
             self._event_queues.remove(queue)
 
     # -------------------------------------------------------------------------
-    # Workflows: Plan Mode & Multi-Milestone Goals
+    # Thread Settings, Goals, and Read-Only Workflow Projection
     # -------------------------------------------------------------------------
 
     async def get_workflow_state(self) -> WorkflowState:
-        """Get current plan mode and active goal progress state."""
+        """Get the read-only collaboration mode and active Thread Goal."""
         res = await self._send_request("workflow/state", {})
         return WorkflowState.from_dict(res)
 
-    async def set_plan_mode(
+    async def update_thread_settings(
         self,
-        active: bool,
-        prompt: str | None = None,
-    ) -> WorkflowState:
-        """Enable or disable Plan Mode (read-only exploration)."""
+        mode: CollaborationModeKind,
+        builtin_tools: list[str] | None = None,
+        thread_id: str | None = None,
+    ) -> ThreadSettingsResult:
+        """Update Thread collaboration mode and optional Builtin selection."""
+        params: dict[str, Any] = {
+            "threadId": thread_id or self._active_thread_id,
+            "collaborationMode": {"mode": mode},
+        }
+        if builtin_tools is not None:
+            params["builtinTools"] = builtin_tools
         res = await self._send_request(
-            "workflow/plan/set",
-            {"active": active, "prompt": prompt},
+            "thread/settings/update",
+            params,
         )
-        return WorkflowState.from_dict(res)
+        return ThreadSettingsResult.from_dict(res)
 
-    async def start_goal(self, objective: str) -> WorkflowGoalState:
-        """Start a new multi-milestone goal workflow."""
+    async def set_collaboration_mode(
+        self,
+        mode: CollaborationModeKind,
+        thread_id: str | None = None,
+    ) -> ThreadSettingsResult:
+        """Set the Thread collaboration mode to ``default`` or ``plan``."""
+        return await self.update_thread_settings(mode, thread_id=thread_id)
+
+    async def set_goal(
+        self,
+        objective: str | None = None,
+        status: ThreadGoalStatus | None = None,
+        token_budget: int | None = None,
+        thread_id: str | None = None,
+    ) -> ThreadGoalSetResult:
+        """Set or replace the active Thread Goal."""
+        params: dict[str, Any] = {
+            "threadId": thread_id or self._active_thread_id,
+        }
+        if objective is not None:
+            params["objective"] = objective
+        if status is not None:
+            params["status"] = status
+        if token_budget is not None:
+            params["tokenBudget"] = token_budget
         res = await self._send_request(
-            "workflow/goal/start",
-            {"objective": objective},
+            "thread/goal/set",
+            params,
         )
-        return WorkflowGoalState.from_dict(res)
+        return ThreadGoalSetResult.from_dict(res)
 
-    async def pause_goal(self) -> WorkflowGoalState:
-        """Pause active multi-milestone goal execution."""
-        res = await self._send_request("workflow/goal/pause", {})
-        return WorkflowGoalState.from_dict(res)
-
-    async def fail_goal(self) -> WorkflowGoalState:
-        """Mark the active goal as failed."""
-        res = await self._send_request("workflow/goal/fail", {})
-        return WorkflowGoalState.from_dict(res)
-
-    async def get_goal_criteria(self) -> str:
-        """Retrieve the evaluation criteria for the current goal milestone."""
-        res = await self._send_request("workflow/goal/criteria", {})
-        val = res.get("value", res) if isinstance(res, dict) else res
-        return val.get("criteria", "") if isinstance(val, dict) else ""
-
-    async def advance_goal(
-        self,
-        verdict: WorkflowVerifierVerdict | dict[str, Any] | None = None,
-    ) -> WorkflowGoalState:
-        """Advance the goal workflow with an optional verifier verdict."""
-        params: dict[str, Any] = {}
-        if verdict is not None:
-            params["verdict"] = (
-                verdict.to_dict()
-                if isinstance(verdict, WorkflowVerifierVerdict)
-                else verdict
-            )
-        res = await self._send_request("workflow/goal/advance", params)
-        return WorkflowGoalState.from_dict(res)
-
-    async def record_verifier_verdict(
-        self,
-        checkpoint_seq: int,
-        output: str,
-    ) -> None:
-        """Record an external verification result for a milestone checkpoint."""
-        await self._send_request(
-            "workflow/goal/record_verdict",
-            {
-                "checkpointSeq": checkpoint_seq,
-                "output": output,
-            },
+    async def get_goal(self, thread_id: str | None = None) -> ThreadGoalGetResult:
+        """Read the active Goal owned by a Thread."""
+        res = await self._send_request(
+            "thread/goal/get",
+            {"threadId": thread_id or self._active_thread_id},
         )
+        return ThreadGoalGetResult.from_dict(res)
+
+    async def clear_goal(self, thread_id: str | None = None) -> ThreadGoalClearResult:
+        """Clear the active Goal and stop future automatic continuation."""
+        res = await self._send_request(
+            "thread/goal/clear",
+            {"threadId": thread_id or self._active_thread_id},
+        )
+        return ThreadGoalClearResult.from_dict(res)
 
     # -------------------------------------------------------------------------
     # Session, World Governance & MCP Management

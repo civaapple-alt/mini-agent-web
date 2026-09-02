@@ -1,4 +1,4 @@
-"""Contract tests for the version 0.6.0 Python SDK event surface."""
+"""Contract tests for the version 0.7.0 Python SDK event surface."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from mini_agent import (
     RunFailedEvent,
     RunFailure,
     RunFinishedEvent,
+    ThreadItem,
     ToolFinishedEvent,
     TurnFinishedEvent,
     TurnSubmissionResult,
@@ -119,6 +120,15 @@ async def test_stream_turn_filters_events_by_thread_and_turn():
             "threadId": "thread-1",
             "turnId": "turn-1",
             "sequence": 2,
+            "items": [
+                {
+                    "type": "toolCall",
+                    "id": "call-1",
+                    "name": "shell",
+                    "arguments": {"command": "pwd"},
+                    "status": "inProgress",
+                }
+            ],
             "event": {"type": "assistant_text_delta", "delta": "right"},
         }
     )
@@ -139,6 +149,15 @@ async def test_stream_turn_filters_events_by_thread_and_turn():
 
     assert approval_event["approval"]["phase"] == "requested"
     assert text_event["event"] == {"type": "assistant_text_delta", "delta": "right"}
+    assert text_event["typed_items"] == [
+        ThreadItem(
+            type="toolCall",
+            id="call-1",
+            name="shell",
+            arguments={"command": "pwd"},
+            status="inProgress",
+        )
+    ]
     assert finished_event["event"] == {
         "type": "turn_finished",
         "status": "completed",

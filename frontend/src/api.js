@@ -111,35 +111,39 @@ export const api = {
     return res.json();
   },
 
-  async setPlanMode(active, prompt = null) {
-    const res = await fetch(`${API_BASE}/api/workflows/plan`, {
+  async updateThreadSettings(mode, builtinTools = null) {
+    const res = await fetch(`${API_BASE}/api/workflows/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ active, prompt }),
+      body: JSON.stringify({ mode, builtin_tools: builtinTools }),
     });
-    if (!res.ok) throw new Error('Failed to set plan mode');
+    if (!res.ok) throw new Error('Failed to update thread settings');
     return res.json();
   },
 
-  async startGoal(objective) {
-    const res = await fetch(`${API_BASE}/api/workflows/goal/start`, {
+  async setCollaborationMode(mode) {
+    return this.updateThreadSettings(mode);
+  },
+
+  async setGoal(objective, tokenBudget = null, status = null) {
+    const res = await fetch(`${API_BASE}/api/workflows/goal`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ objective }),
+      body: JSON.stringify({ objective, token_budget: tokenBudget, status }),
     });
-    if (!res.ok) throw new Error('Failed to start goal');
+    if (!res.ok) throw new Error('Failed to set goal');
     return res.json();
   },
 
-  async pauseGoal() {
-    const res = await fetch(`${API_BASE}/api/workflows/goal/pause`, { method: 'POST' });
-    if (!res.ok) throw new Error('Failed to pause goal');
+  async getGoal() {
+    const res = await fetch(`${API_BASE}/api/workflows/goal`);
+    if (!res.ok) throw new Error('Failed to get goal');
     return res.json();
   },
 
-  async failGoal() {
-    const res = await fetch(`${API_BASE}/api/workflows/goal/fail`, { method: 'POST' });
-    if (!res.ok) throw new Error('Failed to fail goal');
+  async clearGoal() {
+    const res = await fetch(`${API_BASE}/api/workflows/goal`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to clear goal');
     return res.json();
   },
 

@@ -83,6 +83,15 @@ async def render_turn_stream(
             elif item.get("type") == "event":
                 evt = item.get("event", {})
                 evt_type = evt.get("type")
+                projected_items = item.get("items", [])
+                projected_tool = next(
+                    (
+                        candidate
+                        for candidate in projected_items
+                        if candidate.get("type") in ("toolCall", "tool_call")
+                    ),
+                    None,
+                )
                 if not state.active_turn_id and item.get("turnId"):
                     state.active_turn_id = item.get("turnId")
 
@@ -126,8 +135,16 @@ async def render_turn_stream(
                         console.print("\n")
                     current_mode = None
                     call = evt.get("call", {})
-                    tool_name = evt.get("name") or call.get("name") or "tool"
-                    args = call.get("arguments") or evt.get("arguments") or ""
+                    tool_name = (
+                        projected_tool.get("name")
+                        if projected_tool
+                        else evt.get("name") or call.get("name") or "tool"
+                    )
+                    args = (
+                        projected_tool.get("arguments")
+                        if projected_tool
+                        else call.get("arguments") or evt.get("arguments") or ""
+                    )
                     args_preview = _format_args_preview(args)
                     if args_preview:
                         console.print(
@@ -142,10 +159,20 @@ async def render_turn_stream(
                     if current_mode == "thinking":
                         console.print("\n")
                     current_mode = None
-                    tool_name = evt.get("name") or "tool"
-                    is_error = bool(evt.get("is_error"))
+                    tool_name = (
+                        projected_tool.get("name")
+                        if projected_tool
+                        else evt.get("name") or "tool"
+                    )
+                    is_error = bool(evt.get("is_error")) or bool(
+                        projected_tool and projected_tool.get("status") == "failed"
+                    )
                     truncated = bool(evt.get("truncated"))
-                    content = str(evt.get("content") or "")
+                    content = str(
+                        projected_tool.get("output")
+                        if projected_tool and projected_tool.get("output") is not None
+                        else evt.get("content") or ""
+                    )
 
                     trunc_tag = (
                         " [dim yellow](truncated)[/dim yellow]" if truncated else ""
@@ -202,6 +229,17 @@ async def render_turn_stream(
                 elif evt_type == "turn_finished":
                     state.active_turn_id = None
                     metrics.status = evt.get("status", "completed")
+
+            elif item.get("type") == "notification":
+                method = item.get("method", "")
+                data = item.get("data", {})
+                if method == "thread/goal/updated":
+                    goal = data.get("goal", data) if isinstance(data, dict) else {}
+                    console.print(
+                        f"\n[dim blue]◎ Goal updated: {goal.get('status', 'active')}[/dim blue]"
+                    )
+                elif method == "thread/goal/cleared":
+                    console.print("\n[dim blue]◎ Goal cleared[/dim blue]")
 
         if assistant_text_chunks:
             state.last_assistant_response = "".join(assistant_text_chunks).strip()

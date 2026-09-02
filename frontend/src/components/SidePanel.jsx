@@ -46,6 +46,18 @@ export default function SidePanel({
   }, [initialTab]);
 
   useEffect(() => {
+    if (goalState === undefined && planActive === undefined) return;
+    setWorkflowState((current) => ({
+      ...(current || {}),
+      collaboration_mode: {
+        ...(current?.collaboration_mode || {}),
+        mode: planActive ? 'plan' : 'default',
+      },
+      goal: goalState === undefined ? current?.goal || null : goalState,
+    }));
+  }, [goalState, planActive]);
+
+  useEffect(() => {
     if (isOpen) {
       loadAllData();
     }
@@ -151,24 +163,32 @@ export default function SidePanel({
   const handleStartGoal = async () => {
     if (!goalObjectiveInput.trim()) return;
     try {
-      await api.startGoal(goalObjectiveInput.trim());
+      await api.setGoal(goalObjectiveInput.trim());
       setGoalObjectiveInput('');
       await loadWorkflow();
       if (onToast) {
-        onToast('已启动目标驱动收敛任务 (Goal)', 'success');
+        onToast('已设置 Thread Goal，运行时将自动推进', 'success');
       }
     } catch (err) {
       if (onToast) {
-        onToast(`启动 Goal 失败: ${err.message}`, 'error');
+        onToast(`设置 Goal 失败: ${err.message}`, 'error');
       }
+    }
+  };
+
+  const handleClearGoal = async () => {
+    try {
+      await api.clearGoal();
+      setWorkflowState((current) => ({ ...(current || {}), goal: null }));
+      if (onToast) onToast('已清除 Thread Goal', 'success');
+    } catch (err) {
+      if (onToast) onToast(`清除 Goal 失败: ${err.message}`, 'error');
     }
   };
 
   const isGoalRunning = Boolean(
     workflowState?.goal &&
-      (workflowState.goal.status === 'running' ||
-        workflowState.goal.status === 'in_progress' ||
-        workflowState.goal.status === 'active')
+      ['active', 'paused', 'blocked'].includes(workflowState.goal.status)
   );
 
   if (!isOpen) return null;
@@ -325,8 +345,8 @@ export default function SidePanel({
                   <div className="workflow-title-wrap">
                     <Target size={15} className="text-green" />
                     <div>
-                      <span className="workflow-title">目标收敛模式 (Goal Milestones)</span>
-                      <p className="workflow-sub">多里程碑自动驱动收敛，直到达成目标任务</p>
+                      <span className="workflow-title">线程目标 (Thread Goal)</span>
+                      <p className="workflow-sub">由 Goal Runtime 按预算自动推进，并实时报告状态</p>
                     </div>
                   </div>
                 </div>
@@ -334,36 +354,34 @@ export default function SidePanel({
                 {isGoalRunning ? (
                   <div className="goal-status-box">
                     <div className="goal-meta-row font-mono">
-                      <span>Goal ID: <strong>{workflowState.goal.goal_id}</strong></span>
+                      <span>Thread: <strong>{workflowState.goal.thread_id}</strong></span>
                       <span className={`goal-badge ${workflowState.goal.status}`}>
                         {workflowState.goal.status}
                       </span>
                     </div>
-                    <div className="milestone-progress-bar">
-                      <div
-                        className="progress-fill"
-                        style={{
-                          width: `${(workflowState.goal.current_milestone / (workflowState.goal.total_milestones || 1)) * 100}%`,
-                        }}
-                      ></div>
-                    </div>
+                    <div className="goal-objective">{workflowState.goal.objective}</div>
                     <div className="milestone-text font-mono">
-                      里程碑: {workflowState.goal.current_milestone} / {workflowState.goal.total_milestones} (循环: {workflowState.goal.loop_count}/{workflowState.goal.max_loops})
+                      Tokens: {workflowState.goal.tokens_used} / {workflowState.goal.token_budget ?? '∞'}
+                      {' · '}Time: {workflowState.goal.time_used_seconds}s
                     </div>
+                    <button className="btn-action-small" onClick={handleClearGoal}>
+                      <RotateCcw size={12} />
+                      <span>清除目标</span>
+                    </button>
                   </div>
                 ) : (
                   <div className="goal-input-box">
                     <input
                       type="text"
                       className="goal-input font-mono"
-                      placeholder="输入宏观目标，例如: 完成前端全组件高保真重构与测试"
+                      placeholder="输入 Thread Goal，例如: 完成前端重构并通过测试"
                       value={goalObjectiveInput}
                       onChange={(e) => setGoalObjectiveInput(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleStartGoal()}
                     />
                     <button className="btn-start-goal" onClick={handleStartGoal}>
                       <Play size={12} />
-                      <span>启动目标</span>
+                      <span>设置目标</span>
                     </button>
                   </div>
                 )}

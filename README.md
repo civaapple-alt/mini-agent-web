@@ -5,11 +5,15 @@
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
-`mini-agent-web` 是连接现代 Web 前端与 [Mini Agent Harness](https://github.com/civaapple-alt/mini-agent-harness) 的官方 Python SDK 0.6.0、实战示例与应用开发工作区。
+`mini-agent-web` 是连接现代 Web 前端与 [Mini Agent Harness](https://github.com/civaapple-alt/mini-agent-harness) 的官方 Python SDK 0.7.0、实战示例与应用开发工作区。
 
 它通过 Stdio JSON-RPC 2.0 协议与 `mini-agent-app-server` 高效通信，为 Python 开发者提供异步 Client SDK、全套实战 Cookbook 以及未来 Web / TUI 应用扩展底座。
 
-当前发布版本为 `0.6.0`，对应 JSON-RPC wire protocol version `1`。SDK、App Server、FastAPI 网关、Frontend 和 TUI 的版本信息保持同步。
+当前发布版本为 `0.7.0`，对应 JSON-RPC wire protocol version `1`。SDK、App Server、FastAPI 网关、Frontend 和 TUI 的版本信息保持同步。
+
+0.7.0 对齐 App Server 的 Thread/Turn/Item 语义：线程设置使用
+`thread/settings/update`，目标使用 `thread/goal/set|get|clear`，Turn 事件可携带
+`ThreadItem` 投影；Studio、TUI、Server 和 Cookbook 均消费这套新边界。
 
 ---
 
@@ -76,7 +80,7 @@ uv sync
 ```bash
 uv run pytest
 ```
-> 运行全量 API 自动化测试套件。测试会验证 SDK 与 0.6.0 App Server 的握手和管理 API；需要 live Provider 的 Cookbook 不在默认测试中执行。若 App Server 不在 `PATH`，请先设置 `MINI_AGENT_APP_SERVER_PATH`。
+> 运行全量 API 自动化测试套件。测试会验证 SDK 与 0.7.0 App Server 的握手和管理 API；需要 live Provider 的 Cookbook 不在默认测试中执行。若 App Server 不在 `PATH`，请先设置 `MINI_AGENT_APP_SERVER_PATH`。
 
 只运行无 Provider、无 Token 的 Cookbook 协议验证：
 
@@ -245,13 +249,13 @@ mini-agent-web/
 │   ├── 03_approval_handling.py        # 敏感工具权限审批拦截
 │   ├── 04_steering_and_interrupt.py   # 运行时动态转向与协作取消
 │   ├── 05_workflows_and_inspection.py # WorldState 快照、MCP 状态与只读 Plan Mode
-│   └── 06_protocol_compatibility.py   # 0.6.0 事件协议无 Token 验证
+│   └── 06_protocol_compatibility.py   # 0.7.0 事件与 ThreadItem 无 Token 验证
 │
 ├── tests/                     # 自动化集成与单元测试套件 (参见 tests/README.md)
 │   ├── test_cookbook_validation.py # Cookbook 编译与无 Token 协议验证
 │   ├── test_gateway_api.py    # FastAPI REST 与 WebSocket 接口集成测试
 │   ├── test_sdk_apis.py       # pytest-asyncio 全量 SDK API 协议测试
-│   └── test_sdk_events.py     # 0.6.0 事件解析与 Thread/Turn 分流测试
+│   └── test_sdk_events.py     # 0.7.0 事件、ThreadItem 与 Thread/Turn 分流测试
 │
 ├── docs/                      # 核心文档与架构记录
 │   ├── README.md                              # 文档导航中心
@@ -313,7 +317,7 @@ uv run pytest tests/ -s -vv
 uv run pytest tests/test_sdk_apis.py
 ```
 
-0.6.0 发布验证还包含 SDK 事件解析、Thread/Turn 分流和全部 Cookbook 脚本编译检查：
+0.7.0 发布验证还包含 SDK 事件、ThreadItem、Thread/Turn 分流和全部 Cookbook 脚本编译检查：
 
 ```bash
 uv run pytest tests/test_sdk_events.py tests/test_cookbook_validation.py -q

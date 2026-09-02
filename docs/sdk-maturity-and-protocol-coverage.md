@@ -1,6 +1,6 @@
 # Mini Agent Python SDK 成熟度与协议覆盖报告
 
-本文档全面记录了 `mini-agent-web` 官方 Python SDK (`mini-agent`) 0.6.0、Cookbook 实战示例以及底层 App Server JSON-RPC 2.0 协议的成熟度、接口覆盖矩阵与设计决策。
+本文档全面记录了 `mini-agent-web` 官方 Python SDK (`mini-agent`) 0.7.0、Cookbook 实战示例以及底层 App Server JSON-RPC 2.0 协议的成熟度、接口覆盖矩阵与设计决策。
 
 ---
 
@@ -12,6 +12,7 @@
 | **类型安全性** | **95%** | 提供 PEP 561 `py.typed`、协议数据类和事件解析器；未知未来事件仍保留为 `GenericEvent`。 |
 | **依赖与便携性** | **100%** | **零外部依赖 (Zero-Dependency)**，纯 Python 标准库（`asyncio`, `json`, `subprocess`, `dataclasses`）实现。 |
 | **健壮性与容错** | **95%** | 异步双向管道、异常自动映射、目标 Turn 事件分流、`wait_for_turn` 轮询与超时保护。 |
+| **ThreadItem 对齐** | **90%** | `turn/event`、`turn/read`、Studio 和 TUI 使用有界工具 Item 投影；完整历史 UI 仍按后续 ThreadItem 生命周期迭代。 |
 | **Cookbook 验证度** | **确定性 100% / Live 需 Provider** | Demo 06 和全部脚本编译检查进入默认测试；Demo 01–05 需要显式 App Server 与模型 Provider。 |
 
 ---
@@ -43,13 +44,14 @@
 | | `mcp/retry` | `client.retry_mcp()` | ✅ 覆盖 | 重试未就绪或断连的 MCP 服务 |
 | | `session/info` | `client.get_session_info()` | ✅ 覆盖 | 读取会话持久化与数据库路径元数据 |
 | | `workflow/state` | `client.get_workflow_state()` | ✅ 覆盖 | 读取 Plan Mode 与 Goal 工作流状态 |
-| | `workflow/plan/set` | `client.set_plan_mode()` | ✅ 覆盖 | 切换只读 Plan Mode 规划模式 |
-| | `workflow/goal/start` | `client.start_goal()` | ✅ 覆盖 | 启动多阶段 Goal 里程碑目标执行流 |
-| | `workflow/goal/pause` | `client.pause_goal()` | ✅ 覆盖 | 暂停活跃的 Goal 工作流 |
-| | `workflow/goal/fail` | `client.fail_goal()` | ✅ 覆盖 | 将活跃 Goal 标记为失败 |
-| | `workflow/goal/criteria` | `client.get_goal_criteria()` | ✅ 覆盖 | 获取当前里程碑评测指标与约束 |
-| | `workflow/goal/advance` | `client.advance_goal()` | ✅ 覆盖 | 携带外部校验员判定（Verdict）推进里程碑 |
-| | `workflow/goal/record_verdict` | `client.record_verifier_verdict()` | ✅ 覆盖 | 记录里程碑检查点的外部审计输出 |
+| | `thread/settings/update` | `client.update_thread_settings()` / `set_collaboration_mode()` | ✅ 覆盖 | 设置 Thread collaboration mode 和 Builtin tool 选择 |
+| | `thread/settings/updated` | `stream_turn()` / `notification_handler` | ✅ 覆盖 | 广播 Thread 设置变更 |
+| | `thread/goal/set` | `client.set_goal()` | ✅ 覆盖 | 设置 Thread-owned Goal 并交给 Goal Runtime 自动推进 |
+| | `thread/goal/get` | `client.get_goal()` | ✅ 覆盖 | 读取当前有界 Goal 投影 |
+| | `thread/goal/clear` | `client.clear_goal()` | ✅ 覆盖 | 清除 Goal 并停止后续自动续跑 |
+| | `thread/goal/updated` / `cleared` | `stream_turn()` / `notification_handler` | ✅ 覆盖 | 广播 Goal 状态生命周期通知 |
+| **Items** | `turn/event.items` | `event["typed_items"]` | ✅ 覆盖 | 有界 `ThreadItem` 工具调用状态、参数和输出投影 |
+| | `turn/read.items` | `TurnReadResult.items` | ✅ 覆盖 | 读取已结算 Turn 的 Item 投影 |
 
 ---
 
@@ -62,7 +64,7 @@
 | **Demo 03** | `03_approval_handling.py` | 敏感工具（Shell/File Write）拦截与交互式终端安全审批 | **Live / 显式运行** |
 | **Demo 04** | `04_steering_and_interrupt.py` | 运行期动态转向 (`steer`) 与协作式中断取消 (`interrupt`) | **Live / 显式运行** |
 | **Demo 05** | `05_workflows_and_inspection.py` | WorldState 环境检查、只读 Plan Mode 规划模式、会话检查点审查 | **Live / 显式运行** |
-| **Demo 06** | `06_protocol_compatibility.py` | 0.6.0 全事件解析、结构化失败原因、未知事件保留 | **PASS / 无 Token** |
+| **Demo 06** | `06_protocol_compatibility.py` | 0.7.0 生命周期事件、ThreadItem、结构化失败原因、未知事件保留 | **PASS / 无 Token** |
 
 ---
 
@@ -75,17 +77,17 @@
 3. **Rust 行数预算控制**：
    - 本次 SDK 建设完全在客户端层完成，严格遵循 `mini-codex` 的 20,000 行运行时硬限制与 30,000 行全工作区限制。
 
-## 5. 0.6.0 发布验证证据
+## 5. 0.7.0 发布验证证据
 
 本次发布使用与 SDK 同版本的 `mini-agent-app-server` 二进制完成本地验证：
 
 | 检查 | 结果 |
 | :--- | :--- |
-| `uv run pytest -q` | **21 passed**；含 SDK API、事件分流、Gateway 与 Cookbook 验证 |
 | `uv run ruff check .` | **PASS** |
 | `uv run ruff format --check .` | **PASS** |
-| `npm run build` | **PASS** |
-| `uv build --package mini-agent` | **PASS**，生成 `mini_agent-0.6.0` wheel/sdist |
+| `uv build --package mini-agent` | **PASS**，生成 `mini_agent-0.7.0` wheel/sdist |
+| `uv run pytest -q` | **PASS**，45 项测试通过；含 SDK、Gateway、TUI、Frontend 边界与 Cookbook 验证 |
+| `npm test` / `npm run build` | **PASS**，8 项 Studio Node 测试通过并完成 Vite 生产构建 |
 | Demo 06 | **PASS**，无 App Server、无 Provider、无 Token |
 
 Demo 01–05 的 live Provider 运行仍需开发者显式配置模型凭证；这部分不被

@@ -1,20 +1,24 @@
-# Mini Agent Python SDK 0.7.0
+# `mini-agent` Python SDK
 
-Official asynchronous Python SDK for interacting with the `mini-agent-app-server` runtime and Harness engine.
+本目录是 `mini-agent` 的独立 Python 包。它通过 Stdio JSON-RPC 连接
+`mini-agent-app-server`，提供异步客户端、协议类型和事件解析，不负责 Web
+页面或终端展示。
 
-## Installation
+## 安装
+
+发布包：
 
 ```bash
 pip install mini-agent
 ```
 
-Or when developing within the workspace:
+在本工作区开发：
 
 ```bash
 uv sync
 ```
 
-## Quick Start
+## 最小示例
 
 ```python
 import asyncio
@@ -23,51 +27,46 @@ from mini_agent import MiniAgentClient
 
 async def main():
     async with MiniAgentClient() as client:
-        # 1. Initialize and start thread
         await client.initialize(profile="interactive")
         await client.start_thread()
 
-        # 2. Stream turn prompt
-        async for item in client.stream_turn("List available tools and summarize."):
-            if item["type"] == "event":
-                event = item["event"]
-                if event.get("type") == "assistant_text_delta":
-                    print(event.get("delta", ""), end="", flush=True)
+        async for envelope in client.stream_turn("List the files in the workspace."):
+            if envelope["type"] == "event":
+                event = envelope["typed_event"]
+                if event.event_type == "assistant_text_delta":
+                    print(event.delta, end="", flush=True)
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.run(main())
 ```
 
-## Key Features
+如果 App Server 不在 `PATH`，设置 `MINI_AGENT_APP_SERVER_PATH`。SDK 运行时只
+使用 Python 3.10+ 标准库。
 
-* **Async Context Manager**: Simple `async with MiniAgentClient()` manages subprocess lifecycle cleanly.
-* **Stream Generator**: `stream_turn()` yields target-Thread/Turn events, real-time reasoning deltas, text tokens, tool start/finish, context compaction, run lifecycle events, `ThreadItem` projections, `item/started` / `item/completed` lifecycle notifications, runtime notifications, and `approval` records (`requested`/`resolved`).
-* **Security & Approval Interceptor**: Native support for `approval/request`, `approval/respond`, and server `approval/resolved`; approval records are visible even when `approval_handler` is omitted and the SDK uses its default auto-approval policy.
-* **Steering & Interrupt**: Mid-turn instruction injection (`turn/steer`) and cooperative cancellation (`turn/interrupt`).
-* **Zero Required Dependencies**: Runs entirely on Python 3.10+ Standard Library (`asyncio`, `json`, `subprocess`).
+## 公共表面
 
-## 0.7.0 Compatibility
+- `MiniAgentClient` / `AsyncMiniAgentClient`：初始化、Thread、Turn、Goal、
+  设置、审批、Steer 和 Interrupt；
+- `stream_turn()`：按 Thread/Turn 过滤事件，并保留未知事件为
+  `GenericEvent`；
+- `ThreadItem`：Turn 事件和 `turn/read` 中的有界 item 投影；
+- `ItemLifecycleNotification`：`item/started` 和 `item/completed` 的类型化
+  通知；
+- `list_thread_items()`：读取 `thread/items/list` 的游标分页结果；
+- `types.py`：协议结果、Goal、设置、Checkpoint 和错误相关数据类。
 
-The SDK targets `mini-agent-app-server` 0.7.0 over JSON-RPC wire protocol
-version `1`. Thread settings use `thread/settings/update`; Thread Goals use
-`thread/goal/set`, `thread/goal/get`, and `thread/goal/clear`. `turn/event` and
-`turn/read` expose bounded `ThreadItem` projections, and `list_thread_items()`
-reads cursor-bounded history from the existing Session projection. Item
-lifecycle notifications are typed as `ItemLifecycleNotification` while
-remaining notification envelopes. Runtime notifications such as
-`thread/goal/updated` are yielded the same way, while unknown engine events
-remain available as `GenericEvent`. Set
-`MINI_AGENT_APP_SERVER_PATH` when the matching App Server binary is not on
-`PATH`.
+ThreadItem 是已有 Session 投影的读取边界，不是 SDK 的第二个持久化存储。
 
-For a deterministic protocol check that does not start the App Server or call a
-model provider, run:
+## 开发检查
 
 ```bash
-uv run python cookbook/python-demo/06_protocol_compatibility.py
+uv run ruff check sdk/python
+uv run ruff format --check sdk/python
 ```
+
+包的版本与协议字段由工作区发布流程统一维护；本目录只维护 SDK 自己的实现和
+公共导出。
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+MIT，详见 [`LICENSE`](LICENSE)。

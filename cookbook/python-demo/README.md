@@ -1,135 +1,41 @@
-# Mini Agent Python Cookbook (Based on Official SDK)
+# Python Cookbook
 
-本目录提供了基于官方 Python SDK `mini-agent` 0.7.0 调用并集成
-`mini-agent-app-server` 的全套实战示例。示例按“可直接验证的协议契约”和
-“需要真实 Provider 的交互场景”分层，避免把 Token 请求隐藏在默认测试中。
+本目录包含可直接运行的 `mini-agent` 示例。每个脚本都是一个独立入口；示例
+之间不共享运行时状态。
 
----
+## 示例清单
 
-## 目录结构
+| 脚本 | 内容 | 类型 |
+| --- | --- | --- |
+| `01_basic_turn.py` | 初始化、Thread 和基础 Turn | live |
+| `02_streaming_events.py` | 文本、思考、工具和 usage 流 | live |
+| `03_approval_handling.py` | Shell 与 `apply_patch` 审批回调 | live |
+| `04_steering_and_interrupt.py` | Steer 和协作中断 | live |
+| `05_workflows_and_inspection.py` | World、Plan、Goal 和 Checkpoint | live |
+| `06_protocol_compatibility.py` | 当前事件与 ThreadItem 类型检查 | offline |
 
-```text
-cookbook/python-demo/
-├── 01_basic_turn.py               # 基础对话与 Turn 执行示例
-├── 02_streaming_events.py         # 深度流式事件监听 (Token/Step/Approval/Tool/Usage)
-├── 03_approval_handling.py        # 敏感工具权限审批拦截与交互处理
-├── 04_steering_and_interrupt.py   # 运行时协同中断与中途转向 (Steer)
-├── 05_workflows_and_inspection.py # 环境快照、Plan Mode 与线程检查点读取
-├── 06_protocol_compatibility.py   # 0.7.0 事件与 ThreadItem 兼容性无 Token 验证
-└── README.md                      # 本说明文档
-```
+## 运行
 
----
+先确保 App Server 可执行文件可被 SDK 找到；不在 `PATH` 时设置
+`MINI_AGENT_APP_SERVER_PATH`。Live 示例还需要模型 Provider 的凭证。
 
-## 运行环境
-
-已在根目录 `pyproject.toml` 中将 `sdk/python` 注册为工作区依赖包：
-
-```bash
-# Windows PowerShell / Linux / macOS
-uv run python cookbook/python-demo/01_basic_turn.py
-```
-
----
-
-## 核心 SDK 快速上手
-
-```python
-import asyncio
-from mini_agent import MiniAgentClient
-
-
-async def main():
-    async with MiniAgentClient() as client:
-        # 1. 协商协议与初始化
-        await client.initialize(profile="interactive")
-        await client.start_thread()
-
-        # 2. 流式发起 Turn 并实时消费事件
-        async for item in client.stream_turn("查看当前目录下的文件并总结"):
-            if item["type"] == "event":
-                event = item["event"]
-                if event.get("type") == "assistant_text_delta":
-                    print(event.get("delta", ""), end="", flush=True)
-
-
-asyncio.run(main())
-```
-
----
-
-## 示例运行指南
-
-### Demo 01: 基础对话执行
-演示最基础的客户端初始化、启动线程以及发起 Prompt 交互。
 ```bash
 uv run python cookbook/python-demo/01_basic_turn.py
-```
-
-### Demo 02: 深度流式事件监听
-演示如何精细化捕获 Step 步长、推理 Token、审批 requested/resolved 记录、工具调用参数、工具输出 UTF-8 截断状态及 Token 使用量。
-```bash
 uv run python cookbook/python-demo/02_streaming_events.py
-```
-Demo 02 未传入自定义 `approval_handler`，SDK 收到敏感工具的
-`approval/request` 后会默认自动批准，因此不会出现人工输入提示。需要逐次
-确认 Shell 或写文件操作时，请运行 Demo 03，或为 `MiniAgentClient` 传入自己的
-审批回调；不要在不受信任的工作区使用默认自动批准策略。
-
-### Demo 03: 敏感操作安全审批拦截
-演示当 Agent 尝试执行写文件或 Shell 敏感命令时，客户端如何收到 `approval/request` 通知，并在控制台/Web 弹窗中由用户授权决策。
-```bash
 uv run python cookbook/python-demo/03_approval_handling.py
-```
-
-### Demo 04: 中途转向与协同中断
-演示在 Agent 执行长任务时，如何中途注入矫正 Prompt（`turn/steer`）或安全终止当前轮次（`turn/interrupt`）。
-```bash
 uv run python cookbook/python-demo/04_steering_and_interrupt.py
-```
-
-### Demo 05: 工作流与状态检查点
-演示查询 `WorldState` 环境快照、开启/关闭只读探索的 `Plan Mode`，以及读取 `ThreadCheckpoint` 检查点。
-Goal Runtime 会在 App Server 启动时恢复持久化 Goal；本示例通过
-`thread/goal/updated` 获取自动续跑的 `turnId`，在启动时清理遗留 turn，并在结束时
-中断和清除本次 Goal，因而可以连续重复运行。
-```bash
 uv run python cookbook/python-demo/05_workflows_and_inspection.py
 ```
 
-### Demo 06: 0.7.0 协议兼容性验证
-不启动 App Server、不调用模型，验证 SDK 能解析当前生命周期事件、结构化失败原因、未知事件和 `ThreadItem` 投影。
+离线协议检查不启动 App Server，也不调用模型：
+
 ```bash
 uv run python cookbook/python-demo/06_protocol_compatibility.py
 ```
 
-CI 使用同一无 Token 场景，并对全部 Cookbook 脚本执行 Python 编译检查：
-```bash
-uv run pytest tests/test_cookbook_validation.py -q
-```
+## 编写约定
 
-Demo 01–05 是需要 `mini-agent-app-server` 与模型 Provider 的 live 场景；发布验证时应使用与 SDK 同版本的 0.7.0 App Server。它们不放入默认 CI，避免隐式产生 Provider 请求或 Token 费用。
-
----
-
-## Web / FastAPI 后端集成范式
-
-```python
-from fastapi import FastAPI, WebSocket
-from mini_agent import MiniAgentClient
-
-app = FastAPI()
-
-
-@app.websocket("/ws/agent")
-async def agent_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    async with MiniAgentClient() as client:
-        await client.initialize()
-        await client.start_thread()
-
-        while True:
-            prompt = await websocket.receive_text()
-            async for item in client.stream_turn(prompt):
-                await websocket.send_json(item)
-```
+- 示例应保持短小，直接展示一个 SDK 边界；
+- Live 示例不能成为默认自动化测试的隐式依赖；
+- 新增公共事件或 ThreadItem 形状时，同步扩展离线示例；
+- 所有 `.py` 文件必须保持可编译。

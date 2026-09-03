@@ -39,7 +39,10 @@ export default function ThinkingBlock({ content, isStreaming }) {
   const previewSnippet = (content || '').split('\n')[0].slice(0, 60);
 
   return (
-    <div className={`thinking-container ${isStreaming ? 'streaming' : ''}`}>
+    <div
+      className={`thinking-container notranslate ${isStreaming ? 'streaming' : ''}`}
+      translate="no"
+    >
       <div
         className="thinking-header"
         onClick={() => setIsOpen(!isOpen)}
@@ -76,13 +79,13 @@ export default function ThinkingBlock({ content, isStreaming }) {
       </div>
 
       {!isOpen && previewSnippet && (
-        <div className="thinking-preview font-mono" onClick={() => setIsOpen(true)}>
+        <div className="thinking-preview font-mono notranslate" translate="no" onClick={() => setIsOpen(true)}>
           <span>{previewSnippet}...</span>
         </div>
       )}
 
       {isOpen && (
-        <div className="thinking-body font-mono">
+        <div className="thinking-body font-mono notranslate" translate="no">
           {content}
           {isStreaming && <span className="cursor-blink"></span>}
         </div>

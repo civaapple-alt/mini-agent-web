@@ -117,7 +117,10 @@ export default function ToolCard({
   };
 
   return (
-    <div className={`tool-card ${normalizedStatus || 'running'} ${isFailed ? 'has-error' : ''} ${isAwaitingApproval ? 'awaiting-approval' : ''}`}>
+    <div
+      className={`tool-card notranslate ${normalizedStatus || 'running'} ${isFailed ? 'has-error' : ''} ${isAwaitingApproval ? 'awaiting-approval' : ''}`}
+      translate="no"
+    >
       {/* Top Tool Header */}
       <div className="tool-header">
         <div className="tool-left-info">

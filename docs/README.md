@@ -7,7 +7,6 @@
 | --- | --- |
 | [`limits.md`](limits.md) | 输入、输出、工具、会话和传输的硬限制 |
 | [`privacy.md`](privacy.md) | 本地数据、凭证、日志和网络边界 |
-| [`python-sdk-guide.md`](python-sdk-guide.md) | SDK 生命周期、事件流和运行时控制 |
 | [`releasing.md`](releasing.md) | 版本同步、验证和发布步骤 |
 | [`troubleshooting.md`](troubleshooting.md) | 启动、连接、端口和审批故障排查 |
 

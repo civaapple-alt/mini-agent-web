@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `thread/items/list`; workflow state remains a read-only aggregate projection.
 - **Documentation & Agent Notes Reorganization**:
   - Reclassified architectural decision records (ADRs), proposals, and deep dives into the structured `.agents/notes/` tree (`implemented/` and `proposed/`), indexed by `.agents/notes/README.md`.
-  - Streamlined `docs/` to retain strictly essential operational project documentation: `limits.md`, `privacy.md`, `releasing.md`, `troubleshooting.md`, and `python-sdk-guide.md`.
+  - Streamlined `docs/` to retain strictly essential operational project documentation: `limits.md`, `privacy.md`, `releasing.md`, and `troubleshooting.md`; moved the Python SDK guide to `sdk/python/python-sdk-guide.md` alongside its package.
 
 ### Fixed
 
@@ -168,7 +168,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Rich-based interactive CLI terminal application (`tui_app.py`).
   - Terminal-based streaming Markdown, Thinking panels, and approval prompts.
 - **Comprehensive Documentation & Notes**:
-  - `docs/python-sdk-guide.md`: Official developer guide and usage manual.
+  - `sdk/python/python-sdk-guide.md`: Official developer guide and usage manual.
   - `.agents/notes/implemented/testing/2026-08-31-sdk-maturity-and-protocol-coverage.md`: SDK maturity radar and JSON-RPC 2.0 protocol coverage matrix.
   - `.agents/notes/implemented/bug-fix/2026-08-31-app-server-concurrency-and-deadlock-analysis.md`: Deep dive on Tokio multi-thread runtime, Actor self-deadlock, SSE keep-alive drain, and child process isolation.
   - `.agents/notes/implemented/architecture/2026-08-31-python-sdk-architecture-and-app-server-integration.md`: Architecture Decision Record aligning with OpenAI Codex client separation.

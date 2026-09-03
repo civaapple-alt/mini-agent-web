@@ -23,16 +23,18 @@ README。贡献规则从 [`AGENTS.md`](AGENTS.md) 开始。
 ## 运行关系
 
 ```text
-Web Studio ── REST / WebSocket ──┐
-                                 ├─ server ── Python SDK ── Stdio JSON-RPC ── App Server
-TUI ─────────────────────────────┘
-Cookbook ─────────────────────────── Python SDK
+Web Studio ── REST / WebSocket ──> server ──┐
+                                            ├─ Python SDK ── Stdio JSON-RPC ──> App Server
+TUI ────────────────────────────> Python SDK ┘
+Cookbook ───────────────────────> Python SDK
 ```
 
 - App Server 拥有 Thread、Turn、Goal 与 ThreadItem 的运行时语义；
-- SDK 负责进程连接、JSON-RPC、类型解析和有界事件流；
+- Python SDK 是 TUI 和 Cookbook 的直接运行时依赖，负责进程连接、JSON-RPC、
+  类型解析和有界事件流；
 - Server 将 SDK 能力映射为 Web API 与 WebSocket；
-- Studio、TUI 和 Cookbook 只消费这些公开边界。
+- Web Studio 通过 Server 使用 Web API 与 WebSocket；TUI 和 Cookbook 直接使用
+  Python SDK。
 
 ## 快速启动
 

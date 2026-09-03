@@ -57,6 +57,11 @@ asyncio.run(main())
 
 ThreadItem 是已有 Session 投影的读取边界，不是 SDK 的第二个持久化存储。
 
+## 深入阅读
+
+[`python-sdk-guide.md`](python-sdk-guide.md) 介绍 SDK 的完整生命周期、配置、
+流式事件、审批、ThreadItem、分支和 Goal API。
+
 ## 开发检查
 
 ```bash

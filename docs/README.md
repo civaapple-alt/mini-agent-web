@@ -31,13 +31,14 @@
 | 2026-09-02 | Proposed | [Tauri Desktop Shell for Mini Agent](adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md) | 以 sidecar-first 方式复用 React UI，规划桌面 transport、窗口/托盘、通知、工作区约束与跨平台 fallback |
 | 2026-09-02 | Proposed | [Rust Native TUI for Mini Agent](adr/proposed/2026-09-02-rust-native-tui-ratatui-architecture.md) | 规划由 Rust workspace 负责的 Ratatui 全屏 TUI，明确 App Server 复用、TEA reducer、终端恢复、性能测量与测试门槛 |
 | 2026-09-02 | Proposed | [Local Web Studio Evolution](adr/proposed/2026-09-02-local-web-studio-evolution-and-roadmap.md) | 分阶段交付有界的 Diff/Artifact、工作区树、loopback 预览、Goal 投影、Mention、预算提示与结构化审批 |
+| 2026-09-03 | Implemented | [SDK 0.7.0 Alignment Review & Control Plane Evolution](adr/implemented/2026-09-03-sdk-0.7.0-alignment-review-and-control-plane-evolution.md) | 深度评审 0.7.0 适配成效，解耦运行时线程绑定，落地 Builtin Tools 选择器、全量 ThreadItem 投影与多会话控制路由 |
 
 ---
 
 ## 当前发布验证
 
-- `uv run pytest tests/ -v`：43 个测试通过；覆盖网关、WebSocket、线程分支、审批流与事件契约。
-- `cd frontend && npm test`：7 个测试通过；覆盖 API 请求构造、WebSocket 发送守卫、流式事件状态机与斜杠命令解析。
+- `uv run pytest tests/ -v`：46 个测试通过；覆盖网关、WebSocket、线程分支、审批流与事件契约。
+- `cd frontend && npm test`：10 个测试通过；覆盖 API 请求构造、WebSocket 发送守卫、流式事件状态机与斜杠命令解析。
 - `uv run pytest tests/test_cookbook_validation.py -q`：编译全部 Cookbook，并运行 Demo 06 的无 Provider、无 Token 事件协议验证。
 - Demo 01–05 仍是需要显式 Provider 的 live 示例，不作为默认 CI 依赖。
 - 贡献者规则见仓库根目录的 [`AGENTS.md`](../AGENTS.md)。

@@ -3,6 +3,7 @@ import {
   Plus,
   MoreHorizontal,
   Folder,
+  FolderPlus,
   Search,
   ChevronRight,
   X,
@@ -15,6 +16,7 @@ import {
   Loader2,
   Pin,
   Settings,
+  SquarePen,
 } from 'lucide-react';
 import { api } from '../api';
 import './Sidebar.css';
@@ -120,7 +122,9 @@ export default function Sidebar({
           editSourceFolders.length > 0
             ? editSourceFolders
             : [{ name: cleanName, path: cleanName, is_primary: true }];
-        const res = await api.createProject(cleanName, null, folders, true);
+        const primaryFolder = folders.find((f) => f.is_primary) || folders[0];
+        const targetPath = primaryFolder?.path || null;
+        const res = await api.createProject(cleanName, targetPath, folders, true);
         const newProj = res.project || { id: cleanName.toLowerCase().replace(/\s+/g, '-') };
         
         // Start default thread for this project
@@ -430,23 +434,25 @@ export default function Sidebar({
 
             return (
               <div key={proj.name || proj.id} className="project-tree-item">
-                {/* Project Folder Row with Hover Actions (Image 1) */}
+                {/* Project Folder Row with Hover Actions */}
                 <div
-                  className={`project-folder-row ${isCurrentProj ? 'active-proj' : ''}`}
+                  className={`project-folder-row ${isCurrentProj ? 'active-proj' : ''} ${activeProjectPopover === (proj.id || proj.name) ? 'has-open-popover' : ''}`}
                   onClick={() => toggleProjectExpand(proj.name || proj.id, proj.primary_path || proj.path)}
                   title={proj.primary_path || proj.path}
                 >
                   <Folder size={14} className="folder-icon" />
                   <span className="folder-name">{proj.name}</span>
+                  {proj.pinned && <Pin size={10} className="project-pinned-dot" />}
 
-                  {/* Hover Action Buttons on Project Row (Image 1) */}
+                  {/* Hover Action Buttons on Project Row */}
                   <div className="project-row-actions" onClick={(e) => e.stopPropagation()}>
                     <button
-                      className="btn-proj-action-dots"
+                      className={`btn-proj-action-dots ${activeProjectPopover === (proj.id || proj.name) ? 'active' : ''}`}
                       onClick={(e) => {
                         e.stopPropagation();
+                        const key = proj.id || proj.name;
                         setActiveProjectPopover(
-                          activeProjectPopover === proj.id ? null : proj.id
+                          activeProjectPopover === key ? null : key
                         );
                       }}
                       title="项目详情与工作区"
@@ -456,72 +462,79 @@ export default function Sidebar({
 
                     <button
                       className="btn-proj-action-edit"
-                      onClick={() => handleOpenEditProject(proj)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenEditProject(proj);
+                      }}
                       title="编辑项目"
                     >
                       <Edit2 size={12} />
                     </button>
                   </div>
+                </div>
 
-                  {/* Project Details Popover (Image 1) */}
-                  {activeProjectPopover === proj.id && (
-                    <div
-                      className="project-context-popover"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="popover-header-row">
-                        <div className="popover-title-left">
-                          <Folder size={14} className="folder-popover-icon" />
-                          <span className="popover-project-name">{proj.name}</span>
-                        </div>
-                        <button
-                          className={`popover-pin-btn ${proj.pinned ? 'pinned' : ''}`}
-                          onClick={(e) => handleTogglePin(e, proj)}
-                          title={proj.pinned ? '取消固定' : '固定项目'}
-                        >
-                          <Pin size={13} />
-                        </button>
+                {/* Project Details Dropdown Card */}
+                {activeProjectPopover === (proj.id || proj.name) && (
+                  <div
+                    className="project-context-popover"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="popover-header-row">
+                      <div className="popover-title-left">
+                        <Folder size={14} className="folder-popover-icon" />
+                        <span className="popover-project-name">{proj.name}</span>
                       </div>
-
-                      <div className="popover-tasks-summary">
-                        <SquarePen size={12} className="text-muted" />
-                        <span>{proj.threads_count || projThreads.length || 6} 个任务 · {proj.active_threads_count || 1} 个已开启</span>
-                      </div>
-
-                      <div className="popover-divider"></div>
-
-                      {/* Source Folders List (Image 1) */}
-                      <div className="popover-source-folders-list custom-scrollbar">
-                        {proj.source_folders && proj.source_folders.length > 0 ? (
-                          proj.source_folders.map((folder, idx) => (
-                            <div key={idx} className="popover-folder-item">
-                              <Folder size={13} className="folder-item-icon" />
-                              <span className="folder-item-path" title={folder.path || folder.name}>
-                                {folder.path || folder.name}
-                              </span>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="popover-folder-item">
-                            <Folder size={13} className="folder-item-icon" />
-                            <span className="folder-item-path">{proj.primary_path || proj.path || proj.name}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="popover-divider"></div>
-
-                      {/* Bottom Edit Action (Image 1) */}
                       <button
-                        className="popover-btn-edit-project"
-                        onClick={() => handleOpenEditProject(proj)}
+                        className={`popover-pin-btn ${proj.pinned ? 'pinned' : ''}`}
+                        onClick={(e) => handleTogglePin(e, proj)}
+                        title={proj.pinned ? '取消固定' : '固定项目'}
                       >
-                        <Settings size={13} />
-                        <span>编辑项目</span>
+                        <Pin size={13} />
                       </button>
                     </div>
-                  )}
-                </div>
+
+                    <div className="popover-tasks-summary">
+                      <SquarePen size={12} className="text-muted" />
+                      <span>{proj.threads_count || projThreads.length || 0} 个会话 · {proj.active_threads_count || 1} 个活跃</span>
+                    </div>
+
+                    <div className="popover-divider"></div>
+
+                    {/* Source Folders List */}
+                    <div className="popover-source-folders-list custom-scrollbar">
+                      {proj.source_folders && proj.source_folders.length > 0 ? (
+                        proj.source_folders.map((folder, idx) => (
+                          <div key={idx} className="popover-folder-item" title={folder.path || folder.name}>
+                            <Folder size={13} className="folder-item-icon" />
+                            <span className="folder-item-path">
+                              {folder.name || folder.path}
+                            </span>
+                            {folder.is_primary && <span className="primary-tag">主</span>}
+                          </div>
+                        ))
+                      ) : (
+                        <div className="popover-folder-item" title={proj.primary_path || proj.path || proj.name}>
+                          <Folder size={13} className="folder-item-icon" />
+                          <span className="folder-item-path">{proj.primary_path || proj.path || proj.name}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="popover-divider"></div>
+
+                    {/* Bottom Edit Action */}
+                    <button
+                      className="popover-btn-edit-project"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenEditProject(proj);
+                      }}
+                    >
+                      <Settings size={13} />
+                      <span>编辑项目配置</span>
+                    </button>
+                  </div>
+                )}
 
                 {/* Nested Threads under Project */}
                 {isExpanded && (

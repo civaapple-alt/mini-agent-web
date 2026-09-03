@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   GitBranch,
@@ -25,6 +25,18 @@ export default function Header({
   const [newTitle, setNewTitle] = useState(threadTitle || currentThread);
   const [showSummaryPopover, setShowSummaryPopover] = useState(false);
   const [summaryInput, setSummaryInput] = useState(threadSummary || '');
+
+  // Close summary popover when clicking outside
+  useEffect(() => {
+    if (!showSummaryPopover) return;
+    const handleOutsideClick = (e) => {
+      if (!e.target.closest('.summary-popover-wrapper')) {
+        setShowSummaryPopover(false);
+      }
+    };
+    window.addEventListener('click', handleOutsideClick);
+    return () => window.removeEventListener('click', handleOutsideClick);
+  }, [showSummaryPopover]);
 
   const handleSaveTitle = () => {
     if (newTitle.trim() && onRenameThread) {
@@ -66,6 +78,7 @@ export default function Header({
                 className="title-edit-input font-mono"
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
+                onBlur={handleSaveTitle}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleSaveTitle();
                   if (e.key === 'Escape') setIsEditingTitle(false);

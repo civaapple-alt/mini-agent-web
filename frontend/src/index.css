@@ -238,3 +238,55 @@ body.theme-cyberpunk .markdown-content pre {
   margin-left: 2px;
   animation: blink 1s infinite;
 }
+
+/* Universal Studio Floating Tooltips */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) translateY(2px);
+  padding: 4px 8px;
+  background-color: #18181b;
+  color: #f4f4f5;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 1000;
+}
+
+[data-tooltip]:hover::before {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+[data-tooltip-pos="bottom"]::before {
+  bottom: auto;
+  top: calc(100% + 6px);
+  transform: translateX(-50%) translateY(-2px);
+}
+
+[data-tooltip-pos="bottom"]:hover::before {
+  transform: translateX(-50%) translateY(0);
+}
+
+body.theme-dark [data-tooltip]::before,
+body.theme-midnight [data-tooltip]::before,
+body.theme-cyberpunk [data-tooltip]::before {
+  background-color: #27272a;
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}

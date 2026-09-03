@@ -28,7 +28,8 @@ export default function ToolCard({
   const [denyReason, setDenyReason] = useState('');
   const [showDenyInput, setShowDenyInput] = useState(false);
 
-  const { name, status, output, error, id } = tool;
+  const { status, output, error, id } = tool;
+  const name = tool.name || tool.toolName || tool.tool || tool.tool_name || '';
   const args = tool.arguments ?? tool.args;
   const normalizedStatus = status === 'inProgress' ? 'running' : status;
   const isRunning = normalizedStatus === 'running';
@@ -47,16 +48,21 @@ export default function ToolCard({
 
   const getToolIcon = (toolName) => {
     const n = (toolName || '').toLowerCase();
-    if (n === 'shell' || n === 'bash' || n === 'exec') {
+    if (n === 'shell' || n === 'bash' || n === 'exec' || n === 'run_command') {
       return <Terminal size={12} className="tool-type-icon text-amber" />;
     }
-    if (n.includes('file') || n === 'view_file' || n === 'edit_file') {
+    if (
+      n.includes('file') ||
+      n.includes('read') ||
+      n.includes('write') ||
+      n.includes('edit')
+    ) {
       return <FileText size={12} className="tool-type-icon text-sky" />;
     }
-    if (n.includes('dir') || n.includes('path')) {
+    if (n.includes('dir') || n.includes('path') || n.includes('list') || n.includes('find')) {
       return <Folder size={12} className="tool-type-icon text-emerald" />;
     }
-    if (n.includes('mcp')) {
+    if (n.includes('mcp') || n.includes('fetch') || n.includes('web')) {
       return <Cpu size={12} className="tool-type-icon text-purple" />;
     }
     return <Wrench size={12} className="tool-type-icon" />;
@@ -67,9 +73,11 @@ export default function ToolCard({
   if (typeof args === 'object' && args !== null) {
     if (args.command) {
       argsSummary = args.command;
-    } else if (args.path || args.file_path || args.AbsolutePath) {
-      argsSummary = args.path || args.file_path || args.AbsolutePath;
-    } else {
+    } else if (args.path || args.file_path || args.target_file || args.TargetFile || args.AbsolutePath) {
+      argsSummary = args.path || args.file_path || args.target_file || args.TargetFile || args.AbsolutePath;
+    } else if (args.query || args.pattern || args.url) {
+      argsSummary = args.query || args.pattern || args.url;
+    } else if (Object.keys(args).length > 0) {
       argsSummary = JSON.stringify(args);
     }
   } else if (typeof args === 'string') {

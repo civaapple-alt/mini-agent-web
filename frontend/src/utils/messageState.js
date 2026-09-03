@@ -39,11 +39,13 @@ function mergeProjectedToolItems(messages, items) {
     const existingIndex = blocks.findIndex(
       (block) => block.type === 'tool' && block.call_id === callId
     );
+    const toolName = item.name || item.toolName || item.tool || 'tool';
     const nextBlock = {
       type: 'tool',
       id: callId,
       call_id: callId,
-      toolName: item.name || 'tool',
+      name: toolName,
+      toolName: toolName,
       arguments: item.arguments ?? {},
       args: item.arguments ?? {},
       status: projectedStatus(item.status),
@@ -245,10 +247,13 @@ export function aggregateStreamEvent(messages, data) {
       if (lastBlock && lastBlock.type === 'thinking') {
         blocks[blocks.length - 1] = { ...lastBlock, isStreaming: false };
       }
+      const toolName = evt.tool || evt.name || evt.toolName || '';
       blocks.push({
         type: 'tool',
-        toolName: evt.tool || evt.name || '',
+        name: toolName,
+        toolName: toolName,
         args: evt.args || evt.parameters || {},
+        arguments: evt.args || evt.parameters || {},
         status: 'running',
         call_id: evt.call_id || evt.id || '',
       });

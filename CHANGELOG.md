@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed project creation path passthrough to bind the primary directory path selected by the user instead of defaulting to null.
   - Re-anchored project details popover directly below the folder item, eliminating sidebar overflow clipping and mouseleave dismissal.
   - Fixed "scroll to bottom" button in `ChatArea` where flex stretch and negative translation caused it to appear as an oversized green horizontal bar when scrolling up.
+  - Fixed tool card naming in `ToolCard.jsx` and `messageState.js` to correctly extract concrete tool names (e.g. `read_file`, `shell`, `edit_file`) instead of falling back to generic "tool" with low-contrast text.
   - Added click propagation guards on project action buttons, click-outside auto-dismiss for the header summary popover, and blur auto-save on thread title rename.
   - Introduced universal CSS floating tooltips (`[data-tooltip]`) with instant hover and multi-theme support.
 - **Cookbook Demo 04 timing**: replaced fixed steering/interruption sleeps with

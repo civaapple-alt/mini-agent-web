@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -53,8 +54,11 @@ class SessionManager:
         self._lock = asyncio.Lock()
         self._initialized = False
 
-        # Persistence state file path: ~/.mini-agent/state.json
-        self._state_dir = Path.home() / ".mini-agent"
+        # Persistence state file path: ~/.mini-agent/state.json or $MINI_AGENT_STATE_DIR
+        state_dir_env = os.environ.get("MINI_AGENT_STATE_DIR")
+        self._state_dir = (
+            Path(state_dir_env) if state_dir_env else (Path.home() / ".mini-agent")
+        )
         self._state_file = self._state_dir / "state.json"
 
         # Structured project registry: project_id -> project dict
@@ -89,7 +93,18 @@ class SessionManager:
         if self._state_file.is_file():
             try:
                 data = json.loads(self._state_file.read_text(encoding="utf-8"))
-                self._projects_registry = data.get("projects", {})
+                loaded_projects = data.get("projects", {})
+                # Filter out stale temporary test projects that no longer exist on disk
+                clean_projects: dict[str, dict[str, Any]] = {}
+                for pid, p in loaded_projects.items():
+                    p_path = p.get("primary_path", "")
+                    if (
+                        "pytest" in p_path.lower() or "temp" in p_path.lower()
+                    ) and not Path(p_path).exists():
+                        continue
+                    clean_projects[pid] = p
+
+                self._projects_registry = clean_projects
                 self._thread_metadata = data.get("thread_metadata", {})
                 if "settings" in data and isinstance(data["settings"], dict):
                     self._settings.update(data["settings"])
@@ -108,25 +123,26 @@ class SessionManager:
                     err,
                 )
 
-        # If no projects exist, initialize ONLY the current active workspace directory
+        # Always ensure the active workspace directory is registered in projects
         cur_name = self._current_project_path.name
-        if not self._projects_registry:
-            self._current_project_id = cur_name
-            self._projects_registry = {
-                cur_name: {
-                    "id": cur_name,
-                    "name": cur_name,
-                    "pinned": False,
-                    "primary_path": str(self._current_project_path),
-                    "source_folders": [
-                        {
-                            "name": cur_name,
-                            "path": str(self._current_project_path),
-                            "is_primary": True,
-                        }
-                    ],
-                }
+        if cur_name not in self._projects_registry:
+            self._projects_registry[cur_name] = {
+                "id": cur_name,
+                "name": cur_name,
+                "pinned": False,
+                "primary_path": str(self._current_project_path),
+                "source_folders": [
+                    {
+                        "name": cur_name,
+                        "path": str(self._current_project_path),
+                        "is_primary": True,
+                    }
+                ],
             }
+
+        # If current project ID is missing from registry, default to the active workspace project
+        if self._current_project_id not in self._projects_registry:
+            self._current_project_id = cur_name
 
         # Ensure default thread exists
         if not self._thread_metadata:

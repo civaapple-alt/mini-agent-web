@@ -45,6 +45,20 @@ export const api = {
     return res.json();
   },
 
+  async listThreadItems(threadId, options = {}) {
+    const params = new URLSearchParams();
+    if (options.turnId) params.set('turn_id', options.turnId);
+    if (options.cursor) params.set('cursor', options.cursor);
+    if (options.limit) params.set('limit', String(options.limit));
+    if (options.sortDirection) params.set('sort_direction', options.sortDirection);
+    const query = params.toString();
+    const res = await fetch(
+      `${API_BASE}/api/threads/${encodeURIComponent(threadId)}/items${query ? `?${query}` : ''}`
+    );
+    if (!res.ok) throw new Error(`Failed to list items for thread ${threadId}`);
+    return res.json();
+  },
+
   async renameThread(threadId, title) {
     const res = await fetch(`${API_BASE}/api/threads/${encodeURIComponent(threadId)}/rename`, {
       method: 'PATCH',
@@ -114,11 +128,12 @@ export const api = {
     return res.json();
   },
 
-  async updateThreadSettings(mode, builtinTools = null, threadId = null) {
-    const res = await fetch(`${API_BASE}/api/workflows/settings`, {
+  async updateThreadSettings(mode, builtinTools = null, threadId = 'default') {
+    const targetThread = threadId || 'default';
+    const res = await fetch(`${API_BASE}/api/threads/${encodeURIComponent(targetThread)}/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode, builtin_tools: builtinTools, thread_id: threadId }),
+      body: JSON.stringify({ mode, builtin_tools: builtinTools }),
     });
     if (!res.ok) throw new Error('Failed to update thread settings');
     return res.json();
@@ -128,34 +143,30 @@ export const api = {
     return this.updateThreadSettings(mode, null, threadId);
   },
 
-  async setGoal(objective, tokenBudget = null, status = null, threadId = null) {
-    const res = await fetch(`${API_BASE}/api/workflows/goal`, {
+  async setGoal(objective, tokenBudget = null, status = null, threadId = 'default') {
+    const targetThread = threadId || 'default';
+    const res = await fetch(`${API_BASE}/api/threads/${encodeURIComponent(targetThread)}/goal`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         objective,
         token_budget: tokenBudget,
         status,
-        thread_id: threadId,
       }),
     });
     if (!res.ok) throw new Error('Failed to set goal');
     return res.json();
   },
 
-  async getGoal(threadId = null) {
-    const url = threadId
-      ? `${API_BASE}/api/workflows/goal?thread_id=${encodeURIComponent(threadId)}`
-      : `${API_BASE}/api/workflows/goal`;
+  async getGoal(threadId = 'default') {
+    const url = `${API_BASE}/api/threads/${encodeURIComponent(threadId || 'default')}/goal`;
     const res = await fetch(url);
     if (!res.ok) throw new Error('Failed to get goal');
     return res.json();
   },
 
-  async clearGoal(threadId = null) {
-    const url = threadId
-      ? `${API_BASE}/api/workflows/goal?thread_id=${encodeURIComponent(threadId)}`
-      : `${API_BASE}/api/workflows/goal`;
+  async clearGoal(threadId = 'default') {
+    const url = `${API_BASE}/api/threads/${encodeURIComponent(threadId || 'default')}/goal`;
     const res = await fetch(url, { method: 'DELETE' });
     if (!res.ok) throw new Error('Failed to clear goal');
     return res.json();

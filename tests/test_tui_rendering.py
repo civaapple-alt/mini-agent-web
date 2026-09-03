@@ -184,6 +184,21 @@ async def test_render_turn_stream_accepts_runtime_notifications(
     async def mock_stream(*args: Any, **kwargs: Any):
         yield {
             "type": "notification",
+            "method": "item/completed",
+            "data": {
+                "threadId": "goal-thread",
+                "turnId": "turn-goal",
+                "item": {
+                    "type": "toolCall",
+                    "id": "call-goal",
+                    "name": "shell",
+                    "status": "completed",
+                    "output": "ok",
+                },
+            },
+        }
+        yield {
+            "type": "notification",
             "method": "thread/goal/updated",
             "data": {"goal": {"status": "active"}},
         }
@@ -200,6 +215,7 @@ async def test_render_turn_stream_accepts_runtime_notifications(
 
     assert "Goal updated: active" in rendered
     assert "Goal cleared" in rendered
+    assert state.thread_items["call-goal"]["status"] == "completed"
 
 
 @pytest.mark.asyncio

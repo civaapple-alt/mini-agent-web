@@ -175,11 +175,37 @@ async for envelope in client.stream_turn("Inspect the workspace"):
                 print(item.id, item.name, item.status, item.arguments, item.output)
 ```
 
+The App Server also emits dedicated lifecycle notifications on the same stream.
+They are yielded as notification envelopes and expose a typed
+`ItemLifecycleNotification` under `typed_item_notification`:
+
+```python
+async for envelope in client.stream_turn("Inspect the workspace"):
+    if envelope.get("type") != "notification":
+        continue
+    if envelope["method"] in ("item/started", "item/completed"):
+        item_event = envelope["typed_item_notification"]
+        print(item_event.turn_id, item_event.item.id, item_event.method)
+```
+
+For history/replay, use the bounded cursor API. It reads the existing Session
+projection and does not create a second item store:
+
+```python
+page = await client.list_thread_items(thread_id="default", limit=128)
+for entry in page.data:
+    print(entry.turn_id, entry.item.type, entry.item.id)
+```
+
 Runtime notifications such as `thread/settings/updated`,
 `thread/goal/updated`, and `thread/goal/cleared` are yielded as
 `{"type": "notification", "method": ..., "data": ...}` envelopes. A
 `notification_handler` may be supplied when the application needs to
 broadcast these events outside an active turn stream.
+
+`get_workflow_state()` is only a convenience read-only aggregate in the SDK;
+it composes the cached Thread settings projection with `thread/goal/get` and
+does not send a legacy `workflow/state` RPC.
 
 Use the deterministic Cookbook contract check when changing event models:
 

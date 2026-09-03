@@ -28,10 +28,10 @@ function projectedStatus(status) {
   return 'running';
 }
 
-function mergeProjectedToolItems(messages, items) {
+function mergeProjectedToolItems(messages, items, targetIndex = messages.length - 1) {
   if (messages.length === 0 || items.length === 0) return messages;
   const copy = [...messages];
-  const last = { ...copy[copy.length - 1] };
+  const last = { ...copy[targetIndex] };
   const blocks = [...(last.blocks || [])];
 
   for (const item of items) {
@@ -68,14 +68,14 @@ function mergeProjectedToolItems(messages, items) {
   }
 
   last.blocks = blocks;
-  copy[copy.length - 1] = last;
+  copy[targetIndex] = last;
   return copy;
 }
 
-function mergeProjectedCompactionItems(messages, items) {
+function mergeProjectedCompactionItems(messages, items, targetIndex = messages.length - 1) {
   if (messages.length === 0 || items.length === 0) return messages;
   const copy = [...messages];
-  const last = { ...copy[copy.length - 1] };
+  const last = { ...copy[targetIndex] };
   const blocks = [...(last.blocks || [])];
 
   for (const item of items) {
@@ -95,14 +95,14 @@ function mergeProjectedCompactionItems(messages, items) {
   }
 
   last.blocks = blocks;
-  copy[copy.length - 1] = last;
+  copy[targetIndex] = last;
   return copy;
 }
 
-function mergeProjectedReasoningItems(messages, items) {
+function mergeProjectedReasoningItems(messages, items, targetIndex = messages.length - 1) {
   if (messages.length === 0 || items.length === 0) return messages;
   const copy = [...messages];
-  const last = { ...copy[copy.length - 1] };
+  const last = { ...copy[targetIndex] };
   const blocks = [...(last.blocks || [])];
 
   for (const item of items) {
@@ -125,8 +125,106 @@ function mergeProjectedReasoningItems(messages, items) {
   }
 
   last.blocks = blocks;
-  copy[copy.length - 1] = last;
+  copy[targetIndex] = last;
   return copy;
+}
+
+function ensureTurnAssistant(messages, turnId) {
+  const id = `turn_${turnId}`;
+  const existing = messages.findIndex((message) => message.id === id);
+  if (existing !== -1) return messages;
+  return [
+    ...messages,
+    {
+      id,
+      role: 'assistant',
+      text: '',
+      thinking: '',
+      tools: [],
+      blocks: [],
+    },
+  ];
+}
+
+/**
+ * Apply a dedicated App Server item lifecycle notification.
+ *
+ * Text and reasoning deltas remain the streaming source for their respective
+ * blocks. Tool and compaction items are reconciled here because their
+ * authoritative completed projection can arrive outside turn/event.
+ */
+export function aggregateItemLifecycle(messages, data) {
+  if (!data || data.type !== 'notification') return messages;
+  if (data.method !== 'item/started' && data.method !== 'item/completed') return messages;
+
+  const payload = data.data || {};
+  const item = payload.item;
+  if (!item) return messages;
+
+  const turnId = payload.turnId || payload.turn_id || 'unknown';
+  let next = ensureTurnAssistant(messages, turnId);
+  const targetIndex = next.findIndex((message) => message.id === `turn_${turnId}`);
+  if (item.type === 'toolCall' || item.type === 'tool_call') {
+    return mergeProjectedToolItems(next, [item], targetIndex);
+  }
+  if (item.type === 'contextCompaction' || item.type === 'context_compaction') {
+    return mergeProjectedCompactionItems(next, [item], targetIndex);
+  }
+  return next;
+}
+
+/**
+ * Hydrate a message projection with cursor results from thread/items/list.
+ */
+export function aggregateThreadItems(messages, entries) {
+  let next = messages;
+  const targetByTurn = new Map();
+  const turnOrder = [];
+  for (const entry of entries || []) {
+    const turnId = entry.turnId || entry.turn_id || 'unknown';
+    if (!targetByTurn.has(turnId)) {
+      targetByTurn.set(turnId, null);
+      turnOrder.push(turnId);
+    }
+  }
+  const assistantIndexes = next
+    .map((message, index) => (message.role === 'assistant' ? index : -1))
+    .filter((index) => index !== -1);
+  turnOrder.forEach((turnId, index) => {
+    const existingIndex = assistantIndexes[index];
+    if (existingIndex !== undefined) {
+      targetByTurn.set(turnId, existingIndex);
+    } else {
+      next = ensureTurnAssistant(next, turnId);
+      targetByTurn.set(turnId, next.length - 1);
+    }
+  });
+
+  for (const entry of entries || []) {
+    const turnId = entry.turnId || entry.turn_id || 'unknown';
+    const item = entry.item || {};
+    if (!item.type || item.type === 'userMessage') continue;
+    const targetIndex = targetByTurn.get(turnId) ?? next.length - 1;
+    if (item.type === 'toolCall' || item.type === 'tool_call') {
+      next = mergeProjectedToolItems(next, [item], targetIndex);
+    } else if (item.type === 'contextCompaction' || item.type === 'context_compaction') {
+      next = mergeProjectedCompactionItems(next, [item], targetIndex);
+    } else if (item.type === 'reasoning') {
+      next = mergeProjectedReasoningItems(next, [item], targetIndex);
+    } else if (item.type === 'agentMessage' && item.text) {
+      const copy = [...next];
+      const last = { ...copy[targetIndex] };
+      const blocks = [...(last.blocks || [])];
+      const textBlock = blocks.findIndex((block) => block.type === 'text');
+      if (textBlock === -1) blocks.push({ type: 'text', content: item.text });
+      else blocks[textBlock] = { ...blocks[textBlock], content: item.text };
+      last.text = item.text;
+      last.blocks = blocks;
+      copy[targetIndex] = last;
+      next = copy;
+    }
+  }
+  return next;
 }
 
 /**
@@ -141,6 +239,10 @@ export function aggregateStreamEvent(messages, data) {
     const type = evt.type;
 
     if (type === 'turn_started') {
+      const turnMessageId = 'turn_' + (data.turnId || '');
+      if (data.turnId && messages.some((message) => message.id === turnMessageId)) {
+        return messages;
+      }
       return [
         ...messages,
         {

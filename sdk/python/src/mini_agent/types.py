@@ -40,6 +40,9 @@ ThreadGoalStatus = Literal[
     "complete",
 ]
 
+ItemStatus = Literal["inProgress", "completed", "failed"]
+ItemSortDirection = Literal["asc", "desc"]
+
 CollaborationModeKind = Literal["default", "plan"]
 
 
@@ -85,6 +88,83 @@ class ThreadItem:
             arguments=data.get("arguments"),
             status=data.get("status"),
             output=data.get("output"),
+        )
+
+
+@dataclass
+class ItemLifecycleNotification:
+    """Typed projection of an ``item/started`` or ``item/completed`` notification."""
+
+    method: Literal["item/started", "item/completed"]
+    thread_id: str
+    turn_id: str
+    item: ThreadItem
+    timestamp_ms: int
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(
+        cls,
+        method: Literal["item/started", "item/completed"],
+        data: dict[str, Any],
+    ) -> ItemLifecycleNotification:
+        return cls(
+            method=method,
+            thread_id=data.get("threadId") or data.get("thread_id", ""),
+            turn_id=data.get("turnId") or data.get("turn_id", ""),
+            item=ThreadItem.from_dict(data.get("item", {})),
+            timestamp_ms=(
+                data.get("startedAtMs")
+                if method == "item/started"
+                else data.get("completedAtMs")
+            )
+            or (
+                data.get("started_at_ms")
+                if method == "item/started"
+                else data.get("completed_at_ms", 0)
+            ),
+            raw=data,
+        )
+
+
+@dataclass
+class ThreadItemEntry:
+    """One bounded item projection associated with its owning turn."""
+
+    turn_id: str
+    item: ThreadItem
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ThreadItemEntry:
+        return cls(
+            turn_id=data.get("turnId") or data.get("turn_id", ""),
+            item=ThreadItem.from_dict(data.get("item", {})),
+        )
+
+
+@dataclass
+class ThreadItemsListResult:
+    """Cursor-bounded ThreadItem projection returned by ``thread/items/list``."""
+
+    data: list[ThreadItemEntry] = field(default_factory=list)
+    next_cursor: str | None = None
+    backwards_cursor: str | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ThreadItemsListResult:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        if not isinstance(val, dict):
+            return cls(raw=data)
+        return cls(
+            data=[
+                ThreadItemEntry.from_dict(entry)
+                for entry in val.get("data", [])
+                if isinstance(entry, dict)
+            ],
+            next_cursor=val.get("nextCursor") or val.get("next_cursor"),
+            backwards_cursor=val.get("backwardsCursor") or val.get("backwards_cursor"),
+            raw=data,
         )
 
 

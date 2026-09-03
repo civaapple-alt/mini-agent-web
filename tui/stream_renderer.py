@@ -236,7 +236,13 @@ async def render_turn_stream(
             elif item.get("type") == "notification":
                 method = item.get("method", "")
                 data = item.get("data", {})
-                if method == "thread/goal/updated":
+                if method in ("item/started", "item/completed"):
+                    lifecycle_item = (
+                        data.get("item") if isinstance(data, dict) else None
+                    )
+                    if isinstance(lifecycle_item, dict):
+                        state.record_item(lifecycle_item)
+                elif method == "thread/goal/updated":
                     goal = data.get("goal", data) if isinstance(data, dict) else {}
                     console.print(
                         f"\n[dim blue]◎ Goal updated: {goal.get('status', 'active')}[/dim blue]"

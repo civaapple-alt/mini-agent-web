@@ -35,7 +35,13 @@ def to_json_serializable(obj: Any) -> Any:
         return {
             k: to_json_serializable(v)
             for k, v in obj.items()
-            if k not in ("typed_event", "typed_items", "submission")
+            if k
+            not in (
+                "typed_event",
+                "typed_items",
+                "typed_item_notification",
+                "submission",
+            )
         }
     if isinstance(obj, (list, tuple)):
         return [to_json_serializable(v) for v in obj]

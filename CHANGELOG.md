@@ -13,19 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Builtin Tools Selector & Control Plane**: exposed bounded Builtin selection
   with a small default set (`read_file`, `apply_patch`, `shell`, `read_image`) and
-  optional compatibility tools (`write_file`, `edit_file`, `web_fetch`)
-  in Web Studio SidePanel and Gateway `/api/workflows/settings`, enabling dynamic
-  per-thread tool capability restriction aligned with App Server 0.7.0.
-- **Workflow state fidelity**: consume the App Server's active `builtinTools`
-  projection and preserve an explicit empty selection through the Python SDK and
-  Gateway instead of reconstructing it as the default set.
+  explicit `web_fetch` extension in Web Studio SidePanel and Thread settings,
+  enabling dynamic per-thread tool capability restriction aligned with App Server
+  0.7.0. The removed `write_file` and `edit_file` paths are not exposed.
+- **Workflow state fidelity**: preserve the App Server's active `builtinTools`
+  projection and explicit empty selection through SDK settings results and the
+  Gateway's read-only aggregate instead of issuing a legacy state RPC.
 - **Full ThreadItem Lifecycle Stream Reducer**: extended `messageState.js` with
   `contextCompaction` settlement badges and `reasoning` synchronization,
   rendering structured compaction indicators in Web Studio while preserving
   deterministic `toolCall` merging.
-- **Multi-thread Workflow Settings Routing**: enabled optional `thread_id`
-  forwarding in Gateway workflow routes and API client methods, preventing
-  context drift when configuring thread settings across active conversations.
+- **Canonical Thread resource routing**: moved Gateway Settings and Goal writes
+  to `/api/threads/{thread_id}/settings` and `/api/threads/{thread_id}/goal`,
+  matching the App Server's Thread-owned control plane.
+- **Canonical ThreadItem consumption**: synchronized SDK, Gateway, Studio, and
+  TUI with `item/started`, `item/completed`, and cursor-bounded
+  `thread/items/list`; workflow state remains a read-only aggregate projection.
 - **Documentation & Agent Notes Reorganization**:
   - Reclassified architectural decision records (ADRs), proposals, and deep dives into the structured `.agents/notes/` tree (`implemented/` and `proposed/`), indexed by `.agents/notes/README.md`.
   - Streamlined `docs/` to retain strictly essential operational project documentation: `limits.md`, `privacy.md`, `releasing.md`, `troubleshooting.md`, and `python-sdk-guide.md`.
@@ -37,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed project creation path passthrough to bind the primary directory path selected by the user instead of defaulting to null.
   - Re-anchored project details popover directly below the folder item, eliminating sidebar overflow clipping and mouseleave dismissal.
   - Fixed "scroll to bottom" button in `ChatArea` where flex stretch and negative translation caused it to appear as an oversized green horizontal bar when scrolling up.
-  - Fixed tool card naming in `ToolCard.jsx` and `messageState.js` to correctly extract concrete tool names (e.g. `read_file`, `shell`, `edit_file`) instead of falling back to generic "tool" with low-contrast text.
+  - Fixed tool card naming in `ToolCard.jsx` and `messageState.js` to correctly extract concrete tool names (e.g. `read_file`, `apply_patch`, `shell`) instead of falling back to generic "tool" with low-contrast text.
   - Added click propagation guards on project action buttons, click-outside auto-dismiss for the header summary popover, and blur auto-save on thread title rename.
   - Introduced universal CSS floating tooltips (`[data-tooltip]`) with instant hover and multi-theme support.
 - **Cookbook Demo 04 timing**: replaced fixed steering/interruption sleeps with

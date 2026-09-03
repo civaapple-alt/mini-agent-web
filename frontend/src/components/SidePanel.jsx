@@ -24,8 +24,6 @@ import './SidePanel.css';
 const BUILTIN_TOOL_INFO = {
   read_file: { name: 'read_file', label: '读取文件', desc: '只读检查工作区文件与代码' },
   apply_patch: { name: 'apply_patch', label: '应用补丁', desc: '原子化添加、修改、移动或删除文件' },
-  write_file: { name: 'write_file', label: '写入文件', desc: '创建或覆写工作区文件' },
-  edit_file: { name: 'edit_file', label: '编辑文件', desc: '精确替换与修补代码片段' },
   shell: { name: 'shell', label: '终端命令', desc: '执行命令行检查与自动化测试' },
   web_fetch: { name: 'web_fetch', label: '网页抓取', desc: '抓取外部 HTTP 与静态文档' },
   read_image: { name: 'read_image', label: '图像读取', desc: '读取并解析视觉/图像资源' },
@@ -58,8 +56,6 @@ export default function SidePanel({
   const [availableBuiltinTools, setAvailableBuiltinTools] = useState([
     'read_file',
     'apply_patch',
-    'write_file',
-    'edit_file',
     'shell',
     'web_fetch',
     'read_image',
@@ -407,7 +403,7 @@ export default function SidePanel({
                     <div>
                       <span className="workflow-title">内置工具权限控制 (Builtin Tools)</span>
                       <p className="workflow-sub">
-                        当前 Thread 可受控暴露的 7 种工具；默认仅启用 4 个核心工具，反选即可剥离调用能力
+                        当前 Thread 可受控暴露的 5 种工具；默认仅启用 4 个核心工具，反选即可剥离调用能力
                       </p>
                     </div>
                   </div>

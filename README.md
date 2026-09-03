@@ -13,7 +13,9 @@
 
 0.7.0 对齐 App Server 的 Thread/Turn/Item 语义：线程设置使用
 `thread/settings/update`，目标使用 `thread/goal/set|get|clear`，Turn 事件可携带
-`ThreadItem` 投影；Studio、TUI、Server 和 Cookbook 均消费这套新边界。
+`ThreadItem` 投影，并通过 `item/started` / `item/completed` 与
+`thread/items/list` 提供生命周期和分页回放；Studio、TUI、Server 和 Cookbook
+均消费这套新边界。`workflow/state` 仅在 Gateway 作为只读聚合投影保留。
 
 ---
 

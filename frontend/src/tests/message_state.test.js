@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateStreamEvent, shouldAcceptEventForThread } from '../utils/messageState.js';
+import {
+  aggregateItemLifecycle,
+  aggregateStreamEvent,
+  aggregateThreadItems,
+  shouldAcceptEventForThread,
+} from '../utils/messageState.js';
 
 test('message stream aggregation cleanly sequences thinking, text, and tools', () => {
   let messages = [];
@@ -189,4 +194,79 @@ test('ThreadItem reasoning projections synchronize thinking block', () => {
   assert.equal(messages[0].blocks.length, 1);
   assert.equal(messages[0].blocks[0].type, 'thinking');
   assert.equal(messages[0].blocks[0].content, 'System architecture analysis and design steps...');
+});
+
+test('dedicated ThreadItem lifecycle notifications reconcile without duplicate tool blocks', () => {
+  let messages = aggregateStreamEvent([], {
+    type: 'event',
+    turnId: 'turn-earlier',
+    event: { type: 'turn_started' },
+  });
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-later',
+    event: { type: 'turn_started' },
+  });
+  messages = aggregateItemLifecycle(messages, {
+    type: 'notification',
+    method: 'item/started',
+    data: {
+      threadId: 'thread-main',
+      turnId: 'turn-earlier',
+      item: {
+        type: 'toolCall',
+        id: 'call-life',
+        name: 'shell',
+        arguments: { command: 'pwd' },
+        status: 'inProgress',
+      },
+    },
+  });
+  messages = aggregateItemLifecycle(messages, {
+    type: 'notification',
+    method: 'item/completed',
+    data: {
+      threadId: 'thread-main',
+      turnId: 'turn-earlier',
+      item: {
+        type: 'toolCall',
+        id: 'call-life',
+        name: 'shell',
+        arguments: { command: 'pwd' },
+        status: 'completed',
+        output: 'C:\\workspace',
+      },
+    },
+  });
+
+  assert.equal(messages.length, 2);
+  assert.equal(messages[0].blocks.length, 1);
+  assert.equal(messages[0].blocks[0].status, 'completed');
+  assert.equal(messages[0].blocks[0].output, 'C:\\workspace');
+  assert.equal(messages[1].blocks.length, 0);
+});
+
+test('thread item history hydrates existing assistant turns and preserves item identity', () => {
+  const messages = aggregateThreadItems(
+    [
+      { id: 'user-1', role: 'user', text: 'Inspect', blocks: [{ type: 'text', content: 'Inspect' }] },
+      { id: 'assistant-1', role: 'assistant', text: 'Done', blocks: [{ type: 'text', content: 'Done' }] },
+    ],
+    [
+      {
+        turnId: 'turn-history',
+        item: {
+          type: 'toolCall',
+          id: 'call-history',
+          name: 'shell',
+          arguments: { command: 'pwd' },
+          status: 'completed',
+          output: 'C:\\workspace',
+        },
+      },
+    ],
+  );
+
+  assert.equal(messages.length, 2);
+  assert.equal(messages[1].blocks[1].id, 'call-history');
 });

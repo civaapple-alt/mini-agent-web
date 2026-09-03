@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, field
+from typing import Any
 
 from rich.console import Console
 
@@ -55,8 +56,16 @@ class TUIState:
     active_turn_id: str | None = None
     last_turn_metrics: TurnMetrics | None = None
     last_assistant_response: str = ""
+    # Latest authoritative ThreadItem projection keyed by stable item id.
+    thread_items: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def record_turn(self, thread_id: str | None = None) -> None:
         """Increment turn count for the specified thread."""
         tid = thread_id or self.current_thread_id
         self.turn_counts[tid] = self.turn_counts.get(tid, 0) + 1
+
+    def record_item(self, item: dict[str, Any]) -> None:
+        """Reconcile a bounded lifecycle projection without creating a second store."""
+        item_id = str(item.get("id", ""))
+        if item_id:
+            self.thread_items[item_id] = dict(item)

@@ -7,7 +7,12 @@ import SidePanel from './components/SidePanel';
 import SettingsModal from './components/SettingsModal';
 import Toast from './components/Toast';
 import { api, createAgentWebSocket } from './api';
-import { shouldAcceptEventForThread, aggregateStreamEvent } from './utils/messageState';
+import {
+  shouldAcceptEventForThread,
+  aggregateItemLifecycle,
+  aggregateStreamEvent,
+  aggregateThreadItems,
+} from './utils/messageState';
 import './App.css';
 
 export default function App() {
@@ -147,7 +152,10 @@ export default function App() {
   const loadThreadHistory = async (threadId) => {
     setIsLoadingHistory(true);
     try {
-      const cp = await api.readThread(threadId);
+      const [cp, itemPage] = await Promise.all([
+        api.readThread(threadId),
+        api.listThreadItems(threadId, { limit: 128 }),
+      ]);
       if (cp.metadata) {
         setCurrentThreadMeta({
           title: cp.metadata.title || threadId,
@@ -175,7 +183,7 @@ export default function App() {
             },
           ],
         }));
-      setMessages(formatted);
+      setMessages(aggregateThreadItems(formatted, itemPage.data || []));
     } catch (err) {
       console.error(`Failed to load thread ${threadId}:`, err);
       showToast(`加载会话历史失败: ${err.message}`, 'error');
@@ -255,7 +263,9 @@ export default function App() {
 
     if (data.type === 'notification') {
       const notification = data.data || {};
-      if (data.method === 'thread/settings/updated') {
+      if (data.method === 'item/started' || data.method === 'item/completed') {
+        setMessages((prev) => aggregateItemLifecycle(prev, data));
+      } else if (data.method === 'thread/settings/updated') {
         setPlanActive(notification.collaborationMode?.mode === 'plan');
       } else if (data.method === 'thread/goal/updated') {
         setGoalState(notification.goal || null);

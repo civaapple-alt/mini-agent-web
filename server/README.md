@@ -70,7 +70,8 @@ uv run mini-agent-server-dev
 | `/ws/agent` | `WebSocket` | 实时事件推流与双向协议交互通道（含 mode 清洗与 isOpen 保护） |
 | `/api/threads` | `GET` / `POST` | 列出或创建会话线程 |
 | `/api/threads/{thread_id}/fork` | `POST` | 将现有线程分叉为新的实验分支 |
-| `/api/threads/{thread_id}/checkpoint` | `GET` | 读取线程持久化 Checkpoint 检查点 |
+| `/api/threads/{thread_id}` | `GET` | 读取线程 Checkpoint 与消息历史 |
+| `/api/threads/{thread_id}/items` | `GET` | 读取 Session-backed、游标分页的 ThreadItem 投影 |
 | `/api/agent/turn` | `POST` | 提交新一轮 Prompt 指令 |
 | `/api/agent/steer` | `POST` | 向运行中的轮次注入实时纠偏指令 |
 | `/api/agent/interrupt` | `POST` | 协作中断当前活动轮次 |
@@ -81,8 +82,8 @@ uv run mini-agent-server-dev
 | `/api/projects` | `GET` / `POST` | 列出与创建工作区项目 |
 | `/api/projects/{project_id}` | `PUT` / `DELETE` | 更新或移除工作区本地项目 |
 | `/api/workflows/state` | `GET` | 查询 Thread collaboration mode、内置工具列表与 Goal 投影 |
-| `/api/workflows/settings` | `POST` | 设置 collaboration mode 与可选 Builtin tools（支持 `thread_id`） |
-| `/api/workflows/goal` | `GET` / `POST` / `DELETE` | 读取、设置或清除 Thread Goal（支持 `thread_id`） |
+| `/api/threads/{thread_id}/settings` | `POST` | 设置 Thread collaboration mode 与 Builtin tools |
+| `/api/threads/{thread_id}/goal` | `GET` / `POST` / `DELETE` | 读取、设置或清除 Thread Goal |
 
 工作流路由不再提供旧的 `workflow/plan/set` 或手工 milestone/verdict API；Goal
 的 step、timeout、token budget 和自动续跑由 App Server 的 Goal Runtime 负责。

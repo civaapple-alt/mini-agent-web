@@ -42,7 +42,7 @@ if __name__ == "__main__":
 ## Key Features
 
 * **Async Context Manager**: Simple `async with MiniAgentClient()` manages subprocess lifecycle cleanly.
-* **Stream Generator**: `stream_turn()` yields target-Thread/Turn events, real-time reasoning deltas, text tokens, tool start/finish, context compaction, run lifecycle events, `ThreadItem` projections, runtime notifications, and `approval` records (`requested`/`resolved`).
+* **Stream Generator**: `stream_turn()` yields target-Thread/Turn events, real-time reasoning deltas, text tokens, tool start/finish, context compaction, run lifecycle events, `ThreadItem` projections, `item/started` / `item/completed` lifecycle notifications, runtime notifications, and `approval` records (`requested`/`resolved`).
 * **Security & Approval Interceptor**: Native support for `approval/request`, `approval/respond`, and server `approval/resolved`; approval records are visible even when `approval_handler` is omitted and the SDK uses its default auto-approval policy.
 * **Steering & Interrupt**: Mid-turn instruction injection (`turn/steer`) and cooperative cancellation (`turn/interrupt`).
 * **Zero Required Dependencies**: Runs entirely on Python 3.10+ Standard Library (`asyncio`, `json`, `subprocess`).
@@ -52,9 +52,12 @@ if __name__ == "__main__":
 The SDK targets `mini-agent-app-server` 0.7.0 over JSON-RPC wire protocol
 version `1`. Thread settings use `thread/settings/update`; Thread Goals use
 `thread/goal/set`, `thread/goal/get`, and `thread/goal/clear`. `turn/event` and
-`turn/read` expose bounded `ThreadItem` projections. Runtime notifications such
-as `thread/goal/updated` are yielded as notification envelopes, while unknown
-engine events remain available as `GenericEvent`. Set
+`turn/read` expose bounded `ThreadItem` projections, and `list_thread_items()`
+reads cursor-bounded history from the existing Session projection. Item
+lifecycle notifications are typed as `ItemLifecycleNotification` while
+remaining notification envelopes. Runtime notifications such as
+`thread/goal/updated` are yielded the same way, while unknown engine events
+remain available as `GenericEvent`. Set
 `MINI_AGENT_APP_SERVER_PATH` when the matching App Server binary is not on
 `PATH`.
 

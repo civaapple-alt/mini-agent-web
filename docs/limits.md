@@ -12,7 +12,7 @@
 | **单次实时纠偏 (Steer Input)** | **16 KiB** | 前端与 SDK 校验长度，超限拒绝发送并提示原因 |
 | **单条工具返回结果预览** | **16 KiB** | `ToolCard` 与 TUI 保留 UTF-8 安全的首尾截断预览，避免撑爆 DOM / 控制台 |
 | **单轮模型流式文本输出** | **64 KiB** | 流式规约器持续追踪字节数，超限时触发截断告警并结束当前块聚合 |
-| **内置基础工具集** | **4 种默认工具** | 默认暴露 `read_file`、`apply_patch`、`shell`、`read_image`；`write_file`、`edit_file`、`web_fetch` 为可选兼容工具 |
+| **内置基础工具集** | **4 种默认工具** | 默认暴露 `read_file`、`apply_patch`、`shell`、`read_image`；`web_fetch` 仅作为显式扩展，`write_file`、`edit_file` 已移除 |
 | **管理接口请求超时** | **30 秒** | `initialize`、`thread/start`、`thread/settings/update` 等控制面 RPC 30 秒超时熔断 |
 | **Goal 自治执行轮次上限** | **50 步** | 触发 App Server 的 `usageLimited` 并结算退出 |
 | **Goal 执行墙上时钟超时** | **600 秒** | 触发协作式取消（`turn/interrupt`）并标记为超时结算 |

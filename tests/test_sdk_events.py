@@ -8,6 +8,7 @@ from mini_agent import (
     ContextCompactionFinishedEvent,
     ContextCompactionStartedEvent,
     GenericEvent,
+    ItemLifecycleNotification,
     MiniAgentClient,
     ModelUsage,
     RunFailedEvent,
@@ -109,6 +110,25 @@ async def test_stream_turn_filters_events_by_thread_and_turn():
     )
     await queue.put(
         {
+            "type": "notification",
+            "method": "item/completed",
+            "data": {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "completedAtMs": 20,
+                "item": {
+                    "type": "toolCall",
+                    "id": "call-1",
+                    "name": "shell",
+                    "arguments": {"command": "pwd"},
+                    "status": "completed",
+                    "output": "C:/workspace",
+                },
+            },
+        }
+    )
+    await queue.put(
+        {
             "threadId": "other-thread",
             "turnId": "other-turn",
             "sequence": 1,
@@ -142,12 +162,14 @@ async def test_stream_turn_filters_events_by_thread_and_turn():
     )
 
     approval_event = await anext(stream)
+    item_event = await anext(stream)
     text_event = await anext(stream)
     finished_event = await anext(stream)
     with pytest.raises(StopAsyncIteration):
         await anext(stream)
 
     assert approval_event["approval"]["phase"] == "requested"
+    assert item_event["typed_item_notification"].item.id == "call-1"
     assert text_event["event"] == {"type": "assistant_text_delta", "delta": "right"}
     assert text_event["typed_items"] == [
         ThreadItem(
@@ -177,3 +199,49 @@ async def test_stream_turn_returns_when_submission_has_no_turn_id():
 
     assert len(items) == 1
     assert items[0]["data"]["status"] == "queued"
+
+
+def test_thread_item_lifecycle_and_list_projection_parse_camel_case_wire_shape():
+    started = ItemLifecycleNotification.from_dict(
+        "item/started",
+        {
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "startedAtMs": 10,
+            "item": {
+                "type": "toolCall",
+                "id": "call-1",
+                "name": "shell",
+                "arguments": {"command": "pwd"},
+                "status": "inProgress",
+            },
+        },
+    )
+    assert started.thread_id == "thread-1"
+    assert started.timestamp_ms == 10
+    assert started.item.status == "inProgress"
+
+    from mini_agent import ThreadItemsListResult
+
+    page = ThreadItemsListResult.from_dict(
+        {
+            "value": {
+                "data": [
+                    {
+                        "turnId": "turn-1",
+                        "item": {
+                            "type": "agentMessage",
+                            "id": "message-1",
+                            "text": "done",
+                        },
+                    }
+                ],
+                "nextCursor": "1",
+                "backwardsCursor": "0",
+            }
+        }
+    )
+    assert page.data[0].turn_id == "turn-1"
+    assert page.data[0].item.text == "done"
+    assert page.next_cursor == "1"
+    assert page.backwards_cursor == "0"

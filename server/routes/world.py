@@ -27,8 +27,6 @@ DEFAULT_BUILTIN_TOOLS: list[str] = [
 
 ALL_BUILTIN_TOOLS: list[str] = [
     *DEFAULT_BUILTIN_TOOLS,
-    "write_file",
-    "edit_file",
     "web_fetch",
 ]
 
@@ -46,10 +44,6 @@ class UpdateThreadSettingsRequest(BaseModel):
         default=None,
         description="Optional bounded Builtin tool selection for this Thread",
     )
-    thread_id: str | None = Field(
-        default=None,
-        description="Optional target Thread ID (defaults to active runtime thread)",
-    )
 
 
 class SetGoalRequest(BaseModel):
@@ -64,10 +58,6 @@ class SetGoalRequest(BaseModel):
     ) = Field(default=None, description="Optional Goal status")
     token_budget: int | None = Field(
         default=None, ge=1, description="Optional total token budget"
-    )
-    thread_id: str | None = Field(
-        default=None,
-        description="Optional target Thread ID (defaults to active runtime thread)",
     )
 
 
@@ -338,17 +328,18 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.post("/workflows/settings", summary="Update Thread settings")
-async def update_thread_settings(req: UpdateThreadSettingsRequest) -> dict[str, Any]:
+@router.post("/threads/{thread_id}/settings", summary="Update Thread settings")
+async def update_thread_settings(
+    thread_id: str, req: UpdateThreadSettingsRequest
+) -> dict[str, Any]:
     """Update collaboration mode and optional Builtin tool selection."""
     try:
         res = await session_manager.client.update_thread_settings(
             mode=req.mode,
             builtin_tools=req.builtin_tools,
-            thread_id=req.thread_id,
+            thread_id=thread_id,
         )
-        target_thread = req.thread_id or "default"
-        session_manager._thread_builtin_tools[target_thread] = res.builtin_tools
+        session_manager._thread_builtin_tools[thread_id] = res.builtin_tools
         return {
             "collaboration_mode": {"mode": res.collaboration_mode.mode},
             "builtin_tools": res.builtin_tools,
@@ -358,23 +349,23 @@ async def update_thread_settings(req: UpdateThreadSettingsRequest) -> dict[str, 
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.post("/workflows/goal", summary="Set Thread Goal")
-async def set_goal(req: SetGoalRequest) -> dict[str, Any]:
+@router.post("/threads/{thread_id}/goal", summary="Set Thread Goal")
+async def set_goal(thread_id: str, req: SetGoalRequest) -> dict[str, Any]:
     """Set or replace the active Thread Goal."""
     try:
         res = await session_manager.client.set_goal(
             objective=req.objective,
             status=req.status,
             token_budget=req.token_budget,
-            thread_id=req.thread_id,
+            thread_id=thread_id,
         )
         return {"goal": _goal_dict(res.goal)}
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.get("/workflows/goal", summary="Get Thread Goal")
-async def get_goal(thread_id: str | None = None) -> dict[str, Any]:
+@router.get("/threads/{thread_id}/goal", summary="Get Thread Goal")
+async def get_goal(thread_id: str) -> dict[str, Any]:
     """Read the active Thread Goal."""
     try:
         res = await session_manager.client.get_goal(thread_id=thread_id)
@@ -383,8 +374,8 @@ async def get_goal(thread_id: str | None = None) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.delete("/workflows/goal", summary="Clear Thread Goal")
-async def clear_goal(thread_id: str | None = None) -> dict[str, Any]:
+@router.delete("/threads/{thread_id}/goal", summary="Clear Thread Goal")
+async def clear_goal(thread_id: str) -> dict[str, Any]:
     """Clear the active Thread Goal."""
     try:
         res = await session_manager.client.clear_goal(thread_id=thread_id)

@@ -4,13 +4,13 @@ Thread management endpoints with metadata enrichment (title, summary, date group
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from mini_agent.errors import AppServerError
 from pydantic import BaseModel, Field
 
-from server.session_manager import session_manager
+from server.session_manager import session_manager, to_json_serializable
 
 router = APIRouter(prefix="/api/threads", tags=["Threads"])
 
@@ -195,6 +195,33 @@ async def read_thread(thread_id: str) -> dict[str, Any]:
             "messages": cp.messages if cp else [],
             "metadata": meta,
             "raw": cp.raw if cp else {},
+        }
+    except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.get("/{thread_id}/items", summary="List ThreadItem projections")
+async def list_thread_items(
+    thread_id: str,
+    turn_id: str | None = Query(default=None),
+    cursor: str | None = Query(default=None),
+    limit: int | None = Query(default=None, ge=1, le=128),
+    sort_direction: Literal["asc", "desc"] | None = Query(default=None),
+) -> dict[str, Any]:
+    """Expose the App Server's bounded Session-backed item projection."""
+    try:
+        result = await session_manager.client.list_thread_items(
+            thread_id=thread_id,
+            turn_id=turn_id,
+            cursor=cursor,
+            limit=limit,
+            sort_direction=sort_direction,
+        )
+        return {
+            "thread_id": thread_id,
+            "data": to_json_serializable(result.data),
+            "next_cursor": result.next_cursor,
+            "backwards_cursor": result.backwards_cursor,
         }
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err

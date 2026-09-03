@@ -22,7 +22,11 @@ from mini_agent.errors import (
 )
 from mini_agent.events import parse_event
 from mini_agent.types import (
+    DEFAULT_BUILTIN_TOOLS,
+    CollaborationMode,
     CollaborationModeKind,
+    ItemLifecycleNotification,
+    ItemSortDirection,
     McpRetryResult,
     McpStatusResult,
     SessionInfo,
@@ -33,6 +37,7 @@ from mini_agent.types import (
     ThreadGoalSetResult,
     ThreadGoalStatus,
     ThreadItem,
+    ThreadItemsListResult,
     ThreadListResult,
     ThreadResumeResult,
     ThreadSettingsResult,
@@ -227,6 +232,7 @@ class MiniAgentClient:
         self._pending_requests: dict[int, asyncio.Future[Any]] = {}
         self._event_queues: list[asyncio.Queue[dict[str, Any]]] = []
         self._active_thread_id: str = "default"
+        self._thread_settings: dict[str, ThreadSettingsResult] = {}
 
     async def __aenter__(self) -> Self:
         await self.start()
@@ -424,6 +430,10 @@ class MiniAgentClient:
                         "method": method,
                         "data": params,
                     }
+                    if method in ("item/started", "item/completed"):
+                        notification["typed_item_notification"] = (
+                            ItemLifecycleNotification.from_dict(method, params)
+                        )
                     for q in self._event_queues:
                         await q.put(notification)
                     if self.notification_handler is not None:
@@ -566,6 +576,29 @@ class MiniAgentClient:
             {"threadId": thread_id or self._active_thread_id},
         )
         return ThreadCheckpoint.from_dict(res)
+
+    async def list_thread_items(
+        self,
+        thread_id: str | None = None,
+        turn_id: str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        sort_direction: ItemSortDirection | None = None,
+    ) -> ThreadItemsListResult:
+        """Read the bounded Session-backed ThreadItem projection."""
+        params: dict[str, Any] = {
+            "threadId": thread_id or self._active_thread_id,
+        }
+        if turn_id is not None:
+            params["turnId"] = turn_id
+        if cursor is not None:
+            params["cursor"] = cursor
+        if limit is not None:
+            params["limit"] = limit
+        if sort_direction is not None:
+            params["sortDirection"] = sort_direction
+        res = await self._send_request("thread/items/list", params)
+        return ThreadItemsListResult.from_dict(res)
 
     async def close_thread(self, thread_id: str | None = None) -> bool:
         """Close an active thread."""
@@ -752,6 +785,16 @@ class MiniAgentClient:
                     yield envelope
                     continue
                 if envelope.get("type") == "notification":
+                    if (
+                        envelope.get("method") in ("item/started", "item/completed")
+                        and "typed_item_notification" not in envelope
+                    ):
+                        envelope = {
+                            **envelope,
+                            "typed_item_notification": ItemLifecycleNotification.from_dict(
+                                envelope["method"], envelope.get("data", {})
+                            ),
+                        }
                     notification_data = envelope.get("data", {})
                     notification_thread = None
                     if isinstance(notification_data, dict):
@@ -806,8 +849,31 @@ class MiniAgentClient:
 
     async def get_workflow_state(self) -> WorkflowState:
         """Get the read-only collaboration mode and active Thread Goal."""
-        res = await self._send_request("workflow/state", {})
-        return WorkflowState.from_dict(res)
+        thread_id = self._active_thread_id
+        settings = self._thread_settings.get(thread_id)
+        goal = await self.get_goal(thread_id=thread_id)
+        mode = settings.collaboration_mode.mode if settings else "default"
+        builtin_tools = (
+            list(settings.builtin_tools)
+            if settings is not None
+            else list(DEFAULT_BUILTIN_TOOLS)
+        )
+        return WorkflowState(
+            collaboration_mode=(
+                settings.collaboration_mode
+                if settings is not None
+                else CollaborationMode()
+            ),
+            builtin_tools=builtin_tools,
+            goal=goal.goal,
+            raw={
+                "value": {
+                    "collaborationMode": {"mode": mode},
+                    "builtinTools": builtin_tools,
+                    "goal": goal.goal.raw if goal.goal else None,
+                }
+            },
+        )
 
     async def update_thread_settings(
         self,
@@ -826,7 +892,9 @@ class MiniAgentClient:
             "thread/settings/update",
             params,
         )
-        return ThreadSettingsResult.from_dict(res)
+        result = ThreadSettingsResult.from_dict(res)
+        self._thread_settings[params["threadId"]] = result
+        return result
 
     async def set_collaboration_mode(
         self,

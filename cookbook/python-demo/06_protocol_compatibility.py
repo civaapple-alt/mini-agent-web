@@ -1,17 +1,19 @@
 """Demo 06: Protocol Compatibility Smoke Test.
 
 This deterministic example uses no App Server process and no model provider.
-It validates that the 0.7.0 SDK parses public lifecycle events and bounded
-ThreadItem projections, including context compaction and structured run failures.
+It validates that the 0.7.0 SDK parses public lifecycle events, dedicated
+ThreadItem notifications, and bounded ThreadItem list projections.
 """
 
 from mini_agent import (
     ContextCompactionFinishedEvent,
     ContextCompactionStartedEvent,
     GenericEvent,
+    ItemLifecycleNotification,
     RunFailedEvent,
     RunFinishedEvent,
     ThreadItem,
+    ThreadItemsListResult,
     parse_event,
 )
 
@@ -66,6 +68,13 @@ THREAD_ITEM_FIXTURE = {
     "output": "workspace",
 }
 
+ITEM_COMPLETED_FIXTURE = {
+    "threadId": "thread-1",
+    "turnId": "turn-1",
+    "completedAtMs": 20,
+    "item": THREAD_ITEM_FIXTURE,
+}
+
 
 def main() -> None:
     for payload in EVENT_FIXTURES:
@@ -82,6 +91,15 @@ def main() -> None:
     assert item.id == "call-compat-1"
     assert item.arguments == {"command": "pwd"}
     assert item.output == "workspace"
+    item_event = ItemLifecycleNotification.from_dict(
+        "item/completed", ITEM_COMPLETED_FIXTURE
+    )
+    assert item_event.turn_id == "turn-1"
+    assert item_event.item.id == "call-compat-1"
+    page = ThreadItemsListResult.from_dict(
+        {"value": {"data": [{"turnId": "turn-1", "item": THREAD_ITEM_FIXTURE}]}}
+    )
+    assert page.data[0].item.id == "call-compat-1"
     print(f"Validated {len(EVENT_FIXTURES)} protocol event fixtures.")
 
 

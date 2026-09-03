@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAndExecuteSlashCommand, PROFILE_DEFAULTS } from '../utils/slashCommands.js';
+import { parseAndExecuteSlashCommand } from '../utils/slashCommands.js';
 
 test('slash command parser handles /plan, /clear, /status, /copy cleanly', () => {
   let planned = false;
@@ -60,13 +60,10 @@ test('slash command parser handles /steer with active generation and error guard
   assert.equal(handledEmpty, false);
 });
 
-test('profile defaults mapping aligns across interactive, auto, ask', () => {
-  assert.equal(PROFILE_DEFAULTS.interactive.approval_policy, 'per_action');
-  assert.equal(PROFILE_DEFAULTS.interactive.default_mode, 'chat');
-
-  assert.equal(PROFILE_DEFAULTS.auto.approval_policy, 'auto_approve');
-  assert.equal(PROFILE_DEFAULTS.auto.default_mode, 'goal');
-
-  assert.equal(PROFILE_DEFAULTS.ask.approval_policy, 'strict');
-  assert.equal(PROFILE_DEFAULTS.ask.default_mode, 'plan');
+test('goal slash command passes its objective to the goal runtime', () => {
+  let objective = null;
+  assert.equal(parseAndExecuteSlashCommand('/goal ship the release', {
+    onStartGoal: (value) => { objective = value; },
+  }), true);
+  assert.equal(objective, 'ship the release');
 });

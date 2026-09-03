@@ -115,6 +115,16 @@ export const api = {
     return res.json();
   },
 
+  async setWorldExecution(access = 'project', approval = 'per_action') {
+    const res = await fetch(`${API_BASE}/api/world/execution`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access, approval }),
+    });
+    if (!res.ok) throw new Error('Failed to set execution scope');
+    return res.json();
+  },
+
   // ---------------------------------------------------------------------------
   // Workflows (Plan Mode & Goals) & Files
   // ---------------------------------------------------------------------------
@@ -304,15 +314,16 @@ export const api = {
   // Security Approval Response
   // ---------------------------------------------------------------------------
 
-  async respondApproval(requestId, decision, reason = '', remember = false) {
+  async respondApproval(requestId, decision, access, approval, reason = '') {
     const res = await fetch(`${API_BASE}/api/approval/respond`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         request_id: requestId,
         decision,
+        access,
+        approval,
         reason,
-        remember,
       }),
     });
     if (!res.ok) throw new Error('Failed to respond approval');

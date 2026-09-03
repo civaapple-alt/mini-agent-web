@@ -218,6 +218,7 @@ export default function Sidebar({
               name: folderName,
               path: folderPath,
               is_primary: prev.length === 0,
+              editable: true,
             },
           ];
         });
@@ -240,6 +241,7 @@ export default function Sidebar({
         name,
         path,
         is_primary: prev.length === 0,
+        editable: true,
       },
     ]);
     setNewFolderNameInput('');
@@ -265,6 +267,16 @@ export default function Sidebar({
         ...f,
         is_primary: i === idx,
       }))
+    );
+  };
+
+  const handleToggleFolderEditable = (idx) => {
+    setEditSourceFolders((prev) =>
+      prev.map((folder, i) =>
+        i === idx && !folder.is_primary
+          ? { ...folder, editable: folder.editable === false }
+          : folder
+      )
     );
   };
 
@@ -820,7 +832,7 @@ export default function Sidebar({
 
                       <div className="folder-row-right">
                         {folder.is_primary ? (
-                          <span className="primary-badge">主要</span>
+                          <span className="primary-badge">主工作区</span>
                         ) : (
                           <button
                             type="button"
@@ -829,6 +841,17 @@ export default function Sidebar({
                             title="设为主工作目录"
                           >
                             设为主要
+                          </button>
+                        )}
+
+                        {!folder.is_primary && (
+                          <button
+                            type="button"
+                            className={`btn-folder-access ${folder.editable === false ? 'reference' : 'editable'}`}
+                            onClick={() => handleToggleFolderEditable(idx)}
+                            title={folder.editable === false ? '作为只读参考目录' : '允许 Agent 编辑此关联目录'}
+                          >
+                            {folder.editable === false ? '仅参考' : '可编辑'}
                           </button>
                         )}
 

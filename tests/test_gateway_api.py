@@ -163,17 +163,25 @@ async def test_gateway_threads_and_workflows(test_app):
             # 3. Settings
             resp_settings = await client.get("/api/settings")
             assert resp_settings.status_code == 200
-            assert "approval_policy" in resp_settings.json()
+            assert resp_settings.json()["access"] == "project"
+            assert resp_settings.json()["approval"] == "per_action"
 
             resp_set_update = await client.post(
                 "/api/settings",
-                json={"approval_policy": "auto_approve", "theme": "cyberpunk"},
+                json={"theme": "cyberpunk"},
             )
             assert resp_set_update.status_code == 200
             assert (
-                resp_set_update.json().get("settings", {}).get("approval_policy")
-                == "auto_approve"
+                resp_set_update.json().get("settings", {}).get("theme") == "cyberpunk"
             )
+
+            resp_execution = await client.post(
+                "/api/world/execution",
+                json={"access": "full_machine", "approval": "current_project"},
+            )
+            assert resp_execution.status_code == 200
+            assert resp_execution.json()["access"] == "full_machine"
+            assert resp_execution.json()["approval"] == "current_project"
 
     finally:
         await session_manager.stop()
@@ -252,21 +260,10 @@ def test_gateway_websocket_turn_mode_sanitation(test_app):
 
 
 @pytest.mark.asyncio
-async def test_gateway_persisted_checkpoint_rehydration(test_app):
-    """Verify that an existing persisted checkpoint rehydrates a thread across restarts."""
+async def test_gateway_history_uses_canonical_session_store(test_app):
+    """Verify history reads the App Server and never rehydrates Web checkpoints."""
     from mini_agent.types import ThreadCheckpoint
 
-    # Save a mock checkpoint to disk
-    persisted_data = {
-        "thread_id": "test-persisted",
-        "status": "idle",
-        "next_turn_number": 2,
-        "messages": [
-            {"role": "user", "text": "hi"},
-            {"role": "assistant", "text": "hello back", "reasoning": "greeting"},
-        ],
-    }
-    session_manager.save_thread_checkpoint("test-persisted", persisted_data)
     session_manager.set_thread_meta("test-persisted", {"title": "Persisted Session"})
 
     # Setup mock client that initially reports empty thread or unknown thread
@@ -277,18 +274,7 @@ async def test_gateway_persisted_checkpoint_rehydration(test_app):
         status="idle",
         next_turn_number=1,
     )
-    rehydrated_cp = ThreadCheckpoint(
-        thread_id="test-persisted",
-        messages=[
-            {"role": "user", "text": "hi"},
-            {"role": "assistant", "text": "hello back"},
-        ],
-        status="idle",
-        next_turn_number=2,
-    )
-
-    # First read_thread returns empty live thread, so it must trigger resume_thread
-    mock_client.read_thread = AsyncMock(side_effect=[empty_cp, rehydrated_cp])
+    mock_client.read_thread = AsyncMock(return_value=empty_cp)
     mock_client.resume_thread = AsyncMock()
     session_manager._client = mock_client
 
@@ -298,6 +284,5 @@ async def test_gateway_persisted_checkpoint_rehydration(test_app):
         assert resp.status_code == 200
         data = resp.json()
         assert data["thread_id"] == "test-persisted"
-        assert len(data["messages"]) == 2
-        assert data["messages"][0]["text"] == "hi"
-        mock_client.resume_thread.assert_awaited_once()
+        assert data["messages"] == []
+        mock_client.resume_thread.assert_not_awaited()

@@ -13,7 +13,6 @@ import {
   Check,
   Loader2,
   ShieldAlert,
-  CheckCheck,
   X,
 } from 'lucide-react';
 import './ToolCard.css';
@@ -22,6 +21,7 @@ export default function ToolCard({
   tool,
   pendingApproval,
   onRespondApproval,
+  approvalMode = 'per_action',
 }) {
   const [showOutput, setShowOutput] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -40,9 +40,8 @@ export default function ToolCard({
     Boolean(pendingApproval) &&
     isRunning &&
     Boolean(
-      (pendingApproval.data?.action && pendingApproval.data.action.includes(name)) ||
-        pendingApproval.data?.tool === name ||
-        pendingApproval.data?.name === name ||
+      pendingApproval.data?.toolName === name ||
+        pendingApproval.data?.callId === id ||
         pendingApproval.requestId === id
     );
 
@@ -100,9 +99,9 @@ export default function ToolCard({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleApprove = (remember = false) => {
+  const handleApprove = (scope = approvalMode) => {
     if (onRespondApproval && pendingApproval) {
-      onRespondApproval(pendingApproval.requestId, 'approved', '', remember);
+      onRespondApproval(pendingApproval.requestId, 'approve', '', scope);
     }
   };
 
@@ -112,7 +111,7 @@ export default function ToolCard({
       return;
     }
     if (onRespondApproval && pendingApproval) {
-      onRespondApproval(pendingApproval.requestId, 'denied', denyReason.trim(), false);
+      onRespondApproval(pendingApproval.requestId, 'deny', denyReason.trim(), approvalMode);
     }
   };
 
@@ -166,7 +165,7 @@ export default function ToolCard({
             <div className="callout-text">
               <span className="callout-title font-mono">安全权限审批 (Security Approval)</span>
               <p className="callout-desc">
-                {pendingApproval.data?.action || `执行敏感操作: ${name}`}
+                {pendingApproval.data?.actionSummary || `执行敏感操作: ${name}`}
               </p>
             </div>
           </div>
@@ -188,7 +187,7 @@ export default function ToolCard({
           <div className="inline-approval-btn-group">
             <button
               className="btn-approve-primary"
-              onClick={() => handleApprove(false)}
+              onClick={() => handleApprove('per_action')}
               title="允许执行本次操作"
             >
               <Check size={12} />
@@ -196,12 +195,12 @@ export default function ToolCard({
             </button>
 
             <button
-              className="btn-approve-remember"
-              onClick={() => handleApprove(true)}
-              title="在此会话中记住并允许此类操作"
+              className="btn-approve-scope"
+              onClick={() => handleApprove(approvalMode)}
+              title={`按当前批准设置复用：${approvalMode}`}
             >
               <CheckCheck size={12} />
-              <span>本会话始终允许 (Always)</span>
+              <span>{approvalMode === 'current_project' ? '当前项目复用' : approvalMode === 'current_session' ? '当前会话复用' : '逐次批准'}</span>
             </button>
 
             <button

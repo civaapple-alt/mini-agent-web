@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
@@ -48,15 +48,17 @@ class ApprovalResponseRequest(BaseModel):
     request_id: str = Field(
         ..., description="Approval request ID returned by approval_request event"
     )
-    decision: str = Field(..., description="Decision: 'approved' or 'denied'")
+    decision: Literal["approve", "deny"] = Field(
+        ..., description="Decision: approve or deny"
+    )
+    access: Literal["project", "full_machine"] = Field(
+        ..., description="Must match the approval request access"
+    )
+    approval: Literal["per_action", "current_session", "current_project"] = Field(
+        ..., description="Approval reuse scope"
+    )
     reason: str | None = Field(
         default=None, description="Optional explanation or restriction"
-    )
-    remember: bool = Field(
-        default=False, description="Remember approval decision for this tool"
-    )
-    action: str | None = Field(
-        default=None, description="Optional tool/action name to remember"
     )
 
 
@@ -215,13 +217,13 @@ async def interrupt_turn(req: InterruptTurnRequest) -> dict[str, Any]:
 
 @router.post("/approval/respond", summary="Respond to security approval request")
 async def respond_approval(req: ApprovalResponseRequest) -> dict[str, Any]:
-    """Submit human approval decision ('approved' or 'denied') to unblock sensitive action."""
+    """Submit a typed human approval decision to unblock a sensitive action."""
     resolved = session_manager.resolve_approval(
         request_id=req.request_id,
         decision=req.decision,
+        access=req.access,
+        approval=req.approval,
         reason=req.reason,
-        remember=req.remember,
-        action_name=req.action,
     )
     if not resolved:
         raise HTTPException(
@@ -338,11 +340,11 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
             elif action == "approval_response":
                 req_id = data.get("requestId", "")
                 decision = data.get("decision", "denied")
+                access = data.get("access", "")
+                approval = data.get("approval", "")
                 reason = data.get("reason")
-                remember = bool(data.get("remember", False))
-                action_name = data.get("action") or data.get("tool")
                 session_manager.resolve_approval(
-                    req_id, decision, reason, remember=remember, action_name=action_name
+                    req_id, decision, access, approval, reason
                 )
                 await websocket.send_json({"type": "approval_ack", "requestId": req_id})
 
@@ -412,10 +414,3 @@ async def _stream_turn_to_ws(
         await websocket.send_json({"type": "error", "message": str(err)})
     finally:
         session_manager.clear_active_turn(target_thread)
-        try:
-            cp = await session_manager.client.read_thread(target_thread)
-            session_manager.save_thread_checkpoint(target_thread, cp)
-        except Exception as err:  # noqa: BLE001
-            logger.debug(
-                "Failed to checkpoint thread %s on turn finish: %s", target_thread, err
-            )

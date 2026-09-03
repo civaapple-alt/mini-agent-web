@@ -30,13 +30,13 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
 
   // Workflow & Environment
-  const [profile, setProfile] = useState('interactive');
   const [planActive, setPlanActive] = useState(false);
   const [goalState, setGoalState] = useState(null);
-  const [approvalPolicy, setApprovalPolicy] = useState('per_action');
+  const [accessScope, setAccessScope] = useState('project');
+  const [approvalMode, setApprovalMode] = useState('per_action');
   const [userSettings, setUserSettings] = useState({
-    profile: 'interactive',
-    approval_policy: 'per_action',
+    access: 'project',
+    approval: 'per_action',
     default_mode: 'chat',
     reasoning_effort: 'medium',
     theme: 'light',
@@ -111,8 +111,8 @@ export default function App() {
     try {
       const data = await api.getSettings();
       setUserSettings((prev) => ({ ...prev, ...data }));
-      if (data.profile) setProfile(data.profile);
-      if (data.approval_policy) setApprovalPolicy(data.approval_policy);
+      if (data.access) setAccessScope(data.access);
+      if (data.approval) setApprovalMode(data.approval);
       const activeTheme = data.theme || 'light';
       document.body.className = `theme-${activeTheme}`;
     } catch (err) {
@@ -452,20 +452,26 @@ export default function App() {
     });
   };
 
-  const handleRespondApproval = async (requestId, decision, reason = '', remember = false) => {
+  const handleRespondApproval = async (requestId, decision, reason = '', requestedApproval = approvalMode) => {
+    const approval = pendingApproval?.data || {};
+    const selectedAccess = approval.access || accessScope;
+    const selectedApproval = approval.allowedApprovalModes?.includes(requestedApproval)
+      ? requestedApproval
+      : approval.allowedApprovalModes?.[0] || approvalMode;
     if (wsRef.current) {
       wsRef.current.send({
         action: 'approval_response',
         requestId,
         decision,
         reason,
-        remember,
+        access: selectedAccess,
+        approval: selectedApproval,
       });
     } else {
-      await api.respondApproval(requestId, decision, reason, remember);
+      await api.respondApproval(requestId, decision, selectedAccess, selectedApproval, reason);
     }
     setPendingApproval(null);
-    showToast(`已提交安全审批决定: ${decision === 'allow' ? '允许执行' : '拒绝'}`, 'info', 2000);
+    showToast(`已提交安全审批决定: ${decision === 'approve' ? '允许执行' : '拒绝'}`, 'info', 2000);
   };
 
   const handleSelectThread = (threadId) => {
@@ -560,42 +566,33 @@ export default function App() {
     }
   };
 
+  const handleStartGoal = async (objective) => {
+    try {
+      const result = await api.setGoal(objective, null, 'active', currentThread);
+      setGoalState(result.goal || result);
+      showToast('Goal 已启动，并会在当前任务顶部持续显示', 'success');
+    } catch (err) {
+      showToast(`启动 Goal 失败: ${err.message}`, 'error');
+    }
+  };
+
   const handleOpenSidePanel = (tab = 'world') => {
     setSidePanelTab(tab);
     setSidePanelOpen(true);
   };
 
-  const PROFILE_DEFAULTS = {
-    interactive: { approval_policy: 'per_action' },
-    auto: { approval_policy: 'auto_approve' },
-    ask: { approval_policy: 'strict' },
-  };
-
-  const handleUpdateProfile = async (newProfile) => {
-    setProfile(newProfile);
-    const defaults = PROFILE_DEFAULTS[newProfile] || {};
-    const nextPolicy = defaults.approval_policy || approvalPolicy;
-    setApprovalPolicy(nextPolicy);
+  const handleUpdateExecution = async (nextAccess, nextApproval) => {
     try {
-      await api.updateSettings({ profile: newProfile, approval_policy: nextPolicy });
-      if (newProfile === 'ask') {
-        await api.setCollaborationMode('plan');
-        setPlanActive(true);
-      } else if (planActive) {
-        await api.setCollaborationMode('default');
-        setPlanActive(false);
-      }
+      await api.setWorldExecution(nextAccess, nextApproval);
+      setAccessScope(nextAccess);
+      setApprovalMode(nextApproval);
+      setUserSettings((prev) => ({
+        ...prev,
+        access: nextAccess,
+        approval: nextApproval,
+      }));
     } catch (err) {
-      console.error('Failed to update profile:', err);
-    }
-  };
-
-  const handleUpdateApprovalPolicy = async (newPolicy) => {
-    setApprovalPolicy(newPolicy);
-    try {
-      await api.updateSettings({ approval_policy: newPolicy });
-    } catch (err) {
-      console.error('Failed to update approval policy:', err);
+      showToast(`更新执行范围失败: ${err.message}`, 'error');
     }
   };
 
@@ -628,11 +625,12 @@ export default function App() {
         />
 
         <main className="app-content">
-          <ChatArea
+      <ChatArea
             messages={messages}
             isGenerating={isGenerating}
             pendingApproval={pendingApproval}
-            onRespondApproval={handleRespondApproval}
+        onRespondApproval={handleRespondApproval}
+        approvalMode={approvalMode}
             onQuickPrompt={handleSendMessage}
             onRetryPrompt={handleSendMessage}
             autoScroll={userSettings.auto_scroll}
@@ -643,12 +641,12 @@ export default function App() {
 
           <InputBar
             isGenerating={isGenerating}
-            profile={profile}
-            approvalPolicy={approvalPolicy}
+            accessScope={accessScope}
+            approvalMode={approvalMode}
             pendingApproval={pendingApproval}
             onRespondApproval={handleRespondApproval}
-            onChangeProfile={handleUpdateProfile}
-            onChangeApprovalPolicy={handleUpdateApprovalPolicy}
+            onChangeExecution={handleUpdateExecution}
+            onStartGoal={handleStartGoal}
             onSendMessage={handleSendMessage}
             onSteerMessage={handleSteerMessage}
             onInterrupt={handleInterrupt}
@@ -680,12 +678,6 @@ export default function App() {
         onSettingsSaved={(newSettings) => {
           if (newSettings.theme) {
             document.body.className = `theme-${newSettings.theme}`;
-          }
-          if (newSettings.profile) {
-            setProfile(newSettings.profile);
-          }
-          if (newSettings.approval_policy) {
-            setApprovalPolicy(newSettings.approval_policy);
           }
           showToast('偏好设置已保存并生效', 'success', 2000);
         }}

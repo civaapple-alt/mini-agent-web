@@ -12,25 +12,8 @@ import {
 import { api } from '../api';
 import './SettingsModal.css';
 
-const PROFILE_DEFAULTS = {
-  interactive: {
-    approval_policy: 'per_action',
-    default_mode: 'chat',
-  },
-  auto: {
-    approval_policy: 'auto_approve',
-    default_mode: 'goal',
-  },
-  ask: {
-    approval_policy: 'strict',
-    default_mode: 'plan',
-  },
-};
-
 export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToast }) {
   const [settings, setSettings] = useState({
-    profile: 'interactive',
-    approval_policy: 'per_action',
     default_mode: 'chat',
     reasoning_effort: 'medium',
     theme: 'light',
@@ -56,16 +39,6 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToas
     }
   };
 
-  const handleProfileChange = (newProfile) => {
-    const defaults = PROFILE_DEFAULTS[newProfile] || {};
-    setSettings((prev) => ({
-      ...prev,
-      profile: newProfile,
-      approval_policy: defaults.approval_policy || prev.approval_policy,
-      default_mode: defaults.default_mode || prev.default_mode,
-    }));
-  };
-
   const handleSave = async () => {
     setIsSaving(true);
     try {
@@ -84,8 +57,6 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToas
 
   const handleReset = () => {
     setSettings({
-      profile: 'interactive',
-      approval_policy: 'per_action',
       default_mode: 'chat',
       reasoning_effort: 'medium',
       theme: 'light',
@@ -117,39 +88,15 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToas
           <div className="settings-section">
             <div className="section-label">
               <Shield size={13} className="text-amber" />
-              <span>安全审批与运行模式 (Security & Policy)</span>
+              <span>安全与运行边界 (Security & Governance)</span>
             </div>
 
             <div className="setting-item">
               <div className="setting-text">
-                <span className="setting-title">客户端运行 Profile</span>
-                <span className="setting-desc">切换 Profile 会联动调整默认审批策略与工作流</span>
+                <span className="setting-title">访问范围与批准生命周期</span>
+                <span className="setting-desc">请在输入框底部直接设置 Project / Full access 与 Per-Action / Current Session / Current Project；它们独立生效。</span>
               </div>
-              <select
-                className="setting-select"
-                value={settings.profile}
-                onChange={(e) => handleProfileChange(e.target.value)}
-              >
-                <option value="interactive">交互模式 (Interactive - 推荐)</option>
-                <option value="auto">自治模式 (Auto - 目标驱动)</option>
-                <option value="ask">严格只读模式 (Ask - 规划探索)</option>
-              </select>
-            </div>
-
-            <div className="setting-item">
-              <div className="setting-text">
-                <span className="setting-title">安全审批策略 (Approval Policy)</span>
-                <span className="setting-desc">触发 Shell 执行或文件修改时的拦截规则</span>
-              </div>
-              <select
-                className="setting-select"
-                value={settings.approval_policy}
-                onChange={(e) => setSettings({ ...settings, approval_policy: e.target.value })}
-              >
-                <option value="per_action">每次弹窗确认 (Per-Action - 推荐)</option>
-                <option value="auto_approve">全自动放行 (Auto-Approve / Dev)</option>
-                <option value="strict">严格拒绝敏感调用 (Strict Deny)</option>
-              </select>
+              <Shield size={20} className="text-amber" />
             </div>
           </div>
 

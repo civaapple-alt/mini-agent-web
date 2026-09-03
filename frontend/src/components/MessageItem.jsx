@@ -11,6 +11,7 @@ export default function MessageItem({
   isGenerating,
   pendingApproval,
   onRespondApproval,
+  approvalMode = 'per_action',
   onRetryPrompt,
 }) {
   const { role, text, thinking, tools = [], blocks = [], usage } = message;
@@ -155,6 +156,7 @@ export default function MessageItem({
                   tool={block}
                   pendingApproval={isLast ? pendingApproval : null}
                   onRespondApproval={onRespondApproval}
+                  approvalMode={approvalMode}
                 />
               );
             }
@@ -213,6 +215,7 @@ export default function MessageItem({
                     tool={t}
                     pendingApproval={isLast ? pendingApproval : null}
                     onRespondApproval={onRespondApproval}
+                    approvalMode={approvalMode}
                   />
                 ))}
               </div>

@@ -18,17 +18,17 @@ uv run python -m tui.tui_app
 常用参数：
 
 ```bash
-uv run mini-agent-tui --profile auto --policy auto_approve --effort high --thread default
+uv run mini-agent-tui --access project --approval per_action --effort high --thread default
 ```
 
-参数包括 `--profile`、`--policy`、`--effort` 和 `--thread`。运行时按 `/help`
+参数包括 `--access`、`--approval`、`--effort` 和 `--thread`。运行时按 `/help`
 查看完整命令表。
 
 ## 命令分组
 
 - 工作流：`/plan`、`/goal`、`/workflows`；
 - 运行控制：`/steer`、`/clear`、`/exit`；
-- 策略：`/profile`、`/policy`、`/effort`、`/clear-approvals`；
+- 执行控制：`/access`、`/approval`、`/effort`；
 - Thread：`/threads`、`/new`、`/fork`、`/switch`、`/history`；
 - 工作区：`/status`、`/mcp`、`/git`、`/files`、`!<command>`；
 - 输出：`/copy`、`/cp`。

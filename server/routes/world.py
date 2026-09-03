@@ -32,8 +32,12 @@ ALL_BUILTIN_TOOLS: list[str] = [
 
 
 class SetExecutionRequest(BaseModel):
-    approval: str = Field(default="interactive", description="interactive or automatic")
-    copilot: bool = Field(default=False, description="Enable copilot assistance")
+    access: Literal["project", "full_machine"] = Field(
+        default="project", description="Project-scoped or machine-wide access"
+    )
+    approval: Literal["per_action", "current_session", "current_project"] = Field(
+        default="per_action", description="Approval reuse lifetime"
+    )
 
 
 class UpdateThreadSettingsRequest(BaseModel):
@@ -78,6 +82,12 @@ class UpdateProjectRequest(BaseModel):
     source_folders: list[dict[str, Any]] | None = Field(
         default=None, description="List of source folders with is_primary flag"
     )
+    access: Literal["project", "full_machine"] | None = Field(
+        default=None, description="Project access scope"
+    )
+    approval: Literal["per_action", "current_session", "current_project"] | None = (
+        Field(default=None, description="Project approval lifetime")
+    )
 
 
 class SwitchProjectRequest(BaseModel):
@@ -105,6 +115,7 @@ async def create_project_endpoint(req: CreateProjectRequest) -> dict[str, Any]:
             source_folders=req.source_folders,
             init_readme=req.init_readme,
         )
+        await session_manager.restart_for_current_project()
         return {"project": proj, "status": "created"}
     except Exception as err:
         raise HTTPException(
@@ -120,6 +131,11 @@ async def update_project_endpoint(
     try:
         updates = {k: v for k, v in req.model_dump().items() if v is not None}
         proj = session_manager.update_project(project_id, updates)
+        if (
+            project_id == session_manager._current_project_id
+            or proj.get("id") == session_manager._current_project_id
+        ):
+            await session_manager.restart_for_current_project()
         return {"project": proj, "status": "updated"}
     except Exception as err:
         raise HTTPException(
@@ -153,6 +169,7 @@ async def switch_project_endpoint(req: SwitchProjectRequest) -> dict[str, Any]:
     """Switch active project workspace."""
     try:
         proj = session_manager.switch_project(req.path)
+        await session_manager.restart_for_current_project()
         return {"project": proj, "status": "switched"}
     except Exception as err:
         raise HTTPException(
@@ -236,14 +253,17 @@ async def refresh_world() -> dict[str, Any]:
 
 @router.post("/world/execution", summary="Configure execution policy")
 async def set_world_execution(req: SetExecutionRequest) -> dict[str, Any]:
-    """Configure runtime approval policy and execution mode."""
+    """Configure independent access and approval reuse scopes."""
     try:
         res = await session_manager.client.set_world_execution(
+            access=req.access,
             approval=req.approval,
-            copilot=req.copilot,
         )
+        session_manager.set_project_execution(req.access, req.approval)
         return {
             "changed": res.changed,
+            "access": req.access,
+            "approval": req.approval,
             "state": res.state,
         }
     except AppServerError as err:

@@ -56,17 +56,18 @@ class SessionManager:
         self._active_connections: list[WebSocket] = []
         self._pending_approvals: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._pending_approval_details: dict[str, dict[str, Any]] = {}
-        self._remembered_approvals: set[str] = set()
         self._lock = asyncio.Lock()
         self._initialized = False
 
-        # Persistence state file path: ~/.mini-agent/state.json or $MINI_AGENT_STATE_DIR
-        state_dir_env = os.environ.get("MINI_AGENT_STATE_DIR")
+        # Web owns only this derived project/UI manifest. Session history,
+        # checkpoints, and approval grants belong to the App Server SessionStore.
+        state_dir_env = os.environ.get("MINI_AGENT_WEB_STATE_DIR")
         self._state_dir = (
-            Path(state_dir_env) if state_dir_env else (Path.home() / ".mini-agent")
+            Path(state_dir_env)
+            if state_dir_env
+            else (Path.home() / ".mini-agent" / "web")
         )
         self._state_file = self._state_dir / "state.json"
-        self._checkpoints_dir = self._state_dir / "checkpoints"
 
         # Structured project registry: project_id -> project dict
         self._current_project_path: Path = Path.cwd().resolve()
@@ -83,8 +84,6 @@ class SessionManager:
         self._settings: dict[str, Any] = {
             "host": settings.host,
             "port": settings.port,
-            "profile": settings.profile,
-            "approval_policy": "per_action",  # per_action | auto_approve | strict
             "default_mode": "chat",  # chat | plan | goal
             "reasoning_effort": "medium",
             "theme": "light",
@@ -115,7 +114,14 @@ class SessionManager:
                 self._projects_registry = clean_projects
                 self._thread_metadata = data.get("thread_metadata", {})
                 if "settings" in data and isinstance(data["settings"], dict):
-                    self._settings.update(data["settings"])
+                    allowed_settings = set(self._settings)
+                    self._settings.update(
+                        {
+                            key: value
+                            for key, value in data["settings"].items()
+                            if key in allowed_settings
+                        }
+                    )
                 persisted_cur_id = data.get("current_project_id")
                 if persisted_cur_id and persisted_cur_id in self._projects_registry:
                     self._current_project_id = persisted_cur_id
@@ -146,6 +152,8 @@ class SessionManager:
                         "is_primary": True,
                     }
                 ],
+                "access": "project",
+                "approval": "per_action",
             }
 
         # If current project ID is missing from registry, default to the active workspace project
@@ -248,6 +256,8 @@ class SessionManager:
             "pinned": False,
             "primary_path": str(target_dir),
             "source_folders": sources,
+            "access": "project",
+            "approval": "per_action",
         }
         self._projects_registry[proj_id] = proj_info
         self._current_project_id = proj_id
@@ -274,6 +284,14 @@ class SessionManager:
             proj["name"] = updates["name"]
         if "pinned" in updates:
             proj["pinned"] = bool(updates["pinned"])
+        if "access" in updates and updates["access"] in ("project", "full_machine"):
+            proj["access"] = updates["access"]
+        if "approval" in updates and updates["approval"] in (
+            "per_action",
+            "current_session",
+            "current_project",
+        ):
+            proj["approval"] = updates["approval"]
         if "source_folders" in updates and isinstance(updates["source_folders"], list):
             proj["source_folders"] = updates["source_folders"]
             # Find primary folder
@@ -343,6 +361,8 @@ class SessionManager:
             "pinned": False,
             "primary_path": str(p),
             "source_folders": [{"name": p.name, "path": str(p), "is_primary": True}],
+            "access": "project",
+            "approval": "per_action",
         }
         self._projects_registry[proj_id] = proj_info
         self._current_project_id = proj_id
@@ -372,6 +392,28 @@ class SessionManager:
             }
         ]
 
+    def _runtime_env(self) -> dict[str, str]:
+        """Pass the active Project workspace binding to the Host process."""
+        read_roots: list[str] = []
+        write_roots: list[str] = []
+        primary = self._current_project_path.resolve()
+        for folder in self.current_source_folders:
+            raw_path = folder.get("path") if isinstance(folder, dict) else None
+            if not raw_path:
+                continue
+            path = Path(str(raw_path)).resolve()
+            if path == primary or not path.is_dir():
+                continue
+            path_text = str(path)
+            read_roots.append(path_text)
+            if folder.get("editable", True):
+                write_roots.append(path_text)
+        return {
+            "MINI_AGENT_PROJECT_ID": self._current_project_id,
+            "MINI_AGENT_EXTRA_READ_ROOTS": os.pathsep.join(read_roots),
+            "MINI_AGENT_EXTRA_WRITE_ROOTS": os.pathsep.join(write_roots),
+        }
+
     @property
     def client(self) -> MiniAgentClient:
         if self._client is None:
@@ -387,13 +429,20 @@ class SessionManager:
                 return
 
             self._client = MiniAgentClient(
+                cwd=str(self._current_project_path),
+                env=self._runtime_env(),
                 log_dir=settings.log_dir,
                 log_level=settings.log_level,
                 approval_handler=self._handle_approval_request,
                 notification_handler=self._handle_runtime_notification,
             )
             await self._client.__aenter__()
-            init_res = await self._client.initialize(profile=self._settings["profile"])
+            init_res = await self._client.initialize()
+            access, approval = self.project_execution()
+            await self._client.set_world_execution(
+                access=access,
+                approval=approval,
+            )
             logger.info(
                 "MiniAgentClient initialized successfully: %s v%s",
                 init_res.get("serverName"),
@@ -401,17 +450,25 @@ class SessionManager:
             )
             self._initialized = True
 
-            # Auto-rehydrate default thread if a persisted checkpoint exists
-            default_cp = self.get_thread_checkpoint("default")
-            if default_cp and any(
-                isinstance(m, dict) and m.get("role") in ("user", "assistant")
-                for m in default_cp.get("messages", [])
-            ):
-                try:
-                    await self._client.resume_thread("default", default_cp)
-                    logger.info("Rehydrated default thread from persisted checkpoint")
-                except Exception as err:  # noqa: BLE001
-                    logger.debug("Could not resume default thread on startup: %s", err)
+    async def restart_for_current_project(self) -> None:
+        """Rebind the Host process after the active Project/workspace changes."""
+        async with self._lock:
+            client = self._client
+            self._client = None
+            self._initialized = False
+            for task in self._active_tasks.values():
+                task.cancel()
+            self._active_tasks.clear()
+            self._active_turns.clear()
+            for future in self._pending_approvals.values():
+                if not future.done():
+                    future.cancel()
+            self._pending_approvals.clear()
+            self._pending_approval_details.clear()
+        if client is not None:
+            await client.stop()
+        if client is not None:
+            await self.start()
 
     async def stop(self) -> None:
         """Stop the background MiniAgentClient and close WebSocket connections."""
@@ -473,79 +530,35 @@ class SessionManager:
         """Return full thread metadata mapping."""
         return dict(self._thread_metadata)
 
-    def save_thread_checkpoint(self, thread_id: str, checkpoint_data: Any) -> None:
-        """Persist serialized ThreadCheckpoint to disk for session survival."""
-        try:
-            self._checkpoints_dir.mkdir(parents=True, exist_ok=True)
-            cp_file = self._checkpoints_dir / f"{thread_id}.json"
-            if hasattr(checkpoint_data, "raw") and isinstance(
-                checkpoint_data.raw, dict
-            ):
-                data = checkpoint_data.raw
-            elif is_dataclass(checkpoint_data) and not isinstance(
-                checkpoint_data, type
-            ):
-                data = asdict(checkpoint_data)
-            elif isinstance(checkpoint_data, dict):
-                data = checkpoint_data
-            else:
-                data = {
-                    "thread_id": thread_id,
-                    "messages": getattr(checkpoint_data, "messages", []),
-                    "status": getattr(checkpoint_data, "status", "active"),
-                }
-
-            # Guard against overwriting an existing populated checkpoint with an empty one
-            new_msgs = data.get("messages", [])
-            user_facing_new = [
-                m
-                for m in new_msgs
-                if (isinstance(m, dict) and m.get("role") in ("user", "assistant"))
-                or (
-                    hasattr(m, "role")
-                    and getattr(m, "role", None) in ("user", "assistant")
-                )
-            ]
-            existing = self.get_thread_checkpoint(thread_id)
-            if existing:
-                existing_msgs = existing.get("messages", [])
-                user_facing_existing = [
-                    m
-                    for m in existing_msgs
-                    if isinstance(m, dict) and m.get("role") in ("user", "assistant")
-                ]
-                if user_facing_existing and not user_facing_new:
-                    # Do not wipe existing conversation history
-                    return
-
-            cp_file.write_text(
-                json.dumps(to_json_serializable(data), indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-        except Exception as err:  # noqa: BLE001
-            logger.warning(
-                "Failed to persist checkpoint for thread %s: %s", thread_id, err
-            )
-
-    def get_thread_checkpoint(self, thread_id: str) -> dict[str, Any] | None:
-        """Load persisted ThreadCheckpoint from disk if available."""
-        cp_file = self._checkpoints_dir / f"{thread_id}.json"
-        if cp_file.is_file():
-            try:
-                return json.loads(cp_file.read_text(encoding="utf-8"))
-            except Exception as err:  # noqa: BLE001
-                logger.warning(
-                    "Failed to read checkpoint for thread %s: %s", thread_id, err
-                )
-        return None
-
     # -------------------------------------------------------------------------
     # Settings Management
     # -------------------------------------------------------------------------
 
     def get_settings(self) -> dict[str, Any]:
         """Get current server & UI settings."""
-        return dict(self._settings)
+        project = self._projects_registry.get(self._current_project_id, {})
+        return {
+            **self._settings,
+            "access": project.get("access", "project"),
+            "approval": project.get("approval", "per_action"),
+        }
+
+    def project_execution(self) -> tuple[str, str]:
+        project = self._projects_registry.get(self._current_project_id, {})
+        return (
+            str(project.get("access", "project")),
+            str(project.get("approval", "per_action")),
+        )
+
+    def set_project_execution(self, access: str, approval: str) -> None:
+        if access not in ("project", "full_machine"):
+            raise ValueError("invalid access scope")
+        if approval not in ("per_action", "current_session", "current_project"):
+            raise ValueError("invalid approval scope")
+        project = self._projects_registry[self._current_project_id]
+        project["access"] = access
+        project["approval"] = approval
+        self._save_state()
 
     def update_settings(self, updates: dict[str, Any]) -> dict[str, Any]:
         """Update system settings."""
@@ -560,69 +573,17 @@ class SessionManager:
 
     async def _handle_approval_request(
         self,
-        req: dict[str, Any] | str,
-        action: str | None = None,
-        params: dict[str, Any] | None = None,
+        req: dict[str, Any],
     ) -> dict[str, Any]:
         """
         Called asynchronously by MiniAgentClient when the App Server encounters
         a sensitive tool invocation requiring human approval.
         """
-        if isinstance(params, dict):
-            req_data = params
-            req_id = str(
-                req_data.get("requestId")
-                or req_data.get("request_id")
-                or req_data.get("id")
-                or "req"
-            )
-            action_name = str(
-                req_data.get("action")
-                or req_data.get("tool")
-                or req_data.get("name")
-                or ""
-            )
-        elif isinstance(req, dict):
-            req_data = req
-            req_id = str(
-                req.get("requestId")
-                or req.get("request_id")
-                or req.get("id")
-                or req.get("actionId", "req")
-            )
-            action_name = str(
-                req.get("action")
-                or req.get("tool")
-                or req.get("name")
-                or (
-                    req.get("call", {}).get("name")
-                    if isinstance(req.get("call"), dict)
-                    else ""
-                )
-                or ""
-            )
-        else:
-            req_data = {"requestId": req, "action": action or ""}
-            req_id = str(req)
-            action_name = action or ""
-
-        # 1. Policy check: Auto-approve
-        policy = self._settings.get("approval_policy", "per_action")
-        if policy == "auto_approve":
-            logger.info("Policy auto-approved action: %s (%s)", action_name, req_id)
-            return {"decision": "approved", "reason": "Auto-approved by policy"}
-
-        # 2. Policy check: Strict deny
-        if policy == "strict":
-            logger.warning(
-                "Policy strictly denied action: %s (%s)", action_name, req_id
-            )
-            return {"decision": "denied", "reason": "Denied by strict security policy"}
-
-        # 3. Check remembered approvals
-        if action_name and action_name in self._remembered_approvals:
-            logger.info("Action remembered as approved: %s (%s)", action_name, req_id)
-            return {"decision": "approved", "reason": "Remembered user approval"}
+        req_data = req
+        req_id = str(req.get("requestId") or "")
+        if not req_id:
+            raise ValueError("approval request is missing requestId")
+        action_name = str(req_data.get("actionSummary") or req_data.get("action") or "")
 
         logger.info("Approval requested by server: %s", req_data)
 
@@ -649,8 +610,11 @@ class SessionManager:
             return decision
         except (asyncio.TimeoutError, asyncio.CancelledError):
             logger.warning("Approval request %s timed out or was cancelled", req_id)
+            access, approval = self.project_execution()
             return {
-                "decision": "denied",
+                "decision": "deny",
+                "access": req_data.get("access", access),
+                "approval": approval,
                 "reason": "Approval request timed out or cancelled",
             }
         finally:
@@ -665,24 +629,31 @@ class SessionManager:
         self,
         request_id: str,
         decision: str,
+        access: str,
+        approval: str,
         reason: str | None = None,
-        remember: bool = False,
-        action_name: str | None = None,
     ) -> bool:
-        """Resolve a pending approval future with human decision."""
-        details = self._pending_approval_details.get(request_id, {})
-        target_action = (action_name or details.get("action_name") or "").strip()
-        if remember and target_action and decision.lower() in ("approved", "allow"):
-            self._remembered_approvals.add(target_action)
-            logger.info("Remembered approval for action: '%s'", target_action)
+        """Resolve a pending typed approval without storing Web-side grants."""
+        details = self._pending_approval_details.get(request_id)
+        if not details:
+            return False
+        data = details.get("data", {})
+        if access != data.get("access") or approval not in data.get(
+            "allowedApprovalModes", []
+        ):
+            logger.warning("Rejected out-of-scope approval response: %s", request_id)
+            return False
+        if decision.lower() not in ("approve", "deny"):
+            return False
 
         fut = self._pending_approvals.get(request_id)
         if fut and not fut.done():
             fut.set_result(
                 {
                     "decision": decision,
+                    "access": access,
+                    "approval": approval,
                     "reason": reason or "",
-                    "remember": remember,
                 }
             )
             return True

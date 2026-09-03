@@ -14,7 +14,7 @@ async def main():
     print("=== Demo 04: Steering and Cooperative Interruption ===", flush=True)
 
     async with MiniAgentClient(log_dir="logs") as client:
-        await client.initialize(profile="interactive")
+        await client.initialize()
         await client.start_thread()
 
         # ---------------------------------------------------------------------

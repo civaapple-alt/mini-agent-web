@@ -1,6 +1,6 @@
 """
 Settings management endpoints.
-Manages profile, approval policy, theme, reasoning settings, and UI preferences.
+Manages UI preferences; execution access and approval live with the Project.
 """
 
 from __future__ import annotations
@@ -16,12 +16,6 @@ router = APIRouter(prefix="/api/settings", tags=["Settings"])
 
 
 class UpdateSettingsRequest(BaseModel):
-    profile: str | None = Field(
-        default=None, description="Client profile (interactive, auto, ask)"
-    )
-    approval_policy: str | None = Field(
-        default=None, description="Approval policy: per_action, auto_approve, strict"
-    )
     default_mode: str | None = Field(
         default=None, description="Default workflow mode (chat, plan, goal)"
     )

@@ -275,7 +275,8 @@ async def test_render_turn_stream_tool_failure_and_run_failure(
     assert "Detail: model request failed: provider returned HTTP 503" in rendered
     mock_client.read_turn.assert_awaited_once_with("turn-fail")
     assert "Turn Settled" in rendered
-    assert "Status: failed" in rendered
+    assert "状态: 执行失败" in rendered
+    assert "结束原因: 运行错误" in rendered
     assert state.last_turn_metrics is not None
     assert state.last_turn_metrics.status == "failed"
 
@@ -301,38 +302,30 @@ async def test_handle_slash_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "Mini Agent Runtime Status" in output_buffer.getvalue()
     assert "Completed Turns" in output_buffer.getvalue()
 
-    # 2. /policy switch
-    handled = await handle_slash_command("/policy auto_approve", state, mock_client)
-    assert handled is True
-    assert state.approval_policy == "auto_approve"
-
-    # 3. /profile switch
-    state.runtime_thread_id = "runtime-thread"
-    handled = await handle_slash_command("/profile auto", state, mock_client)
-    assert handled is True
-    assert state.profile == "auto"
-    mock_client.set_collaboration_mode.assert_awaited_once_with(
-        "default", thread_id="runtime-thread"
+    # 2. /approval switch
+    handled = await handle_slash_command(
+        "/approval current_project", state, mock_client
     )
-
-    # 4. /clear-approvals
-    state.remembered_approvals.add("shell")
-    handled = await handle_slash_command("/clear-approvals", state, mock_client)
     assert handled is True
-    assert len(state.remembered_approvals) == 0
+    assert state.approval_mode == "current_project"
 
-    # 5. Unknown slash command interception
+    # 3. /access switch
+    handled = await handle_slash_command("/access full_machine", state, mock_client)
+    assert handled is True
+    assert state.access_scope == "full_machine"
+
+    # 4. Unknown slash command interception
     handled = await handle_slash_command("/hepl", state, mock_client)
     assert handled is True
     assert "Unknown command: /hepl" in output_buffer.getvalue()
 
-    # 6. /steer while idle
+    # 5. /steer while idle
     state.active_turn_id = None
     handled = await handle_slash_command("/steer focus on auth", state, mock_client)
     assert handled is True
     assert "No active turn is currently running to steer" in output_buffer.getvalue()
 
-    # 7. /history with message playback
+    # 6. /history with message playback
     mock_checkpoint = AsyncMock()
     mock_checkpoint.status = "idle"
     mock_checkpoint.messages = [
@@ -345,25 +338,25 @@ async def test_handle_slash_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "Thread Checkpoint" in output_buffer.getvalue()
     assert "Bug fixed successfully" in output_buffer.getvalue()
 
-    # 8. ! shell command execution
+    # 7. ! shell command execution
     handled = await handle_slash_command("!echo test_shell_output", state, mock_client)
     assert handled is True
     assert "Executing shell command: echo test_shell_output" in output_buffer.getvalue()
     assert "Command succeeded" in output_buffer.getvalue()
 
-    # 9. ! empty command
+    # 8. ! empty command
     handled = await handle_slash_command("!", state, mock_client)
     assert handled is True
     assert "Usage: !<shell_command>" in output_buffer.getvalue()
 
-    # 10. /copy command
+    # 9. /copy command
     state.last_assistant_response = "# Summary\n\nTask completed successfully."
     monkeypatch.setattr("tui.clipboard.copy_to_clipboard", lambda text: True)
     handled = await handle_slash_command("/copy", state, mock_client)
     assert handled is True
     assert "Copied latest assistant response" in output_buffer.getvalue()
 
-    # 11. /cp alias command
+    # 10. /cp alias command
     handled = await handle_slash_command("/cp", state, mock_client)
     assert handled is True
 
@@ -373,18 +366,7 @@ def test_ask_approval_sync(monkeypatch: pytest.MonkeyPatch) -> None:
     test_con = Console(file=output_buffer, force_terminal=False, color_system=None)
     monkeypatch.setattr("tui.approvals.console", test_con)
 
-    # 1. auto_approve policy
-    state_auto = TUIState(approval_policy="auto_approve")
-    decision = _ask_approval_sync(state_auto, "Run cmd", "req-1", "shell")
-    assert decision == "approved"
-
-    # 2. strict policy
-    state_strict = TUIState(approval_policy="strict")
-    decision = _ask_approval_sync(state_strict, "Run cmd", "req-2", "shell")
-    assert decision == "denied"
-
-    # 3. remembered approval
-    state_mem = TUIState(approval_policy="per_action")
-    state_mem.remembered_approvals.add("read_file")
-    decision = _ask_approval_sync(state_mem, "Read file", "req-3", "read_file")
+    monkeypatch.setattr("tui.approvals.Prompt.ask", lambda *args, **kwargs: "yes")
+    state = TUIState(approval_mode="current_project")
+    decision = _ask_approval_sync(state, "Run cmd", "req-1", "shell")
     assert decision == "approved"

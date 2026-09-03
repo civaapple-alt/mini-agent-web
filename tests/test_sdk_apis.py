@@ -10,7 +10,7 @@ from mini_agent import MiniAgentClient, ThreadCheckpoint
 async def test_advanced_thread_and_workflow_apis():
     async with MiniAgentClient(log_dir="logs") as client:
         # 1. Initialize
-        init_res = await client.initialize(profile="interactive")
+        init_res = await client.initialize()
         assert init_res.get("protocolVersion") == 1
         assert init_res.get("serverVersion") == "0.7.0"
 
@@ -65,7 +65,7 @@ async def test_advanced_thread_and_workflow_apis():
         assert hasattr(refresh_res, "changed")
 
         exec_res = await client.set_world_execution(
-            approval="interactive", copilot=False
+            access="project", approval="per_action"
         )
         assert hasattr(exec_res, "changed")
 
@@ -130,12 +130,12 @@ async def test_thread_goal_api_mapping_without_starting_goal_runtime():
 
 
 @pytest.mark.asyncio
-async def test_sdk_approval_response_preserves_remember_flag():
-    async def approval_handler(request_id, action, params):
-        assert request_id == "approval-1"
-        assert action == "shell"
+async def test_sdk_approval_response_uses_typed_decision():
+    async def approval_handler(params):
+        assert params["requestId"] == "approval-1"
+        assert params["actionSummary"] == "shell"
         assert params["callId"] == "call-1"
-        return {"decision": "approved", "remember": True}
+        return {"decision": "approve", "access": "project", "approval": "per_action"}
 
     client = MiniAgentClient(approval_handler=approval_handler)
     calls = []
@@ -149,7 +149,9 @@ async def test_sdk_approval_response_preserves_remember_flag():
     await client._handle_approval_request(
         {
             "requestId": "approval-1",
-            "action": "shell",
+            "actionSummary": "shell",
+            "access": "project",
+            "allowedApprovalModes": ["per_action"],
             "threadId": "thread-1",
             "turnId": "turn-1",
             "callId": "call-1",
@@ -159,6 +161,11 @@ async def test_sdk_approval_response_preserves_remember_flag():
     assert calls == [
         (
             "approval/respond",
-            {"requestId": "approval-1", "approved": True, "remember": True},
+            {
+                "requestId": "approval-1",
+                "decision": "approve",
+                "access": "project",
+                "approval": "per_action",
+            },
         )
     ]

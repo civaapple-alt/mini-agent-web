@@ -62,7 +62,7 @@ async def main():
             return cleared.cleared
 
         # 1. Initialize
-        init_res = await client.initialize(profile="interactive")
+        init_res = await client.initialize()
         print(
             f"[OK] Initialized, server: {init_res.get('serverName')} v{init_res.get('serverVersion')}",
             flush=True,

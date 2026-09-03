@@ -10,15 +10,15 @@ import asyncio
 from mini_agent import MiniAgentClient
 
 
-async def interactive_approval_handler(request_id: str, action: str) -> bool:
+async def interactive_approval_handler(request: dict) -> dict:
     """
     Custom approval callback.
     Can be connected to a GUI modal, CLI prompt, or security policy engine.
     """
     print("\n" + "=" * 60, flush=True)
     print("[SECURITY APPROVAL REQUIRED]", flush=True)
-    print(f"Request ID : {request_id}", flush=True)
-    print(f"Action     : {action}", flush=True)
+    print(f"Request ID : {request['requestId']}", flush=True)
+    print(f"Action     : {request['actionSummary']}", flush=True)
     print("=" * 60, flush=True)
 
     loop = asyncio.get_running_loop()
@@ -26,9 +26,9 @@ async def interactive_approval_handler(request_id: str, action: str) -> bool:
         None,
         lambda: input("Allow agent to execute this action? (y/N): ").strip().lower(),
     )
-    approved = user_choice in ("y", "yes")
-    print(f"-> Decision: {'APPROVED' if approved else 'REJECTED'}\n", flush=True)
-    return approved
+    decision = "approve" if user_choice in ("y", "yes") else "deny"
+    print(f"-> Decision: {decision.upper()}\n", flush=True)
+    return {"decision": decision, "access": "project", "approval": "per_action"}
 
 
 async def main():
@@ -39,7 +39,7 @@ async def main():
         approval_handler=interactive_approval_handler,
         log_dir="logs",
     ) as client:
-        await client.initialize(profile="interactive")
+        await client.initialize()
         await client.start_thread()
 
         prompt = (

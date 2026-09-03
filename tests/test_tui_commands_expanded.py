@@ -65,8 +65,8 @@ async def test_handle_help_and_exit_slash_commands():
 
 
 @pytest.mark.asyncio
-async def test_handle_effort_and_policy_commands():
-    """Test /effort and /policy commands."""
+async def test_handle_effort_and_approval_commands():
+    """Test /effort and /approval commands."""
     state = TUIState(current_thread_id="test-thread")
     mock_client = AsyncMock()
 
@@ -79,12 +79,12 @@ async def test_handle_effort_and_policy_commands():
     assert handled_set_effort is True
     assert state.effort == "high"
 
-    # Set policy
-    handled_set_policy = await handle_slash_command(
-        "/policy auto_approve", state, mock_client
+    # Set approval scope
+    handled_set_approval = await handle_slash_command(
+        "/approval current_session", state, mock_client
     )
-    assert handled_set_policy is True
-    assert state.approval_policy == "auto_approve"
+    assert handled_set_approval is True
+    assert state.approval_mode == "current_session"
 
 
 def test_slash_command_completer():

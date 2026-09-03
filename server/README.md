@@ -37,6 +37,17 @@ uv run mini-agent-server-dev
 Thread、Turn、Goal 和 ThreadItem 的运行时语义来自 App Server；网关不创建
 第二套运行时状态机。
 
+访问和批准是当前 Project 的执行设置：`project` / `full_machine` 控制路径范围，
+`per_action` / `current_session` / `current_project` 控制批准复用生命周期。
+`full_machine` 只表示整机路径范围，不是 allow-all；Deny、Plan 锁、工具可用性和
+仍需人工确认的高风险动作继续由 App Server/Host 执行。Auto Copilot 是
+`Goal + full_machine + current_project` 的明确组合。
+
+Project 的主目录和关联目录会在启动 SDK 时分别绑定为主工作区、额外可写根目录或
+只读参考根目录。切换或编辑 Project 会重启并重绑 Host；Web 的 UI 状态只保存
+Project 清单和界面偏好，Session history、Goal、checkpoint 和批准授权由
+App Server 的 canonical Session/Runtime 所有。
+
 ## 文件分工
 
 ```text

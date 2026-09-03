@@ -56,6 +56,26 @@ def _format_output_preview(
     return joined
 
 
+def _status_label(status: str) -> str:
+    return {
+        "completed": "已完成",
+        "cancelled": "已取消",
+        "failed": "执行失败",
+        "steered": "已转向",
+        "step_limit": "运行保护触发",
+    }.get(status, status)
+
+
+def _stop_reason_label(reason: str) -> str:
+    return {
+        "completed": "正常完成",
+        "cancelled": "用户取消",
+        "steered": "用户纠偏后结算",
+        "step_limit": "达到内部运行保护上限；可检查结果后继续",
+        "error": "运行错误",
+    }.get(reason, reason)
+
+
 async def render_turn_stream(
     client: MiniAgentClient,
     user_input: str,
@@ -270,12 +290,14 @@ async def render_turn_stream(
         console.print("\n")
         # Print sleek turn settlement telemetry
         state.last_turn_metrics = metrics
-        status_style = "green" if metrics.status == "completed" else "red"
-        parts = [f"Status: [{status_style}]{metrics.status}[/{status_style}]"]
+        status_style = "green" if metrics.status == "completed" else "yellow"
+        parts = [
+            f"状态: [{status_style}]{_status_label(metrics.status)}[/{status_style}]"
+        ]
         if metrics.steps > 0:
             parts.append(f"Steps: {metrics.steps}")
         if metrics.stop_reason:
-            parts.append(f"Stop: {metrics.stop_reason}")
+            parts.append(f"结束原因: {_stop_reason_label(metrics.stop_reason)}")
         if metrics.total_tokens > 0:
             parts.append(
                 f"Tokens: {metrics.input_tokens} in / {metrics.output_tokens} out"

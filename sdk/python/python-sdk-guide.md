@@ -22,7 +22,7 @@ from mini_agent import MiniAgentClient
 
 async def main():
     async with MiniAgentClient() as client:
-        await client.initialize(profile="interactive")
+        await client.initialize()
         await client.start_thread()
 
         async for event in client.stream_turn("List files in current directory"):
@@ -113,17 +113,16 @@ async for envelope in client.stream_turn("Explain quantum computing"):
 ### 4.2 Security Approval Interception (`approval_handler`)
 Sensitive actions (shell execution, workspace file modification, web fetching) trigger an `approval/request` notification from the backend. You can intercept these programmatically:
 
-If `approval_handler` is omitted, the SDK uses its default auto-approve handler.
-This is why Cookbook Demo 02 can execute its inspection Shell calls without a
-manual prompt. Use a custom callback, as in Demo 03, when every sensitive action
-must require an explicit human decision; do not use the default in an untrusted
-workspace.
+If `approval_handler` is omitted, the SDK denies approval requests by default.
+Applications that have a human or other trusted decision authority should return
+a typed `{ "decision": "approve"|"deny", "access": ..., "approval": ... }`
+object. The App Server still enforces security Deny, Plan locks, tool exposure,
+and the trusted Project/Session binding.
 
 ```python
-async def custom_approver(request_id: str, action: str, params: dict) -> bool:
+async def custom_approver(request_id: str, action: str, params: dict) -> dict:
     print(f"[SECURITY ALERT] Request: {action}")
-    # Prompt user or verify against whitelist
-    return True
+    return {"decision": "approve", "access": "project", "approval": "per_action"}
 
 
 client = MiniAgentClient(approval_handler=custom_approver)
@@ -214,18 +213,24 @@ uv run python cookbook/python-demo/06_protocol_compatibility.py
 uv run pytest tests/test_sdk_events.py tests/test_cookbook_validation.py -q
 ```
 
-### 4.6 Thread Settings and Plan Mode
+### 4.6 Project execution controls and Plan Mode
 ```python
 # Inspect system environment & available tools
 world_state = await client.get_world_state()
 
-# Enter read-only exploration mode
+# Access and approval are independent Project-owned controls.
+await client.set_world_execution(
+    access="full_machine", approval="current_project"
+)
+
+# Enter read-mostly exploration mode. Plan may use bounded scratch exploration
+# and retain plan.md, but formal Project mutations remain locked.
 await client.set_collaboration_mode("plan")
 
 # Return to the default collaboration mode
 await client.set_collaboration_mode("default")
 
-# Read settled thread checkpoint
+# Read the canonical App Server Session history projection
 checkpoint = await client.read_thread()
 print(f"Messages count: {len(checkpoint.messages)}")
 ```
@@ -240,7 +245,7 @@ forked = await client.fork_thread(
     source_thread_id="default", new_thread_id="feature-experiment"
 )
 
-# Resume thread from checkpoint
+# Resume through the canonical App Server Session contract
 resumed = await client.resume_thread(thread_id="restored-thread", checkpoint=checkpoint)
 ```
 

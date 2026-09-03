@@ -27,7 +27,7 @@ from mini_agent import MiniAgentClient
 
 async def main():
     async with MiniAgentClient() as client:
-        await client.initialize(profile="interactive")
+        await client.initialize()
         await client.start_thread()
 
         async for envelope in client.stream_turn("List the files in the workspace."):
@@ -46,16 +46,22 @@ asyncio.run(main())
 ## 公共表面
 
 - `MiniAgentClient` / `AsyncMiniAgentClient`：初始化、Thread、Turn、Goal、
-  设置、审批、Steer 和 Interrupt；
+  执行范围、审批、Steer 和 Interrupt；
 - `stream_turn()`：按 Thread/Turn 过滤事件，并保留未知事件为
   `GenericEvent`；
 - `ThreadItem`：Turn 事件和 `turn/read` 中的有界 item 投影；
 - `ItemLifecycleNotification`：`item/started` 和 `item/completed` 的类型化
   通知；
 - `list_thread_items()`：读取 `thread/items/list` 的游标分页结果；
-- `types.py`：协议结果、Goal、设置、Checkpoint 和错误相关数据类。
+- `types.py`：协议结果、Goal、设置、Session history 和错误相关数据类。
 
-ThreadItem 是已有 Session 投影的读取边界，不是 SDK 的第二个持久化存储。
+执行控制由 Project 的 `access`（`project` / `full_machine`）和
+`approval`（`per_action` / `current_session` / `current_project`）组成。
+`full_machine` 只扩大路径范围，不等于 allow-all；Deny、Plan 锁、工具可用性和
+仍需确认的高风险动作继续生效。Auto Copilot 是 `Goal + full_machine +
+current_project` 的明确组合。
+
+ThreadItem 是 App Server Session history 的读取投影，不是 SDK 的第二个持久化存储。
 
 ## 深入阅读
 

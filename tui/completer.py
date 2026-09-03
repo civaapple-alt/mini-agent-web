@@ -56,12 +56,10 @@ class SlashCommandCompleter(Completer):
                 ("/plan", "开启/切换只读 Plan Mode (架构与规划探索)"),
                 ("/goal", "启动/查看目标驱动多里程碑收敛任务"),
                 ("/steer", "向当前轮次注入实时纠偏指令 (Steering Guidance)"),
-                ("/policy", "查看/切换安全审批策略 (per_action|auto_approve|strict)"),
-                ("/approve", "切换安全审批策略别名"),
+                ("/approval", "查看/切换批准复用范围"),
+                ("/access", "查看/切换访问范围"),
                 ("/effort", "查看/切换思考链强度 (low|medium|high)"),
                 ("/reasoning", "切换思考链强度别名"),
-                ("/profile", "查看系统 Profile 对照表与说明"),
-                ("/clear-approvals", "清空已记住的工具放行缓存"),
                 ("/threads", "列出所有历史会话与分支列表"),
                 ("/new", "新建并切换至新会话线程"),
                 ("/fork", "分叉当前会话历史为新的实验分支"),
@@ -99,11 +97,11 @@ class SlashCommandCompleter(Completer):
         else:
             sub_prefix = sub_text.lower()
 
-        if cmd in ("/policy", "/approve"):
+        if cmd == "/approval":
             policies = [
-                ("per_action", "每次敏感操作单独弹窗确认 (默认/推荐)"),
-                ("auto_approve", "全自动放行工具执行 (Dev/高速)"),
-                ("strict", "严格拒绝一切敏感写操作"),
+                ("per_action", "每次敏感操作单独确认"),
+                ("current_session", "当前 Session 内复用批准"),
+                ("current_project", "当前 Project 内复用批准"),
             ]
             for p_name, p_desc in policies:
                 if p_name.startswith(sub_prefix):
@@ -127,13 +125,12 @@ class SlashCommandCompleter(Completer):
                         display=e_name,
                         display_meta=e_desc,
                     )
-        elif cmd == "/profile":
-            profiles = [
-                ("interactive", "日常人机结对协作与单步工具把控 (默认/推荐)"),
-                ("auto", "目标驱动多里程碑无人值守收敛"),
-                ("ask", "严格只读问答与架构探索 (支持 /plan)"),
+        elif cmd == "/access":
+            access_options = [
+                ("project", "仅限当前 Project 的工作区范围"),
+                ("full_machine", "整机访问范围，仍受安全拒绝和批准控制"),
             ]
-            for pr_name, pr_desc in profiles:
+            for pr_name, pr_desc in access_options:
                 if pr_name.startswith(sub_prefix):
                     yield Completion(
                         pr_name,

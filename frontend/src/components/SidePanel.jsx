@@ -380,9 +380,9 @@ export default function SidePanel({
                   <div className="workflow-title-wrap">
                     <Compass size={15} className="text-amber" />
                     <div>
-                      <span className="workflow-title">只读规划模式 (Plan Mode)</span>
+                      <span className="workflow-title">规划模式 (Plan Mode)</span>
                       <p className="workflow-sub">
-                        启用后 Agent 处于只读探索状态，在对话流中输出严密的架构与实施计划，禁止写文件
+                        以只读探索为主；允许创建受控临时脚本与输出，最终形成 plan.md，正式项目修改仍保持锁定
                       </p>
                     </div>
                   </div>

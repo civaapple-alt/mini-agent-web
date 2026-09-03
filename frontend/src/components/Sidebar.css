@@ -869,6 +869,23 @@ body.theme-cyberpunk .nested-thread-item.selected {
   text-decoration: underline;
 }
 
+.btn-folder-access {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.btn-folder-access.editable {
+  color: var(--accent-green);
+}
+
+.btn-folder-access.reference {
+  color: var(--text-muted);
+}
+
 .btn-remove-folder {
   background: transparent;
   border: none;

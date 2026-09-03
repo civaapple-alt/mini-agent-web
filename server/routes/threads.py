@@ -133,59 +133,15 @@ async def fork_thread(req: ForkThreadRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.get("/{thread_id}", summary="Read thread checkpoint")
+@router.get("/{thread_id}", summary="Read canonical thread history")
 async def read_thread(thread_id: str) -> dict[str, Any]:
-    """Read settled checkpoint and message history for a specific thread."""
+    """Read canonical App Server Session history for a specific thread."""
     try:
-        persisted_cp = session_manager.get_thread_checkpoint(thread_id)
-        has_thread = False
-        cp = None
-
         try:
             cp = await session_manager.client.read_thread(thread_id)
-            has_thread = True
         except AppServerError:
-            has_thread = False
-
-        persisted_msgs = persisted_cp.get("messages", []) if persisted_cp else []
-        user_persisted = [
-            m
-            for m in persisted_msgs
-            if isinstance(m, dict) and m.get("role") in ("user", "assistant")
-        ]
-        live_msgs = cp.messages if (cp and cp.messages) else []
-        user_live = [
-            m
-            for m in live_msgs
-            if (isinstance(m, dict) and m.get("role") in ("user", "assistant"))
-            or (
-                hasattr(m, "role") and getattr(m, "role", None) in ("user", "assistant")
-            )
-        ]
-
-        if user_persisted and not user_live:
-            # Rehydrate live App Server from disk checkpoint
-            try:
-                await session_manager.client.resume_thread(thread_id, persisted_cp)
-                cp = await session_manager.client.read_thread(thread_id)
-            except Exception:  # noqa: BLE001
-                if not has_thread:
-                    await session_manager.client.start_thread(thread_id)
-                    cp = await session_manager.client.read_thread(thread_id)
-        elif not has_thread:
-            if persisted_cp and persisted_cp.get("messages"):
-                try:
-                    await session_manager.client.resume_thread(thread_id, persisted_cp)
-                    cp = await session_manager.client.read_thread(thread_id)
-                except Exception:  # noqa: BLE001
-                    await session_manager.client.start_thread(thread_id)
-                    cp = await session_manager.client.read_thread(thread_id)
-            else:
-                await session_manager.client.start_thread(thread_id)
-                cp = await session_manager.client.read_thread(thread_id)
-
-        if cp is not None:
-            session_manager.save_thread_checkpoint(thread_id, cp)
+            await session_manager.client.start_thread(thread_id)
+            cp = await session_manager.client.read_thread(thread_id)
 
         meta = session_manager.get_thread_meta(thread_id)
         return {

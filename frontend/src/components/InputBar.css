@@ -170,7 +170,7 @@ body.theme-dark .dock-left-hint {
   opacity: 0.9;
 }
 
-.btn-dock-remember {
+.btn-dock-scope {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -185,11 +185,11 @@ body.theme-dark .dock-left-hint {
   transition: all 0.15s ease;
 }
 
-body.theme-dark .btn-dock-remember {
+body.theme-dark .btn-dock-scope {
   background-color: var(--bg-surface);
 }
 
-.btn-dock-remember:hover {
+.btn-dock-scope:hover {
   background-color: rgba(16, 163, 127, 0.08);
 }
 

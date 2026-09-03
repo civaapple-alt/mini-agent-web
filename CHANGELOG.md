@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Project execution control plane**: aligned SDK, Gateway, Studio, and TUI on
+  independent Project access (`project` / `full_machine`) and approval lifetime
+  (`per_action` / `current_session` / `current_project`). `full_machine` is
+  machine-wide path access, not global allow-all; Auto Copilot is the explicit
+  `Goal + full_machine + current_project` composition.
+- **Canonical Project workspace binding**: passes the active primary directory,
+  editable associated roots, and reference-only roots into the App Server runtime;
+  Web state no longer persists duplicate thread checkpoints or approval grants.
+
 - **Builtin Tools Selector & Control Plane**: exposed bounded Builtin selection
   with a small default set (`read_file`, `apply_patch`, `shell`, `read_image`) and
   explicit `web_fetch` extension in Web Studio SidePanel and Thread settings,

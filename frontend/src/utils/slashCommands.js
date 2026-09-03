@@ -2,23 +2,9 @@
  * Pure helper functions and definitions for slash commands.
  */
 
-export const PROFILE_DEFAULTS = {
-  interactive: {
-    approval_policy: 'per_action',
-    default_mode: 'chat',
-  },
-  auto: {
-    approval_policy: 'auto_approve',
-    default_mode: 'goal',
-  },
-  ask: {
-    approval_policy: 'strict',
-    default_mode: 'plan',
-  },
-};
-
 export const SLASH_COMMANDS = [
-  { cmd: '/plan', desc: '开启/切换只读 Plan Mode (只读规划架构)' },
+  { cmd: '/plan', desc: '开启/切换 Plan 规划探索模式' },
+  { cmd: '/goal', desc: '创建并启动跨回合 Goal' },
   { cmd: '/clear', desc: '清空当前界面交互与消息历史' },
   { cmd: '/status', desc: '打开右侧诊断抽屉与环境看板' },
   { cmd: '/copy', desc: '复制模型最新的 Markdown 回复' },
@@ -33,13 +19,12 @@ export const SLASH_COMMANDS = [
 export function parseAndExecuteSlashCommand(cmdStr, {
   isGenerating = false,
   onTogglePlanMode,
-  onChangeProfile,
+  onStartGoal,
   onClearChat,
   onOpenStatus,
   onCopyLastResponse,
   onSteerMessage,
   onToast,
-  profile = 'interactive',
 }) {
   const cleanCmd = (cmdStr || '').trim();
   const lowerCmd = cleanCmd.toLowerCase();
@@ -47,9 +32,17 @@ export function parseAndExecuteSlashCommand(cmdStr, {
   if (lowerCmd === '/plan') {
     if (onTogglePlanMode) {
       onTogglePlanMode();
-    } else if (onChangeProfile) {
-      onChangeProfile(profile === 'ask' ? 'interactive' : 'ask');
     }
+    return true;
+  }
+
+  if (lowerCmd.startsWith('/goal')) {
+    const objective = cleanCmd.slice(5).trim();
+    if (!objective) {
+      if (onToast) onToast('请输入 Goal 目标，例如：/goal 完成登录流程并运行测试', 'info');
+      return true;
+    }
+    if (onStartGoal) onStartGoal(objective);
     return true;
   }
 

@@ -10,10 +10,8 @@ import {
   ShieldAlert,
   Shield,
   Check,
-  CheckCheck,
   X,
   ChevronDown,
-  MessageSquare,
   Image as ImageIcon,
   FileCode,
 } from 'lucide-react';
@@ -22,33 +20,33 @@ import { parseAndExecuteSlashCommand } from '../utils/slashCommands';
 import './InputBar.css';
 
 const SLASH_COMMANDS = [
-  { cmd: '/plan', desc: '开启/切换只读规划探索模式 (Ask Profile)', icon: <Compass size={13} className="text-amber" /> },
+  { cmd: '/plan', desc: '开启/切换 Plan 规划探索模式', icon: <Compass size={13} className="text-amber" /> },
+  { cmd: '/goal', desc: '创建并启动一个跨回合 Goal', icon: <Target size={13} className="text-green" /> },
   { cmd: '/clear', desc: '清空当前聊天记录', icon: <Sparkles size={13} className="text-sky" /> },
   { cmd: '/status', desc: '打开工作区探测与环境状态面板', icon: <Command size={13} className="text-emerald" /> },
   { cmd: '/copy', desc: '复制模型最新回复/文档 Markdown 到剪贴板', icon: <Sparkles size={13} className="text-purple" /> },
   { cmd: '/steer', desc: '向运行中的 Agent 发送实时纠偏指令', icon: <Navigation size={13} className="text-purple" /> },
 ];
 
-const PROFILES = [
-  { id: 'interactive', label: '交互协作 (Interactive)', icon: <MessageSquare size={11} className="text-sky" />, desc: '日常人机结对对话与单步工具把控 (推荐)' },
-  { id: 'auto', label: '自治目标 (Auto)', icon: <Target size={11} className="text-green" />, desc: '目标驱动多里程碑无人值守收敛' },
-  { id: 'ask', label: '严格只读 (Ask)', icon: <Compass size={11} className="text-amber" />, desc: '只读规划探索与高安全审计，禁止写操作' },
+const ACCESS_SCOPES = [
+  { id: 'project', label: '项目范围 (Project)', desc: '仅当前 Project 的工作区范围' },
+  { id: 'full_machine', label: '完全访问 (Full access)', desc: '整机路径范围；不会绕过 Deny 或沙箱' },
 ];
 
-const APPROVAL_POLICIES = [
-  { id: 'per_action', label: '每次确认 (Per-Action)', desc: '每次敏感操作单独弹窗确认 (推荐)' },
-  { id: 'auto_approve', label: '自动放行 (Auto-Approve)', desc: '全自动放行工具执行 (Dev/高速)' },
-  { id: 'strict', label: '严格拒绝 (Strict Deny)', desc: '严格拒绝一切敏感写操作' },
+const APPROVAL_MODES = [
+  { id: 'per_action', label: '逐次批准 (Per-Action)', desc: '每次敏感操作单独确认' },
+  { id: 'current_session', label: '当前会话 (Current Session)', desc: '本 Session 内复用精确批准' },
+  { id: 'current_project', label: '当前项目 (Current Project)', desc: 'Project 内匹配 Workspace 版本的 Session 复用' },
 ];
 
 export default function InputBar({
   isGenerating,
-  profile = 'interactive',
-  approvalPolicy = 'per_action',
+  accessScope = 'project',
+  approvalMode = 'per_action',
   pendingApproval,
   onRespondApproval,
-  onChangeProfile,
-  onChangeApprovalPolicy,
+  onChangeExecution,
+  onStartGoal,
   onSendMessage,
   onSteerMessage,
   onInterrupt,
@@ -61,8 +59,8 @@ export default function InputBar({
   const [prompt, setPrompt] = useState('');
   const [showSlashPopup, setShowSlashPopup] = useState(false);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [showPolicyMenu, setShowPolicyMenu] = useState(false);
+  const [showAccessMenu, setShowAccessMenu] = useState(false);
+  const [showApprovalMenu, setShowApprovalMenu] = useState(false);
   const [denyReason, setDenyReason] = useState('');
   const [showDenyInput, setShowDenyInput] = useState(false);
 
@@ -89,17 +87,17 @@ export default function InputBar({
   // Close popup menus when clicking outside
   useEffect(() => {
     const handleDocumentClick = () => {
-      setShowProfileMenu(false);
-      setShowPolicyMenu(false);
+      setShowAccessMenu(false);
+      setShowApprovalMenu(false);
       setShowMentionPopup(false);
     };
-    if (showProfileMenu || showPolicyMenu || showMentionPopup) {
+    if (showAccessMenu || showApprovalMenu || showMentionPopup) {
       window.addEventListener('click', handleDocumentClick);
     }
     return () => {
       window.removeEventListener('click', handleDocumentClick);
     };
-  }, [showProfileMenu, showPolicyMenu, showMentionPopup]);
+  }, [showAccessMenu, showApprovalMenu, showMentionPopup]);
 
   const loadWorkspaceFiles = async (q) => {
     try {
@@ -173,13 +171,12 @@ export default function InputBar({
     const handled = parseAndExecuteSlashCommand(cleanCmd, {
       isGenerating,
       onTogglePlanMode,
-      onChangeProfile,
+      onStartGoal,
       onClearChat,
       onOpenStatus,
       onCopyLastResponse,
       onSteerMessage,
       onToast,
-      profile,
     });
 
     if (handled) {
@@ -338,9 +335,9 @@ export default function InputBar({
     }
   };
 
-  const handleApprove = (remember = false) => {
+  const handleApprove = (scope = approvalMode) => {
     if (onRespondApproval && pendingApproval) {
-      onRespondApproval(pendingApproval.requestId, 'approved', '', remember);
+      onRespondApproval(pendingApproval.requestId, 'approve', '', scope);
       setShowDenyInput(false);
       setDenyReason('');
     }
@@ -352,19 +349,19 @@ export default function InputBar({
       return;
     }
     if (onRespondApproval && pendingApproval) {
-      onRespondApproval(pendingApproval.requestId, 'denied', denyReason.trim(), false);
+      onRespondApproval(pendingApproval.requestId, 'deny', denyReason.trim(), approvalMode);
       setShowDenyInput(false);
       setDenyReason('');
     }
   };
 
-  const currentProfileObj = PROFILES.find((p) => p.id === profile) || PROFILES[0];
-  const currentPolicyObj = APPROVAL_POLICIES.find((p) => p.id === approvalPolicy) || APPROVAL_POLICIES[0];
+  const currentAccessObj = ACCESS_SCOPES.find((item) => item.id === accessScope) || ACCESS_SCOPES[0];
+  const currentApprovalObj = APPROVAL_MODES.find((item) => item.id === approvalMode) || APPROVAL_MODES[0];
 
   // Format pending approval action text
   const approvalActionText = pendingApproval
     ? typeof pendingApproval.data === 'object' && pendingApproval.data !== null
-      ? pendingApproval.data.action || JSON.stringify(pendingApproval.data, null, 2)
+      ? pendingApproval.data.actionSummary || JSON.stringify(pendingApproval.data, null, 2)
       : String(pendingApproval.data)
     : '';
 
@@ -408,7 +405,7 @@ export default function InputBar({
               <button
                 type="button"
                 className="btn-dock-approve"
-                onClick={() => handleApprove(false)}
+                onClick={() => handleApprove('per_action')}
                 title="允许执行本次操作"
               >
                 <Check size={12} />
@@ -417,12 +414,12 @@ export default function InputBar({
 
               <button
                 type="button"
-                className="btn-dock-remember"
-                onClick={() => handleApprove(true)}
-                title="在此会话中始终允许此类操作"
+                className="btn-dock-scope"
+                onClick={() => handleApprove(approvalMode)}
+                title={`按当前设置复用：${currentApprovalObj.label}`}
               >
-                <CheckCheck size={12} />
-                <span>始终允许 (Always)</span>
+                <Check size={12} />
+                <span>{currentApprovalObj.label.split(' ')[0]} (Apply)</span>
               </button>
 
               <button
@@ -549,10 +546,6 @@ export default function InputBar({
                 ? '⚠️ 等待上方安全权限审批确认后继续...'
                 : isGenerating
                 ? 'Agent 执行中... 输入内容并按回车可动态纠偏 (Steer)'
-                : profile === 'ask'
-                ? '📋 Ask Mode: 输入规划任务需求... (只读探索与计划制定)'
-                : profile === 'auto'
-                ? '🎯 Auto Mode: 输入宏观目标需求... (多里程碑自治收敛)'
                 : '输入任务、指令或问题... (支持 Ctrl+V 粘贴截图、输入 @ 引用文件、输入 / 查看快捷命令)'
             }
             className="chat-textarea"
@@ -561,7 +554,7 @@ export default function InputBar({
 
         {/* Bottom Composer Footer */}
         <div className="input-footer-bar">
-          {/* Bottom-Left Controls: Profile Selector + Approval Policy Selector + Image Upload */}
+          {/* Bottom-Left Controls: access, approval, and image upload */}
           <div className="input-hints">
             {/* Image Upload Button */}
             <button
@@ -572,88 +565,88 @@ export default function InputBar({
             >
               <ImageIcon size={14} />
             </button>
-            {/* 1. Profile Dropdown Selector (Left of Approval Policy) */}
+            {/* 1. Access scope selector */}
             <div className="composer-popover-wrapper" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
                 className="composer-pill-btn font-mono"
                 onClick={() => {
-                  setShowProfileMenu(!showProfileMenu);
-                  setShowPolicyMenu(false);
+                  setShowAccessMenu(!showAccessMenu);
+                  setShowApprovalMenu(false);
                 }}
-                title="点击切换客户端运行 Profile"
+                title="设置文件系统访问范围"
               >
-                {currentProfileObj.icon}
-                <span>{currentProfileObj.label.split(' ')[0]}</span>
+                <Shield size={11} className={accessScope === 'full_machine' ? 'text-rose' : 'text-sky'} />
+                <span>{currentAccessObj.label.split(' ')[0]}</span>
                 <ChevronDown size={10} className="text-muted" />
               </button>
 
-              {showProfileMenu && (
+              {showAccessMenu && (
                 <div className="composer-popup-menu custom-scrollbar">
-                  <div className="composer-popup-title">运行 Profile (Profile)</div>
-                  {PROFILES.map((p) => (
+                  <div className="composer-popup-title">访问范围 (Access)</div>
+                  {ACCESS_SCOPES.map((item) => (
                     <div
-                      key={p.id}
-                      className={`composer-popup-item ${p.id === profile ? 'active' : ''}`}
+                      key={item.id}
+                      className={`composer-popup-item ${item.id === accessScope ? 'active' : ''}`}
                       onClick={() => {
-                        if (onChangeProfile) onChangeProfile(p.id);
-                        setShowProfileMenu(false);
+                        if (
+                          item.id === 'full_machine' &&
+                          accessScope !== 'full_machine' &&
+                          !window.confirm(
+                            '完全访问将允许 Agent 访问整机路径范围，但仍受 Deny、Plan 锁、工具可用性和高风险确认约束。继续吗？'
+                          )
+                        ) {
+                          return;
+                        }
+                        if (onChangeExecution) onChangeExecution(item.id, approvalMode);
+                        setShowAccessMenu(false);
                       }}
                     >
                       <div className="item-header">
                         <div className="item-title-wrap">
-                          {p.icon}
-                          <span className="item-name font-mono">{p.label}</span>
+                          <Shield size={11} className="text-sky" />
+                          <span className="item-name font-mono">{item.label}</span>
                         </div>
-                        {p.id === profile && <Check size={12} className="text-green" />}
+                        {item.id === accessScope && <Check size={12} className="text-green" />}
                       </div>
-                      <span className="item-desc">{p.desc}</span>
+                      <span className="item-desc">{item.desc}</span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* 2. Approval Policy Dropdown Selector */}
+            {/* 2. Approval lifetime selector */}
             <div className="composer-popover-wrapper" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
                 className="composer-pill-btn font-mono"
                 onClick={() => {
-                  setShowPolicyMenu(!showPolicyMenu);
-                  setShowProfileMenu(false);
+                  setShowApprovalMenu(!showApprovalMenu);
+                  setShowAccessMenu(false);
                 }}
-                title="点击切换安全审批策略"
+                title="设置批准生命周期"
               >
-                <Shield
-                  size={11}
-                  className={
-                    approvalPolicy === 'auto_approve'
-                      ? 'text-green'
-                      : approvalPolicy === 'strict'
-                      ? 'text-rose'
-                      : 'text-amber'
-                  }
-                />
-                <span>审批: {currentPolicyObj.label.split(' ')[0]}</span>
+                <Shield size={11} className="text-amber" />
+                <span>批准: {currentApprovalObj.label.split(' ')[0]}</span>
                 <ChevronDown size={10} className="text-muted" />
               </button>
 
-              {showPolicyMenu && (
+              {showApprovalMenu && (
                 <div className="composer-popup-menu custom-scrollbar">
-                  <div className="composer-popup-title">安全审批策略 (Approval Policy)</div>
-                  {APPROVAL_POLICIES.map((item) => (
+                  <div className="composer-popup-title">批准生命周期 (Approval)</div>
+                  {APPROVAL_MODES.map((item) => (
                     <div
                       key={item.id}
-                      className={`composer-popup-item ${item.id === approvalPolicy ? 'active' : ''}`}
+                      className={`composer-popup-item ${item.id === approvalMode ? 'active' : ''}`}
                       onClick={() => {
-                        if (onChangeApprovalPolicy) onChangeApprovalPolicy(item.id);
-                        setShowPolicyMenu(false);
+                        if (onChangeExecution) onChangeExecution(accessScope, item.id);
+                        setShowApprovalMenu(false);
                       }}
                     >
                       <div className="item-header">
                         <span className="item-name font-mono">{item.label}</span>
-                        {item.id === approvalPolicy && <Check size={12} className="text-green" />}
+                        {item.id === approvalMode && <Check size={12} className="text-green" />}
                       </div>
                       <span className="item-desc">{item.desc}</span>
                     </div>
@@ -663,6 +656,11 @@ export default function InputBar({
             </div>
 
             <span className="hint-kbd font-mono">Enter 发送</span>
+            {accessScope === 'full_machine' && approvalMode === 'current_project' && (
+              <span className="hint-kbd font-mono" title="Goal + 当前配置可形成 Auto Copilot">
+                Auto Copilot 就绪
+              </span>
+            )}
           </div>
 
           {/* Bottom-Right: Action Buttons */}

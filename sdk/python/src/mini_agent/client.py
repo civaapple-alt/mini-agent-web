@@ -196,8 +196,8 @@ class MiniAgentClient:
         :param cwd: Working directory for the server process (defaults to current directory).
         :param env: Additional environment variables.
         :param approval_handler: Optional async callback for handling sensitive tool approvals.
-                                 When omitted, the SDK answers with the default auto-approval
-                                 policy while still exposing approval records in stream_turn().
+                                 When omitted, the SDK denies approval requests by default
+                                 while still exposing approval records in stream_turn().
         :param log_dir: Target directory for execution logs (e.g. 'logs').
         :param log_file: Specific log file path (e.g. 'logs/01_basic_turn.log').
         :param log_level: Logging level ('DEBUG', 'INFO', logging.DEBUG, etc.).
@@ -211,6 +211,8 @@ class MiniAgentClient:
         self.env = {**file_env, **os.environ, **(env or {})}
         self.approval_handler = approval_handler
         self.notification_handler = notification_handler
+        self._access_scope = "project"
+        self._approval_mode = "per_action"
 
         # Configure file logging if log_dir, log_file or env specified
         eff_dir = log_dir or self.env.get("MINI_AGENT_LOG_DIR")
@@ -315,11 +317,11 @@ class MiniAgentClient:
         """Return True if the underlying mini-agent-app-server subprocess is active."""
         return self._proc is not None and self._proc.returncode is None
 
-    async def restart(self, profile: str = "interactive") -> dict[str, Any]:
+    async def restart(self) -> dict[str, Any]:
         """Restart the server process and re-initialize session."""
         await self.stop()
         await self.start()
-        res: dict[str, Any] = await self.initialize(profile=profile)
+        res: dict[str, Any] = await self.initialize()
         if self._active_thread_id:
             await self.start_thread(self._active_thread_id)
         return res
@@ -454,65 +456,51 @@ class MiniAgentClient:
     async def _publish_approval(self, params: dict[str, Any], phase: str) -> None:
         approval = {**params, "phase": phase}
         logger.info(
-            "[Approval] %s action: %s (id=%s, approved=%s)",
+            "[Approval] %s action: %s (id=%s, outcome=%s)",
             phase,
-            approval.get("action", ""),
+            approval.get("actionSummary", ""),
             approval.get("requestId", ""),
-            approval.get("approved", "pending"),
+            approval.get("outcome", "pending"),
         )
         for q in self._event_queues:
             await q.put({"type": "approval", "approval": approval})
 
     async def _handle_approval_request(self, params: dict[str, Any]) -> None:
         """Handle server approval/request notification."""
-        request_id = str(
-            params.get("requestId")
-            or params.get("request_id")
-            or params.get("id")
-            or ""
-        )
-        action = str(params.get("action") or params.get("tool") or "")
-        remember = False
+        request_id = str(params.get("requestId") or "")
+        response: dict[str, Any] = {
+            "requestId": request_id,
+            "decision": "deny",
+            "access": self._access_scope,
+            "approval": self._approval_mode,
+        }
         try:
             if self.approval_handler is not None:
-                import inspect
+                res = await self.approval_handler(params)
 
-                sig = inspect.signature(self.approval_handler)
-                num_params = len(sig.parameters)
-                if num_params == 1:
-                    res = await self.approval_handler(params)
-                elif num_params == 2:
-                    res = await self.approval_handler(request_id, action)
-                else:
-                    res = await self.approval_handler(request_id, action, params)
-
-                if isinstance(res, bool):
-                    approved = res
-                elif isinstance(res, dict):
-                    decision = str(res.get("decision", "")).lower()
-                    approved = decision in ("approved", "allow", "yes", "true") or bool(
-                        res.get("approved")
+                if not isinstance(res, dict):
+                    raise TypeError(
+                        "approval handler must return a typed decision object"
                     )
-                    remember = bool(res.get("remember", False))
-                elif isinstance(res, str):
-                    approved = res.lower() in ("approved", "allow", "yes", "true")
-                else:
-                    approved = bool(res)
+                decision = str(res.get("decision", "")).lower()
+                if decision not in ("approve", "deny"):
+                    raise ValueError("approval decision must be approve or deny")
+                response.update(res)
+                response["requestId"] = request_id
+                response["decision"] = decision
+                if response["access"] != params.get("access"):
+                    raise ValueError("approval access must match the request")
+                if response["approval"] not in params.get("allowedApprovalModes", []):
+                    raise ValueError("approval scope is not allowed for the request")
             else:
-                approved = True
+                response["reason"] = "No approval handler configured"
         except Exception as err:  # noqa: BLE001
             logger.error("Approval handler error: %s. Denying by default.", err)
-            approved = False
+            response["decision"] = "deny"
+            response["reason"] = str(err)
 
         try:
-            await self._send_request(
-                "approval/respond",
-                {
-                    "requestId": request_id,
-                    "approved": approved,
-                    "remember": remember,
-                },
-            )
+            await self._send_request("approval/respond", response)
         except Exception as err:  # noqa: BLE001
             logger.error("Failed to send approval response: %s", err)
 
@@ -522,7 +510,6 @@ class MiniAgentClient:
 
     async def initialize(
         self,
-        profile: str | None = "interactive",
         client_name: str = "python-sdk",
         client_version: str = "0.7.0",
         providers: dict[str, Any] | None = None,
@@ -533,8 +520,6 @@ class MiniAgentClient:
             "clientName": client_name,
             "clientVersion": client_version,
         }
-        if profile:
-            params["profile"] = profile
         if providers:
             params["providers"] = providers
 
@@ -967,15 +952,23 @@ class MiniAgentClient:
 
     async def set_world_execution(
         self,
-        approval: str = "interactive",
-        copilot: bool = False,
+        access: str = "project",
+        approval: str = "per_action",
     ) -> WorldSetExecutionResult:
-        """Configure runtime approval policy ('interactive' | 'automatic') and execution mode."""
+        """Set independent access and approval reuse scopes."""
+        if access not in ("project", "full_machine"):
+            raise ValueError("access must be project or full_machine")
+        if approval not in ("per_action", "current_session", "current_project"):
+            raise ValueError(
+                "approval must be per_action, current_session, or current_project"
+            )
+        self._access_scope = access
+        self._approval_mode = approval
         res = await self._send_request(
             "world/set_execution",
             {
+                "access": access,
                 "approval": approval,
-                "copilot": copilot,
             },
         )
         return WorldSetExecutionResult.from_dict(res)

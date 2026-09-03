@@ -19,23 +19,7 @@ if TYPE_CHECKING:
 def _ask_approval_sync(
     state: TUIState, action_desc: str, request_id: str, tool_name: str
 ) -> str:
-    """Prompt user synchronously on a dedicated thread with approval policies and session memory."""
-    # 1. Policy check: Auto-approve
-    if state.approval_policy == "auto_approve":
-        console.print(f"[dim]⚡ Auto-approved: {tool_name or request_id}[/dim]")
-        return "approved"
-
-    # 2. Policy check: Strict deny
-    if state.approval_policy == "strict":
-        console.print(
-            f"[dim red]⛔ Denied by strict policy: {tool_name or request_id}[/dim red]"
-        )
-        return "denied"
-
-    # 3. Check remembered approvals for this session
-    if tool_name and tool_name in state.remembered_approvals:
-        console.print(f"[dim green]⚡ Remembered approval: {tool_name}[/dim green]")
-        return "approved"
+    """Prompt for one typed approval; reuse is selected by the caller's scope."""
 
     if sys.platform == "win32":
         try:
@@ -57,8 +41,8 @@ def _ask_approval_sync(
     )
     choice = (
         Prompt.ask(
-            "[bold yellow]Allow execution? [y]es / [n]o / [a]lways (本会话始终放行此工具)[/bold yellow]",
-            choices=["y", "n", "a", "yes", "no", "always"],
+            "[bold yellow]Allow execution? [y]es / [n]o[/bold yellow]",
+            choices=["y", "n", "yes", "no"],
             default="n",
             show_choices=True,
         )
@@ -66,10 +50,6 @@ def _ask_approval_sync(
         .lower()
     )
 
-    if choice in ("a", "always"):
-        if tool_name:
-            state.remembered_approvals.add(tool_name)
-        return "approved"
     if choice in ("y", "yes"):
         return "approved"
     return "denied"

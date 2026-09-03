@@ -14,13 +14,8 @@ async def main():
     # 1. Start client with detailed logging enabled into logs/ directory
     async with MiniAgentClient(log_dir="logs") as client:
         # 2. Negotiate protocol and initialize
-        init_result = await client.initialize(
-            profile="interactive",
-            client_name="python-basic-demo",
-        )
-        print(
-            f"[OK] Initialized with profile: {init_result.get('profile')}", flush=True
-        )
+        await client.initialize(client_name="python-basic-demo")
+        print("[OK] App Server initialized", flush=True)
 
         # 3. Start default execution thread
         thread_id = await client.start_thread()

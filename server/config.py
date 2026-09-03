@@ -33,9 +33,6 @@ class ServerSettings:
             ]
         )
     )
-    profile: str = field(
-        default_factory=lambda: os.getenv("MINI_AGENT_PROFILE", "interactive")
-    )
     log_dir: str = field(
         default_factory=lambda: os.getenv("MINI_AGENT_LOG_DIR", "logs")
     )

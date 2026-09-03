@@ -18,7 +18,7 @@ test('api client methods construct expected fetch endpoints and payloads', async
       return {
         ok: true,
         json: async () => ({
-          settings: { profile: 'auto', approval_policy: 'auto_approve' },
+          settings: { access: 'project', approval: 'per_action' },
         }),
       };
     }
@@ -48,8 +48,16 @@ test('api client methods construct expected fetch endpoints and payloads', async
   assert.equal(calls[calls.length - 1].url, '/api/threads/t-123/items?limit=64&sort_direction=desc');
 
   // 2. Settings APIs
-  const setRes = await api.updateSettings({ profile: 'auto' });
-  assert.equal(setRes.settings.profile, 'auto');
+  const setRes = await api.updateSettings({ reasoning_effort: 'high' });
+  assert.equal(setRes.settings.access, 'project');
+
+  await api.setWorldExecution('full_machine', 'current_project');
+  const executionCall = calls[calls.length - 1];
+  assert.equal(executionCall.url, '/api/world/execution');
+  assert.deepEqual(JSON.parse(executionCall.options.body), {
+    access: 'full_machine',
+    approval: 'current_project',
+  });
 
   // 2b. Thread settings and Goal Runtime APIs
   await api.setCollaborationMode('plan');
@@ -79,13 +87,20 @@ test('api client methods construct expected fetch endpoints and payloads', async
   assert.equal(calls[calls.length - 1].options.method, 'DELETE');
 
   // 3. Approval response
-  const appRes = await api.respondApproval('req-1', 'allow', '', true);
+  const appRes = await api.respondApproval(
+    'req-1',
+    'approve',
+    'full_machine',
+    'current_project',
+    ''
+  );
   assert.equal(appRes.status, 'resolved');
   const lastCall = calls[calls.length - 1];
   const parsedBody = JSON.parse(lastCall.options.body);
   assert.equal(parsedBody.request_id, 'req-1');
-  assert.equal(parsedBody.decision, 'allow');
-  assert.equal(parsedBody.remember, true);
+  assert.equal(parsedBody.decision, 'approve');
+  assert.equal(parsedBody.access, 'full_machine');
+  assert.equal(parsedBody.approval, 'current_project');
 });
 
 test('createAgentWebSocket provides safe send and isOpen status', (t) => {

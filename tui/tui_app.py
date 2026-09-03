@@ -27,7 +27,7 @@ async def run_tui(state: TUIState) -> None:
     console.print(
         Panel.fit(
             "[bold sky_blue1]Mini Agent Terminal Studio (TUI)[/bold sky_blue1]\n"
-            f"[dim]Profile: [cyan]{state.profile}[/cyan] | Approval Policy: [yellow]{state.approval_policy}[/yellow] | Effort: [green]{state.effort}[/green][/dim]\n"
+            f"[dim]Access: [cyan]{state.access_scope}[/cyan] | Approval: [yellow]{state.approval_mode}[/yellow] | Effort: [green]{state.effort}[/green][/dim]\n"
             "[dim]Type '/help' for commands. Supports [bold yellow]Tab Autocomplete[/bold yellow]. Type '/exit' to leave.[/dim]",
             border_style="cyan",
         )
@@ -84,28 +84,29 @@ async def run_tui(state: TUIState) -> None:
         except Exception:  # noqa: BLE001
             prompt_session = None
 
-    async def _handler(
-        req: dict[str, Any] | str, action: str | None = None
-    ) -> dict[str, Any]:
-        if isinstance(req, dict):
-            action_desc = req.get("action") or str(req)
-            request_id = req.get("requestId") or req.get("request_id") or ""
-            tool_name = str(req.get("tool") or req.get("name") or "")
-        else:
-            action_desc = action or req
-            request_id = req
-            tool_name = str(action or "")
+    async def _handler(req: dict[str, Any]) -> dict[str, Any]:
+        action_desc = str(req.get("actionSummary") or "")
+        request_id = str(req.get("requestId") or "")
+        tool_name = str(req.get("toolName") or "")
 
         decision = await asyncio.to_thread(
             _ask_approval_sync, state, action_desc, request_id, tool_name
         )
-        return {"decision": decision}
+        return {
+            "decision": "approve" if decision == "approved" else "deny",
+            "access": state.access_scope,
+            "approval": state.approval_mode,
+        }
 
     console.print("[dim]Connecting to App Server...[/dim]")
     async with MiniAgentClient(log_dir="logs", approval_handler=_handler) as client:
-        init_res = await client.initialize(profile=state.profile)
+        init_res = await client.initialize()
+        await client.set_world_execution(
+            access=state.access_scope,
+            approval=state.approval_mode,
+        )
         console.print(
-            f"[green]✓ Connected to {init_res.get('serverName')} v{init_res.get('serverVersion')} (Profile: {state.profile})[/green]\n"
+            f"[green]✓ Connected to {init_res.get('serverName')} v{init_res.get('serverVersion')}[/green]\n"
         )
         await client.start_thread(state.runtime_thread_id)
         if state.current_thread_id != state.runtime_thread_id:
@@ -116,10 +117,8 @@ async def run_tui(state: TUIState) -> None:
                 console.print(
                     "[dim yellow]⚡ App Server disconnected, auto-reconnecting...[/dim yellow]"
                 )
-                await client.restart(profile=state.profile)
-                console.print(
-                    f"[dim green]✓ Reconnected to App Server (Profile: {state.profile})[/dim green]"
-                )
+                await client.restart()
+                console.print("[dim green]✓ Reconnected to App Server[/dim green]")
 
         consecutive_interrupts = 0
 
@@ -239,19 +238,18 @@ def main() -> None:
     )
     parser.add_argument(
         "-p",
-        "--profile",
-        choices=["interactive", "auto", "ask"],
-        default="interactive",
-        help="Startup system profile: interactive (default), auto, ask",
+        "--access",
+        choices=["project", "full_machine"],
+        default="project",
+        help="Access scope: project (default) or full_machine",
     )
     parser.add_argument(
         "-a",
-        "--policy",
-        "--approval-policy",
-        dest="approval_policy",
-        choices=["per_action", "auto_approve", "strict"],
+        "--approval",
+        dest="approval_mode",
+        choices=["per_action", "current_session", "current_project"],
         default="per_action",
-        help="Security approval policy: per_action (default), auto_approve, strict",
+        help="Approval reuse scope",
     )
     parser.add_argument(
         "-e",
@@ -270,8 +268,8 @@ def main() -> None:
 
     args = parser.parse_args()
     state = TUIState(
-        profile=args.profile,
-        approval_policy=args.approval_policy,
+        access_scope=args.access,
+        approval_mode=args.approval_mode,
         effort=args.effort,
         current_thread_id=args.thread_id,
     )

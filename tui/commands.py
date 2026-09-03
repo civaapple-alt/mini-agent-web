@@ -54,21 +54,16 @@ def print_help_table(state: TUIState) -> None:
         "向当前正在执行的轮次注入实时纠偏指令 (别名: /guide)",
     )
 
-    # 3. 安全与审批策略
+    # 3. 安全与审批范围
     table.add_row(
         "安全与审批",
-        "/policy [mode]",
-        f"切换审批策略: per_action, auto_approve, strict (别名: /approve | 当前: [bold cyan]{state.approval_policy}[/bold cyan])",
+        "/approval [scope]",
+        f"切换批准复用范围: per_action, current_session, current_project (当前: [bold cyan]{state.approval_mode}[/bold cyan])",
     )
     table.add_row(
         "",
-        "/clear-approvals",
-        f"清空已记住的工具放行缓存 (当前记住: {len(state.remembered_approvals)} 个)",
-    )
-    table.add_row(
-        "",
-        "/profile [mode]",
-        f"查看或切换系统 Profile: interactive, auto, ask (当前: [bold cyan]{state.profile}[/bold cyan])",
+        "/access [scope]",
+        f"切换访问范围: project, full_machine (当前: [bold cyan]{state.access_scope}[/bold cyan])",
     )
 
     # 4. 会话与多分支管理
@@ -268,12 +263,8 @@ async def handle_slash_command(
         table.add_column("Value", style="white")
         table.add_row("Server", server_info)
         table.add_row("Workspace Root", str(Path.cwd().resolve()))
-        table.add_row("Active Profile", state.profile)
-        table.add_row("Approval Policy", state.approval_policy)
-        table.add_row(
-            "Remembered Approvals",
-            f"{len(state.remembered_approvals)} tools",
-        )
+        table.add_row("Access Scope", state.access_scope)
+        table.add_row("Approval Scope", state.approval_mode)
         table.add_row("Reasoning Effort", state.effort)
         table.add_row("Active Thread", state.current_thread_id)
         table.add_row(
@@ -403,86 +394,48 @@ async def handle_slash_command(
         console.print(table)
         return True
 
-    if lower_text.startswith("/profile"):
+    if lower_text.startswith("/access"):
         parts = text.split(maxsplit=1)
         if len(parts) > 1:
-            target_profile = parts[1].strip().lower()
-            if target_profile in ("interactive", "auto", "ask"):
-                try:
-                    if target_profile == "ask":
-                        await client.set_collaboration_mode(
-                            "plan", thread_id=state.runtime_thread_id
-                        )
-                    else:
-                        await client.set_collaboration_mode(
-                            "default", thread_id=state.runtime_thread_id
-                        )
-                except Exception as err:  # noqa: BLE001
-                    console.print(f"[red]Failed to switch profile: {err}[/red]")
-                else:
-                    state.profile = target_profile
-                    console.print(
-                        f"[green]✓ System Profile switched to: [bold]{state.profile}[/bold][/green]"
-                    )
-            else:
+            target_access = parts[1].strip().lower()
+            if target_access in ("project", "full_machine"):
+                state.access_scope = target_access
                 console.print(
-                    "[yellow]Invalid profile. Choose from: interactive, auto, ask[/yellow]"
-                )
-        else:
-            table = Table(
-                title="Mini Agent System Profiles",
-                border_style="cyan",
-            )
-            table.add_column("Profile ID", style="bold sky_blue1", width=16)
-            table.add_column("Status", style="green", width=12)
-            table.add_column("说明与适用场景", style="white")
-            table.add_row(
-                "interactive",
-                "✓ Active" if state.profile == "interactive" else "",
-                "日常人机结对协作与单步工具把控 (默认/推荐)",
-            )
-            table.add_row(
-                "auto",
-                "✓ Active" if state.profile == "auto" else "",
-                "目标驱动多里程碑无人值守收敛",
-            )
-            table.add_row(
-                "ask",
-                "✓ Active" if state.profile == "ask" else "",
-                "严格只读问答与架构探索 (支持 /plan)",
-            )
-            console.print(table)
-            console.print(
-                "[dim]用法: [cyan]/profile <interactive | auto | ask>[/cyan][/dim]"
-            )
-        return True
-
-    if lower_text.startswith(("/policy", "/approve")):
-        parts = text.split(maxsplit=1)
-        if len(parts) > 1:
-            target_policy = parts[1].strip().lower()
-            if target_policy in ("per_action", "auto_approve", "strict"):
-                state.approval_policy = target_policy
-                console.print(
-                    f"[green]✓ Approval policy switched to: [bold]{state.approval_policy}[/bold][/green]"
+                    f"[green]✓ Access scope switched to: [bold]{state.access_scope}[/bold][/green]"
                 )
             else:
                 console.print(
-                    "[yellow]Invalid policy. Choose from: per_action, auto_approve, strict[/yellow]"
+                    "[yellow]Invalid access scope. Choose from: project, full_machine[/yellow]"
                 )
         else:
             console.print(
-                f"[sky_blue1]Current Approval Policy: [bold]{state.approval_policy}[/bold]\n"
-                f"Remembered Tool Approvals: {len(state.remembered_approvals)}\n"
-                "[dim]Usage: /policy <per_action | auto_approve | strict>[/dim][/sky_blue1]"
+                f"[sky_blue1]Current Access Scope: [bold]{state.access_scope}[/bold]\n"
+                "[dim]Usage: /access <project | full_machine>[/dim][/sky_blue1]"
             )
         return True
 
-    if lower_text == "/clear-approvals":
-        state.remembered_approvals.clear()
-        console.print(
-            "[green]✓ Cleared all remembered tool approvals for this session.[/green]"
-        )
+    if lower_text.startswith("/approval"):
+        parts = text.split(maxsplit=1)
+        if len(parts) > 1:
+            target_approval = parts[1].strip().lower()
+            if target_approval in (
+                "per_action",
+                "current_session",
+                "current_project",
+            ):
+                state.approval_mode = target_approval
+                console.print(
+                    f"[green]✓ Approval scope switched to: [bold]{state.approval_mode}[/bold][/green]"
+                )
+            else:
+                console.print(
+                    "[yellow]Invalid approval scope. Choose from: per_action, current_session, current_project[/yellow]"
+                )
+        else:
+            console.print(
+                f"[sky_blue1]Current Approval Scope: [bold]{state.approval_mode}[/bold]\n"
+                "[dim]Usage: /approval <per_action | current_session | current_project>[/dim][/sky_blue1]"
+            )
         return True
 
     if lower_text.startswith("/plan"):

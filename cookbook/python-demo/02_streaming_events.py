@@ -14,7 +14,7 @@ async def main():
     print("=== Demo 02: Deep Event Stream Inspection ===", flush=True)
 
     async with MiniAgentClient(log_dir="logs") as client:
-        await client.initialize(profile="interactive")
+        await client.initialize()
         await client.start_thread()
 
         prompt = "Inspect the current directory, check files, and tell me the project structure."
@@ -26,10 +26,10 @@ async def main():
             if item["type"] == "approval":
                 approval = item.get("approval", {})
                 phase = approval.get("phase", "unknown")
-                approved = approval.get("approved", "pending")
+                outcome = approval.get("outcome", "pending")
                 print(
-                    f"[Approval {phase}] {approval.get('action', '')} "
-                    f"(id={approval.get('requestId', '')}, approved={approved})",
+                    f"[Approval {phase}] {approval.get('actionSummary', '')} "
+                    f"(id={approval.get('requestId', '')}, outcome={outcome})",
                     flush=True,
                 )
                 continue

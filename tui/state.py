@@ -44,10 +44,9 @@ class TurnMetrics:
 class TUIState:
     """Runtime mutable state for the active TUI session."""
 
-    profile: str = "interactive"  # interactive | auto | ask
-    approval_policy: str = "per_action"  # per_action | auto_approve | strict
+    access_scope: str = "project"  # project | full_machine
+    approval_mode: str = "per_action"  # per_action | current_session | current_project
     effort: str = "medium"  # low | medium | high
-    remembered_approvals: set[str] = field(default_factory=set)
     # The bundled App Server binds settings and Goal Runtime to its default
     # runtime Thread. Conversation threads may still be switched independently.
     runtime_thread_id: str = "default"

@@ -220,7 +220,7 @@
   opacity: 0.9;
 }
 
-.btn-approve-remember {
+.btn-approve-scope {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -234,7 +234,7 @@
   transition: all 0.15s ease;
 }
 
-.btn-approve-remember:hover {
+.btn-approve-scope:hover {
   background-color: rgba(16, 185, 129, 0.12);
 }
 

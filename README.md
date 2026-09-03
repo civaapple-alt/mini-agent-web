@@ -23,10 +23,9 @@ README。贡献规则从 [`AGENTS.md`](AGENTS.md) 开始。
 ## 运行关系
 
 ```text
-Web Studio ── REST / WebSocket ──> server ──┐
-                                            ├─ Python SDK ── Stdio JSON-RPC ──> App Server
-TUI ────────────────────────────> Python SDK ┘
-Cookbook ───────────────────────> Python SDK
+Web Studio (browser) ── REST / WebSocket ──> FastAPI Server ──> Python SDK ── Stdio JSON-RPC ──> App Server
+TUI ── direct dependency ────────────────────────────────> Python SDK ── Stdio JSON-RPC ──> App Server
+Cookbook ── direct dependency ──────────────────────────> Python SDK ── Stdio JSON-RPC ──> App Server
 ```
 
 - App Server 拥有 Thread、Turn、Goal 与 ThreadItem 的运行时语义；

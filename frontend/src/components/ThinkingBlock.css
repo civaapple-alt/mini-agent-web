@@ -111,11 +111,12 @@
 
 .cursor-blink {
   display: inline-block;
-  width: 5px;
+  width: 2px;
   height: 12px;
   background-color: var(--accent-sky);
   margin-left: 4px;
   vertical-align: middle;
+  border-radius: 1px;
   animation: blink 1s step-start infinite;
 }
 

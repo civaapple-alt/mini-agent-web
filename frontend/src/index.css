@@ -232,12 +232,16 @@ body.theme-cyberpunk .markdown-content pre {
   50% { opacity: 0; }
 }
 
-.cursor-blink::after {
-  content: '▋';
-  color: var(--accent-green);
+.markdown-content.cursor-blink::after {
+  content: '';
   display: inline-block;
-  margin-left: 2px;
-  animation: blink 1s infinite;
+  width: 2px;
+  height: 1.15em;
+  background-color: var(--accent-green, #10a37f);
+  vertical-align: -2px;
+  margin-left: 3px;
+  border-radius: 1px;
+  animation: blink 0.9s ease-in-out infinite;
 }
 
 /* Universal Studio Floating Tooltips */

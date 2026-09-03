@@ -210,8 +210,8 @@ export default function MessageItem({
               </div>
             )}
 
-            {(text || isStreamingThis) && (
-              <div className={`markdown-content ${isStreamingThis ? 'cursor-blink' : ''}`}>
+            {(text || (isStreamingThis && tools.length === 0)) && (
+              <div className={`markdown-content ${isStreamingThis && tools.length === 0 ? 'cursor-blink' : ''}`}>
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {text || ''}
                 </ReactMarkdown>

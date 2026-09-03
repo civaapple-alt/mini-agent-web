@@ -253,3 +253,55 @@ def test_gateway_websocket_turn_mode_sanitation(test_app):
 
         assert len(captured_modes) == 2
         assert captured_modes[1] == "start"
+
+
+@pytest.mark.asyncio
+async def test_gateway_persisted_checkpoint_rehydration(test_app):
+    """Verify that an existing persisted checkpoint rehydrates a thread across restarts."""
+    from mini_agent.types import ThreadCheckpoint
+
+    # Save a mock checkpoint to disk
+    persisted_data = {
+        "thread_id": "test-persisted",
+        "status": "idle",
+        "next_turn_number": 2,
+        "messages": [
+            {"role": "user", "text": "hi"},
+            {"role": "assistant", "text": "hello back", "reasoning": "greeting"},
+        ],
+    }
+    session_manager.save_thread_checkpoint("test-persisted", persisted_data)
+    session_manager.set_thread_meta("test-persisted", {"title": "Persisted Session"})
+
+    # Setup mock client that initially reports empty thread or unknown thread
+    mock_client = AsyncMock()
+    empty_cp = ThreadCheckpoint(
+        thread_id="test-persisted",
+        messages=[],
+        status="idle",
+        next_turn_number=1,
+    )
+    rehydrated_cp = ThreadCheckpoint(
+        thread_id="test-persisted",
+        messages=[
+            {"role": "user", "text": "hi"},
+            {"role": "assistant", "text": "hello back"},
+        ],
+        status="idle",
+        next_turn_number=2,
+    )
+
+    # First read_thread returns empty live thread, so it must trigger resume_thread
+    mock_client.read_thread = AsyncMock(side_effect=[empty_cp, rehydrated_cp])
+    mock_client.resume_thread = AsyncMock()
+    session_manager._client = mock_client
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/api/threads/test-persisted")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["thread_id"] == "test-persisted"
+        assert len(data["messages"]) == 2
+        assert data["messages"][0]["text"] == "hi"
+        mock_client.resume_thread.assert_awaited_once()

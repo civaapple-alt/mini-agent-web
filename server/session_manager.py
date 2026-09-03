@@ -395,6 +395,18 @@ class SessionManager:
             )
             self._initialized = True
 
+            # Auto-rehydrate default thread if a persisted checkpoint exists
+            default_cp = self.get_thread_checkpoint("default")
+            if default_cp and any(
+                isinstance(m, dict) and m.get("role") in ("user", "assistant")
+                for m in default_cp.get("messages", [])
+            ):
+                try:
+                    await self._client.resume_thread("default", default_cp)
+                    logger.info("Rehydrated default thread from persisted checkpoint")
+                except Exception as err:  # noqa: BLE001
+                    logger.debug("Could not resume default thread on startup: %s", err)
+
     async def stop(self) -> None:
         """Stop the background MiniAgentClient and close WebSocket connections."""
         async with self._lock:
@@ -476,6 +488,30 @@ class SessionManager:
                     "messages": getattr(checkpoint_data, "messages", []),
                     "status": getattr(checkpoint_data, "status", "active"),
                 }
+
+            # Guard against overwriting an existing populated checkpoint with an empty one
+            new_msgs = data.get("messages", [])
+            user_facing_new = [
+                m
+                for m in new_msgs
+                if (isinstance(m, dict) and m.get("role") in ("user", "assistant"))
+                or (
+                    hasattr(m, "role")
+                    and getattr(m, "role", None) in ("user", "assistant")
+                )
+            ]
+            existing = self.get_thread_checkpoint(thread_id)
+            if existing:
+                existing_msgs = existing.get("messages", [])
+                user_facing_existing = [
+                    m
+                    for m in existing_msgs
+                    if isinstance(m, dict) and m.get("role") in ("user", "assistant")
+                ]
+                if user_facing_existing and not user_facing_new:
+                    # Do not wipe existing conversation history
+                    return
+
             cp_file.write_text(
                 json.dumps(to_json_serializable(data), indent=2, ensure_ascii=False),
                 encoding="utf-8",

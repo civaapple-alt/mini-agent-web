@@ -15,9 +15,9 @@
   包含 App Server JSON-RPC 2.0 协议全景覆盖矩阵、SDK 0.7.0 事件/ThreadItem 覆盖和 Cookbook 确定性/live 验收边界。
 * 🧪 [**Python Cookbook (`cookbook/python-demo/README.md`)**](../cookbook/python-demo/README.md)
   包含 Demo 01–05 的 Provider 依赖说明，以及 Demo 06 的无 Provider、无 Token 协议验证。
-* 📈 [**客户端架构与性能全景对比 (`docs/client-architectures-and-performance-comparison.md`)**](client-architectures-and-performance-comparison.md)  
+* 📈 [**客户端架构与性能全景对比 (`docs/adr/implemented/2026-09-02-client-architectures-and-performance-comparison.md`)**](adr/implemented/2026-09-02-client-architectures-and-performance-comparison.md)
   包含 Rust 原生 REPL、Python TUI 与 Web Studio 在进程模型、通信通道、启动延迟、内存开销与适用场景上的多维度系统性对比。
-* 🛠️ [**App Server 并发死锁与流式挂起根因剖析 (`docs/app-server-concurrency-and-deadlock-analysis.md`)**](app-server-concurrency-and-deadlock-analysis.md)  
+* 🛠️ [**App Server 并发死锁与流式挂起根因剖析 (`docs/adr/implemented/2026-08-31-app-server-concurrency-and-deadlock-analysis.md`)**](adr/implemented/2026-08-31-app-server-concurrency-and-deadlock-analysis.md)
   深入剖析并记录了 Tokio 多线程运行时阻塞、Transport Actor 自锁、SSE Keep-Alive 挂起及子进程 Stdin 继承等 4 个底层死锁机制与加固方案。
 
 ---
@@ -28,6 +28,8 @@
 | :--- | :---: | :--- | :--- |
 | 2026-08-31 | Accepted | [Python SDK Architecture & App Server Integration](adr/2026-08-31-python-sdk-architecture-and-app-server-integration.md) | 建立官方 `mini-agent` Python SDK，采用强类型事件体系与异步上下文管理器，对齐 Codex 架构分层 |
 | 2026-08-31 | Accepted | [FastAPI Gateway & Web Studio UI](adr/2026-08-31-fastapi-gateway-and-web-studio-ui.md) | 基于 FastAPI、WebSocket/SSE 与零构建轻量 Web 前端构建 Web Studio 交互控制台与终端 TUI |
+| 2026-08-31 | Implemented | [App Server Concurrency & Deadlock Hardening](adr/implemented/2026-08-31-app-server-concurrency-and-deadlock-analysis.md) | 根治 Tokio 单线程阻塞、Transport Actor 自锁、SSE Keep-Alive 挂起与子进程 Stdin 继承死锁 |
+| 2026-09-02 | Implemented | [Client Architectures & Performance Comparison](adr/implemented/2026-09-02-client-architectures-and-performance-comparison.md) | 深入对比 Rust REPL、Python TUI 与 Web Studio 的进程模型、通信通道、内存与时延指标 |
 | 2026-09-02 | Proposed | [Tauri Desktop Shell for Mini Agent](adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md) | 以 sidecar-first 方式复用 React UI，规划桌面 transport、窗口/托盘、通知、工作区约束与跨平台 fallback |
 | 2026-09-02 | Proposed | [Rust Native TUI for Mini Agent](adr/proposed/2026-09-02-rust-native-tui-ratatui-architecture.md) | 规划由 Rust workspace 负责的 Ratatui 全屏 TUI，明确 App Server 复用、TEA reducer、终端恢复、性能测量与测试门槛 |
 | 2026-09-02 | Proposed | [Local Web Studio Evolution](adr/proposed/2026-09-02-local-web-studio-evolution-and-roadmap.md) | 分阶段交付有界的 Diff/Artifact、工作区树、loopback 预览、Goal 投影、Mention、预算提示与结构化审批 |

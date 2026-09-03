@@ -1,5 +1,9 @@
-# Mini Agent 客户端架构与性能全景对比分析
-(Rust REPL vs Python TUI vs Web Studio)
+# ADR: Mini Agent 客户端架构与性能全景对比分析 (Client Architectures & Performance)
+
+* **日期**: 2026-09-02
+* **状态**: Implemented
+* **范围**: 客户端交互层 (Rust REPL / Python TUI / Web Studio)
+* **上下文**: 对 Mini Agent 生态中已落地的三种客户端（Rust 原生 REPL、Python TUI Studio、Web Studio）的技术架构、通信拓扑、进程模型与性能指标进行系统性全景对比与选型决策。
 
 ## 一、概述
 

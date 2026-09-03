@@ -1,6 +1,9 @@
-# Mini Agent App Server 并发死锁与流式挂起根因剖析与加固
+# ADR: Mini Agent App Server 并发死锁与流式挂起根因剖析与加固
 
-在 `mini-agent-web` 与 `mini-codex`（`mini-agent-app-server`）进行 Stdio JSON-RPC 2.0 联调与全流程验证过程中，我们定位并修复了 4 个底层的死锁与连接挂起隐患。本文档详细记录其机制、复现条件与修复方案，作为系统并发设计与故障排查的重要参考。
+* **日期**: 2026-08-31
+* **状态**: Implemented
+* **范围**: App Server Runtime / JSON-RPC 传输层 / 子进程隔离
+* **上下文**: 在 `mini-agent-web` 与 `mini-codex`（`mini-agent-app-server`）进行 Stdio JSON-RPC 2.0 联调与全流程验证过程中，定位并修复了 4 个底层的并发死锁与长连接流式挂起隐患。本文档详细记录其机制、复现条件与修复方案，作为系统并发设计与故障排查的重要参考。
 
 ---
 

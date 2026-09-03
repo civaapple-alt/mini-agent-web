@@ -73,7 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tauri 2.0 Desktop Application Proposal**:
   - Drafted ADR proposal for Mini Agent Native Desktop Application (`docs/adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md`).
 - **Client Architecture & Performance Analysis Doc**:
-  - Published multi-dimensional comparison analyzing Rust REPL, Python TUI, and Web Studio (`docs/client-architectures-and-performance-comparison.md`).
+  - Published multi-dimensional comparison analyzing Rust REPL, Python TUI, and Web Studio (`docs/adr/implemented/2026-09-02-client-architectures-and-performance-comparison.md`).
 
 #### Fixed
 
@@ -152,7 +152,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive Documentation (`docs/`)**:
   - `docs/python-sdk-guide.md`: Official developer guide and usage manual.
   - `docs/sdk-maturity-and-protocol-coverage.md`: SDK maturity radar and JSON-RPC 2.0 protocol coverage matrix.
-  - `docs/app-server-concurrency-and-deadlock-analysis.md`: Deep dive on Tokio multi-thread runtime, Actor self-deadlock, SSE keep-alive drain, and child process isolation.
+  - `docs/adr/implemented/2026-08-31-app-server-concurrency-and-deadlock-analysis.md`: Deep dive on Tokio multi-thread runtime, Actor self-deadlock, SSE keep-alive drain, and child process isolation.
   - `docs/adr/2026-08-31-python-sdk-architecture-and-app-server-integration.md`: Architecture Decision Record aligning with OpenAI Codex client separation.
 
 ### Fixed & Hardened (Backend Engine Alignment)

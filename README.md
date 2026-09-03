@@ -259,9 +259,8 @@ mini-agent-web/
 │
 ├── docs/                      # 核心文档与架构记录
 │   ├── README.md                              # 文档导航中心
-│   ├── python-sdk-guide.md                    # 官方开发者指南
-│   ├── sdk-maturity-and-protocol-coverage.md  # 协议覆盖与成熟度报告
-│   └── app-server-concurrency-and-deadlock-analysis.md # 并发死锁与加固剖析
+│   ├── adr/                                   # 架构决策记录 (implemented / proposed)
+│   └── python-sdk-guide.md                    # 官方开发者指南
 │
 ├── logs/                      # 运行时隔离日志 (git-ignored)
 ├── CHANGELOG.md               # 版本变更记录
@@ -276,8 +275,9 @@ mini-agent-web/
 
 * 📟 [**终端 TUI 工作室文档 (`tui/README.md`)**](tui/README.md)：架构分层、Tab 补全、`/steer` 实时纠偏、`/fork` 分支与命令参考。
 * 🎨 [**Web UI 前端工程文档 (`frontend/README.md`)**](frontend/README.md)：React 19 组件树、ThinkingBlock、ToolCard、Toast 通知与 WebSocket API。
-* 🌐 [**FastAPI 网关服务文档 (`server/README.md`)**](server/README.md)：RESTful API、`/ws/agent` 双向全双工通道与 `SessionManager` 连接管理。
-* 📈 [**客户端架构与性能全景对比 (`docs/client-architectures-and-performance-comparison.md`)**](docs/client-architectures-and-performance-comparison.md)：Rust REPL、Python TUI 与 Web Studio 多维度深度对比分析。
+* 📈 [**客户端架构与性能全景对比 ADR (`docs/adr/implemented/2026-09-02-client-architectures-and-performance-comparison.md`)**](docs/adr/implemented/2026-09-02-client-architectures-and-performance-comparison.md)：Rust REPL、Python TUI 与 Web Studio 多维度深度对比分析。
+* 🛠️ [**App Server 并发死锁与加固 ADR (`docs/adr/implemented/2026-08-31-app-server-concurrency-and-deadlock-analysis.md`)**](docs/adr/implemented/2026-08-31-app-server-concurrency-and-deadlock-analysis.md)：Tokio 运行时阻塞、Transport Actor 自锁、SSE Keep-Alive 挂起及子进程隔离根治。
+* 🏛️ [**SDK 0.7.0 适配评审与控制面演进 ADR (`docs/adr/implemented/2026-09-03-sdk-0.7.0-alignment-review-and-control-plane-evolution.md`)**](docs/adr/implemented/2026-09-03-sdk-0.7.0-alignment-review-and-control-plane-evolution.md)：系统评审 0.7.0 适配成效，解耦运行时线程绑定，落地 Builtin Tools 选择器与全量 ThreadItem 投影。
 * 💡 [**Tauri 原生桌面 Shell 提案 (`docs/adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md`)**](docs/adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md)：以 App Server sidecar 为首选，规划 React transport、桌面原生能力、工作区约束与跨平台 fallback。
 * 📟 [**Rust 原生 TUI 架构提案 (`docs/adr/proposed/2026-09-02-rust-native-tui-ratatui-architecture.md`)**](docs/adr/proposed/2026-09-02-rust-native-tui-ratatui-architecture.md)：基于 Ratatui + Tokio + TEA reducer 的全屏 TUI 方案，强调协议复用、终端恢复与可测性能目标。
 * 🌐 [**本地 Web Studio 演进路线提案 (`docs/adr/proposed/2026-09-02-local-web-studio-evolution-and-roadmap.md`)**](docs/adr/proposed/2026-09-02-local-web-studio-evolution-and-roadmap.md)：分阶段完善有界 Diff/Artifact、工作区树、loopback 预览、Goal 投影与安全审批。

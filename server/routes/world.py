@@ -319,9 +319,15 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
         has_builtin_selection = isinstance(workflow_payload, dict) and (
             "builtinTools" in workflow_payload or "builtin_tools" in workflow_payload
         )
-        effective_builtin_tools = (
-            wf.builtin_tools if has_builtin_selection else DEFAULT_BUILTIN_TOOLS
-        )
+        target_thread = thread_id or "default"
+        if target_thread in session_manager._thread_builtin_tools:
+            effective_builtin_tools = session_manager._thread_builtin_tools[
+                target_thread
+            ]
+        else:
+            effective_builtin_tools = (
+                wf.builtin_tools if has_builtin_selection else DEFAULT_BUILTIN_TOOLS
+            )
         return {
             "collaboration_mode": {"mode": wf.collaboration_mode.mode},
             "builtin_tools": effective_builtin_tools,
@@ -341,6 +347,8 @@ async def update_thread_settings(req: UpdateThreadSettingsRequest) -> dict[str, 
             builtin_tools=req.builtin_tools,
             thread_id=req.thread_id,
         )
+        target_thread = req.thread_id or "default"
+        session_manager._thread_builtin_tools[target_thread] = res.builtin_tools
         return {
             "collaboration_mode": {"mode": res.collaboration_mode.mode},
             "builtin_tools": res.builtin_tools,

@@ -27,12 +27,14 @@ def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     orig_cur_id = session_manager._current_project_id
     orig_cur_path = session_manager._current_project_path
     orig_settings = dict(session_manager._settings)
+    orig_builtin_tools = dict(getattr(session_manager, "_thread_builtin_tools", {}))
 
     # Point to isolated test state
     session_manager._state_dir = test_state_dir
     session_manager._state_file = test_state_dir / "state.json"
     session_manager._projects_registry = {}
     session_manager._thread_metadata = {}
+    session_manager._thread_builtin_tools = {}
     session_manager._load_state()
 
     yield
@@ -42,6 +44,7 @@ def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     session_manager._state_file = orig_state_file
     session_manager._projects_registry = orig_projects
     session_manager._thread_metadata = orig_threads
+    session_manager._thread_builtin_tools = orig_builtin_tools
     session_manager._current_project_id = orig_cur_id
     session_manager._current_project_path = orig_cur_path
     session_manager._settings = orig_settings

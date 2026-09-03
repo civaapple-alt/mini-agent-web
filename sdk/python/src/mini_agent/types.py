@@ -299,12 +299,22 @@ class ThreadGoal:
         )
 
 
+DEFAULT_BUILTIN_TOOLS: list[str] = [
+    "read_file",
+    "apply_patch",
+    "shell",
+    "read_image",
+]
+
+
 @dataclass
 class WorkflowState:
     """Read-only workflow projection using the Codex-shaped settings model."""
 
     collaboration_mode: CollaborationMode = field(default_factory=CollaborationMode)
-    builtin_tools: list[str] = field(default_factory=list)
+    builtin_tools: list[str] = field(
+        default_factory=lambda: list(DEFAULT_BUILTIN_TOOLS)
+    )
     goal: ThreadGoal | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -317,7 +327,11 @@ class WorkflowState:
         builtin_tools = (
             val["builtinTools"]
             if "builtinTools" in val
-            else val.get("builtin_tools", [])
+            else (
+                val["builtin_tools"]
+                if "builtin_tools" in val
+                else list(DEFAULT_BUILTIN_TOOLS)
+            )
         )
         return cls(
             collaboration_mode=CollaborationMode.from_dict(mode_data),

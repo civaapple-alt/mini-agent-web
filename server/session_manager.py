@@ -70,6 +70,7 @@ class SessionManager:
         # Active turn & task tracking for responsive interrupts
         self._active_turns: dict[str, str] = {}
         self._active_tasks: dict[str, asyncio.Task[Any]] = {}
+        self._thread_builtin_tools: dict[str, list[str]] = {}
 
         # Runtime system settings
         self._settings: dict[str, Any] = {

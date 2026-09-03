@@ -219,6 +219,16 @@ export default function App() {
       return;
     }
 
+    if (data.type === 'steer_ack') {
+      showToast('✓ 纠偏指令已下发，模型正在安全结算转向...', 'info', 2000);
+      return;
+    }
+
+    if (data.type === 'error') {
+      showToast(`⚠️ ${data.message || '操作异常'}`, 'error', 4000);
+      return;
+    }
+
     // 2. Security Approval Interception
     if (data.type === 'approval_request') {
       setPendingApproval({
@@ -268,9 +278,13 @@ export default function App() {
         evt.type === 'run_finished' ||
         evt.type === 'run_failed'
       ) {
-        setIsGenerating(false);
-        setActiveTurnId(null);
-        loadThreads();
+        if (evt.type === 'turn_finished' && evt.stop_reason === 'steered') {
+          showToast('✓ 纠偏已生效，正在应用新指令继续生成...', 'info', 2500);
+        } else {
+          setIsGenerating(false);
+          setActiveTurnId(null);
+          loadThreads();
+        }
       }
       setMessages((prev) => aggregateStreamEvent(prev, data));
     }
@@ -372,6 +386,23 @@ export default function App() {
   };
 
   const handleSteerMessage = (text) => {
+    // 1. Render user's steer prompt in chat log immediately so it is clearly visible
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: 'user_steer_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        role: 'user',
+        text,
+        isSteer: true,
+        images: [],
+        referencedFiles: [],
+        thinking: '',
+        tools: [],
+        blocks: [{ type: 'text', content: text }],
+      },
+    ]);
+
+    // 2. Transmit steer action over WebSocket
     if (wsRef.current) {
       wsRef.current.send({
         action: 'steer',

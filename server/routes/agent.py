@@ -287,9 +287,11 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 )
 
             elif action == "steer":
-                turn_id = data.get("turnId")
+                thread_id = data.get("threadId") or "default"
+                turn_id = data.get("turnId") or session_manager.get_active_turn(
+                    thread_id
+                )
                 text = data.get("text", "")
-                thread_id = data.get("threadId")
                 if turn_id:
                     try:
                         await session_manager.client.steer_turn(
@@ -299,9 +301,17 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                             {"type": "steer_ack", "turnId": turn_id}
                         )
                     except Exception as err:  # noqa: BLE001
+                        logger.warning("Failed to steer turn %s: %s", turn_id, err)
                         await websocket.send_json(
-                            {"type": "error", "message": str(err)}
+                            {"type": "error", "message": f"纠偏下发失败: {err}"}
                         )
+                else:
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "message": "无法执行纠偏：当前没有正在执行的任务轮次",
+                        }
+                    )
 
             elif action == "interrupt":
                 thread_id = data.get("threadId") or "default"

@@ -737,6 +737,9 @@ class MiniAgentClient:
             if not start_resp.turn_id:
                 return
 
+            active_turn_id = start_resp.turn_id
+            steered = False
+
             while True:
                 envelope = await queue.get()
                 if envelope.get("type") == "approval":
@@ -762,8 +765,13 @@ class MiniAgentClient:
                 if envelope.get("threadId") != target_thread:
                     continue
                 turn_id = envelope.get("turnId")
-                if start_resp.turn_id and turn_id != start_resp.turn_id:
-                    continue
+                if active_turn_id and turn_id != active_turn_id:
+                    if steered:
+                        active_turn_id = turn_id
+                        steered = False
+                    else:
+                        continue
+
                 event_dict = envelope.get("event", {})
                 sequence = envelope.get("sequence", 0)
                 item_dicts = envelope.get("items", [])
@@ -781,7 +789,13 @@ class MiniAgentClient:
                 }
 
                 event_type = event_dict.get("type")
-                if event_type in ("turn_finished", "run_failed"):
+                stop_reason = event_dict.get("stop_reason")
+                if event_type == "turn_finished":
+                    if stop_reason == "steered":
+                        steered = True
+                        continue
+                    break
+                elif event_type == "run_failed":
                     break
         finally:
             self._event_queues.remove(queue)

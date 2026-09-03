@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Copy, Check, Sparkles, RotateCcw, Layers } from 'lucide-react';
+import { Copy, Check, Sparkles, RotateCcw, Layers, Navigation } from 'lucide-react';
 import ThinkingBlock from './ThinkingBlock';
 import ToolCard from './ToolCard';
 
@@ -90,7 +90,15 @@ export default function MessageItem({
             </div>
           )}
 
-          <div className="user-bubble">{text}</div>
+          <div className="user-bubble">
+            {message.isSteer && (
+              <span className="steer-tag font-mono">
+                <Navigation size={10} style={{ marginRight: 3, verticalAlign: '-1px' }} />
+                实时纠偏
+              </span>
+            )}
+            {text}
+          </div>
           <div className="user-actions">
             <button
               className="msg-action-btn"

@@ -404,16 +404,36 @@ export default function Sidebar({
 
   return (
     <aside className="codex-sidebar">
-      {/* 0. Top Entry: 新建会话 (支持选择所属项目) */}
+      {/* 1. Header: Codex ⌵ | Search */}
+      <div className="sidebar-top-bar">
+        <div className="codex-brand-dropdown">
+          <span className="brand-name">Codex</span>
+          <ChevronRight size={13} className="brand-chevron" style={{ transform: 'rotate(90deg)' }} />
+        </div>
+        <div className="top-bar-icons">
+          <button
+            className={`top-icon-btn ${showSearchBox ? 'active' : ''}`}
+            onClick={() => {
+              setShowSearchBox(!showSearchBox);
+              if (showSearchBox) setSearchQuery('');
+            }}
+            title="搜索会话"
+          >
+            <Search size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Top Nav Action: 新对话 (支持直接新建或选择所属项目) */}
       <div className="sidebar-nav-actions">
         <div
           className="nav-action-row nav-new-session-row"
           onClick={handleOpenNewSession}
-          title="新建会话 (可选择所属项目)"
+          title="新对话 (可选择所属项目与标题)"
         >
           <div className="nav-row-left">
-            <SquarePen size={15} className="nav-row-icon" />
-            <span className="nav-row-label">新建会话</span>
+            <SquarePen size={14} className="nav-row-icon" />
+            <span className="nav-row-label">新对话</span>
           </div>
           <button
             type="button"
@@ -422,28 +442,18 @@ export default function Sidebar({
               e.stopPropagation();
               handleOpenNewSession();
             }}
-            title="新建会话"
+            title="新建会话并选择项目"
           >
-            <Plus size={12} />
+            <Plus size={13} />
           </button>
         </div>
       </div>
 
-      {/* 1. Projects Section */}
+      {/* 3. Projects Section */}
       <div className="sidebar-projects-section custom-scrollbar">
         <div className="section-header-row">
-          <span className="section-title-label">项目与会话</span>
+          <span className="section-title-label">项目</span>
           <div className="section-header-actions" style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-            <button
-              className={`btn-add-project-mini ${showSearchBox ? 'active' : ''}`}
-              onClick={() => {
-                setShowSearchBox(!showSearchBox);
-                if (showSearchBox) setSearchQuery('');
-              }}
-              title="搜索会话"
-            >
-              <Search size={12} />
-            </button>
             <button
               className="btn-add-project-mini"
               onClick={handleOpenNewProject}
@@ -937,15 +947,16 @@ export default function Sidebar({
         </div>
       )}
 
-      {/* New Session Modal */}
+      {/* New Session Modal (Centered Overlay) */}
       {showNewSessionModal && (
         <div
-          className="modal-backdrop"
+          className="modal-overlay-edit-project"
           onClick={() => setShowNewSessionModal(false)}
         >
           <div
-            className="modal-card modal-card-edit-project"
+            className="modal-card-edit-project"
             onClick={(e) => e.stopPropagation()}
+            style={{ width: '460px' }}
           >
             <div className="modal-edit-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -975,26 +986,28 @@ export default function Sidebar({
                   >
                     {allProjects.map((p) => (
                       <option key={p.id || p.name} value={p.name || p.id}>
-                        {p.name} {p.primary_path ? `(${p.primary_path})` : ''}
+                        📁 {p.name} {p.primary_path ? `(${p.primary_path})` : ''}
                       </option>
                     ))}
                   </select>
                   <span className="field-hint-text">
-                    会话将归属于该项目，并在其工作区目录上下文中执行任务。
+                    会话将归属于所选项目，并在其工作区目录上下文中执行任务。
                   </span>
                 </div>
 
                 {/* Session Title (Optional) */}
                 <div className="form-group-block">
                   <label className="field-label-text">会话标题（可选）</label>
-                  <input
-                    type="text"
-                    className="input-project-name"
-                    placeholder="留空则自动生成（如：新会话 t-xxx）"
-                    value={newSessionTitle}
-                    onChange={(e) => setNewSessionTitle(e.target.value)}
-                    autoFocus
-                  />
+                  <div className="modal-input-wrap">
+                    <input
+                      type="text"
+                      className="modal-text-input"
+                      placeholder="留空则自动生成（如：新会话 t-xxx）"
+                      value={newSessionTitle}
+                      onChange={(e) => setNewSessionTitle(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
                 </div>
               </div>
 

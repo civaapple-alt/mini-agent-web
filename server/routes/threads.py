@@ -47,12 +47,19 @@ async def list_threads(
     """List active and historical conversation threads with titles and summaries."""
     try:
         res = await session_manager.client.list_threads(cursor=cursor, limit=limit)
-        thread_ids = res.data if isinstance(res.data, list) else []
+        live_thread_ids = list(res.data) if isinstance(res.data, list) else []
 
-        # Ensure all discovered threads have metadata records
+        # Combine active App Server threads and historical metadata threads
+        seen = set(live_thread_ids)
+        all_thread_ids = list(live_thread_ids)
+        for tid in session_manager._thread_metadata:
+            if tid not in seen:
+                all_thread_ids.append(tid)
+                seen.add(tid)
+
         enriched_threads: list[dict[str, Any]] = []
         cur_project_name = session_manager._current_project_path.name
-        for tid in thread_ids:
+        for tid in all_thread_ids:
             meta = session_manager.get_thread_meta(tid)
             enriched_threads.append(
                 {
@@ -68,7 +75,7 @@ async def list_threads(
 
         return {
             "threads": enriched_threads,
-            "raw_thread_ids": thread_ids,
+            "raw_thread_ids": all_thread_ids,
             "next_cursor": res.next_cursor,
         }
     except AppServerError as err:
@@ -121,7 +128,27 @@ async def fork_thread(req: ForkThreadRequest) -> dict[str, Any]:
 async def read_thread(thread_id: str) -> dict[str, Any]:
     """Read settled checkpoint and message history for a specific thread."""
     try:
-        cp = await session_manager.client.read_thread(thread_id)
+        try:
+            cp = await session_manager.client.read_thread(thread_id)
+            session_manager.save_thread_checkpoint(thread_id, cp)
+        except AppServerError as err:
+            if "unknown thread" in str(err).lower():
+                persisted_cp = session_manager.get_thread_checkpoint(thread_id)
+                if persisted_cp and persisted_cp.get("messages"):
+                    try:
+                        await session_manager.client.resume_thread(
+                            thread_id, persisted_cp
+                        )
+                        cp = await session_manager.client.read_thread(thread_id)
+                    except Exception:  # noqa: BLE001
+                        await session_manager.client.start_thread(thread_id)
+                        cp = await session_manager.client.read_thread(thread_id)
+                else:
+                    await session_manager.client.start_thread(thread_id)
+                    cp = await session_manager.client.read_thread(thread_id)
+            else:
+                raise
+
         meta = session_manager.get_thread_meta(thread_id)
         return {
             "thread_id": cp.thread_id,

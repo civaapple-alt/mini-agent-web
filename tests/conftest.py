@@ -22,6 +22,7 @@ def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Backup singleton fields
     orig_state_dir = session_manager._state_dir
     orig_state_file = session_manager._state_file
+    orig_checkpoints_dir = getattr(session_manager, "_checkpoints_dir", None)
     orig_projects = dict(session_manager._projects_registry)
     orig_threads = dict(session_manager._thread_metadata)
     orig_cur_id = session_manager._current_project_id
@@ -32,6 +33,7 @@ def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Point to isolated test state
     session_manager._state_dir = test_state_dir
     session_manager._state_file = test_state_dir / "state.json"
+    session_manager._checkpoints_dir = test_state_dir / "checkpoints"
     session_manager._projects_registry = {}
     session_manager._thread_metadata = {}
     session_manager._thread_builtin_tools = {}
@@ -42,6 +44,7 @@ def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Restore singleton after test finishes
     session_manager._state_dir = orig_state_dir
     session_manager._state_file = orig_state_file
+    session_manager._checkpoints_dir = orig_checkpoints_dir
     session_manager._projects_registry = orig_projects
     session_manager._thread_metadata = orig_threads
     session_manager._thread_builtin_tools = orig_builtin_tools

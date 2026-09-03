@@ -412,3 +412,10 @@ async def _stream_turn_to_ws(
         await websocket.send_json({"type": "error", "message": str(err)})
     finally:
         session_manager.clear_active_turn(target_thread)
+        try:
+            cp = await session_manager.client.read_thread(target_thread)
+            session_manager.save_thread_checkpoint(target_thread, cp)
+        except Exception as err:  # noqa: BLE001
+            logger.debug(
+                "Failed to checkpoint thread %s on turn finish: %s", target_thread, err
+            )

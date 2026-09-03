@@ -60,6 +60,7 @@ class SessionManager:
             Path(state_dir_env) if state_dir_env else (Path.home() / ".mini-agent")
         )
         self._state_file = self._state_dir / "state.json"
+        self._checkpoints_dir = self._state_dir / "checkpoints"
 
         # Structured project registry: project_id -> project dict
         self._current_project_path: Path = Path.cwd().resolve()
@@ -453,6 +454,48 @@ class SessionManager:
     def list_all_thread_meta(self) -> dict[str, dict[str, Any]]:
         """Return full thread metadata mapping."""
         return dict(self._thread_metadata)
+
+    def save_thread_checkpoint(self, thread_id: str, checkpoint_data: Any) -> None:
+        """Persist serialized ThreadCheckpoint to disk for session survival."""
+        try:
+            self._checkpoints_dir.mkdir(parents=True, exist_ok=True)
+            cp_file = self._checkpoints_dir / f"{thread_id}.json"
+            if hasattr(checkpoint_data, "raw") and isinstance(
+                checkpoint_data.raw, dict
+            ):
+                data = checkpoint_data.raw
+            elif is_dataclass(checkpoint_data) and not isinstance(
+                checkpoint_data, type
+            ):
+                data = asdict(checkpoint_data)
+            elif isinstance(checkpoint_data, dict):
+                data = checkpoint_data
+            else:
+                data = {
+                    "thread_id": thread_id,
+                    "messages": getattr(checkpoint_data, "messages", []),
+                    "status": getattr(checkpoint_data, "status", "active"),
+                }
+            cp_file.write_text(
+                json.dumps(to_json_serializable(data), indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception as err:  # noqa: BLE001
+            logger.warning(
+                "Failed to persist checkpoint for thread %s: %s", thread_id, err
+            )
+
+    def get_thread_checkpoint(self, thread_id: str) -> dict[str, Any] | None:
+        """Load persisted ThreadCheckpoint from disk if available."""
+        cp_file = self._checkpoints_dir / f"{thread_id}.json"
+        if cp_file.is_file():
+            try:
+                return json.loads(cp_file.read_text(encoding="utf-8"))
+            except Exception as err:  # noqa: BLE001
+                logger.warning(
+                    "Failed to read checkpoint for thread %s: %s", thread_id, err
+                )
+        return None
 
     # -------------------------------------------------------------------------
     # Settings Management

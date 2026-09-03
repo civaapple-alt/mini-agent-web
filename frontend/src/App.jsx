@@ -108,9 +108,11 @@ export default function App() {
       setUserSettings((prev) => ({ ...prev, ...data }));
       if (data.profile) setProfile(data.profile);
       if (data.approval_policy) setApprovalPolicy(data.approval_policy);
-      if (data.theme) document.body.className = `theme-${data.theme}`;
+      const activeTheme = data.theme || 'light';
+      document.body.className = `theme-${activeTheme}`;
     } catch (err) {
       console.error('Failed to load settings:', err);
+      document.body.className = 'theme-light';
     }
   };
 

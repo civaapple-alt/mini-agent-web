@@ -11,10 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Builtin Tools Selector & Control Plane**: exposed bounded 6-tool selection
-  (`read_file`, `write_file`, `edit_file`, `shell`, `web_fetch`, `read_image`)
+- **Builtin Tools Selector & Control Plane**: exposed bounded Builtin selection
+  with a small default set (`read_file`, `apply_patch`, `shell`, `read_image`) and
+  optional compatibility tools (`write_file`, `edit_file`, `web_fetch`)
   in Web Studio SidePanel and Gateway `/api/workflows/settings`, enabling dynamic
   per-thread tool capability restriction aligned with App Server 0.7.0.
+- **Workflow state fidelity**: consume the App Server's active `builtinTools`
+  projection and preserve an explicit empty selection through the Python SDK and
+  Gateway instead of reconstructing it as the default set.
 - **Full ThreadItem Lifecycle Stream Reducer**: extended `messageState.js` with
   `contextCompaction` settlement badges and `reasoning` synchronization,
   rendering structured compaction indicators in Web Studio while preserving

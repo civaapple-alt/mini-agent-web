@@ -38,12 +38,21 @@ async def test_advanced_thread_and_workflow_apis():
         wf_state = await client.get_workflow_state()
         assert wf_state.collaboration_mode.mode in ("default", "plan")
         assert hasattr(wf_state, "builtin_tools")
+        assert wf_state.builtin_tools == [
+            "read_file",
+            "apply_patch",
+            "shell",
+            "read_image",
+        ]
 
         plan_res = await client.update_thread_settings(
             "plan", builtin_tools=["read_file", "shell"]
         )
         assert plan_res.collaboration_mode.mode == "plan"
         assert "read_file" in plan_res.builtin_tools
+
+        empty_res = await client.update_thread_settings("plan", builtin_tools=[])
+        assert empty_res.builtin_tools == []
 
         plan_off = await client.set_collaboration_mode("default")
         assert plan_off.collaboration_mode.mode == "default"

@@ -314,7 +314,11 @@ class WorkflowState:
         goal_data = val.get("goal") if isinstance(val, dict) else None
         goal = ThreadGoal.from_dict(goal_data) if goal_data else None
         mode_data = val.get("collaborationMode") or val.get("collaboration_mode")
-        builtin_tools = val.get("builtinTools") or val.get("builtin_tools", [])
+        builtin_tools = (
+            val["builtinTools"]
+            if "builtinTools" in val
+            else val.get("builtin_tools", [])
+        )
         return cls(
             collaboration_mode=CollaborationMode.from_dict(mode_data),
             builtin_tools=builtin_tools,
@@ -338,7 +342,11 @@ class ThreadSettingsResult:
             collaboration_mode=CollaborationMode.from_dict(
                 val.get("collaborationMode") or val.get("collaboration_mode")
             ),
-            builtin_tools=val.get("builtinTools") or val.get("builtin_tools", []),
+            builtin_tools=(
+                val["builtinTools"]
+                if "builtinTools" in val
+                else val.get("builtin_tools", [])
+            ),
             raw=data,
         )
 

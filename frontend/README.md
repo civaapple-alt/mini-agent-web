@@ -21,7 +21,7 @@
 - **📊 侧边栏工作流面板 (SidePanel)**：
   - **World 环境状态**：工作区环境探测、已安装工具与系统信息。
   - **Plan Mode 规划探索**：一键开启/关闭只读探索模式。
-  - **Builtin Tools 权限控制**：可视化多选与限制 6 种标准内置工具（`read_file`, `write_file`, `edit_file`, `shell`, `web_fetch`, `read_image`）。
+  - **Builtin Tools 权限控制**：默认暴露少量高价值工具（`read_file`, `apply_patch`, `shell`, `read_image`），并可按 Thread 开启兼容工具（`write_file`, `edit_file`, `web_fetch`）。
   - **Goal 目标收敛管理**：显示 Thread Goal 的状态、Token/时间预算，支持设置与清除目标。
   - **MCP 扩展诊断**：查看 MCP 服务列表、工具状态与连接重试。
   - **Git 工作区**：查看未暂存/暂存变更、分支状态与 Diff 摘要。

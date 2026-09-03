@@ -18,13 +18,18 @@ from server.session_manager import session_manager
 router = APIRouter(prefix="/api", tags=["World & Workflows"])
 
 
-ALL_BUILTIN_TOOLS: list[str] = [
+DEFAULT_BUILTIN_TOOLS: list[str] = [
     "read_file",
+    "apply_patch",
+    "shell",
+    "read_image",
+]
+
+ALL_BUILTIN_TOOLS: list[str] = [
+    *DEFAULT_BUILTIN_TOOLS,
     "write_file",
     "edit_file",
-    "shell",
     "web_fetch",
-    "read_image",
 ]
 
 
@@ -308,7 +313,15 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
                 "created_at": g.created_at,
                 "updated_at": g.updated_at,
             }
-        effective_builtin_tools = wf.builtin_tools or ALL_BUILTIN_TOOLS
+        workflow_payload = (
+            wf.raw.get("value", wf.raw) if isinstance(wf.raw, dict) else {}
+        )
+        has_builtin_selection = isinstance(workflow_payload, dict) and (
+            "builtinTools" in workflow_payload or "builtin_tools" in workflow_payload
+        )
+        effective_builtin_tools = (
+            wf.builtin_tools if has_builtin_selection else DEFAULT_BUILTIN_TOOLS
+        )
         return {
             "collaboration_mode": {"mode": wf.collaboration_mode.mode},
             "builtin_tools": effective_builtin_tools,

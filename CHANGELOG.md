@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Multi-thread Workflow Settings Routing**: enabled optional `thread_id`
   forwarding in Gateway workflow routes and API client methods, preventing
   context drift when configuring thread settings across active conversations.
+- **Documentation & Agent Notes Reorganization**:
+  - Reclassified architectural decision records (ADRs), proposals, and deep dives into the structured `.agents/notes/` tree (`implemented/` and `proposed/`), indexed by `.agents/notes/README.md`.
+  - Streamlined `docs/` to retain strictly essential operational project documentation: `limits.md`, `privacy.md`, `releasing.md`, `troubleshooting.md`, and `python-sdk-guide.md`.
 
 ### Fixed
 
@@ -71,9 +74,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Implemented `@keyframes pulse` animated skeleton loading screen during thread history retrieval.
   - Added global `Escape` key handling to close modals, SidePanel drawers, and popovers.
 - **Tauri 2.0 Desktop Application Proposal**:
-  - Drafted ADR proposal for Mini Agent Native Desktop Application (`docs/adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md`).
+  - Drafted ADR proposal for Mini Agent Native Desktop Application (`.agents/notes/proposed/architecture/2026-09-02-tauri-desktop-app-and-app-server-integration.md`).
 - **Client Architecture & Performance Analysis Doc**:
-  - Published multi-dimensional comparison analyzing Rust REPL, Python TUI, and Web Studio (`docs/adr/implemented/2026-09-02-client-architectures-and-performance-comparison.md`).
+  - Published multi-dimensional comparison analyzing Rust REPL, Python TUI, and Web Studio (`.agents/notes/implemented/architecture/2026-09-02-client-architectures-and-performance-comparison.md`).
 
 #### Fixed
 
@@ -149,11 +152,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Terminal User Interface (`tui/`)**:
   - Rich-based interactive CLI terminal application (`tui_app.py`).
   - Terminal-based streaming Markdown, Thinking panels, and approval prompts.
-- **Comprehensive Documentation (`docs/`)**:
+- **Comprehensive Documentation & Notes**:
   - `docs/python-sdk-guide.md`: Official developer guide and usage manual.
-  - `docs/sdk-maturity-and-protocol-coverage.md`: SDK maturity radar and JSON-RPC 2.0 protocol coverage matrix.
-  - `docs/adr/implemented/2026-08-31-app-server-concurrency-and-deadlock-analysis.md`: Deep dive on Tokio multi-thread runtime, Actor self-deadlock, SSE keep-alive drain, and child process isolation.
-  - `docs/adr/2026-08-31-python-sdk-architecture-and-app-server-integration.md`: Architecture Decision Record aligning with OpenAI Codex client separation.
+  - `.agents/notes/implemented/testing/2026-08-31-sdk-maturity-and-protocol-coverage.md`: SDK maturity radar and JSON-RPC 2.0 protocol coverage matrix.
+  - `.agents/notes/implemented/bug-fix/2026-08-31-app-server-concurrency-and-deadlock-analysis.md`: Deep dive on Tokio multi-thread runtime, Actor self-deadlock, SSE keep-alive drain, and child process isolation.
+  - `.agents/notes/implemented/architecture/2026-08-31-python-sdk-architecture-and-app-server-integration.md`: Architecture Decision Record aligning with OpenAI Codex client separation.
 
 ### Fixed & Hardened (Backend Engine Alignment)
 - **Protocol Schema**: Fixed `turn/steer` payload formatting to match App Server's `TurnSteerParams` schema (`text` parameter).

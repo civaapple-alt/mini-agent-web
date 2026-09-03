@@ -1,46 +1,44 @@
 # Mini Agent Web & Python SDK Documentation
 
-本目录包含 `mini-agent-web` 0.7.0、官方 Python SDK (`mini-agent`) 的架构设计、开发者指南、协议覆盖报告与决策记录（ADR）。当前 wire protocol 为 JSON-RPC version `1`。
+本目录包含 `mini-agent-web` 0.7.0 的核心操作手册、限制规范、隐私说明与故障排查指南。
+
+> 💡 **架构决策记录 (ADR) 与演进设计**：请参阅 [`.agents/notes/README.md`](../.agents/notes/README.md)。
 
 ---
 
 ## 📚 核心文档索引
 
-### 1. 开发者指南与技术报告
-* 📘 [**Python SDK 开发者指南 (`docs/python-sdk-guide.md`)**](python-sdk-guide.md)  
-  包含 SDK 0.7.0 快速上手、`MiniAgentClient` 异步生命周期、Thread/Turn/Item 约束的流式推流、权限审批拦截与运行时动态控制。
-* 🖥️ [**Web API Gateway 与 Web Studio 架构设计 (`docs/web-gateway-and-studio-architecture.md`)**](web-gateway-and-studio-architecture.md)  
-  包含 FastAPI 网关架构、WebSocket/SSE 双流式通道、Thinking 思考折叠、工具状态卡片与双向安全审批握手实现。
-* 📊 [**SDK 成熟度与协议覆盖报告 (`docs/sdk-maturity-and-protocol-coverage.md`)**](sdk-maturity-and-protocol-coverage.md)  
-  包含 App Server JSON-RPC 2.0 协议全景覆盖矩阵、SDK 0.7.0 事件/ThreadItem 覆盖和 Cookbook 确定性/live 验收边界。
-* 🧪 [**Python Cookbook (`cookbook/python-demo/README.md`)**](../cookbook/python-demo/README.md)
-  包含 Demo 01–05 的 Provider 依赖说明，以及 Demo 06 的无 Provider、无 Token 协议验证。
-* 📈 [**客户端架构与性能全景对比 (`docs/adr/implemented/2026-09-02-client-architectures-and-performance-comparison.md`)**](adr/implemented/2026-09-02-client-architectures-and-performance-comparison.md)
-  包含 Rust 原生 REPL、Python TUI 与 Web Studio 在进程模型、通信通道、启动延迟、内存开销与适用场景上的多维度系统性对比。
-* 🛠️ [**App Server 并发死锁与流式挂起根因剖析 (`docs/adr/implemented/2026-08-31-app-server-concurrency-and-deadlock-analysis.md`)**](adr/implemented/2026-08-31-app-server-concurrency-and-deadlock-analysis.md)
-  深入剖析并记录了 Tokio 多线程运行时阻塞、Transport Actor 自锁、SSE Keep-Alive 挂起及子进程 Stdin 继承等 4 个底层死锁机制与加固方案。
+| 文档名称 | 对应路径 | 核心内容说明 |
+| :--- | :--- | :--- |
+| 🛡️ **运行边界与限制** | [`limits.md`](limits.md) | 输入长度、流式输出、工具结果、执行步数与网络帧的显式硬限制。 |
+| 🔒 **数据与隐私保护** | [`privacy.md`](privacy.md) | 零遥测声明、本地数据流向、API 凭证防泄漏与安全审批防护。 |
+| 🚀 **版本发布流程** | [`releasing.md`](releasing.md) | 全栈多模块版本同步清单、自动化门禁测试套件与 Git 标签发布规范。 |
+| 🛠️ **故障排查指南** | [`troubleshooting.md`](troubleshooting.md) | App Server 丢失、端口冲突、WebSocket 断开、401 鉴权失败与审批卡死的解决方案。 |
+| 📘 **Python SDK 开发者指南** | [`python-sdk-guide.md`](python-sdk-guide.md) | `MiniAgentClient` 异步生命周期、流式推流、权限审批拦截与运行时动态控制说明。 |
 
 ---
 
-## 🏛️ 架构决策记录 (ADR)
+## 🏛️ 架构决策与设计笔记 (Agent Notes)
 
-| 日期 | 状态 | 标题 | 决策说明 |
-| :--- | :---: | :--- | :--- |
-| 2026-08-31 | Accepted | [Python SDK Architecture & App Server Integration](adr/2026-08-31-python-sdk-architecture-and-app-server-integration.md) | 建立官方 `mini-agent` Python SDK，采用强类型事件体系与异步上下文管理器，对齐 Codex 架构分层 |
-| 2026-08-31 | Accepted | [FastAPI Gateway & Web Studio UI](adr/2026-08-31-fastapi-gateway-and-web-studio-ui.md) | 基于 FastAPI、WebSocket/SSE 与零构建轻量 Web 前端构建 Web Studio 交互控制台与终端 TUI |
-| 2026-08-31 | Implemented | [App Server Concurrency & Deadlock Hardening](adr/implemented/2026-08-31-app-server-concurrency-and-deadlock-analysis.md) | 根治 Tokio 单线程阻塞、Transport Actor 自锁、SSE Keep-Alive 挂起与子进程 Stdin 继承死锁 |
-| 2026-09-02 | Implemented | [Client Architectures & Performance Comparison](adr/implemented/2026-09-02-client-architectures-and-performance-comparison.md) | 深入对比 Rust REPL、Python TUI 与 Web Studio 的进程模型、通信通道、内存与时延指标 |
-| 2026-09-02 | Proposed | [Tauri Desktop Shell for Mini Agent](adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md) | 以 sidecar-first 方式复用 React UI，规划桌面 transport、窗口/托盘、通知、工作区约束与跨平台 fallback |
-| 2026-09-02 | Proposed | [Rust Native TUI for Mini Agent](adr/proposed/2026-09-02-rust-native-tui-ratatui-architecture.md) | 规划由 Rust workspace 负责的 Ratatui 全屏 TUI，明确 App Server 复用、TEA reducer、终端恢复、性能测量与测试门槛 |
-| 2026-09-02 | Proposed | [Local Web Studio Evolution](adr/proposed/2026-09-02-local-web-studio-evolution-and-roadmap.md) | 分阶段交付有界的 Diff/Artifact、工作区树、loopback 预览、Goal 投影、Mention、预算提示与结构化审批 |
-| 2026-09-03 | Implemented | [SDK 0.7.0 Alignment Review & Control Plane Evolution](adr/implemented/2026-09-03-sdk-0.7.0-alignment-review-and-control-plane-evolution.md) | 深度评审 0.7.0 适配成效，解耦运行时线程绑定，落地 Builtin Tools 选择器、全量 ThreadItem 投影与多会话控制路由 |
+技术选型、架构设计与并发优化笔记已按规范归档至 [`.agents/notes/`](../.agents/notes/README.md)：
+
+- **已落地决策 (Implemented)**：
+  - [Python SDK 架构与 App Server 集成](../.agents/notes/implemented/architecture/2026-08-31-python-sdk-architecture-and-app-server-integration.md)
+  - [FastAPI 网关与 Web Studio 交互设计](../.agents/notes/implemented/architecture/2026-08-31-fastapi-gateway-and-web-studio-ui.md)
+  - [App Server 并发死锁与加固复盘](../.agents/notes/implemented/bug-fix/2026-08-31-app-server-concurrency-and-deadlock-analysis.md)
+  - [客户端架构与性能全景对比分析](../.agents/notes/implemented/architecture/2026-09-02-client-architectures-and-performance-comparison.md)
+  - [SDK 0.7.0 适配评审与控制面演进落地](../.agents/notes/implemented/architecture/2026-09-03-sdk-0.7.0-alignment-review-and-control-plane-evolution.md)
+- **规划与演进提案 (Proposed)**：
+  - [Local Web Studio 演进路线提案](../.agents/notes/proposed/feature/2026-09-02-local-web-studio-evolution-and-roadmap.md)
+  - [Rust 原生 TUI (Ratatui) 架构提案](../.agents/notes/proposed/architecture/2026-09-02-rust-native-tui-ratatui-architecture.md)
+  - [Tauri 原生桌面 Shell 提案](../.agents/notes/proposed/architecture/2026-09-02-tauri-desktop-app-and-app-server-integration.md)
 
 ---
 
-## 当前发布验证
+## 当前验证门禁
 
-- `uv run pytest tests/ -v`：46 个测试通过；覆盖网关、WebSocket、线程分支、审批流与事件契约。
-- `cd frontend && npm test`：10 个测试通过；覆盖 API 请求构造、WebSocket 发送守卫、流式事件状态机与斜杠命令解析。
-- `uv run pytest tests/test_cookbook_validation.py -q`：编译全部 Cookbook，并运行 Demo 06 的无 Provider、无 Token 事件协议验证。
-- Demo 01–05 仍是需要显式 Provider 的 live 示例，不作为默认 CI 依赖。
+- `uv run pytest tests/ -v`：46 个测试通过；
+- `cd frontend && npm test`：10 个测试通过；
+- `cd frontend && npm run build`：生产构建 0 错误通过；
+- `uv run python cookbook/python-demo/06_protocol_compatibility.py`：14 类协议事件离线校验通过；
 - 贡献者规则见仓库根目录的 [`AGENTS.md`](../AGENTS.md)。

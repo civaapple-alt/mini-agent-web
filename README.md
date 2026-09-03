@@ -257,10 +257,18 @@ mini-agent-web/
 │   ├── test_sdk_apis.py       # pytest-asyncio 全量 SDK API 协议测试
 │   └── test_sdk_events.py     # 0.7.0 事件、ThreadItem 与 Thread/Turn 分流测试
 │
-├── docs/                      # 核心文档与架构记录
-│   ├── README.md                              # 文档导航中心
-│   ├── adr/                                   # 架构决策记录 (implemented / proposed)
-│   └── python-sdk-guide.md                    # 官方开发者指南
+├── .agents/notes/             # 架构决策记录 (ADR) 与设计笔记
+│   ├── README.md              # 架构笔记索引与维护门禁
+│   ├── implemented/           # 已落地的架构、特性、并发加固与测试报告
+│   └── proposed/              # 规划中与评审中的提案路线图
+│
+├── docs/                      # 核心运维与开发者文档
+│   ├── README.md              # 文档导航中心
+│   ├── limits.md              # 运行边界与硬限制规范
+│   ├── privacy.md             # 数据主权与隐私安全
+│   ├── releasing.md           # 版本发布流程与门禁
+│   ├── troubleshooting.md     # 常见故障排查指南
+│   └── python-sdk-guide.md    # 官方 Python SDK 开发者指南
 │
 ├── logs/                      # 运行时隔离日志 (git-ignored)
 ├── CHANGELOG.md               # 版本变更记录
@@ -273,20 +281,28 @@ mini-agent-web/
 
 ## 📚 模块文档中心与索引
 
+### 核心操作与指南 (`docs/`)
+* 🛡️ [**运行边界与硬限制 (`docs/limits.md`)**](docs/limits.md)：输入限制、流式输出、工具结果、轮次步数与帧大小硬边界。
+* 🔒 [**数据与隐私保护 (`docs/privacy.md`)**](docs/privacy.md)：零外部遥测、本地日志流向、API 凭证防泄露与审批机制。
+* 🚀 [**版本发布流程 (`docs/releasing.md`)**](docs/releasing.md)：全栈多模块版本同步、自动化门禁测试与 Git 标签发布规范。
+* 🛠️ [**故障排查指南 (`docs/troubleshooting.md`)**](docs/troubleshooting.md)：App Server 丢失、端口冲突、WebSocket 断连与 401 鉴权故障自愈。
+* 📘 [**Python SDK 开发者指南 (`docs/python-sdk-guide.md`)**](docs/python-sdk-guide.md)：完整 API 说明、流式推流、审批拦截与运行时动态控制。
 * 📟 [**终端 TUI 工作室文档 (`tui/README.md`)**](tui/README.md)：架构分层、Tab 补全、`/steer` 实时纠偏、`/fork` 分支与命令参考。
 * 🎨 [**Web UI 前端工程文档 (`frontend/README.md`)**](frontend/README.md)：React 19 组件树、ThinkingBlock、ToolCard、Toast 通知与 WebSocket API。
-* 📈 [**客户端架构与性能全景对比 ADR (`docs/adr/implemented/2026-09-02-client-architectures-and-performance-comparison.md`)**](docs/adr/implemented/2026-09-02-client-architectures-and-performance-comparison.md)：Rust REPL、Python TUI 与 Web Studio 多维度深度对比分析。
-* 🛠️ [**App Server 并发死锁与加固 ADR (`docs/adr/implemented/2026-08-31-app-server-concurrency-and-deadlock-analysis.md`)**](docs/adr/implemented/2026-08-31-app-server-concurrency-and-deadlock-analysis.md)：Tokio 运行时阻塞、Transport Actor 自锁、SSE Keep-Alive 挂起及子进程隔离根治。
-* 🏛️ [**SDK 0.7.0 适配评审与控制面演进 ADR (`docs/adr/implemented/2026-09-03-sdk-0.7.0-alignment-review-and-control-plane-evolution.md`)**](docs/adr/implemented/2026-09-03-sdk-0.7.0-alignment-review-and-control-plane-evolution.md)：系统评审 0.7.0 适配成效，解耦运行时线程绑定，落地 Builtin Tools 选择器与全量 ThreadItem 投影。
-* 💡 [**Tauri 原生桌面 Shell 提案 (`docs/adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md`)**](docs/adr/proposed/2026-09-02-tauri-desktop-app-and-app-server-integration.md)：以 App Server sidecar 为首选，规划 React transport、桌面原生能力、工作区约束与跨平台 fallback。
-* 📟 [**Rust 原生 TUI 架构提案 (`docs/adr/proposed/2026-09-02-rust-native-tui-ratatui-architecture.md`)**](docs/adr/proposed/2026-09-02-rust-native-tui-ratatui-architecture.md)：基于 Ratatui + Tokio + TEA reducer 的全屏 TUI 方案，强调协议复用、终端恢复与可测性能目标。
-* 🌐 [**本地 Web Studio 演进路线提案 (`docs/adr/proposed/2026-09-02-local-web-studio-evolution-and-roadmap.md`)**](docs/adr/proposed/2026-09-02-local-web-studio-evolution-and-roadmap.md)：分阶段完善有界 Diff/Artifact、工作区树、loopback 预览、Goal 投影与安全审批。
+* 🌐 [**FastAPI 网关服务文档 (`server/README.md`)**](server/README.md)：RESTful API、`/ws/agent` 双向全双工通道与 `SessionManager` 连接管理。
 * 🧪 [**自动化测试套件文档 (`tests/README.md`)**](tests/README.md)：零 Token 消耗、AST 语法编译、网关与事件测试。
-* 📘 [**Python SDK 开发者指南 (`docs/python-sdk-guide.md`)**](docs/python-sdk-guide.md)：完整 API 说明、流式事件、审批拦截与错误处理。
-* 📊 [**SDK 成熟度与协议覆盖报告 (`docs/sdk-maturity-and-protocol-coverage.md`)**](docs/sdk-maturity-and-protocol-coverage.md)：JSON-RPC 2.0 接口覆盖矩阵与测试验收。
 * 🧪 [**Cookbook 实战与协议验证 (`cookbook/python-demo/README.md`)**](cookbook/python-demo/README.md)：Demo 01–05 的 live 运行边界与 Demo 06 协议验证。
 * 🤝 [**贡献者与变更准入规则 (`AGENTS.md`)**](AGENTS.md)：版本同步、测试规范与变更准入要求。
 * 📜 [**版本更新日志 (`CHANGELOG.md`)**](CHANGELOG.md)：版本变更与功能演进记录。
+
+### 架构决策与设计笔记 (`.agents/notes/`)
+* 🏛️ [**架构设计笔记总索引 (`.agents/notes/README.md`)**](.agents/notes/README.md)：全景记录 ADR 决策、架构雷达与提案演进。
+* 📈 [**客户端架构与性能全景对比**](.agents/notes/implemented/architecture/2026-09-02-client-architectures-and-performance-comparison.md)：Rust REPL、Python TUI 与 Web Studio 多维度深度对比分析。
+* 🛠️ [**App Server 并发死锁与加固**](.agents/notes/implemented/bug-fix/2026-08-31-app-server-concurrency-and-deadlock-analysis.md)：Tokio 运行时阻塞、Transport Actor 自锁、SSE Keep-Alive 挂起及子进程隔离根治。
+* 🏛️ [**SDK 0.7.0 适配评审与控制面演进**](.agents/notes/implemented/architecture/2026-09-03-sdk-0.7.0-alignment-review-and-control-plane-evolution.md)：系统评审 0.7.0 适配成效，解耦运行时线程绑定，落地 Builtin Tools 选择器与全量 ThreadItem 投影。
+* 🌐 [**Local Web Studio 演进路线提案**](.agents/notes/proposed/feature/2026-09-02-local-web-studio-evolution-and-roadmap.md)：分阶段完善有界 Diff/Artifact、工作区树、loopback 预览、Goal 投影与安全审批。
+* 💡 [**Tauri 原生桌面 Shell 提案**](.agents/notes/proposed/architecture/2026-09-02-tauri-desktop-app-and-app-server-integration.md)：以 App Server sidecar 为首选，规划 React transport、桌面原生能力与平台降级。
+* 📟 [**Rust 原生 TUI 架构提案**](.agents/notes/proposed/architecture/2026-09-02-rust-native-tui-ratatui-architecture.md)：基于 Ratatui + Tokio + TEA reducer 的全屏 TUI 方案。
 
 ---
 

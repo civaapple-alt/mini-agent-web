@@ -70,6 +70,63 @@ function mergeProjectedToolItems(messages, items) {
   return copy;
 }
 
+function mergeProjectedCompactionItems(messages, items) {
+  if (messages.length === 0 || items.length === 0) return messages;
+  const copy = [...messages];
+  const last = { ...copy[copy.length - 1] };
+  const blocks = [...(last.blocks || [])];
+
+  for (const item of items) {
+    const compactionId = item.id || 'compaction';
+    const exists = blocks.some(
+      (b) =>
+        b.type === 'compaction' &&
+        (b.id === compactionId || (!item.id && b.id.startsWith('compaction')))
+    );
+    if (!exists) {
+      blocks.push({
+        type: 'compaction',
+        id: compactionId,
+        status: item.status || 'completed',
+      });
+    }
+  }
+
+  last.blocks = blocks;
+  copy[copy.length - 1] = last;
+  return copy;
+}
+
+function mergeProjectedReasoningItems(messages, items) {
+  if (messages.length === 0 || items.length === 0) return messages;
+  const copy = [...messages];
+  const last = { ...copy[copy.length - 1] };
+  const blocks = [...(last.blocks || [])];
+
+  for (const item of items) {
+    if (!item.text) continue;
+    const existingIndex = blocks.findIndex((b) => b.type === 'thinking');
+    if (existingIndex === -1) {
+      blocks.unshift({
+        type: 'thinking',
+        content: item.text,
+        isStreaming: false,
+      });
+      last.thinking = item.text;
+    } else if ((blocks[existingIndex].content || '').length < item.text.length) {
+      blocks[existingIndex] = {
+        ...blocks[existingIndex],
+        content: item.text,
+      };
+      last.thinking = item.text;
+    }
+  }
+
+  last.blocks = blocks;
+  copy[copy.length - 1] = last;
+  return copy;
+}
+
 /**
  * Pure reducer function to update messages array based on engine stream events.
  */
@@ -105,9 +162,38 @@ export function aggregateStreamEvent(messages, data) {
       if (type === 'tool_started' || type === 'tool_finished') return messages;
     }
 
+    const projectedCompactions = (data.items || []).filter(
+      (item) =>
+        item.type === 'contextCompaction' || item.type === 'context_compaction'
+    );
+    if (projectedCompactions.length > 0) {
+      messages = mergeProjectedCompactionItems(messages, projectedCompactions);
+    }
+
+    const projectedReasonings = (data.items || []).filter(
+      (item) => item.type === 'reasoning'
+    );
+    if (projectedReasonings.length > 0) {
+      messages = mergeProjectedReasoningItems(messages, projectedReasonings);
+    }
+
     const copy = [...messages];
     const last = { ...copy[copy.length - 1] };
     const blocks = [...(last.blocks || [])];
+
+    if (type === 'context_compaction_finished') {
+      const exists = blocks.some((b) => b.type === 'compaction');
+      if (!exists) {
+        blocks.push({
+          type: 'compaction',
+          id: `compaction_${evt.checkpoint_seq || Date.now()}`,
+          status: 'completed',
+        });
+        last.blocks = blocks;
+        copy[copy.length - 1] = last;
+        return copy;
+      }
+    }
 
     if (type === 'assistant_reasoning_delta') {
       const lastBlock = blocks[blocks.length - 1];

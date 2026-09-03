@@ -134,3 +134,59 @@ test('ThreadItem tool projections update one stable tool block', () => {
   assert.equal(messages[0].blocks[0].status, 'completed');
   assert.equal(messages[0].blocks[0].output, 'C:\\workspace');
 });
+
+test('ThreadItem contextCompaction projections create compaction notice block', () => {
+  let messages = aggregateStreamEvent([], {
+    type: 'event',
+    threadId: 'thread-main',
+    turnId: 'turn-compact',
+    event: { type: 'turn_started' },
+  });
+
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    threadId: 'thread-main',
+    turnId: 'turn-compact',
+    items: [
+      {
+        type: 'contextCompaction',
+        id: 'compaction-1',
+        status: 'completed',
+      },
+    ],
+    event: { type: 'context_compaction_finished' },
+  });
+
+  assert.equal(messages[0].blocks.length, 1);
+  assert.equal(messages[0].blocks[0].type, 'compaction');
+  assert.equal(messages[0].blocks[0].id, 'compaction-1');
+  assert.equal(messages[0].blocks[0].status, 'completed');
+});
+
+test('ThreadItem reasoning projections synchronize thinking block', () => {
+  let messages = aggregateStreamEvent([], {
+    type: 'event',
+    threadId: 'thread-main',
+    turnId: 'turn-reason',
+    event: { type: 'turn_started' },
+  });
+
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    threadId: 'thread-main',
+    turnId: 'turn-reason',
+    items: [
+      {
+        type: 'reasoning',
+        id: 'reason-1',
+        text: 'System architecture analysis and design steps...',
+      },
+    ],
+    event: { type: 'model_responded' },
+  });
+
+  assert.equal(messages[0].thinking, 'System architecture analysis and design steps...');
+  assert.equal(messages[0].blocks.length, 1);
+  assert.equal(messages[0].blocks[0].type, 'thinking');
+  assert.equal(messages[0].blocks[0].content, 'System architecture analysis and design steps...');
+});

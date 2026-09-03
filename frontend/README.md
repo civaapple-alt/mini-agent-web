@@ -9,7 +9,7 @@
 - **💬 实时对话与流式渲染**：
   - **ThinkingBlock**：可折叠展开的思维链（Thinking Process）实时渐进输出与耗时统计。
   - **ToolCard**：细粒度工具执行卡片，展示工具名称、参数 JSON 结构化高亮、执行结果折叠以及状态机（Running / Completed / Failed）。
-  - **MessageItem**：支持 GitHub 风格 Markdown、代码高亮、复制与图片 Lightbox 模态大图预览。
+  - **MessageItem**：支持 GitHub 风格 Markdown、代码高亮、复制、图片 Lightbox 模态大图预览与 `ContextCompaction` 上下文压缩结算指示。
 - **🛡️ 交互式安全审批与记忆闭环**：
   - 当 Agent 尝试执行敏感操作（如 Shell 命令或写入文件）时，InputBar 底部常驻悬浮审批 Dock；
   - 支持单次放行（Allow）、本会话始终放行（Always Allow）或填写理由拒绝（Deny）。
@@ -21,6 +21,7 @@
 - **📊 侧边栏工作流面板 (SidePanel)**：
   - **World 环境状态**：工作区环境探测、已安装工具与系统信息。
   - **Plan Mode 规划探索**：一键开启/关闭只读探索模式。
+  - **Builtin Tools 权限控制**：可视化多选与限制 6 种标准内置工具（`read_file`, `write_file`, `edit_file`, `shell`, `web_fetch`, `read_image`）。
   - **Goal 目标收敛管理**：显示 Thread Goal 的状态、Token/时间预算，支持设置与清除目标。
   - **MCP 扩展诊断**：查看 MCP 服务列表、工具状态与连接重试。
   - **Git 工作区**：查看未暂存/暂存变更、分支状态与 Diff 摘要。

@@ -501,3 +501,79 @@
   background-color: rgba(2, 132, 199, 0.15);
   color: #0284c7;
 }
+
+/* Builtin Tools Selection */
+.builtin-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.builtin-tool-chip {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  user-select: none;
+}
+
+.builtin-tool-chip:hover {
+  border-color: var(--accent-color, #10b981);
+  background-color: var(--bg-card, rgba(255, 255, 255, 0.03));
+}
+
+.builtin-tool-chip.active {
+  border-color: rgba(16, 185, 129, 0.4);
+  background-color: rgba(16, 185, 129, 0.05);
+}
+
+.builtin-tool-chip.inactive {
+  opacity: 0.6;
+  border-style: dashed;
+}
+
+.chip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.chip-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.chip-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.chip-badge.enabled {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.chip-badge.disabled {
+  background-color: rgba(156, 163, 175, 0.15);
+  color: var(--text-muted, #9ca3af);
+}
+
+.chip-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.chip-desc {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.3;
+}

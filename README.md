@@ -355,8 +355,8 @@ uv build --package mini-agent
 | :--- | :--- | :--- |
 | **基础环境同步** | `uv sync` | 安装 SDK 基础依赖 |
 | **全量开发环境** | `uv sync --all-extras` | 安装 web + tui + dev 全套工具链 |
-| **运行后端测试** | `uv run pytest tests/ -v` | 执行 43 项后端 API / 网关 / 契约自动化测试 |
-| **运行前端测试** | `cd frontend && npm test` | 执行 7 项前端模块与流式状态机单元测试 |
+| **运行后端测试** | `uv run pytest tests/ -v` | 执行 46 项后端 API / 网关 / 契约自动化测试 |
+| **运行前端测试** | `cd frontend && npm test` | 执行 10 项前端模块与流式状态机单元测试 |
 | **前端打包构建** | `cd frontend && npm run build` | Vite 生产打包并生成 `frontend/dist/` |
 | **代码格式与 Lint** | `uv run ruff check .` | 静态检查代码质量 |
 | **执行 Cookbook 示例**| `uv run python cookbook/python-demo/01_basic_turn.py` | 运行实战演示 |

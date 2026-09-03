@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Copy, Check, Sparkles, RotateCcw } from 'lucide-react';
+import { Copy, Check, Sparkles, RotateCcw, Layers } from 'lucide-react';
 import ThinkingBlock from './ThinkingBlock';
 import ToolCard from './ToolCard';
 
@@ -148,6 +148,29 @@ export default function MessageItem({
                   pendingApproval={isLast ? pendingApproval : null}
                   onRespondApproval={onRespondApproval}
                 />
+              );
+            }
+            if (block.type === 'compaction') {
+              return (
+                <div
+                  key={block.id || `compaction_${idx}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    margin: '8px 0',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    background: 'rgba(245, 158, 11, 0.08)',
+                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                    color: 'var(--text-secondary, #9CA3AF)',
+                    fontSize: '12px',
+                    fontFamily: 'monospace',
+                  }}
+                >
+                  <Layers size={13} style={{ color: '#F59E0B' }} />
+                  <span>上下文压缩结算 (Context Compaction Settled)</span>
+                </div>
               );
             }
             if (block.type === 'text') {

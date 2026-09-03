@@ -105,44 +105,58 @@ export const api = {
   // Workflows (Plan Mode & Goals) & Files
   // ---------------------------------------------------------------------------
 
-  async getWorkflowState() {
-    const res = await fetch(`${API_BASE}/api/workflows/state`);
+  async getWorkflowState(threadId = null) {
+    const url = threadId
+      ? `${API_BASE}/api/workflows/state?thread_id=${encodeURIComponent(threadId)}`
+      : `${API_BASE}/api/workflows/state`;
+    const res = await fetch(url);
     if (!res.ok) throw new Error('Failed to get workflow state');
     return res.json();
   },
 
-  async updateThreadSettings(mode, builtinTools = null) {
+  async updateThreadSettings(mode, builtinTools = null, threadId = null) {
     const res = await fetch(`${API_BASE}/api/workflows/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode, builtin_tools: builtinTools }),
+      body: JSON.stringify({ mode, builtin_tools: builtinTools, thread_id: threadId }),
     });
     if (!res.ok) throw new Error('Failed to update thread settings');
     return res.json();
   },
 
-  async setCollaborationMode(mode) {
-    return this.updateThreadSettings(mode);
+  async setCollaborationMode(mode, threadId = null) {
+    return this.updateThreadSettings(mode, null, threadId);
   },
 
-  async setGoal(objective, tokenBudget = null, status = null) {
+  async setGoal(objective, tokenBudget = null, status = null, threadId = null) {
     const res = await fetch(`${API_BASE}/api/workflows/goal`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ objective, token_budget: tokenBudget, status }),
+      body: JSON.stringify({
+        objective,
+        token_budget: tokenBudget,
+        status,
+        thread_id: threadId,
+      }),
     });
     if (!res.ok) throw new Error('Failed to set goal');
     return res.json();
   },
 
-  async getGoal() {
-    const res = await fetch(`${API_BASE}/api/workflows/goal`);
+  async getGoal(threadId = null) {
+    const url = threadId
+      ? `${API_BASE}/api/workflows/goal?thread_id=${encodeURIComponent(threadId)}`
+      : `${API_BASE}/api/workflows/goal`;
+    const res = await fetch(url);
     if (!res.ok) throw new Error('Failed to get goal');
     return res.json();
   },
 
-  async clearGoal() {
-    const res = await fetch(`${API_BASE}/api/workflows/goal`, { method: 'DELETE' });
+  async clearGoal(threadId = null) {
+    const url = threadId
+      ? `${API_BASE}/api/workflows/goal?thread_id=${encodeURIComponent(threadId)}`
+      : `${API_BASE}/api/workflows/goal`;
+    const res = await fetch(url, { method: 'DELETE' });
     if (!res.ok) throw new Error('Failed to clear goal');
     return res.json();
   },

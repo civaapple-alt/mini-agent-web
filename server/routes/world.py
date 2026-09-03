@@ -18,6 +18,16 @@ from server.session_manager import session_manager
 router = APIRouter(prefix="/api", tags=["World & Workflows"])
 
 
+ALL_BUILTIN_TOOLS: list[str] = [
+    "read_file",
+    "write_file",
+    "edit_file",
+    "shell",
+    "web_fetch",
+    "read_image",
+]
+
+
 class SetExecutionRequest(BaseModel):
     approval: str = Field(default="interactive", description="interactive or automatic")
     copilot: bool = Field(default=False, description="Enable copilot assistance")
@@ -30,6 +40,10 @@ class UpdateThreadSettingsRequest(BaseModel):
     builtin_tools: list[str] | None = Field(
         default=None,
         description="Optional bounded Builtin tool selection for this Thread",
+    )
+    thread_id: str | None = Field(
+        default=None,
+        description="Optional target Thread ID (defaults to active runtime thread)",
     )
 
 
@@ -45,6 +59,10 @@ class SetGoalRequest(BaseModel):
     ) = Field(default=None, description="Optional Goal status")
     token_budget: int | None = Field(
         default=None, ge=1, description="Optional total token budget"
+    )
+    thread_id: str | None = Field(
+        default=None,
+        description="Optional target Thread ID (defaults to active runtime thread)",
     )
 
 
@@ -273,8 +291,8 @@ async def retry_mcp() -> dict[str, Any]:
 
 
 @router.get("/workflows/state", summary="Get workflow state")
-async def get_workflow_state() -> dict[str, Any]:
-    """Retrieve the current collaboration mode and active Thread Goal."""
+async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
+    """Retrieve current collaboration mode, active Thread Goal, and builtin tools."""
     try:
         wf = await session_manager.client.get_workflow_state()
         goal_dict = None
@@ -290,8 +308,11 @@ async def get_workflow_state() -> dict[str, Any]:
                 "created_at": g.created_at,
                 "updated_at": g.updated_at,
             }
+        effective_builtin_tools = wf.builtin_tools or ALL_BUILTIN_TOOLS
         return {
             "collaboration_mode": {"mode": wf.collaboration_mode.mode},
+            "builtin_tools": effective_builtin_tools,
+            "available_builtin_tools": ALL_BUILTIN_TOOLS,
             "goal": goal_dict,
         }
     except AppServerError as err:
@@ -305,10 +326,12 @@ async def update_thread_settings(req: UpdateThreadSettingsRequest) -> dict[str, 
         res = await session_manager.client.update_thread_settings(
             mode=req.mode,
             builtin_tools=req.builtin_tools,
+            thread_id=req.thread_id,
         )
         return {
             "collaboration_mode": {"mode": res.collaboration_mode.mode},
             "builtin_tools": res.builtin_tools,
+            "available_builtin_tools": ALL_BUILTIN_TOOLS,
         }
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
@@ -322,6 +345,7 @@ async def set_goal(req: SetGoalRequest) -> dict[str, Any]:
             objective=req.objective,
             status=req.status,
             token_budget=req.token_budget,
+            thread_id=req.thread_id,
         )
         return {"goal": _goal_dict(res.goal)}
     except AppServerError as err:
@@ -329,20 +353,20 @@ async def set_goal(req: SetGoalRequest) -> dict[str, Any]:
 
 
 @router.get("/workflows/goal", summary="Get Thread Goal")
-async def get_goal() -> dict[str, Any]:
+async def get_goal(thread_id: str | None = None) -> dict[str, Any]:
     """Read the active Thread Goal."""
     try:
-        res = await session_manager.client.get_goal()
+        res = await session_manager.client.get_goal(thread_id=thread_id)
         return {"goal": _goal_dict(res.goal) if res.goal else None}
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
 @router.delete("/workflows/goal", summary="Clear Thread Goal")
-async def clear_goal() -> dict[str, Any]:
+async def clear_goal(thread_id: str | None = None) -> dict[str, Any]:
     """Clear the active Thread Goal."""
     try:
-        res = await session_manager.client.clear_goal()
+        res = await session_manager.client.clear_goal(thread_id=thread_id)
         return {"cleared": res.cleared}
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err

@@ -80,9 +80,9 @@ uv run mini-agent-server-dev
 | `/api/world/browse-folder` | `POST` | 触发原生系统文件夹选择窗口 |
 | `/api/projects` | `GET` / `POST` | 列出与创建工作区项目 |
 | `/api/projects/{project_id}` | `PUT` / `DELETE` | 更新或移除工作区本地项目 |
-| `/api/workflows/state` | `GET` | 查询 Thread collaboration mode 与 Goal 投影 |
-| `/api/workflows/settings` | `POST` | 设置 collaboration mode 与可选 Builtin tools |
-| `/api/workflows/goal` | `GET` / `POST` / `DELETE` | 读取、设置或清除 Thread Goal |
+| `/api/workflows/state` | `GET` | 查询 Thread collaboration mode、内置工具列表与 Goal 投影 |
+| `/api/workflows/settings` | `POST` | 设置 collaboration mode 与可选 Builtin tools（支持 `thread_id`） |
+| `/api/workflows/goal` | `GET` / `POST` / `DELETE` | 读取、设置或清除 Thread Goal（支持 `thread_id`） |
 
 工作流路由不再提供旧的 `workflow/plan/set` 或手工 milestone/verdict API；Goal
 的 step、timeout、token budget 和自动续跑由 App Server 的 Goal Runtime 负责。

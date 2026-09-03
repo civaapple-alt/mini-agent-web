@@ -54,6 +54,15 @@ test('api client methods construct expected fetch endpoints and payloads', async
   assert.equal(settingsCall.url, '/api/workflows/settings');
   assert.equal(JSON.parse(settingsCall.options.body).mode, 'plan');
 
+  await api.updateThreadSettings('plan', ['read_file', 'shell'], 't-123');
+  const toolSettingsCall = calls[calls.length - 1];
+  assert.equal(toolSettingsCall.url, '/api/workflows/settings');
+  assert.deepEqual(JSON.parse(toolSettingsCall.options.body).builtin_tools, [
+    'read_file',
+    'shell',
+  ]);
+  assert.equal(JSON.parse(toolSettingsCall.options.body).thread_id, 't-123');
+
   await api.setGoal('Ship the next release', 4096);
   const goalCall = calls[calls.length - 1];
   assert.equal(goalCall.url, '/api/workflows/goal');

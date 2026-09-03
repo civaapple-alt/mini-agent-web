@@ -16,9 +16,19 @@ import {
   Terminal,
   Folder,
   RotateCcw,
+  Wrench,
 } from 'lucide-react';
 import { api } from '../api';
 import './SidePanel.css';
+
+const BUILTIN_TOOL_INFO = {
+  read_file: { name: 'read_file', label: '读取文件', desc: '只读检查工作区文件与代码' },
+  write_file: { name: 'write_file', label: '写入文件', desc: '创建或覆写工作区文件' },
+  edit_file: { name: 'edit_file', label: '编辑文件', desc: '精确替换与修补代码片段' },
+  shell: { name: 'shell', label: '终端命令', desc: '执行命令行检查与自动化测试' },
+  web_fetch: { name: 'web_fetch', label: '网页抓取', desc: '抓取外部 HTTP 与静态文档' },
+  read_image: { name: 'read_image', label: '图像读取', desc: '读取并解析视觉/图像资源' },
+};
 
 export default function SidePanel({
   isOpen,
@@ -38,6 +48,22 @@ export default function SidePanel({
   const [selectedFileContent, setSelectedFileContent] = useState('');
   const [gitData, setGitData] = useState(null);
   const [goalObjectiveInput, setGoalObjectiveInput] = useState('');
+  const [selectedBuiltinTools, setSelectedBuiltinTools] = useState([
+    'read_file',
+    'write_file',
+    'edit_file',
+    'shell',
+    'web_fetch',
+    'read_image',
+  ]);
+  const [availableBuiltinTools, setAvailableBuiltinTools] = useState([
+    'read_file',
+    'write_file',
+    'edit_file',
+    'shell',
+    'web_fetch',
+    'read_image',
+  ]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRetryingMcp, setIsRetryingMcp] = useState(false);
 
@@ -102,8 +128,42 @@ export default function SidePanel({
     try {
       const data = await api.getWorkflowState();
       setWorkflowState(data);
+      if (Array.isArray(data.builtin_tools) && data.builtin_tools.length > 0) {
+        setSelectedBuiltinTools(data.builtin_tools);
+      }
+      if (
+        Array.isArray(data.available_builtin_tools) &&
+        data.available_builtin_tools.length > 0
+      ) {
+        setAvailableBuiltinTools(data.available_builtin_tools);
+      }
     } catch (err) {
       console.error('Failed to load workflow state:', err);
+    }
+  };
+
+  const handleToggleBuiltinTool = async (toolName) => {
+    const nextTools = selectedBuiltinTools.includes(toolName)
+      ? selectedBuiltinTools.filter((t) => t !== toolName)
+      : [...selectedBuiltinTools, toolName];
+
+    setSelectedBuiltinTools(nextTools);
+    try {
+      await api.updateThreadSettings(planActive ? 'plan' : 'default', nextTools);
+      if (onToast) {
+        onToast(
+          nextTools.includes(toolName)
+            ? `已启用内置工具: ${toolName}`
+            : `已限制内置工具: ${toolName}`,
+          'info'
+        );
+      }
+    } catch (err) {
+      console.error('Failed to update builtin tool settings:', err);
+      if (onToast) {
+        onToast(`更新内置工具配置失败: ${err.message}`, 'error');
+      }
+      setSelectedBuiltinTools(selectedBuiltinTools);
     }
   };
 
@@ -336,6 +396,49 @@ export default function SidePanel({
                   >
                     <span>{planActive ? '已开启' : '已关闭'}</span>
                   </button>
+                </div>
+              </div>
+
+              {/* Builtin Tools Selection */}
+              <div className="workflow-card">
+                <div className="workflow-card-header">
+                  <div className="workflow-title-wrap">
+                    <Wrench size={15} className="text-sky" />
+                    <div>
+                      <span className="workflow-title">内置工具权限控制 (Builtin Tools)</span>
+                      <p className="workflow-sub">
+                        在当前 Thread 中受控暴露的 6 种标准工具；反选即可剥离该工具的调用能力
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="builtin-tools-grid">
+                  {availableBuiltinTools.map((toolName) => {
+                    const info = BUILTIN_TOOL_INFO[toolName] || {
+                      name: toolName,
+                      label: toolName,
+                      desc: '',
+                    };
+                    const isChecked = selectedBuiltinTools.includes(toolName);
+                    return (
+                      <div
+                        key={toolName}
+                        className={`builtin-tool-chip ${isChecked ? 'active' : 'inactive'}`}
+                        onClick={() => handleToggleBuiltinTool(toolName)}
+                        title={info.desc}
+                      >
+                        <div className="chip-header">
+                          <span className="chip-name font-mono">{info.name}</span>
+                          <span className={`chip-badge ${isChecked ? 'enabled' : 'disabled'}`}>
+                            {isChecked ? '已启用' : '已禁用'}
+                          </span>
+                        </div>
+                        <div className="chip-label">{info.label}</div>
+                        <div className="chip-desc">{info.desc}</div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 

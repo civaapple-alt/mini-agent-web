@@ -104,13 +104,22 @@ async def test_gateway_threads_and_workflows(test_app):
             resp_wf = await client.get("/api/workflows/state")
             assert resp_wf.status_code == 200
             assert resp_wf.json()["collaboration_mode"]["mode"] in ("default", "plan")
+            assert "available_builtin_tools" in resp_wf.json()
+            assert "builtin_tools" in resp_wf.json()
 
-            # Toggle Plan Mode
+            # Toggle Plan Mode and filter Builtin tools
             resp_settings = await client.post(
-                "/api/workflows/settings", json={"mode": "plan"}
+                "/api/workflows/settings",
+                json={
+                    "mode": "plan",
+                    "builtin_tools": ["read_file", "shell"],
+                    "thread_id": "default",
+                },
             )
             assert resp_settings.status_code == 200
             assert resp_settings.json()["collaboration_mode"]["mode"] == "plan"
+            assert "available_builtin_tools" in resp_settings.json()
+            assert "builtin_tools" in resp_settings.json()
 
             # Workflow files
             resp_wffiles = await client.get("/api/workflows/files")

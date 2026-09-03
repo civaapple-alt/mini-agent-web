@@ -304,6 +304,7 @@ class WorkflowState:
     """Read-only workflow projection using the Codex-shaped settings model."""
 
     collaboration_mode: CollaborationMode = field(default_factory=CollaborationMode)
+    builtin_tools: list[str] = field(default_factory=list)
     goal: ThreadGoal | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -313,8 +314,10 @@ class WorkflowState:
         goal_data = val.get("goal") if isinstance(val, dict) else None
         goal = ThreadGoal.from_dict(goal_data) if goal_data else None
         mode_data = val.get("collaborationMode") or val.get("collaboration_mode")
+        builtin_tools = val.get("builtinTools") or val.get("builtin_tools", [])
         return cls(
             collaboration_mode=CollaborationMode.from_dict(mode_data),
+            builtin_tools=builtin_tools,
             goal=goal,
             raw=data,
         )

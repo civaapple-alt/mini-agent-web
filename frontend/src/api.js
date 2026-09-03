@@ -15,11 +15,11 @@ export const api = {
     return res.json();
   },
 
-  async startThread(threadId = 'default', title = null) {
+  async startThread(threadId = 'default', title = null, project = null) {
     const res = await fetch(`${API_BASE}/api/threads`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ thread_id: threadId, title }),
+      body: JSON.stringify({ thread_id: threadId, title, project }),
     });
     if (!res.ok) throw new Error('Failed to start thread');
     return res.json();

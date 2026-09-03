@@ -58,6 +58,11 @@ export default function Sidebar({
   const [showAddFolderInput, setShowAddFolderInput] = useState(false);
   const [isSavingProject, setIsSavingProject] = useState(false);
 
+  // New Session Modal State
+  const [showNewSessionModal, setShowNewSessionModal] = useState(false);
+  const [newSessionProject, setNewSessionProject] = useState('');
+  const [newSessionTitle, setNewSessionTitle] = useState('');
+
   useEffect(() => {
     loadProjects();
   }, []);
@@ -360,8 +365,70 @@ export default function Sidebar({
     });
   }, [normalizedThreads]);
 
+  const handleOpenNewSession = () => {
+    setActiveProjectPopover(null);
+    setActiveMenuThread(null);
+    setNewSessionProject(currentProjectName || allProjects[0]?.name || 'mini-agent-web');
+    setNewSessionTitle('');
+    setShowNewSessionModal(true);
+  };
+
+  const handleConfirmNewSession = async (e) => {
+    if (e) e.preventDefault();
+    const projToUse = newSessionProject || currentProjectName;
+    const titleToUse = newSessionTitle.trim();
+
+    setShowNewSessionModal(false);
+
+    // If target project is different from active workspace, switch workspace
+    const targetProj = allProjects.find(
+      (p) => p.name === projToUse || p.id === projToUse
+    );
+    if (
+      targetProj &&
+      targetProj.primary_path &&
+      targetProj.primary_path !== projectsData?.current_project?.primary_path
+    ) {
+      try {
+        await api.switchProject(targetProj.primary_path);
+        await loadProjects();
+      } catch (err) {
+        console.warn('Failed to switch project workspace:', err);
+      }
+    }
+
+    if (onNewThread) {
+      onNewThread(projToUse, titleToUse);
+    }
+  };
+
   return (
     <aside className="codex-sidebar">
+      {/* 0. Top Entry: 新建会话 (支持选择所属项目) */}
+      <div className="sidebar-nav-actions">
+        <div
+          className="nav-action-row nav-new-session-row"
+          onClick={handleOpenNewSession}
+          title="新建会话 (可选择所属项目)"
+        >
+          <div className="nav-row-left">
+            <SquarePen size={15} className="nav-row-icon" />
+            <span className="nav-row-label">新建会话</span>
+          </div>
+          <button
+            type="button"
+            className="btn-plus-shortcut"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenNewSession();
+            }}
+            title="新建会话"
+          >
+            <Plus size={12} />
+          </button>
+        </div>
+      </div>
+
       {/* 1. Projects Section */}
       <div className="sidebar-projects-section custom-scrollbar">
         <div className="section-header-row">
@@ -862,6 +929,90 @@ export default function Sidebar({
                       : editingProject.is_new
                         ? '创建项目'
                         : '保存'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* New Session Modal */}
+      {showNewSessionModal && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setShowNewSessionModal(false)}
+        >
+          <div
+            className="modal-card modal-card-edit-project"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-edit-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <SquarePen size={16} style={{ color: 'var(--accent-color, #10a37f)' }} />
+                <span className="modal-edit-title">新建会话</span>
+              </div>
+              <button
+                type="button"
+                className="modal-edit-close"
+                onClick={() => setShowNewSessionModal(false)}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmNewSession}>
+              <div className="modal-edit-body">
+                {/* Select Project */}
+                <div className="form-group-block">
+                  <label className="field-label-text">
+                    所属项目 <span className="text-required">*</span>
+                  </label>
+                  <select
+                    className="modal-select-project"
+                    value={newSessionProject}
+                    onChange={(e) => setNewSessionProject(e.target.value)}
+                  >
+                    {allProjects.map((p) => (
+                      <option key={p.id || p.name} value={p.name || p.id}>
+                        {p.name} {p.primary_path ? `(${p.primary_path})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="field-hint-text">
+                    会话将归属于该项目，并在其工作区目录上下文中执行任务。
+                  </span>
+                </div>
+
+                {/* Session Title (Optional) */}
+                <div className="form-group-block">
+                  <label className="field-label-text">会话标题（可选）</label>
+                  <input
+                    type="text"
+                    className="input-project-name"
+                    placeholder="留空则自动生成（如：新会话 t-xxx）"
+                    value={newSessionTitle}
+                    onChange={(e) => setNewSessionTitle(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              <div className="modal-edit-footer">
+                <div />
+                <div className="footer-right-buttons">
+                  <button
+                    type="button"
+                    className="btn-cancel-edit"
+                    onClick={() => setShowNewSessionModal(false)}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-save-project-primary"
+                  >
+                    创建并开始
                   </button>
                 </div>
               </div>

@@ -467,15 +467,17 @@ export default function App() {
     loadThreadHistory(threadId);
   };
 
-  const handleNewThread = async () => {
-    const tid = `thread_${Date.now().toString(36)}`;
+  const handleNewThread = async (customProject = null, customTitle = null) => {
+    const tid = `t-${Date.now().toString(36)}`;
+    const finalTitle =
+      customTitle && customTitle.trim() ? customTitle.trim() : `新会话 ${tid}`;
     try {
-      await api.startThread(tid, `新会话 ${tid}`);
+      await api.startThread(tid, finalTitle, customProject);
       await loadThreads();
       setCurrentThread(tid);
-      setCurrentThreadMeta({ title: `新会话 ${tid}`, summary: '' });
+      setCurrentThreadMeta({ title: finalTitle, summary: '' });
       setMessages([]);
-      showToast(`已创建新会话: ${tid}`, 'success');
+      showToast(`已创建新会话: ${finalTitle}`, 'success');
     } catch (err) {
       showToast(`创建新会话失败: ${err.message}`, 'error');
     }

@@ -20,6 +20,9 @@ class StartThreadRequest(BaseModel):
         default="default", description="Identifier of the thread to create or attach"
     )
     title: str | None = Field(default=None, description="Optional custom display title")
+    project: str | None = Field(
+        default=None, description="Optional project ID or name to bind this thread to"
+    )
 
 
 class ForkThreadRequest(BaseModel):
@@ -87,13 +90,19 @@ async def start_thread(req: StartThreadRequest) -> dict[str, Any]:
     """Start or attach to a conversation thread."""
     try:
         active_id = await session_manager.client.start_thread(req.thread_id)
+        updates: dict[str, Any] = {}
         if req.title:
-            session_manager.set_thread_meta(active_id, {"title": req.title})
+            updates["title"] = req.title
+        if req.project:
+            updates["project"] = req.project
+        if updates:
+            session_manager.set_thread_meta(active_id, updates)
         meta = session_manager.get_thread_meta(active_id)
         return {
             "thread_id": active_id,
             "status": "active",
             "title": meta.get("title"),
+            "project": meta.get("project"),
             "summary": meta.get("summary"),
         }
     except AppServerError as err:

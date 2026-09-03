@@ -20,6 +20,30 @@ App Server. Keep the public SDK and the App Server JSON-RPC contract aligned.
 - Public behavior changes require updates to `CHANGELOG.md`, the relevant
   README or guide, and a focused test or Cookbook validation.
 
+## Progressive information disclosure
+
+Apply progressive disclosure across documentation, model context, UI components,
+and agent communications:
+
+- **Documentation & navigation**: Keep entry documents (`README.md`,
+  `docs/README.md`, `.agents/notes/README.md`) as lightweight indexes with concise
+  summaries and direct links. Never dump exhaustive implementation details,
+  historical logs, or full schemas into entry-level pages; direct readers
+  step-by-step from high-level overview to operational guides (`docs/`) and
+  deep-dive architectural notes (`.agents/notes/`).
+- **Prompt & context bounds**: Never inject unbounded file contents, massive tool
+  schemas, or entire historical sessions into model context up front. Disclose
+  bounded metadata first (names, short summaries, frontmatter); load detailed
+  contents or schemas on demand only when explicitly requested or activated.
+- **UI & stream presentation**: In Web Studio and TUI, default to folded,
+  structured summaries (e.g. collapsed thinking blocks, compact tool execution
+  cards with expandable parameters/outputs, settled context compaction badges) to
+  prevent overwhelming the user or DOM.
+- **Agent responses & summaries**: Lead with high-level conclusions, actionable
+  next steps, and structured links. Provide detailed technical breakdowns,
+  comprehensive diffs, or raw logs progressively in referenced artifacts rather
+  than unprompted walls of text.
+
 ## Development commands
 
 Run these commands from the repository root as applicable:

@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Imported missing `FolderPlus` and `SquarePen` icons in `Sidebar.jsx`, preventing React runtime crashes on project creation, folder management, and details popover rendering.
   - Fixed project creation path passthrough to bind the primary directory path selected by the user instead of defaulting to null.
   - Re-anchored project details popover directly below the folder item, eliminating sidebar overflow clipping and mouseleave dismissal.
+  - Fixed "scroll to bottom" button in `ChatArea` where flex stretch and negative translation caused it to appear as an oversized green horizontal bar when scrolling up.
   - Added click propagation guards on project action buttons, click-outside auto-dismiss for the header summary popover, and blur auto-save on thread title rename.
   - Introduced universal CSS floating tooltips (`[data-tooltip]`) with instant hover and multi-theme support.
 - **Cookbook Demo 04 timing**: replaced fixed steering/interruption sleeps with

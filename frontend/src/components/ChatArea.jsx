@@ -110,25 +110,6 @@ export default function ChatArea({
           className="btn-scroll-bottom"
           onClick={scrollToBottom}
           title="回到底部最新消息"
-          style={{
-            position: 'sticky',
-            bottom: '16px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '6px 12px',
-            borderRadius: '20px',
-            background: 'var(--accent-color, #10B981)',
-            color: '#FFFFFF',
-            border: 'none',
-            fontSize: '11px',
-            fontWeight: 500,
-            cursor: 'pointer',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-            zIndex: 10,
-          }}
         >
           <ArrowDown size={12} />
           <span>回到底部</span>

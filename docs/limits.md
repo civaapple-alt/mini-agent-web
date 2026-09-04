@@ -14,8 +14,10 @@
 | **单轮模型流式文本输出** | **64 KiB** | 流式规约器持续追踪字节数，超限时触发截断告警并结束当前块聚合 |
 | **内置基础工具集** | **4 种默认工具** | 默认暴露 `read_file`、`apply_patch`、`shell`、`read_image`；`web_fetch` 仅作为显式扩展，`write_file`、`edit_file` 已移除 |
 | **管理接口请求超时** | **30 秒** | `initialize`、`thread/start`、`thread/settings/update` 等控制面 RPC 30 秒超时熔断 |
-| **Goal 自治执行轮次上限** | **50 步** | 触发 App Server 的 `usageLimited` 并结算退出 |
-| **Goal 执行墙上时钟超时** | **600 秒** | 触发协作式取消（`turn/interrupt`）并标记为超时结算 |
+| **SDK JSON-RPC 请求超时** | **30 秒** | 单次 Stdio 请求/响应超时后清理 pending request，并抛出 `ServerProcessError` |
+| **Goal 自治循环上限** | **100 loops** | 运行时安全护栏；达到上限后标记为 `usageLimited` 并结算退出 |
+| **Goal 单个里程碑步数上限** | **200 steps** | 运行时安全护栏；达到上限后结束当前里程碑并进入受控结算 |
+| **Goal 单个里程碑墙上时钟** | **1800 秒** | 触发协作式取消（`turn/interrupt`）并标记为超时结算 |
 | **WebSocket 帧与缓冲区** | **1 MiB** | 超出单帧大小的异常报文直接拒绝解析并断开异常连接 |
 
 ---
@@ -29,7 +31,14 @@
 
 ### 2.2 工作区与会话列表
 - **会话历史检索**：会话搜索在前端进行亚毫秒级模糊过滤，历史会话加载采用异步渐进骨架屏（Skeleton Loading）；
+- **SessionStore 投影**：网关最多读取 128 个 Session；单个 `session.jsonl` 最大 8 MiB，单条记录最大 64 KiB；历史、运行中和已暂停 Session 均通过 canonical projection 展示；
+- **Session 切换**：历史或已暂停 Session 可通过 `/api/threads/{thread_id}/attach` 恢复；被其他 App Server 持有锁的运行中 Session 只读展示，锁释放后再 attach；
 - **工作区项目管理**：支持多项目并行固定（Pin），系统目录选择器受限于宿主操作系统权限。
+
+### 2.3 访问范围、批准与工作流
+- **访问范围**：`project` 限定在当前 Project 的主目录及关联目录；`full_machine` 只扩大路径范围到整机，不等于全部 Allow，Deny、Plan 锁和高风险动作确认仍有效；
+- **批准生命周期**：`per_action`、`current_session`、`current_project` 分别对应单次、当前会话和当前 Project；current-project grant 只驻留网关/App Server 内存，绑定 Project、workspace identity、revision、path scope 与 action，切换 Project、策略变更或撤销时失效；
+- **Goal 顶部控制**：活动 Goal 在当前 Thread 顶部显示，支持暂停、恢复、更新和删除；Goal 状态由 App Server canonical state 提供，页面刷新或切换 Session 后重新读取。
 
 ---
 

@@ -29,6 +29,12 @@ npm run build
 事件消费遵循 Thread/Turn 身份，并用稳定 item ID 合并工具和上下文压缩状态。
 历史消息通过 ThreadItem 分页投影恢复，生命周期通知不会创建重复卡片。
 
+Studio 侧栏从 App Server 的 SessionStore 投影同时展示历史、运行中和已暂停
+Session。选择历史或已暂停 Session 会请求 attach；如果 Session 仍被另一个
+App Server 进程锁定，Studio 保持只读历史，锁释放后即可再次 attach。活动 Goal
+固定显示在当前 Thread 顶部，状态和暂停、恢复、更新、删除操作仍以 App Server
+为准。
+
 ## 入口文件
 
 ```text

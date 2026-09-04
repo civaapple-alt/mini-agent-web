@@ -50,6 +50,13 @@
   letter-spacing: 0.08em;
 }
 
+.goal-topbar-mode {
+  color: #2563eb;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
 .goal-topbar-status {
   border-radius: 10px;
   padding: 2px 7px;

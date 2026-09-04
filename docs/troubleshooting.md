@@ -97,3 +97,19 @@ Turn 发送后，流式输出了部分思考链，随后一直停留在某个工
 Mini Agent 默认使用跨平台且现代的 **PowerShell 7 (`pwsh`)**。
 1. 请确保已安装 PowerShell 7，并将其加入系统 PATH；
 2. 在终端运行 `pwsh --version` 进行确认。
+
+---
+
+## 7. 历史 Session 显示为只读或无法立即恢复
+
+### 现象
+- 侧栏可以看到 Session，但提示“正在另一个进程运行”；
+- 已暂停 Goal 显示在历史列表中，点击后没有立即开始新一轮执行。
+
+### 处理方式
+- 被其他 App Server 持有锁的 Session 仍可读取 canonical history，但不能被第二个
+  进程同时 attach；等待原进程结束后重新选择该 Session；
+- 已暂停 Session 的 attach 只恢复运行时连接，不会自动执行新 Turn；发送下一条消息
+  或恢复 Goal 后才会继续推进；
+- 如果仍然无法恢复，先刷新 Web Studio，再检查对应 Project 的 SessionStore 和
+  App Server 日志，避免删除 Session 文件来绕过锁。

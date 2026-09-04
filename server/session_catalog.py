@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -48,9 +49,45 @@ def _read_json(path: Path) -> dict[str, Any]:
 def _process_alive(pid: int) -> bool:
     if pid <= 0:
         return False
+    if sys.platform == "win32":
+        # Windows does not implement POSIX signal 0 consistently. In
+        # particular, os.kill(pid, 0) may raise WinError 87/SystemError even
+        # for a valid PID, so query the process exit code through kernel32.
+        try:
+            import ctypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.OpenProcess.argtypes = [
+                ctypes.c_uint32,
+                ctypes.c_bool,
+                ctypes.c_uint32,
+            ]
+            kernel32.OpenProcess.restype = ctypes.c_void_p
+            kernel32.GetExitCodeProcess.argtypes = [
+                ctypes.c_void_p,
+                ctypes.POINTER(ctypes.c_ulong),
+            ]
+            kernel32.GetExitCodeProcess.restype = ctypes.c_bool
+            kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+            kernel32.CloseHandle.restype = ctypes.c_bool
+            handle = kernel32.OpenProcess(0x1000, False, pid)
+            if not handle:
+                return False
+            exit_code = ctypes.c_ulong()
+            try:
+                return bool(
+                    kernel32.GetExitCodeProcess(
+                        handle, ctypes.byref(exit_code)
+                    )
+                    and exit_code.value == 259
+                )
+            finally:
+                kernel32.CloseHandle(handle)
+        except Exception:  # noqa: BLE001
+            return False
     try:
         os.kill(pid, 0)
-    except (OSError, PermissionError):
+    except (OSError, PermissionError, SystemError):
         return False
     return True
 
@@ -81,6 +118,32 @@ def _goal_status(value: Any) -> str:
         "budget_limited": "budget_limited",
         "failed": "failed",
     }.get(str(value), "none")
+
+
+def _goal_projection(
+    goal: dict[str, Any], thread_id: str, goal_status: str
+) -> dict[str, Any] | None:
+    """Project Rust GoalState into the stable Web workflow shape."""
+    objective = str(goal.get("objective") or "")
+    if not objective:
+        return None
+    status = {
+        "running": "active",
+        "user_paused": "paused",
+        "converged": "completed",
+        "usage_limited": "usageLimited",
+        "budget_limited": "budgetLimited",
+    }.get(str(goal.get("status") or goal_status), str(goal.get("status") or goal_status))
+    return {
+        "thread_id": str(goal.get("thread_id") or thread_id),
+        "objective": objective,
+        "status": status,
+        "token_budget": goal.get("token_budget"),
+        "tokens_used": goal.get("tokens_used", 0),
+        "time_used_seconds": goal.get("time_used_seconds", 0),
+        "created_at": goal.get("created_at_ms", 0),
+        "updated_at": goal.get("updated_at_ms", 0),
+    }
 
 
 def _item_projection(record: dict[str, Any]) -> dict[str, Any] | None:
@@ -221,9 +284,13 @@ class SessionCatalog:
         goal_status = _goal_status(goal.get("status"))
         has_lock, pid = _lock_info(path / "session.lock")
         lock_active = bool(has_lock and pid and _process_alive(pid))
+        # A paused Goal is a resumable Session state even after the process has
+        # released its lock. Keep lock ownership separate from lifecycle state:
+        # a live process is still locked, while a user-paused process remains
+        # visibly paused and can be attached by Studio later.
         runtime_status = (
             "paused"
-            if lock_active and goal_status == "paused"
+            if goal_status == "paused"
             else "running"
             if lock_active
             else "historical"
@@ -242,9 +309,15 @@ class SessionCatalog:
             "created_at": _timestamp(summary.get("created_at_ms")),
             "updated_at": _timestamp(updated_ms),
             "runtime_status": runtime_status,
-            "session_status": "locked" if lock_active else "historical",
+            "session_status": (
+                "locked"
+                if lock_active
+                else "paused"
+                if goal_status == "paused"
+                else "historical"
+            ),
             "goal_status": goal_status,
-            "goal": goal or None,
+            "goal": _goal_projection(goal, thread_id, goal_status),
             "plan_active": bool(plan.get("active", False)),
             "cleanup_pending": cleanup.get("status") == "cleanup_pending",
             "active_turn_id": goal.get("active_turn_id") or latest_turn_id

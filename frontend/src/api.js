@@ -25,6 +25,19 @@ export const api = {
     return res.json();
   },
 
+  async attachThread(threadId = 'default', project = null) {
+    const res = await fetch(`${API_BASE}/api/threads/${encodeURIComponent(threadId)}/attach`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project }),
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || `Failed to attach thread ${threadId}`);
+    }
+    return res.json();
+  },
+
   async forkThread(sourceThreadId, newThreadId, title = null) {
     const res = await fetch(`${API_BASE}/api/threads/fork`, {
       method: 'POST',

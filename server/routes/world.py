@@ -332,6 +332,40 @@ async def retry_mcp() -> dict[str, Any]:
 async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
     """Retrieve current collaboration mode, active Thread Goal, and builtin tools."""
     try:
+        target_thread = thread_id or "default"
+        canonical = session_manager.read_any_project_thread(target_thread)
+        if canonical:
+            session = canonical.get("session", {})
+            goal = session.get("goal")
+            if isinstance(goal, dict) and goal.get("objective"):
+                status = str(goal.get("status") or session.get("goal_status") or "active")
+                goal_dict = {
+                    "thread_id": goal.get("thread_id") or target_thread,
+                    "objective": goal.get("objective", ""),
+                    "status": status,
+                    "token_budget": goal.get("token_budget"),
+                    "tokens_used": goal.get("tokens_used", 0),
+                    "time_used_seconds": goal.get("time_used_seconds", 0),
+                    "created_at": goal.get("created_at", goal.get("created_at_ms", 0)),
+                    "updated_at": goal.get("updated_at", goal.get("updated_at_ms", 0)),
+                }
+            else:
+                goal_dict = None
+            effective_builtin_tools = session_manager._thread_builtin_tools.get(
+                target_thread, DEFAULT_BUILTIN_TOOLS
+            )
+            return {
+                "collaboration_mode": {
+                    "mode": "plan" if session.get("plan_active") else "default"
+                },
+                "builtin_tools": effective_builtin_tools,
+                "available_builtin_tools": ALL_BUILTIN_TOOLS,
+                "goal": goal_dict,
+                "source": "session_store",
+                "session_status": session.get("session_status"),
+                "runtime_status": session.get("runtime_status"),
+            }
+
         client = await session_manager.get_client_for_thread(thread_id)
         wf = await client.get_workflow_state(thread_id=thread_id)
         goal_dict = None

@@ -227,6 +227,7 @@ def test_gateway_websocket_turn_mode_sanitation(test_app):
     mock_client = AsyncMock()
     mock_client.stream_turn = mock_stream_turn
     session_manager._client = mock_client
+    session_manager._clients["t-1"] = mock_client
 
     client = TestClient(test_app)
     with client.websocket_connect("/ws/agent") as ws:
@@ -277,6 +278,7 @@ async def test_gateway_history_uses_canonical_session_store(test_app):
     mock_client.read_thread = AsyncMock(return_value=empty_cp)
     mock_client.resume_thread = AsyncMock()
     session_manager._client = mock_client
+    session_manager._clients["test-persisted"] = mock_client
 
     transport = ASGITransport(app=test_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

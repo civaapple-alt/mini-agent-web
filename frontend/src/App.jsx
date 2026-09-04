@@ -162,6 +162,10 @@ export default function App() {
           summary: cp.metadata.summary || '',
         });
       }
+      if (cp.session) {
+        setPlanActive(Boolean(cp.session.plan_active));
+        setGoalState(cp.session.goal || null);
+      }
       const rawMessages = cp.messages || [];
       const formatted = rawMessages
         .filter((m) => {
@@ -476,12 +480,26 @@ export default function App() {
 
   const handleSelectThread = (threadId) => {
     if (threadId === currentThread) return;
+    const selected = threads.find((thread) => thread.thread_id === threadId);
     setIsGenerating(false);
     setActiveTurnId(null);
     setPendingApproval(null);
     setCurrentThread(threadId);
+    if (selected) {
+      setCurrentThreadMeta({
+        title: selected.title || threadId,
+        summary: selected.summary || '',
+      });
+    }
     loadThreadHistory(threadId);
     loadWorkflows(threadId);
+    api.attachThread(threadId, selected?.project).then((result) => {
+      if (!result.attached && result.session_status === 'locked') {
+        showToast('该 Session 正在另一个进程运行，当前为只读查看；结束后可重新 attach', 'info', 3500);
+      }
+    }).catch((err) => {
+      showToast(`切换 Session 失败: ${err.message}`, 'error');
+    });
   };
 
   const handleNewThread = async (customProject = null, customTitle = null) => {
@@ -673,11 +691,13 @@ export default function App() {
           {goalState && (
             <div className="goal-topbar" role="status">
               <div className="goal-topbar-main">
+                {planActive && <span className="goal-topbar-mode">PLAN</span>}
                 <span className="goal-topbar-label">GOAL</span>
                 <span className={`goal-topbar-status ${goalState.status}`}>{goalState.status}</span>
                 <span className="goal-topbar-objective" title={goalState.objective}>{goalState.objective}</span>
               </div>
               <div className="goal-topbar-actions">
+                <button type="button" onClick={() => handleOpenSidePanel('plan_goal')}>详情</button>
                 {goalState.status === 'paused' ? (
                   <button type="button" onClick={handleResumeGoal}>恢复</button>
                 ) : goalState.status === 'active' ? (

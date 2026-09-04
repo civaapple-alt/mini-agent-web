@@ -538,6 +538,37 @@ class SessionManager:
         await self.get_client_for_thread(thread_id, project_id)
         return thread_id
 
+    async def attach_thread(
+        self, thread_id: str = "default", project_id: str | None = None
+    ) -> dict[str, Any]:
+        """Attach Studio to a resumable Session without stealing a live lock."""
+        target = thread_id or "default"
+        canonical = self.read_any_project_thread(target)
+        if canonical and canonical["session"]["session_status"] == "locked":
+            session = canonical["session"]
+            return {
+                "thread_id": target,
+                "attached": False,
+                "project": session.get("project_id"),
+                "session_id": session.get("session_id"),
+                "session_status": session.get("session_status"),
+                "runtime_status": session.get("runtime_status"),
+                "locked_by": session.get("locked_by"),
+            }
+
+        await self.get_client_for_thread(target, project_id)
+        refreshed = self.read_any_project_thread(target)
+        session = refreshed.get("session", {}) if refreshed else {}
+        return {
+            "thread_id": target,
+            "attached": True,
+            "project": session.get("project_id") or project_id,
+            "session_id": session.get("session_id"),
+            "session_status": session.get("session_status", "locked"),
+            "runtime_status": session.get("runtime_status", "running"),
+            "locked_by": session.get("locked_by"),
+        }
+
     async def start(self) -> None:
         """Start and initialize the background MiniAgentClient."""
         async with self._lock:

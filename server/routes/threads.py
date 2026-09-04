@@ -36,6 +36,12 @@ class StartThreadRequest(BaseModel):
     )
 
 
+class AttachThreadRequest(BaseModel):
+    project: str | None = Field(
+        default=None, description="Optional project ID or name for a resumable Session"
+    )
+
+
 class ForkThreadRequest(BaseModel):
     source_thread_id: str = Field(..., description="Existing thread ID to fork from")
     new_thread_id: str = Field(
@@ -107,6 +113,7 @@ async def list_threads(
                         "session_status": catalog_entry["session_status"],
                         "runtime_status": catalog_entry["runtime_status"],
                         "goal_status": catalog_entry["goal_status"],
+                        "cleanup_pending": catalog_entry["cleanup_pending"],
                         "resumable": catalog_entry["resumable"],
                     }
                 )
@@ -119,6 +126,19 @@ async def list_threads(
         }
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.post("/{thread_id}/attach", summary="Attach to a resumable Session")
+async def attach_thread(thread_id: str, req: AttachThreadRequest | None = None) -> dict[str, Any]:
+    """Attach to a historical/paused Session, or report a live external lock."""
+    try:
+        return await session_manager.attach_thread(
+            thread_id, req.project if req else None
+        )
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
 
 
 @router.post("", summary="Start or attach to a thread")

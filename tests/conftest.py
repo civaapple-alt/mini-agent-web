@@ -18,6 +18,21 @@ def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     test_state_dir = tmp_path / "mini_agent_test_state"
     test_state_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("MINI_AGENT_WEB_STATE_DIR", str(test_state_dir))
+    # App Server SessionStore follows the process home directory. Isolate it
+    # too, otherwise fixed test thread IDs can collide with a user's local
+    # ~/.mini-agent/sessions and make gateway tests read unrelated history.
+    # Keep the synthetic home short: Rust's canonical SessionStore encodes the
+    # absolute workspace path into a Windows directory name with a 240-byte
+    # bound, and pytest's nested temp paths can otherwise exceed MAX_PATH.
+    test_home = Path("C:/m")
+    test_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("USERPROFILE", str(test_home))
+    monkeypatch.setenv("HOME", str(test_home))
+    # Initialization validates provider settings even when tests never invoke
+    # a real model. Use non-secret test values so home isolation cannot hide a
+    # developer's environment-backed credentials and no paid call is possible.
+    monkeypatch.setenv("OPENAI_API_KEY", "mini-agent-test-key")
+    monkeypatch.setenv("OPENAI_MODEL", "mini-agent-test-model")
     local_server = (
         Path(__file__).parents[1].parent
         / "mini-codex"
@@ -33,6 +48,8 @@ def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     orig_state_file = session_manager._state_file
     orig_projects = dict(session_manager._projects_registry)
     orig_threads = dict(session_manager._thread_metadata)
+    orig_client = session_manager._client
+    orig_clients = dict(session_manager._clients)
     orig_cur_id = session_manager._current_project_id
     orig_cur_path = session_manager._current_project_path
     orig_settings = dict(session_manager._settings)
@@ -53,6 +70,8 @@ def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     session_manager._state_file = orig_state_file
     session_manager._projects_registry = orig_projects
     session_manager._thread_metadata = orig_threads
+    session_manager._client = orig_client
+    session_manager._clients = orig_clients
     session_manager._thread_builtin_tools = orig_builtin_tools
     session_manager._current_project_id = orig_cur_id
     session_manager._current_project_path = orig_cur_path

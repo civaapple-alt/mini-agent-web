@@ -4,6 +4,7 @@ Automated pytest suite for Mini Agent Python SDK advanced APIs.
 
 import pytest
 from mini_agent import MiniAgentClient, ThreadCheckpoint
+from mini_agent.errors import ServerProcessError
 
 
 @pytest.mark.asyncio
@@ -169,3 +170,25 @@ async def test_sdk_approval_response_uses_typed_decision():
             },
         )
     ]
+
+
+@pytest.mark.asyncio
+async def test_sdk_request_timeout_cleans_pending_request():
+    class FakeStdin:
+        def write(self, _data):
+            return None
+
+        async def drain(self):
+            return None
+
+    class FakeProcess:
+        stdin = FakeStdin()
+        returncode = None
+
+    client = MiniAgentClient(request_timeout=0.01)
+    client._proc = FakeProcess()
+
+    with pytest.raises(ServerProcessError, match="request 'initialize' timed out"):
+        await client._send_request("initialize")
+
+    assert client._pending_requests == {}

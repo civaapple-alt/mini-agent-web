@@ -25,6 +25,7 @@ uv run mini-agent-server-dev
 | --- | --- |
 | `/ws/agent` | Turn 流、审批、Steer、Interrupt 和 runtime notifications |
 | `/api/threads` | Thread 列表、创建、读取、分叉、摘要和关闭 |
+| `/api/threads/{thread_id}/attach` | attach 历史/暂停 Session，或报告外部运行锁 |
 | `/api/threads/{thread_id}/items` | 有界 ThreadItem 历史投影 |
 | `/api/threads/{thread_id}/settings` | Thread collaboration mode 和 Builtin tools |
 | `/api/threads/{thread_id}/goal` | Thread Goal 的读取、设置和清除 |
@@ -32,7 +33,7 @@ uv run mini-agent-server-dev
 | `/api/world/*` | World、MCP、Git 和本地工作区探测 |
 | `/api/projects/*` | 本地项目元数据管理 |
 | `/api/settings` | 网关偏好设置 |
-| `/api/workflows/state` | 只读 workflow 聚合投影 |
+| `/api/workflows/state` | 只读 workflow 聚合投影（含锁定 Session 的 canonical 状态） |
 
 Thread、Turn、Goal 和 ThreadItem 的运行时语义来自 App Server；网关不创建
 第二套运行时状态机。

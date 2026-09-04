@@ -236,3 +236,49 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     history = catalog.read_thread(workspace, "project-1", "t-1")
     assert history["messages"][0]["text"] == "inspect project"
     assert history["items"][0]["item"]["type"] == "userMessage"
+
+
+def test_session_catalog_keeps_user_paused_state_after_lock_release(
+    tmp_path, monkeypatch
+):
+    """A paused Goal remains selectable and resumable after its process exits."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    session_dir = session_base / "s-paused"
+    session_dir.mkdir(parents=True)
+    records = [
+        {"kind": "session_created", "session_id": "s-paused", "timestamp_ms": 1},
+        {"kind": "thread_started", "thread_id": "t-paused"},
+        {
+            "kind": "checkpoint",
+            "thread_id": "t-paused",
+            "messages": [{"role": "user", "text": "pause here"}],
+            "timestamp_ms": 2,
+        },
+    ]
+    (session_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_dir / "goal").mkdir()
+    (session_dir / "goal" / "state.json").write_text(
+        json.dumps(
+            {
+                "objective": "finish the migration",
+                "status": "user_paused",
+                "token_budget": 1000,
+                "tokens_used": 12,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    entry = SessionCatalog().list_sessions(workspace, "project-1")["data"][0]
+
+    assert entry["runtime_status"] == "paused"
+    assert entry["session_status"] == "paused"
+    assert entry["resumable"] is True
+    assert entry["goal_status"] == "paused"

@@ -62,6 +62,9 @@ asyncio.run(main())
 current_project` 的明确组合。
 
 ThreadItem 是 App Server Session history 的读取投影，不是 SDK 的第二个持久化存储。
+每个 JSON-RPC 请求默认有 30 秒 transport timeout；可通过
+`MiniAgentClient(request_timeout=...)` 为宿主测试或特殊本地环境调整。超时会
+清理 pending request，并抛出 `ServerProcessError`，不会无限等待。
 
 ## 深入阅读
 

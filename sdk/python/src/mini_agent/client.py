@@ -51,6 +51,8 @@ from mini_agent.types import (
 
 logger = logging.getLogger("mini_agent")
 
+DEFAULT_REQUEST_TIMEOUT_SECS = 30.0
+
 
 def setup_logging(
     log_dir: str | None = "logs",
@@ -188,6 +190,7 @@ class MiniAgentClient:
         log_file: str | None = None,
         log_level: str | int | None = None,
         log_mode: str | None = None,
+        request_timeout: float = DEFAULT_REQUEST_TIMEOUT_SECS,
     ):
         """
         Initialize the MiniAgentClient.
@@ -202,6 +205,7 @@ class MiniAgentClient:
         :param log_file: Specific log file path (e.g. 'logs/01_basic_turn.log').
         :param log_level: Logging level ('DEBUG', 'INFO', logging.DEBUG, etc.).
         :param log_mode: Log file open mode ('a' for append, 'w' for overwrite/fresh log).
+        :param request_timeout: Timeout in seconds for one JSON-RPC request/response.
         """
         _ensure_utf8_console()
         self.executable = executable
@@ -235,6 +239,9 @@ class MiniAgentClient:
         self._event_queues: list[asyncio.Queue[dict[str, Any]]] = []
         self._active_thread_id: str = "default"
         self._thread_settings: dict[str, ThreadSettingsResult] = {}
+        if request_timeout <= 0:
+            raise ValueError("request_timeout must be positive")
+        self.request_timeout = request_timeout
 
     async def __aenter__(self) -> Self:
         await self.start()
@@ -353,10 +360,27 @@ class MiniAgentClient:
         self._pending_requests[req_id] = future
 
         logger.debug(">>> SEND: %s", data.strip())
+        try:
+            await asyncio.wait_for(
+                self._write_request(data), timeout=self.request_timeout
+            )
+            return await asyncio.wait_for(future, timeout=self.request_timeout)
+        except asyncio.TimeoutError as err:
+            raise ServerProcessError(
+                f"App Server request '{method}' timed out after "
+                f"{self.request_timeout:g}s"
+            ) from err
+        finally:
+            # The reader normally removes completed requests. On a timeout or
+            # transport failure there is no response left to correlate.
+            if self._pending_requests.get(req_id) is future:
+                self._pending_requests.pop(req_id, None)
+
+    async def _write_request(self, data: str) -> None:
+        """Write one bounded JSON-RPC request with the same timeout budget."""
+        assert self._proc and self._proc.stdin
         self._proc.stdin.write(data.encode("utf-8"))
         await self._proc.stdin.drain()
-
-        return await future
 
     async def _send_notification(
         self, method: str, params: dict[str, Any] | None = None

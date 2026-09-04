@@ -19,6 +19,7 @@ from fastapi import WebSocket
 from mini_agent import MiniAgentClient
 
 from server.config import settings
+from server.session_catalog import session_catalog
 
 logger = logging.getLogger("mini_agent.server")
 
@@ -53,6 +54,7 @@ class SessionManager:
 
     def __init__(self) -> None:
         self._client: MiniAgentClient | None = None
+        self._clients: dict[str, MiniAgentClient] = {}
         self._active_connections: list[WebSocket] = []
         self._pending_approvals: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._pending_approval_details: dict[str, dict[str, Any]] = {}
@@ -201,11 +203,17 @@ class SessionManager:
                 for t in self._thread_metadata.values()
                 if t.get("project") == proj_id or t.get("project") == p.get("name")
             ]
+            sessions = session_catalog.list_sessions(
+                Path(p["primary_path"]), proj_id, limit=128
+            )["data"]
             projects_list.append(
                 {
                     **p,
                     "threads_count": len(p_threads),
-                    "active_threads_count": max(1, len(p_threads)),
+                    "active_threads_count": sum(
+                        item["runtime_status"] == "running" for item in sessions
+                    ),
+                    "sessions_count": len(sessions),
                 }
             )
 
@@ -392,12 +400,18 @@ class SessionManager:
             }
         ]
 
-    def _runtime_env(self) -> dict[str, str]:
-        """Pass the active Project workspace binding to the Host process."""
+    def _runtime_env(self, project: dict[str, Any] | None = None) -> dict[str, str]:
+        """Pass one Project's bounded workspace binding to the Host process."""
         read_roots: list[str] = []
         write_roots: list[str] = []
-        primary = self._current_project_path.resolve()
-        for folder in self.current_source_folders:
+        project = project or self._projects_registry.get(self._current_project_id, {})
+        primary = Path(
+            project.get("primary_path", self._current_project_path)
+        ).resolve()
+        source_folders = project.get("source_folders") or [
+            {"path": str(primary), "is_primary": True}
+        ]
+        for folder in source_folders:
             raw_path = folder.get("path") if isinstance(folder, dict) else None
             if not raw_path:
                 continue
@@ -409,7 +423,7 @@ class SessionManager:
             if folder.get("editable", True):
                 write_roots.append(path_text)
         return {
-            "MINI_AGENT_PROJECT_ID": self._current_project_id,
+            "MINI_AGENT_PROJECT_ID": str(project.get("id", self._current_project_id)),
             "MINI_AGENT_EXTRA_READ_ROOTS": os.pathsep.join(read_roots),
             "MINI_AGENT_EXTRA_WRITE_ROOTS": os.pathsep.join(write_roots),
         }
@@ -422,38 +436,129 @@ class SessionManager:
             )
         return self._client
 
+    def _project_for_thread(
+        self, thread_id: str, project_id: str | None = None
+    ) -> dict[str, Any]:
+        candidate = project_id or self._thread_metadata.get(thread_id, {}).get(
+            "project"
+        )
+        if candidate in self._projects_registry:
+            return self._projects_registry[candidate]
+        for project in self._projects_registry.values():
+            if project.get("name") == candidate:
+                return project
+        canonical = self.read_any_project_thread(thread_id)
+        if canonical:
+            canonical_project = canonical.get("session", {}).get("project_id")
+            if canonical_project in self._projects_registry:
+                return self._projects_registry[canonical_project]
+        return self._projects_registry[self._current_project_id]
+
+    async def _create_client(
+        self,
+        thread_id: str,
+        project: dict[str, Any],
+        session_mode: str,
+        session_id: str | None = None,
+    ) -> MiniAgentClient:
+        env = self._runtime_env(project)
+        env.update(
+            {
+                "MINI_AGENT_SESSION_MODE": session_mode,
+                "MINI_AGENT_THREAD_ID": thread_id,
+            }
+        )
+        if session_id:
+            env["MINI_AGENT_SESSION_ID"] = session_id
+        client = MiniAgentClient(
+            cwd=str(Path(project["primary_path"]).resolve()),
+            env=env,
+            log_dir=settings.log_dir,
+            log_level=settings.log_level,
+            approval_handler=self._handle_approval_request,
+            notification_handler=self._handle_runtime_notification,
+        )
+        await client.__aenter__()
+        try:
+            init_res = await client.initialize()
+            access = str(project.get("access", "project"))
+            approval = str(project.get("approval", "per_action"))
+            await client.set_world_execution(access=access, approval=approval)
+            await client.start_thread(thread_id)
+            logger.info(
+                "MiniAgentClient initialized for thread %s: %s v%s",
+                thread_id,
+                init_res.get("serverName"),
+                init_res.get("serverVersion"),
+            )
+            return client
+        except Exception:
+            await client.stop()
+            raise
+
+    async def get_client_for_thread(
+        self, thread_id: str | None = None, project_id: str | None = None
+    ) -> MiniAgentClient:
+        """Get or create the App Server process bound to one canonical session."""
+        target = thread_id or "default"
+        existing = self._clients.get(target)
+        if existing is not None:
+            return existing
+        canonical = self.read_any_project_thread(target)
+        if canonical and canonical["session"]["session_status"] == "locked":
+            raise RuntimeError(
+                f"Session '{target}' is already running in another process"
+            )
+        project = self._project_for_thread(target, project_id)
+        session = canonical.get("session") if canonical else None
+        client = await self._create_client(
+            target,
+            project,
+            "resume" if session else "new",
+            session.get("session_id") if session else None,
+        )
+        self._clients[target] = client
+        if target == "default":
+            self._client = client
+        return client
+
+    def live_thread_ids(self) -> list[str]:
+        return list(self._clients)
+
+    def bind_thread_client(self, thread_id: str, client: MiniAgentClient) -> None:
+        """Associate an App Server's forked in-memory thread with its client."""
+        self._clients[thread_id] = client
+
+    async def start_thread(
+        self, thread_id: str = "default", project_id: str | None = None
+    ) -> str:
+        if project_id:
+            self.set_thread_meta(thread_id, {"project": project_id})
+        await self.get_client_for_thread(thread_id, project_id)
+        return thread_id
+
     async def start(self) -> None:
         """Start and initialize the background MiniAgentClient."""
         async with self._lock:
             if self._client is not None:
                 return
-
-            self._client = MiniAgentClient(
-                cwd=str(self._current_project_path),
-                env=self._runtime_env(),
-                log_dir=settings.log_dir,
-                log_level=settings.log_level,
-                approval_handler=self._handle_approval_request,
-                notification_handler=self._handle_runtime_notification,
+            canonical = self.read_project_thread("default")
+            session = canonical.get("session") if canonical else None
+            reusable_session = session and session.get("session_status") != "locked"
+            self._client = await self._create_client(
+                "default",
+                self._projects_registry[self._current_project_id],
+                "resume" if reusable_session else "new",
+                session.get("session_id") if reusable_session else None,
             )
-            await self._client.__aenter__()
-            init_res = await self._client.initialize()
-            access, approval = self.project_execution()
-            await self._client.set_world_execution(
-                access=access,
-                approval=approval,
-            )
-            logger.info(
-                "MiniAgentClient initialized successfully: %s v%s",
-                init_res.get("serverName"),
-                init_res.get("serverVersion"),
-            )
+            self._clients["default"] = self._client
             self._initialized = True
 
     async def restart_for_current_project(self) -> None:
         """Rebind the Host process after the active Project/workspace changes."""
         async with self._lock:
-            client = self._client
+            clients = list(self._clients.values())
+            self._clients.clear()
             self._client = None
             self._initialized = False
             for task in self._active_tasks.values():
@@ -465,10 +570,9 @@ class SessionManager:
                     future.cancel()
             self._pending_approvals.clear()
             self._pending_approval_details.clear()
-        if client is not None:
+        for client in set(clients):
             await client.stop()
-        if client is not None:
-            await self.start()
+        await self.start()
 
     async def stop(self) -> None:
         """Stop the background MiniAgentClient and close WebSocket connections."""
@@ -487,15 +591,17 @@ class SessionManager:
                     fut.cancel()
             self._pending_approvals.clear()
 
-            # 3. Terminate MiniAgentClient
-            if self._client is not None:
+            # 3. Terminate all per-session App Server processes
+            clients = list(self._clients.values())
+            self._clients.clear()
+            self._client = None
+            for client in set(clients):
                 try:
-                    await asyncio.wait_for(self._client.stop(), timeout=3.0)
+                    await asyncio.wait_for(client.stop(), timeout=3.0)
                 except (asyncio.TimeoutError, Exception):  # noqa: BLE001, S110
                     pass
-                self._client = None
-                self._initialized = False
-                logger.info("MiniAgentClient terminated cleanly.")
+            self._initialized = False
+            logger.info("MiniAgentClient processes terminated cleanly.")
 
     # -------------------------------------------------------------------------
     # Thread Metadata Management
@@ -529,6 +635,51 @@ class SessionManager:
     def list_all_thread_meta(self) -> dict[str, dict[str, Any]]:
         """Return full thread metadata mapping."""
         return dict(self._thread_metadata)
+
+    def list_project_sessions(
+        self, project_id: str | None = None, limit: int = 64, cursor: str | None = None
+    ) -> dict[str, Any]:
+        """Read the canonical SessionStore projection for one registered Project."""
+        target_id = project_id or self._current_project_id
+        project = self._projects_registry.get(target_id)
+        if not project:
+            raise KeyError(f"Project '{target_id}' not found")
+        result = session_catalog.list_sessions(
+            Path(project["primary_path"]), target_id, limit=limit, cursor=cursor
+        )
+        for session in result["data"]:
+            meta = self._thread_metadata.get(session["thread_id"], {})
+            session["title"] = meta.get("title") or session["title"]
+            session["summary"] = meta.get("summary") or session["summary"]
+        return result
+
+    def list_all_project_sessions(self, limit: int = 128) -> list[dict[str, Any]]:
+        """Return a bounded cross-project SessionStore view for the sidebar."""
+        sessions: list[dict[str, Any]] = []
+        for project_id in self._projects_registry:
+            sessions.extend(self.list_project_sessions(project_id, limit=limit)["data"])
+        sessions.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
+        return sessions[: max(1, min(limit, 128))]
+
+    def read_project_thread(
+        self, thread_id: str, project_id: str | None = None
+    ) -> dict[str, Any] | None:
+        """Read a settled Thread projection without creating a Web checkpoint."""
+        target_id = project_id or self._current_project_id
+        project = self._projects_registry.get(target_id)
+        if not project:
+            return None
+        return session_catalog.read_thread(
+            Path(project["primary_path"]), target_id, thread_id
+        )
+
+    def read_any_project_thread(self, thread_id: str) -> dict[str, Any] | None:
+        """Find one canonical SessionStore thread without changing the active Project."""
+        for project_id in self._projects_registry:
+            result = self.read_project_thread(thread_id, project_id)
+            if result:
+                return result
+        return None
 
     # -------------------------------------------------------------------------
     # Settings Management
@@ -661,6 +812,34 @@ class SessionManager:
 
     def list_pending_approvals(self) -> list[str]:
         return list(self._pending_approvals.keys())
+
+    def approval_snapshot(self) -> dict[str, Any]:
+        """Expose project policy and pending requests without exposing grants."""
+        access, approval = self.project_execution()
+        pending = []
+        for request_id, details in self._pending_approval_details.items():
+            pending.append(
+                {
+                    "request_id": request_id,
+                    "action_name": details.get("action_name", ""),
+                    "data": details.get("data", {}),
+                }
+            )
+        return {
+            "project_id": self._current_project_id,
+            "access": access,
+            "approval": approval,
+            "pending_requests": pending,
+            "grant_store": "app-server-memory",
+            "revocable": True,
+        }
+
+    async def revoke_current_project_approvals(self) -> dict[str, Any]:
+        """Restart the project-bound App Server, clearing its in-memory grants."""
+        project_id = self._current_project_id
+        self.cancel_active_task()
+        await self.restart_for_current_project()
+        return {"project_id": project_id, "revoked": True}
 
     # -------------------------------------------------------------------------
     # WebSocket Connection Management

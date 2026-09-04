@@ -36,6 +36,8 @@ export default function SidePanel({
   planActive,
   onTogglePlan,
   goalState,
+  threadId = 'default',
+  onGoalChanged,
   onToast,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -85,6 +87,12 @@ export default function SidePanel({
     }
   }, [isOpen, activeTab]);
 
+  useEffect(() => {
+    if (isOpen && activeTab === 'plan_goal') {
+      loadWorkflow();
+    }
+  }, [threadId]);
+
   const loadAllData = async () => {
     setIsLoading(true);
     try {
@@ -122,7 +130,7 @@ export default function SidePanel({
 
   const loadWorkflow = async () => {
     try {
-      const data = await api.getWorkflowState();
+      const data = await api.getWorkflowState(threadId);
       setWorkflowState(data);
       if (Array.isArray(data.builtin_tools)) {
         setSelectedBuiltinTools(data.builtin_tools);
@@ -145,7 +153,7 @@ export default function SidePanel({
 
     setSelectedBuiltinTools(nextTools);
     try {
-      await api.updateThreadSettings(planActive ? 'plan' : 'default', nextTools);
+      await api.updateThreadSettings(planActive ? 'plan' : 'default', nextTools, threadId);
       if (onToast) {
         onToast(
           nextTools.includes(toolName)
@@ -219,8 +227,9 @@ export default function SidePanel({
   const handleStartGoal = async () => {
     if (!goalObjectiveInput.trim()) return;
     try {
-      await api.setGoal(goalObjectiveInput.trim());
+      const result = await api.setGoal(goalObjectiveInput.trim(), null, 'active', threadId);
       setGoalObjectiveInput('');
+      if (onGoalChanged) onGoalChanged(result.goal || null);
       await loadWorkflow();
       if (onToast) {
         onToast('已设置 Thread Goal，运行时将自动推进', 'success');
@@ -234,11 +243,49 @@ export default function SidePanel({
 
   const handleClearGoal = async () => {
     try {
-      await api.clearGoal();
+      await api.clearGoal(threadId);
       setWorkflowState((current) => ({ ...(current || {}), goal: null }));
+      if (onGoalChanged) onGoalChanged(null);
       if (onToast) onToast('已清除 Thread Goal', 'success');
     } catch (err) {
       if (onToast) onToast(`清除 Goal 失败: ${err.message}`, 'error');
+    }
+  };
+
+  const handlePauseGoal = async () => {
+    try {
+      const result = await api.pauseGoal(threadId);
+      setWorkflowState((current) => ({ ...(current || {}), goal: result.goal }));
+      if (onGoalChanged) onGoalChanged(result.goal);
+      if (onToast) onToast('Goal 已暂停，可随时恢复', 'info');
+    } catch (err) {
+      if (onToast) onToast(`暂停 Goal 失败: ${err.message}`, 'error');
+    }
+  };
+
+  const handleResumeGoal = async () => {
+    try {
+      const result = await api.resumeGoal(threadId);
+      setWorkflowState((current) => ({ ...(current || {}), goal: result.goal }));
+      if (onGoalChanged) onGoalChanged(result.goal);
+      if (onToast) onToast('Goal 已恢复，运行时将继续推进', 'success');
+    } catch (err) {
+      if (onToast) onToast(`恢复 Goal 失败: ${err.message}`, 'error');
+    }
+  };
+
+  const handleUpdateGoal = async () => {
+    const goal = workflowState?.goal;
+    if (!goal) return;
+    const objective = window.prompt('更新当前 Thread Goal', goal.objective);
+    if (!objective || objective.trim() === goal.objective.trim()) return;
+    try {
+      const result = await api.updateGoal(objective.trim(), goal.token_budget, threadId);
+      setWorkflowState((current) => ({ ...(current || {}), goal: result.goal }));
+      if (onGoalChanged) onGoalChanged(result.goal);
+      if (onToast) onToast('Goal 目标已更新', 'success');
+    } catch (err) {
+      if (onToast) onToast(`更新 Goal 失败: ${err.message}`, 'error');
     }
   };
 
@@ -463,10 +510,27 @@ export default function SidePanel({
                       Tokens: {workflowState.goal.tokens_used} / {workflowState.goal.token_budget ?? '∞'}
                       {' · '}Time: {workflowState.goal.time_used_seconds}s
                     </div>
-                    <button className="btn-action-small" onClick={handleClearGoal}>
-                      <RotateCcw size={12} />
-                      <span>清除目标</span>
-                    </button>
+                    <div className="goal-actions">
+                      {workflowState.goal.status === 'paused' ? (
+                        <button className="btn-action-small" onClick={handleResumeGoal}>
+                          <Play size={12} />
+                          <span>恢复</span>
+                        </button>
+                      ) : workflowState.goal.status === 'active' ? (
+                        <button className="btn-action-small" onClick={handlePauseGoal}>
+                          <Pause size={12} />
+                          <span>暂停</span>
+                        </button>
+                      ) : null}
+                      <button className="btn-action-small" onClick={handleUpdateGoal}>
+                        <FileText size={12} />
+                        <span>更新</span>
+                      </button>
+                      <button className="btn-action-small" onClick={handleClearGoal}>
+                        <RotateCcw size={12} />
+                        <span>删除</span>
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="goal-input-box">

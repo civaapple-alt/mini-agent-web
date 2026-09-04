@@ -85,7 +85,7 @@ export default function App() {
   useEffect(() => {
     loadSettings();
     loadThreads();
-    loadWorkflows();
+    loadWorkflows('default');
     loadThreadHistory('default');
 
     // Establish WebSocket Connection
@@ -139,9 +139,9 @@ export default function App() {
     }
   };
 
-  const loadWorkflows = async () => {
+  const loadWorkflows = async (threadId = currentThreadRef.current) => {
     try {
-      const wfState = await api.getWorkflowState();
+      const wfState = await api.getWorkflowState(threadId);
       setPlanActive(wfState.collaboration_mode?.mode === 'plan');
       setGoalState(wfState.goal || null);
     } catch (err) {
@@ -481,6 +481,7 @@ export default function App() {
     setPendingApproval(null);
     setCurrentThread(threadId);
     loadThreadHistory(threadId);
+    loadWorkflows(threadId);
   };
 
   const handleNewThread = async (customProject = null, customTitle = null) => {
@@ -557,7 +558,7 @@ export default function App() {
   const handleTogglePlan = async () => {
     const nextState = !planActive;
     try {
-      const res = await api.setCollaborationMode(nextState ? 'plan' : 'default');
+      const res = await api.setCollaborationMode(nextState ? 'plan' : 'default', currentThread);
       const active = res.collaboration_mode?.mode === 'plan';
       setPlanActive(active);
       showToast(`Plan Mode 已${active ? '开启 (只读规划)' : '关闭'}`, 'info');
@@ -573,6 +574,50 @@ export default function App() {
       showToast('Goal 已启动，并会在当前任务顶部持续显示', 'success');
     } catch (err) {
       showToast(`启动 Goal 失败: ${err.message}`, 'error');
+    }
+  };
+
+  const handlePauseGoal = async () => {
+    try {
+      if (isGenerating) handleInterrupt();
+      const result = await api.pauseGoal(currentThread);
+      setGoalState(result.goal || null);
+      showToast('Goal 已暂停，可随时恢复', 'info');
+    } catch (err) {
+      showToast(`暂停 Goal 失败: ${err.message}`, 'error');
+    }
+  };
+
+  const handleResumeGoal = async () => {
+    try {
+      const result = await api.resumeGoal(currentThread);
+      setGoalState(result.goal || null);
+      showToast('Goal 已恢复，运行时将继续推进', 'success');
+    } catch (err) {
+      showToast(`恢复 Goal 失败: ${err.message}`, 'error');
+    }
+  };
+
+  const handleUpdateGoal = async () => {
+    if (!goalState) return;
+    const objective = window.prompt('更新当前 Thread Goal', goalState.objective);
+    if (!objective || objective.trim() === goalState.objective.trim()) return;
+    try {
+      const result = await api.updateGoal(objective.trim(), goalState.token_budget, currentThread);
+      setGoalState(result.goal || null);
+      showToast('Goal 目标已更新', 'success');
+    } catch (err) {
+      showToast(`更新 Goal 失败: ${err.message}`, 'error');
+    }
+  };
+
+  const handleClearGoal = async () => {
+    try {
+      await api.clearGoal(currentThread);
+      setGoalState(null);
+      showToast('Goal 已删除，Session 历史仍然保留', 'info');
+    } catch (err) {
+      showToast(`删除 Goal 失败: ${err.message}`, 'error');
     }
   };
 
@@ -625,6 +670,24 @@ export default function App() {
         />
 
         <main className="app-content">
+          {goalState && (
+            <div className="goal-topbar" role="status">
+              <div className="goal-topbar-main">
+                <span className="goal-topbar-label">GOAL</span>
+                <span className={`goal-topbar-status ${goalState.status}`}>{goalState.status}</span>
+                <span className="goal-topbar-objective" title={goalState.objective}>{goalState.objective}</span>
+              </div>
+              <div className="goal-topbar-actions">
+                {goalState.status === 'paused' ? (
+                  <button type="button" onClick={handleResumeGoal}>恢复</button>
+                ) : goalState.status === 'active' ? (
+                  <button type="button" onClick={handlePauseGoal}>暂停</button>
+                ) : null}
+                <button type="button" onClick={handleUpdateGoal}>更新</button>
+                <button type="button" className="danger" onClick={handleClearGoal}>删除</button>
+              </div>
+            </div>
+          )}
       <ChatArea
             messages={messages}
             isGenerating={isGenerating}
@@ -666,6 +729,8 @@ export default function App() {
         onClose={() => setSidePanelOpen(false)}
         planActive={planActive}
         goalState={goalState}
+        threadId={currentThread}
+        onGoalChanged={setGoalState}
         onTogglePlan={handleTogglePlan}
         onToast={showToast}
       />

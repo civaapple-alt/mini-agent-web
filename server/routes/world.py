@@ -255,11 +255,17 @@ async def refresh_world() -> dict[str, Any]:
 async def set_world_execution(req: SetExecutionRequest) -> dict[str, Any]:
     """Configure independent access and approval reuse scopes."""
     try:
+        previous_execution = session_manager.project_execution()
         res = await session_manager.client.set_world_execution(
             access=req.access,
             approval=req.approval,
         )
         session_manager.set_project_execution(req.access, req.approval)
+        if previous_execution != (req.access, req.approval):
+            # Approval grants are keyed by action and scope. Restarting on a
+            # policy change prevents a grant created under a wider policy from
+            # leaking into the new project/session policy.
+            await session_manager.restart_for_current_project()
         return {
             "changed": res.changed,
             "access": req.access,
@@ -268,6 +274,23 @@ async def set_world_execution(req: SetExecutionRequest) -> dict[str, Any]:
         }
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.get("/world/approval", summary="Inspect current project approvals")
+async def get_world_approval() -> dict[str, Any]:
+    """Show the project policy and pending requests, never raw approval grants."""
+    return session_manager.approval_snapshot()
+
+
+@router.post("/world/approval/revoke", summary="Revoke current project approvals")
+async def revoke_world_approval() -> dict[str, Any]:
+    """Restart the bound App Server so cached project approvals are discarded."""
+    try:
+        return await session_manager.revoke_current_project_approvals()
+    except Exception as err:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to revoke approvals: {err}"
+        ) from err
 
 
 @router.get("/mcp/status", summary="Get MCP servers and tool status")
@@ -309,7 +332,8 @@ async def retry_mcp() -> dict[str, Any]:
 async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
     """Retrieve current collaboration mode, active Thread Goal, and builtin tools."""
     try:
-        wf = await session_manager.client.get_workflow_state()
+        client = await session_manager.get_client_for_thread(thread_id)
+        wf = await client.get_workflow_state(thread_id=thread_id)
         goal_dict = None
         if wf.goal:
             g = wf.goal
@@ -354,7 +378,8 @@ async def update_thread_settings(
 ) -> dict[str, Any]:
     """Update collaboration mode and optional Builtin tool selection."""
     try:
-        res = await session_manager.client.update_thread_settings(
+        client = await session_manager.get_client_for_thread(thread_id)
+        res = await client.update_thread_settings(
             mode=req.mode,
             builtin_tools=req.builtin_tools,
             thread_id=thread_id,
@@ -373,7 +398,8 @@ async def update_thread_settings(
 async def set_goal(thread_id: str, req: SetGoalRequest) -> dict[str, Any]:
     """Set or replace the active Thread Goal."""
     try:
-        res = await session_manager.client.set_goal(
+        client = await session_manager.get_client_for_thread(thread_id)
+        res = await client.set_goal(
             objective=req.objective,
             status=req.status,
             token_budget=req.token_budget,
@@ -388,7 +414,8 @@ async def set_goal(thread_id: str, req: SetGoalRequest) -> dict[str, Any]:
 async def get_goal(thread_id: str) -> dict[str, Any]:
     """Read the active Thread Goal."""
     try:
-        res = await session_manager.client.get_goal(thread_id=thread_id)
+        client = await session_manager.get_client_for_thread(thread_id)
+        res = await client.get_goal(thread_id=thread_id)
         return {"goal": _goal_dict(res.goal) if res.goal else None}
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
@@ -398,8 +425,47 @@ async def get_goal(thread_id: str) -> dict[str, Any]:
 async def clear_goal(thread_id: str) -> dict[str, Any]:
     """Clear the active Thread Goal."""
     try:
-        res = await session_manager.client.clear_goal(thread_id=thread_id)
+        client = await session_manager.get_client_for_thread(thread_id)
+        res = await client.clear_goal(thread_id=thread_id)
         return {"cleared": res.cleared}
+    except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.post("/threads/{thread_id}/goal/pause", summary="Pause Thread Goal")
+async def pause_goal(thread_id: str) -> dict[str, Any]:
+    """Pause a Goal while retaining its objective and progress."""
+    try:
+        client = await session_manager.get_client_for_thread(thread_id)
+        current = await client.get_goal(thread_id=thread_id)
+        if not current.goal:
+            raise HTTPException(status_code=404, detail="Thread Goal not found")
+        result = await client.set_goal(
+            objective=current.goal.objective,
+            status="paused",
+            token_budget=current.goal.token_budget,
+            thread_id=thread_id,
+        )
+        return {"goal": _goal_dict(result.goal)}
+    except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.post("/threads/{thread_id}/goal/resume", summary="Resume Thread Goal")
+async def resume_goal(thread_id: str) -> dict[str, Any]:
+    """Resume a paused Goal with the same objective and progress."""
+    try:
+        client = await session_manager.get_client_for_thread(thread_id)
+        current = await client.get_goal(thread_id=thread_id)
+        if not current.goal:
+            raise HTTPException(status_code=404, detail="Thread Goal not found")
+        result = await client.set_goal(
+            objective=current.goal.objective,
+            status="active",
+            token_budget=current.goal.token_budget,
+            thread_id=thread_id,
+        )
+        return {"goal": _goal_dict(result.goal)}
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 

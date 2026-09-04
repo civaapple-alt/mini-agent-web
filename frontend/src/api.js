@@ -125,6 +125,20 @@ export const api = {
     return res.json();
   },
 
+  async getWorldApproval() {
+    const res = await fetch(`${API_BASE}/api/world/approval`);
+    if (!res.ok) throw new Error('Failed to inspect project approvals');
+    return res.json();
+  },
+
+  async revokeWorldApprovals() {
+    const res = await fetch(`${API_BASE}/api/world/approval/revoke`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to revoke project approvals');
+    return res.json();
+  },
+
   // ---------------------------------------------------------------------------
   // Workflows (Plan Mode & Goals) & Files
   // ---------------------------------------------------------------------------
@@ -165,6 +179,25 @@ export const api = {
       }),
     });
     if (!res.ok) throw new Error('Failed to set goal');
+    return res.json();
+  },
+  async updateGoal(objective, tokenBudget = null, threadId = 'default') {
+    return this.setGoal(objective, tokenBudget, null, threadId);
+  },
+  async pauseGoal(threadId = 'default') {
+    const targetThread = threadId || 'default';
+    const res = await fetch(`${API_BASE}/api/threads/${encodeURIComponent(targetThread)}/goal/pause`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to pause goal');
+    return res.json();
+  },
+  async resumeGoal(threadId = 'default') {
+    const targetThread = threadId || 'default';
+    const res = await fetch(`${API_BASE}/api/threads/${encodeURIComponent(targetThread)}/goal/resume`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to resume goal');
     return res.json();
   },
 

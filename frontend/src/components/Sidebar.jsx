@@ -321,6 +321,11 @@ export default function Sidebar({
         project: t.project || currentProjectName,
         summary: t.summary || '',
         updated_at: t.updated_at || new Date().toISOString(),
+        runtime_status: t.runtime_status || null,
+        session_status: t.session_status || null,
+        goal_status: t.goal_status || null,
+        resumable: Boolean(t.resumable),
+        session_id: t.session_id || null,
       };
     });
   }, [threads, currentProjectName]);
@@ -584,7 +589,7 @@ export default function Sidebar({
 
                     <div className="popover-tasks-summary">
                       <SquarePen size={12} className="text-muted" />
-                      <span>{proj.threads_count || projThreads.length || 0} 个会话 · {proj.active_threads_count || 1} 个活跃</span>
+                      <span>{Math.max(proj.threads_count || 0, proj.sessions_count || 0, projThreads.length)} 个会话 · {proj.active_threads_count ?? 0} 个活跃</span>
                     </div>
 
                     <div className="popover-divider"></div>
@@ -633,13 +638,30 @@ export default function Sidebar({
                       return (
                         <div
                           key={thread.thread_id}
-                          className={`nested-thread-item ${isSelected ? 'selected' : ''}`}
+                          className={`nested-thread-item ${isSelected ? 'selected' : ''} ${thread.runtime_status === 'running' ? 'is-running' : ''}`}
                           onClick={() => onSelectThread(thread.thread_id)}
                           title={thread.title}
                         >
                           <span className="nested-thread-title">
                             {thread.title}
                           </span>
+
+                          {(thread.runtime_status || thread.goal_status) && (
+                            <span
+                              className={`thread-status-badge ${thread.runtime_status || thread.goal_status}`}
+                              title={thread.resumable ? '可恢复的历史会话' : undefined}
+                            >
+                              {thread.runtime_status === 'running'
+                                ? '运行中'
+                                : thread.runtime_status === 'paused'
+                                  ? '已暂停'
+                                : thread.goal_status === 'paused'
+                                  ? '已暂停'
+                                  : thread.resumable
+                                    ? '可恢复'
+                                    : '历史'}
+                            </span>
+                          )}
 
                           <div className="thread-tail-indicators">
                             {isSelected && (

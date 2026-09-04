@@ -832,9 +832,9 @@ class MiniAgentClient:
     # Thread Settings, Goals, and Read-Only Workflow Projection
     # -------------------------------------------------------------------------
 
-    async def get_workflow_state(self) -> WorkflowState:
+    async def get_workflow_state(self, thread_id: str | None = None) -> WorkflowState:
         """Get the read-only collaboration mode and active Thread Goal."""
-        thread_id = self._active_thread_id
+        thread_id = thread_id or self._active_thread_id
         settings = self._thread_settings.get(thread_id)
         goal = await self.get_goal(thread_id=thread_id)
         mode = settings.collaboration_mode.mode if settings else "default"
@@ -911,6 +911,23 @@ class MiniAgentClient:
             params,
         )
         return ThreadGoalSetResult.from_dict(res)
+
+    async def update_goal(
+        self,
+        objective: str,
+        token_budget: int | None = None,
+        thread_id: str | None = None,
+    ) -> ThreadGoalSetResult:
+        """Update a Thread Goal objective without changing its active state."""
+        current = await self.get_goal(thread_id=thread_id)
+        return await self.set_goal(
+            objective=objective,
+            status=(current.goal.status if current.goal else "active"),
+            token_budget=token_budget
+            if token_budget is not None
+            else (current.goal.token_budget if current.goal else None),
+            thread_id=thread_id,
+        )
 
     async def get_goal(self, thread_id: str | None = None) -> ThreadGoalGetResult:
         """Read the active Goal owned by a Thread."""

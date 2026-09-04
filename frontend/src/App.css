@@ -24,6 +24,73 @@
   min-width: 0;
 }
 
+.goal-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  min-height: 38px;
+}
+
+.goal-topbar-main,
+.goal-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.goal-topbar-label {
+  color: #10a37f;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.goal-topbar-status {
+  border-radius: 10px;
+  padding: 2px 7px;
+  color: var(--text-secondary);
+  background: var(--bg-card-hover);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.goal-topbar-status.active {
+  color: #10a37f;
+  background: rgba(16, 163, 127, 0.1);
+}
+
+.goal-topbar-objective {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.goal-topbar-actions button {
+  padding: 3px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: var(--bg-app);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.goal-topbar-actions button:hover {
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+}
+
+.goal-topbar-actions button.danger {
+  color: #b42318;
+}
+
 /* Responsive Media Queries */
 @media (max-width: 768px) {
   .app-main-layout {
@@ -36,5 +103,9 @@
     max-height: 200px;
     border-right: none !important;
     border-bottom: 1px solid var(--border-color);
+  }
+  .goal-topbar {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

@@ -125,7 +125,8 @@ async def execute_turn(req: StartTurnRequest) -> dict[str, Any]:
     """Submit a prompt and wait for turn completion."""
     enriched_prompt = _process_attachments(req.prompt, req.images, req.referenced_files)
     try:
-        sub = await session_manager.client.start_turn(
+        client = await session_manager.get_client_for_thread(req.thread_id)
+        sub = await client.start_turn(
             prompt=enriched_prompt,
             mode=req.mode,
             thread_id=req.thread_id,
@@ -133,7 +134,7 @@ async def execute_turn(req: StartTurnRequest) -> dict[str, Any]:
         if not sub.turn_id:
             return {"status": sub.status, "reason": sub.reason}
 
-        result = await session_manager.client.wait_for_turn(sub.turn_id)
+        result = await client.wait_for_turn(sub.turn_id)
         return {
             "turn_id": result.turn_id,
             "status": result.status,
@@ -159,7 +160,8 @@ async def stream_turn(
 
     async def event_generator():
         try:
-            async for item in session_manager.client.stream_turn(
+            client = await session_manager.get_client_for_thread(thread_id)
+            async for item in client.stream_turn(
                 prompt=prompt,
                 mode=mode,
                 thread_id=thread_id,
@@ -192,7 +194,8 @@ async def stream_turn(
 async def steer_turn(req: SteerTurnRequest) -> dict[str, Any]:
     """Inject a dynamic steering instruction into a currently executing turn."""
     try:
-        res = await session_manager.client.steer_turn(
+        client = await session_manager.get_client_for_thread(req.thread_id)
+        res = await client.steer_turn(
             turn_id=req.turn_id,
             text=req.text,
             thread_id=req.thread_id,
@@ -206,7 +209,8 @@ async def steer_turn(req: SteerTurnRequest) -> dict[str, Any]:
 async def interrupt_turn(req: InterruptTurnRequest) -> dict[str, Any]:
     """Cooperatively interrupt and cancel an active turn."""
     try:
-        await session_manager.client.interrupt_turn(
+        client = await session_manager.get_client_for_thread(req.thread_id)
+        await client.interrupt_turn(
             turn_id=req.turn_id,
             thread_id=req.thread_id,
         )
@@ -296,9 +300,8 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 text = data.get("text", "")
                 if turn_id:
                     try:
-                        await session_manager.client.steer_turn(
-                            turn_id, text, thread_id
-                        )
+                        client = await session_manager.get_client_for_thread(thread_id)
+                        await client.steer_turn(turn_id, text, thread_id)
                         await websocket.send_json(
                             {"type": "steer_ack", "turnId": turn_id}
                         )
@@ -330,7 +333,8 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 # 2. Notify App Server engine
                 if turn_id:
                     try:
-                        await session_manager.client.interrupt_turn(turn_id, thread_id)
+                        client = await session_manager.get_client_for_thread(thread_id)
+                        await client.interrupt_turn(turn_id, thread_id)
                     except Exception as err:  # noqa: BLE001
                         logger.warning("Failed to call client.interrupt_turn: %s", err)
 
@@ -370,7 +374,8 @@ async def _stream_turn_to_ws(
     current_task = asyncio.current_task()
     effort = session_manager.get_settings().get("reasoning_effort", "medium")
     try:
-        async for item in session_manager.client.stream_turn(
+        client = await session_manager.get_client_for_thread(target_thread)
+        async for item in client.stream_turn(
             prompt=prompt,
             mode=mode,
             thread_id=target_thread,

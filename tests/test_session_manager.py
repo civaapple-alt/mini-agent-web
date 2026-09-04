@@ -3,9 +3,11 @@ Unit and integration tests for SessionManager state, approvals, and projects.
 """
 
 import asyncio
+import json
 
 import pytest
 
+from server.session_catalog import SessionCatalog, _session_base
 from server.session_manager import SessionManager
 
 
@@ -120,6 +122,18 @@ def test_session_manager_settings_persistence(mock_session_manager, tmp_path):
     assert new_mgr._settings["auto_scroll"] is False
 
 
+def test_approval_snapshot_exposes_policy_without_web_grants(mock_session_manager):
+    mock_session_manager.set_project_execution("full_machine", "current_project")
+
+    snapshot = mock_session_manager.approval_snapshot()
+
+    assert snapshot["project_id"] == "default"
+    assert snapshot["access"] == "full_machine"
+    assert snapshot["approval"] == "current_project"
+    assert snapshot["grant_store"] == "app-server-memory"
+    assert snapshot["pending_requests"] == []
+
+
 def test_session_manager_thread_metadata_management(mock_session_manager):
     """Ensure thread metadata can be queried, updated, and persisted."""
     meta = mock_session_manager.get_thread_meta("t-custom")
@@ -134,3 +148,69 @@ def test_session_manager_thread_metadata_management(mock_session_manager):
     all_meta = mock_session_manager.list_all_thread_meta()
     assert "t-custom" in all_meta
     assert all_meta["t-custom"]["title"] == "Renamed Session"
+
+
+def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monkeypatch):
+    """Project history is projected from SessionStore summary/checkpoint files."""
+    home = tmp_path / "home"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setenv("USERPROFILE", str(home))
+    session_dir = _session_base(workspace) / "s-1"
+    session_dir.mkdir(parents=True)
+    records = [
+        {
+            "seq": 1,
+            "kind": "session_created",
+            "schema_version": 1,
+            "session_id": "s-1",
+            "timestamp_ms": 1000,
+        },
+        {"seq": 2, "kind": "thread_started", "thread_id": "t-1"},
+        {
+            "seq": 3,
+            "kind": "turn_started",
+            "thread_id": "t-1",
+            "turn_id": "turn-1",
+            "prompt": "inspect project",
+        },
+        {
+            "seq": 4,
+            "kind": "item",
+            "item_id": "item-1",
+            "thread_id": "t-1",
+            "turn_id": "turn-1",
+            "message": {"role": "user", "text": "inspect project"},
+        },
+        {"seq": 5, "kind": "turn_settled", "thread_id": "t-1", "turn_id": "turn-1"},
+        {
+            "seq": 6,
+            "kind": "checkpoint",
+            "thread_id": "t-1",
+            "messages": [{"role": "user", "text": "inspect project"}],
+            "timestamp_ms": 2000,
+        },
+    ]
+    (session_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "id": "s-1",
+                "created_at_ms": 1000,
+                "updated_at_ms": 2000,
+                "turn_count": 1,
+                "last_prompt": "inspect project",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    catalog = SessionCatalog()
+    listed = catalog.list_sessions(workspace, "project-1")
+    assert listed["data"][0]["thread_id"] == "t-1"
+    assert listed["data"][0]["session_status"] == "historical"
+    history = catalog.read_thread(workspace, "project-1", "t-1")
+    assert history["messages"][0]["text"] == "inspect project"
+    assert history["items"][0]["item"]["type"] == "userMessage"

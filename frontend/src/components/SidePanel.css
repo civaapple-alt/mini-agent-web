@@ -271,6 +271,12 @@
   padding: 10px;
 }
 
+.goal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .goal-meta-row {
   display: flex;
   align-items: center;

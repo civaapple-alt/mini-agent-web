@@ -15,6 +15,17 @@ from server.session_manager import session_manager, to_json_serializable
 router = APIRouter(prefix="/api/threads", tags=["Threads"])
 
 
+@router.get("/project/{project_id}/sessions", summary="List Project Sessions")
+async def list_project_sessions(
+    project_id: str, cursor: str | None = None, limit: int = Query(64, ge=1, le=128)
+) -> dict[str, Any]:
+    """List bounded historical and locked SessionStore records for a Project."""
+    try:
+        return session_manager.list_project_sessions(project_id, limit, cursor)
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+
+
 class StartThreadRequest(BaseModel):
     thread_id: str = Field(
         default="default", description="Identifier of the thread to create or attach"
@@ -50,7 +61,9 @@ async def list_threads(
     """List active and historical conversation threads with titles and summaries."""
     try:
         res = await session_manager.client.list_threads(cursor=cursor, limit=limit)
-        live_thread_ids = list(res.data) if isinstance(res.data, list) else []
+        live_thread_ids = session_manager.live_thread_ids()
+        if not live_thread_ids and isinstance(res.data, list):
+            live_thread_ids = list(res.data)
 
         # Combine active App Server threads and historical metadata threads
         seen = set(live_thread_ids)
@@ -60,21 +73,44 @@ async def list_threads(
                 all_thread_ids.append(tid)
                 seen.add(tid)
 
+        # The Web gateway's state.json is UI metadata only. Add canonical
+        # SessionStore sessions so historical, running, and paused sessions are
+        # visible even when the current App Server process did not create them.
+        catalog_entries = {
+            session["thread_id"]: session
+            for session in session_manager.list_all_project_sessions()
+        }
+        for tid in catalog_entries:
+            if tid not in seen:
+                all_thread_ids.append(tid)
+                seen.add(tid)
+
         enriched_threads: list[dict[str, Any]] = []
         cur_project_name = session_manager._current_project_path.name
         for tid in all_thread_ids:
             meta = session_manager.get_thread_meta(tid)
-            enriched_threads.append(
-                {
-                    "thread_id": tid,
-                    "title": meta.get("title") or f"会话 {tid}",
-                    "project": meta.get("project") or cur_project_name,
-                    "summary": meta.get("summary", ""),
-                    "created_at": meta.get("created_at"),
-                    "updated_at": meta.get("updated_at"),
-                    "pinned": meta.get("pinned", False),
-                }
-            )
+            item = {
+                "thread_id": tid,
+                "title": meta.get("title") or f"会话 {tid}",
+                "project": meta.get("project") or cur_project_name,
+                "summary": meta.get("summary", ""),
+                "created_at": meta.get("created_at"),
+                "updated_at": meta.get("updated_at"),
+                "pinned": meta.get("pinned", False),
+            }
+            catalog_entry = catalog_entries.get(tid)
+            if catalog_entry:
+                item.update(
+                    {
+                        "project": catalog_entry["project_id"],
+                        "session_id": catalog_entry["session_id"],
+                        "session_status": catalog_entry["session_status"],
+                        "runtime_status": catalog_entry["runtime_status"],
+                        "goal_status": catalog_entry["goal_status"],
+                        "resumable": catalog_entry["resumable"],
+                    }
+                )
+            enriched_threads.append(item)
 
         return {
             "threads": enriched_threads,
@@ -89,7 +125,7 @@ async def list_threads(
 async def start_thread(req: StartThreadRequest) -> dict[str, Any]:
     """Start or attach to a conversation thread."""
     try:
-        active_id = await session_manager.client.start_thread(req.thread_id)
+        active_id = await session_manager.start_thread(req.thread_id, req.project)
         updates: dict[str, Any] = {}
         if req.title:
             updates["title"] = req.title
@@ -113,10 +149,12 @@ async def start_thread(req: StartThreadRequest) -> dict[str, Any]:
 async def fork_thread(req: ForkThreadRequest) -> dict[str, Any]:
     """Fork an existing thread history into a new branched thread."""
     try:
-        res = await session_manager.client.fork_thread(
+        client = await session_manager.get_client_for_thread(req.source_thread_id)
+        res = await client.fork_thread(
             source_thread_id=req.source_thread_id,
             new_thread_id=req.new_thread_id,
         )
+        session_manager.bind_thread_client(res.thread_id, client)
         src_meta = session_manager.get_thread_meta(req.source_thread_id)
         fork_title = (
             req.title or f"{src_meta.get('title', req.source_thread_id)} (Fork)"
@@ -137,11 +175,21 @@ async def fork_thread(req: ForkThreadRequest) -> dict[str, Any]:
 async def read_thread(thread_id: str) -> dict[str, Any]:
     """Read canonical App Server Session history for a specific thread."""
     try:
+        canonical = session_manager.read_any_project_thread(thread_id)
+        if canonical:
+            meta = session_manager.get_thread_meta(thread_id)
+            return {
+                **canonical,
+                "metadata": meta,
+                "raw": {"session": canonical["session"]},
+            }
         try:
-            cp = await session_manager.client.read_thread(thread_id)
+            client = await session_manager.get_client_for_thread(thread_id)
+            cp = await client.read_thread(thread_id)
         except AppServerError:
-            await session_manager.client.start_thread(thread_id)
-            cp = await session_manager.client.read_thread(thread_id)
+            client = await session_manager.get_client_for_thread(thread_id)
+            await client.start_thread(thread_id)
+            cp = await client.read_thread(thread_id)
 
         meta = session_manager.get_thread_meta(thread_id)
         return {
@@ -166,7 +214,16 @@ async def list_thread_items(
 ) -> dict[str, Any]:
     """Expose the App Server's bounded Session-backed item projection."""
     try:
-        result = await session_manager.client.list_thread_items(
+        canonical = session_manager.read_any_project_thread(thread_id)
+        if canonical:
+            return {
+                "thread_id": thread_id,
+                "data": canonical.get("items", []),
+                "next_cursor": None,
+                "backwards_cursor": None,
+            }
+        client = await session_manager.get_client_for_thread(thread_id)
+        result = await client.list_thread_items(
             thread_id=thread_id,
             turn_id=turn_id,
             cursor=cursor,
@@ -203,7 +260,8 @@ async def rename_thread(thread_id: str, req: RenameThreadRequest) -> dict[str, A
 async def close_thread(thread_id: str) -> dict[str, Any]:
     """Close an active thread and release server resources."""
     try:
-        closed = await session_manager.client.close_thread(thread_id)
+        client = await session_manager.get_client_for_thread(thread_id)
+        closed = await client.close_thread(thread_id)
         return {"thread_id": thread_id, "closed": closed}
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err

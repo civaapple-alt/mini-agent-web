@@ -497,6 +497,27 @@ body.theme-cyberpunk .nested-thread-item.selected {
   min-width: 0;
 }
 
+.thread-status-badge {
+  flex-shrink: 0;
+  margin-left: 6px;
+  padding: 1px 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 14px;
+}
+
+.thread-status-badge.running {
+  border-color: #60a5fa;
+  color: #2563eb;
+}
+
+.thread-status-badge.paused {
+  border-color: #f59e0b;
+  color: #b45309;
+}
+
 .thread-tail-indicators {
   display: flex;
   align-items: center;

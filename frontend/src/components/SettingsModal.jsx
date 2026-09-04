@@ -14,7 +14,6 @@ import './SettingsModal.css';
 
 export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToast }) {
   const [settings, setSettings] = useState({
-    default_mode: 'chat',
     reasoning_effort: 'medium',
     theme: 'light',
     auto_scroll: true,
@@ -23,10 +22,13 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToas
   });
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [approvalInfo, setApprovalInfo] = useState(null);
+  const [isRevokingApprovals, setIsRevokingApprovals] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       loadSettings();
+      loadApprovalInfo();
     }
   }, [isOpen]);
 
@@ -36,6 +38,28 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToas
       setSettings((prev) => ({ ...prev, ...data }));
     } catch (err) {
       console.error('Failed to load settings:', err);
+    }
+  };
+
+  const loadApprovalInfo = async () => {
+    try {
+      setApprovalInfo(await api.getWorldApproval());
+    } catch (err) {
+      console.error('Failed to load project approval state:', err);
+    }
+  };
+
+  const handleRevokeApprovals = async () => {
+    if (!window.confirm('撤销当前项目已缓存的批准？这会重启当前 App Server。')) return;
+    setIsRevokingApprovals(true);
+    try {
+      await api.revokeWorldApprovals();
+      await loadApprovalInfo();
+      if (onToast) onToast('当前项目批准已撤销，App Server 已重启', 'success');
+    } catch (err) {
+      if (onToast) onToast(`撤销项目批准失败: ${err.message}`, 'error');
+    } finally {
+      setIsRevokingApprovals(false);
     }
   };
 
@@ -57,7 +81,6 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToas
 
   const handleReset = () => {
     setSettings({
-      default_mode: 'chat',
       reasoning_effort: 'medium',
       theme: 'light',
       auto_scroll: true,
@@ -98,6 +121,22 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToas
               </div>
               <Shield size={20} className="text-amber" />
             </div>
+
+            <div className="approval-state-card">
+              <div>
+                <span className="setting-title">当前项目批准缓存</span>
+                <span className="setting-desc">
+                  {approvalInfo?.pending_requests?.length || 0} 个待处理请求 · {approvalInfo?.grant_store || 'App Server'}
+                </span>
+              </div>
+              <button
+                className="btn-revoke-approvals"
+                onClick={handleRevokeApprovals}
+                disabled={isRevokingApprovals}
+              >
+                {isRevokingApprovals ? '撤销中...' : '撤销已批准'}
+              </button>
+            </div>
           </div>
 
           {/* Section 2: Model & Reasoning */}
@@ -123,21 +162,6 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToas
               </select>
             </div>
 
-            <div className="setting-item">
-              <div className="setting-text">
-                <span className="setting-title">默认启动模式 (Default Mode)</span>
-                <span className="setting-desc">新建会话时的默认模式</span>
-              </div>
-              <select
-                className="setting-select"
-                value={settings.default_mode}
-                onChange={(e) => setSettings({ ...settings, default_mode: e.target.value })}
-              >
-                <option value="chat">常规对话模式 (Chat)</option>
-                <option value="plan">只读规划模式 (Plan Mode)</option>
-                <option value="goal">目标收敛模式 (Goal Mode)</option>
-              </select>
-            </div>
           </div>
 
           {/* Section 3: UI & Appearance */}

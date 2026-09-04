@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Full-Stack End-to-End Smoke Test for Mini Agent.
 Validates Web Studio Gateway, Python SDK, App Server, Host, and Core

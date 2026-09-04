@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Check version synchronization across all package targets in mini-agent-web.
 

@@ -11,9 +11,10 @@ npm install
 npm run dev
 ```
 
-开发服务器默认监听 `http://127.0.0.1:5173`。生产构建和单元测试：
+开发服务器默认监听 `http://127.0.0.1:5173`。代码扫描、测试与构建：
 
 ```bash
+npm run lint
 npm test
 npm run build
 ```
@@ -21,10 +22,11 @@ npm run build
 ## 本地边界
 
 - `src/api.js`：REST 与 WebSocket 请求封装；
-- `src/App.jsx`：页面级状态和事件分发；
+- `src/App.jsx`：页面级状态和事件分发，集成顶层 ErrorBoundary 容错保护；
 - `src/utils/`：消息聚合、ThreadItem 投影和斜杠命令等纯逻辑；
-- `src/components/`：消息、工具、审批、侧栏和设置组件；
-- `src/tests/`：Node 原生测试。
+- `src/components/`：消息、工具、审批、侧栏、设置组件与 ErrorBoundary；
+- `src/tests/`：Node 原生测试与 Vitest 组件挂载测试；
+- `eslint.config.js`：ESLint 9 静态语法与 JSX 导入未声明标识符安全扫描。
 
 事件消费遵循 Thread/Turn 身份，并用稳定 item ID 合并工具和上下文压缩状态。
 历史消息通过 ThreadItem 分页投影恢复，生命周期通知不会创建重复卡片。
@@ -40,6 +42,7 @@ App Server 进程锁定，Studio 保持只读历史，锁释放后即可再次 a
 ```text
 index.html
 package.json
+eslint.config.js
 vite.config.js
 src/main.jsx
 src/App.jsx

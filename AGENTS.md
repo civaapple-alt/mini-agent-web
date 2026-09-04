@@ -60,6 +60,7 @@ Run from the repository root as applicable:
 uv run ruff check .
 uv run ruff format --check .
 uv run pytest -q
+npm --prefix frontend run lint
 npm --prefix frontend test
 npm --prefix frontend run build
 uv build --package mini-agent

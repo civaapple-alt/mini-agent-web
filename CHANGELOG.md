@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Web Studio Multi-Layer Frontend Quality Assurance & Error Boundary**:
+  - Configured ESLint 9 with `react/jsx-no-undef: 'error'` and `no-undef: 'error'` in `frontend/eslint.config.js`, statically intercepting undeclared identifiers and unimported JSX components in sub-second builds.
+  - Added React `ErrorBoundary` with compact retry fallbacks around `ToolCard` in `MessageItem.jsx` and top-level views (`ChatArea`, `SidePanel`) in `App.jsx`, preventing component render failures from crashing the application into a blank screen.
+  - Integrated `vitest` + `@testing-library/react` + `happy-dom` into `npm test`, covering `ToolCard` state projections (completed, running, failed, security approval actions) and `ErrorBoundary` resilience.
+  - Isolated test session state cleanup in `tests/conftest.py`, avoiding stale session lock collisions across test runs in synthetic Windows profiles.
+
 - **Experimental TUI boundary**: reduced the terminal client to a focused Python
   SDK/App Server verification surface. Access and approval changes now call the
   App Server, Plan/Goal controls use the selected Thread, and local shell, Git,

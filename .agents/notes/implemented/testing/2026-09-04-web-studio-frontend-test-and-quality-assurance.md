@@ -1,7 +1,7 @@
-# Web Studio 前端测试体系与质量保障体系演进提案
+# Web Studio 前端测试体系与质量保障体系
 
 - **日期**：2026-09-04
-- **状态**：推进实施中 (In Progress)
+- **状态**：已落地实施 (阶段 1-3 落地完成；阶段 4 规划中)
 - **作者**：Web Studio Quality Team
 - **范围**：`frontend/` (React SPA), `server/` (Gateway Integration), 全栈自动化冒烟
 
@@ -97,7 +97,24 @@
 
 ## 4. 实施与推进计划
 
-- [x] **阶段 1（即刻落地）**：配置 ESLint 静态代码扫描体系，启用 `no-undef` 与 `react/jsx-no-undef`，验证现有全部代码干净度；
-- [x] **阶段 2（即刻落地）**：实现 `ErrorBoundary` 容错组件并包裹核心交互视图，消除全站白屏风险；
-- [x] **阶段 3（即刻落地）**：引入组件渲染挂载测试（`vitest` + `@testing-library/react`），已为 `ToolCard`（成功/运行中/失败/审批等各状态）与 `ErrorBoundary` 补齐分支测试；
-- [ ] **阶段 4（E2E 自动化）**：构建 Playwright 端到端浏览器测试流水线。
+- [x] **阶段 1（已落地）**：配置 ESLint 静态代码扫描体系，启用 `no-undef` 与 `react/jsx-no-undef`，验证现有全部代码干净度；
+- [x] **阶段 2（已落地）**：实现 `ErrorBoundary` 容错组件并包裹核心交互视图，消除全站白屏风险；
+- [x] **阶段 3（已落地）**：引入组件渲染挂载测试（`vitest` + `@testing-library/react`），已为 `ToolCard`（成功/运行中/失败/审批等各状态）与 `ErrorBoundary` 补齐分支测试；
+- [ ] **阶段 4（规划中）**：构建 Playwright 端到端浏览器测试流水线。
+
+---
+
+## 5. 落地成果与代码资产
+
+1. **静态语法与导入防护**：
+   - 配置文件：`frontend/eslint.config.js`（ESLint 9 Flat Config 规范）；
+   - 检验命令：`npm --prefix frontend run lint`（纳为 CI 与日常本地提交前置校验）。
+2. **运行时容错保护（Error Boundary）**：
+   - 实现组件：`frontend/src/components/ErrorBoundary.jsx` 与 `ErrorBoundary.css`；
+   - 挂载点：在 `MessageItem.jsx` 中为每张 `ToolCard` 包裹局部错误边界，在 `App.jsx` 中为对话主区 `ChatArea` 与侧边栏 `SidePanel` 包裹页面级边界。
+3. **组件挂载与交互测试套件**：
+   - 框架集成：`vitest` + `@testing-library/react` + `happy-dom`；
+   - 测试文件：`frontend/src/tests/ToolCard.test.jsx`，覆盖工具各种终态、交互按钮回调以及 `ErrorBoundary` 容错测试；
+   - 统一入口：`frontend/package.json` 中的 `npm test` 聚合 Node 单元测试与 Vitest 组件测试。
+4. **测试环境隔离加固**：
+   - 在 `tests/conftest.py` 中增加合成测试目录会话清理逻辑，避免历史中断残留的锁文件引起虚假锁定。

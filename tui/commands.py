@@ -4,10 +4,6 @@ Slash command definitions and dispatcher for Mini Agent TUI.
 
 from __future__ import annotations
 
-import asyncio
-import os
-import shutil
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,7 +22,7 @@ if TYPE_CHECKING:
 def print_help_table(state: TUIState) -> None:
     """Render the clean categorized help reference table."""
     table = Table(
-        title="Mini Agent Terminal Studio (TUI) 命令大全",
+        title="Mini Agent TUI（实验性 Python SDK 验证命令）",
         border_style="cyan",
         show_lines=False,
     )
@@ -34,13 +30,12 @@ def print_help_table(state: TUIState) -> None:
     table.add_column("命令 / 格式", style="bold sky_blue1", width=28)
     table.add_column("功能说明与当前配置", style="white")
 
-    # 1. 工作流模式
+    # 1. Thread workflow controls owned by the App Server
     table.add_row(
-        "工作流模式", "/plan [on|off]", "开启/切换只读 Plan Mode (只读架构探索)"
+        "Thread 控制", "/plan [on|off]", "调用当前 Thread 的 Plan 探索 Runtime"
     )
-    table.add_row("", "/goal <目标描述>", "启动目标驱动多里程碑无人值守收敛任务")
+    table.add_row("", "/goal <目标描述>", "调用当前 Thread 的 Goal Runtime")
     table.add_row("", "/goal", "查看当前活动 Goal 进度与各里程碑收敛状态")
-    table.add_row("", "/workflows", "探测工作区内规范与计划文件 (plan.md, AGENTS.md)")
 
     # 2. 模型与思考控制
     table.add_row(
@@ -77,22 +72,12 @@ def print_help_table(state: TUIState) -> None:
         "查看当前会话已结算 Checkpoint 与消息回放 (别名: /checkpoint)",
     )
 
-    # 5. 工作区与环境探测
-    table.add_row("工作区探测", "/status", "查看运行时环境、Server 状态与轮次遥测总览")
+    # 5. Runtime inspection
+    table.add_row("运行时验证", "/status", "读取 World、Thread、Goal 和轮次遥测摘要")
     table.add_row("", "/mcp", "查看已启用的 MCP 服务与扩展工具状态")
-    table.add_row("", "/git", "查看当前工作区 Git 分支及未提交变更 (别名: /diff)")
-    table.add_row("", "/files [query]", "检索当前工作区代码文件路径 (别名: /ls)")
-    table.add_row(
-        "",
-        "!<command>",
-        "直接在宿主环境执行本地 Shell 命令 (如 !git status, !cargo test)",
-    )
 
-    # 6. 通用控制
-    table.add_row(
-        "通用控制", "/copy", "复制模型最新回复/文档 Markdown 到系统剪贴板 (别名: /cp)"
-    )
-    table.add_row("", "/clear", "清空终端屏幕")
+    # 6. TUI-only presentation controls
+    table.add_row("界面控制", "/clear", "清空终端屏幕")
     table.add_row("", "/help", "显示本命令参考大全")
     table.add_row("", "/exit / /quit", "退出 TUI 交互终端")
 
@@ -106,49 +91,9 @@ async def handle_slash_command(
     init_res: dict[str, str] | None = None,
 ) -> bool:
     """
-    Check if the user input is a slash command or shell escape (!cmd) and handle it.
+    Check if the user input is a TUI slash command and handle it.
     Returns True if handled, False if it should proceed as a model turn prompt.
     """
-    if text.startswith("!"):
-        cmd_to_run = text[1:].strip()
-        if not cmd_to_run:
-            console.print(
-                "[dim yellow]Usage: !<shell_command> (e.g. !git status, !pytest, !cargo test)[/dim yellow]"
-            )
-            return True
-
-        console.print(
-            f"[dim]⚡ Executing shell command: [bold cyan]{cmd_to_run}[/bold cyan][/dim]"
-        )
-        try:
-
-            def _run_shell() -> int:
-                if sys.platform == "win32":
-                    shell_exe = shutil.which("pwsh") or shutil.which("powershell")
-                    if shell_exe:
-                        res = subprocess.run(
-                            [shell_exe, "-NoProfile", "-Command", cmd_to_run],
-                            check=False,
-                        )
-                        return res.returncode
-                res = subprocess.run(
-                    cmd_to_run,
-                    shell=True,
-                    check=False,
-                )
-                return res.returncode
-
-            code = await asyncio.to_thread(_run_shell)
-            if code != 0:
-                console.print(f"[dim red]Command exited with code {code}[/dim red]\n")
-            else:
-                console.print("[dim green]✓ Command succeeded (exit 0)[/dim green]\n")
-        except Exception as err:  # noqa: BLE001
-            console.print(
-                f"[bold red]Failed to execute shell command: {err}[/bold red]\n"
-            )
-        return True
-
     lower_text = text.lower().strip()
 
     if lower_text in ("/exit", "/quit"):
@@ -161,44 +106,6 @@ async def handle_slash_command(
 
     if lower_text == "/help":
         print_help_table(state)
-        return True
-
-    if lower_text in ("/copy", "/cp"):
-        text_to_copy = state.last_assistant_response
-        if not text_to_copy:
-            # Fallback: attempt to read latest assistant message from thread checkpoint
-            try:
-                cp = await client.read_thread(state.current_thread_id)
-                for msg in reversed(cp.messages):
-                    role = str(msg.get("role") or msg.get("type") or "").lower()
-                    if role in ("assistant", "model", "bot"):
-                        content = msg.get("text") or msg.get("content") or ""
-                        if isinstance(content, list):
-                            content = "\n".join(str(c) for c in content)
-                        if content.strip():
-                            text_to_copy = content.strip()
-                            break
-            except Exception:  # noqa: BLE001, S110
-                pass
-
-        if not text_to_copy:
-            console.print(
-                "[yellow]No assistant response or summary available to copy yet.[/yellow]"
-            )
-            return True
-
-        from tui.clipboard import copy_to_clipboard
-
-        success = copy_to_clipboard(text_to_copy)
-        if success:
-            console.print(
-                f"[green]✓ Copied latest assistant response ([bold]{len(text_to_copy)}[/bold] chars, Markdown) to system clipboard.[/green]"
-            )
-        else:
-            console.print(
-                f"[yellow]Failed to copy to clipboard on this environment. Markdown content preview ({len(text_to_copy)} chars):[/yellow]\n"
-                f"[dim]{text_to_copy[:300]}...[/dim]"
-            )
         return True
 
     if lower_text.startswith(("/effort", "/reasoning")):
@@ -280,129 +187,19 @@ async def handle_slash_command(
         console.print(table)
         return True
 
-    if lower_text in ("/git", "/diff"):
-        try:
-
-            def _get_git_info() -> tuple[str, list[str]]:
-                b_proc = subprocess.run(
-                    ["git", "branch", "--show-current"],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                branch_name = b_proc.stdout.strip() or "main"
-                s_proc = subprocess.run(
-                    ["git", "status", "--porcelain"],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                out_lines = [
-                    ln.strip() for ln in s_proc.stdout.splitlines() if ln.strip()
-                ]
-                return branch_name, out_lines
-
-            branch, lines = await asyncio.to_thread(_get_git_info)
-            table = Table(
-                title=f"Git Status (Branch: {branch})",
-                border_style="green" if not lines else "yellow",
-            )
-            table.add_column("Status", style="bold cyan", width=10)
-            table.add_column("File Path", style="white")
-            if not lines:
-                table.add_row(
-                    "Clean",
-                    "[dim]Working tree clean, no changes[/dim]",
-                )
-            else:
-                for line in lines:
-                    st = line[:2].strip()
-                    fp = line[3:].strip()
-                    table.add_row(st, fp)
-            console.print(table)
-        except Exception as err:  # noqa: BLE001
-            console.print(f"[red]Git check failed: {err}[/red]")
-        return True
-
-    if lower_text.startswith(("/files", "/ls")):
-        parts = text.split(maxsplit=1)
-        query = parts[1].strip().lower() if len(parts) > 1 else ""
-        ignore_dirs = {
-            ".git",
-            "node_modules",
-            "__pycache__",
-            ".venv",
-            "venv",
-            ".pytest_cache",
-            ".ruff_cache",
-            "dist",
-            "build",
-            "target",
-        }
-        matches = []
-        for root, dirs, files in os.walk(Path.cwd()):
-            dirs[:] = [
-                d for d in dirs if d not in ignore_dirs and not d.startswith(".")
-            ]
-            rel_root = Path(root).relative_to(Path.cwd())
-            for f in files:
-                if f.startswith(".") and f != ".env.example":
-                    continue
-                rel_p = (
-                    str(rel_root / f).replace("\\", "/") if str(rel_root) != "." else f
-                )
-                if not query or query in rel_p.lower():
-                    matches.append(rel_p)
-                    if len(matches) >= 30:
-                        break
-            if len(matches) >= 30:
-                break
-        matches.sort()
-        table = Table(
-            title=f"Workspace Files ({len(matches)} matches)",
-            border_style="sky_blue1",
-        )
-        table.add_column("File Path", style="white")
-        for m in matches:
-            table.add_row(m)
-        console.print(table)
-        return True
-
-    if lower_text == "/workflows":
-        candidates = [
-            "plan.md",
-            "goal/plan.md",
-            "goal/milestones.json",
-            "AGENTS.md",
-            "README.md",
-        ]
-        table = Table(
-            title="Workflow & Architecture Files",
-            border_style="cyan",
-        )
-        table.add_column("File", style="bold sky_blue1", width=24)
-        table.add_column("Exists", style="green", width=10)
-        table.add_column("Path", style="dim")
-        for c in candidates:
-            p = Path.cwd() / c
-            exists = p.exists()
-            table.add_row(
-                c,
-                "✓ Yes" if exists else "No",
-                str(p.resolve()) if exists else "-",
-            )
-        console.print(table)
-        return True
-
     if lower_text.startswith("/access"):
         parts = text.split(maxsplit=1)
         if len(parts) > 1:
             target_access = parts[1].strip().lower()
             if target_access in ("project", "full_machine"):
-                state.access_scope = target_access
-                console.print(
-                    f"[green]✓ Access scope switched to: [bold]{state.access_scope}[/bold][/green]"
-                )
+                try:
+                    await client.set_world_execution(target_access, state.approval_mode)
+                    state.access_scope = target_access
+                    console.print(
+                        f"[green]✓ App Server access scope: [bold]{state.access_scope}[/bold][/green]"
+                    )
+                except Exception as err:  # noqa: BLE001
+                    console.print(f"[red]Failed to set access scope: {err}[/red]")
             else:
                 console.print(
                     "[yellow]Invalid access scope. Choose from: project, full_machine[/yellow]"
@@ -423,10 +220,16 @@ async def handle_slash_command(
                 "current_session",
                 "current_project",
             ):
-                state.approval_mode = target_approval
-                console.print(
-                    f"[green]✓ Approval scope switched to: [bold]{state.approval_mode}[/bold][/green]"
-                )
+                try:
+                    await client.set_world_execution(
+                        state.access_scope, target_approval
+                    )
+                    state.approval_mode = target_approval
+                    console.print(
+                        f"[green]✓ App Server approval scope: [bold]{state.approval_mode}[/bold][/green]"
+                    )
+                except Exception as err:  # noqa: BLE001
+                    console.print(f"[red]Failed to set approval scope: {err}[/red]")
             else:
                 console.print(
                     "[yellow]Invalid approval scope. Choose from: per_action, current_session, current_project[/yellow]"
@@ -444,25 +247,25 @@ async def handle_slash_command(
             arg = parts[1].strip().lower()
             if arg in ("on", "true", "1", "enable"):
                 res = await client.set_collaboration_mode(
-                    "plan", thread_id=state.runtime_thread_id
+                    "plan", thread_id=state.current_thread_id
                 )
             elif arg in ("off", "false", "0", "disable"):
                 res = await client.set_collaboration_mode(
-                    "default", thread_id=state.runtime_thread_id
+                    "default", thread_id=state.current_thread_id
                 )
             else:
-                wf = await client.get_workflow_state()
+                wf = await client.get_workflow_state(thread_id=state.current_thread_id)
                 next_mode = (
                     "default" if wf.collaboration_mode.mode == "plan" else "plan"
                 )
                 res = await client.set_collaboration_mode(
-                    next_mode, thread_id=state.runtime_thread_id
+                    next_mode, thread_id=state.current_thread_id
                 )
         else:
-            wf = await client.get_workflow_state()
+            wf = await client.get_workflow_state(thread_id=state.current_thread_id)
             next_mode = "default" if wf.collaboration_mode.mode == "plan" else "plan"
             res = await client.set_collaboration_mode(
-                next_mode, thread_id=state.runtime_thread_id
+                next_mode, thread_id=state.current_thread_id
             )
         active = res.collaboration_mode.mode == "plan"
         console.print(
@@ -475,14 +278,14 @@ async def handle_slash_command(
         if len(parts) > 1:
             target_goal = parts[1].strip()
             res = await client.set_goal(
-                objective=target_goal, thread_id=state.runtime_thread_id
+                objective=target_goal, thread_id=state.current_thread_id
             )
             console.print(
                 f"[green]✓ Thread Goal set ({res.goal.thread_id}): [bold]{res.goal.objective}[/bold]\n"
                 f"Status: {res.goal.status} | Token budget: {res.goal.token_budget or 'unlimited'}[/green]"
             )
         else:
-            wf = await client.get_workflow_state()
+            wf = await client.get_workflow_state(thread_id=state.current_thread_id)
             if wf.goal:
                 console.print(
                     f"[sky_blue1]Thread Goal ({wf.goal.thread_id}): status={wf.goal.status}, tokens={wf.goal.tokens_used}/{wf.goal.token_budget or 'unlimited'}[/sky_blue1]"

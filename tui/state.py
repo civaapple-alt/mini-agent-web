@@ -47,9 +47,6 @@ class TUIState:
     access_scope: str = "project"  # project | full_machine
     approval_mode: str = "per_action"  # per_action | current_session | current_project
     effort: str = "medium"  # low | medium | high
-    # The bundled App Server binds settings and Goal Runtime to its default
-    # runtime Thread. Conversation threads may still be switched independently.
-    runtime_thread_id: str = "default"
     current_thread_id: str = "default"
     turn_counts: dict[str, int] = field(default_factory=dict)
     active_turn_id: str | None = None

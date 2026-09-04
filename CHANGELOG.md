@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Experimental TUI boundary**: reduced the terminal client to a focused Python
+  SDK/App Server verification surface. Access and approval changes now call the
+  App Server, Plan/Goal controls use the selected Thread, and local shell, Git,
+  file-search, workflow, and clipboard bypass commands are no longer exposed.
+- **Actionable runtime-stop output**: the TUI renders runtime protection as an
+  actionable result instead of the opaque `Turn Settled (Status: step_limit)`
+  telemetry line.
+
 - **Project execution control plane**: aligned SDK, Gateway, Studio, and TUI on
   independent Project access (`project` / `full_machine`) and approval lifetime
   (`per_action` / `current_session` / `current_project`). `full_machine` is

@@ -8,7 +8,7 @@ from __future__ import annotations
 import io
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import pytest
 from rich.console import Console
@@ -159,7 +159,7 @@ async def test_render_turn_stream_successful_flow(
     assert "Tool finished: shell" in rendered
     assert "21 passed in 0.8s" in rendered
     assert "All tests are passing cleanly." in rendered
-    assert "Turn Settled" in rendered
+    assert "本轮结果" in rendered
     assert "Steps: 1" in rendered
     assert "Tokens: 150 in / 45 out" in rendered
     assert state.last_turn_metrics is not None
@@ -274,11 +274,47 @@ async def test_render_turn_stream_tool_failure_and_run_failure(
     assert "Run failed: ExecutionLimit: Recursion depth exceeded" in rendered
     assert "Detail: model request failed: provider returned HTTP 503" in rendered
     mock_client.read_turn.assert_awaited_once_with("turn-fail")
-    assert "Turn Settled" in rendered
+    assert "本轮结果" in rendered
     assert "状态: 执行失败" in rendered
     assert "结束原因: 运行错误" in rendered
     assert state.last_turn_metrics is not None
     assert state.last_turn_metrics.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_render_turn_stream_explains_runtime_protection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_buffer = io.StringIO()
+    test_con = Console(
+        file=output_buffer, width=120, force_terminal=False, color_system=None
+    )
+    monkeypatch.setattr("tui.stream_renderer.console", test_con)
+
+    state = TUIState(current_thread_id="step-limit-thread")
+    mock_client = AsyncMock()
+
+    async def mock_stream(*args: Any, **kwargs: Any):
+        yield {
+            "type": "event",
+            "turnId": "turn-step-limit",
+            "event": {"type": "run_finished", "steps": 8, "stop_reason": "step_limit"},
+        }
+        yield {
+            "type": "event",
+            "turnId": "turn-step-limit",
+            "event": {"type": "turn_finished", "status": "step_limit"},
+        }
+
+    mock_client.stream_turn = mock_stream
+
+    await render_turn_stream(mock_client, "Explore safely", state)
+    rendered = output_buffer.getvalue()
+
+    assert "本轮结果" in rendered
+    assert "运行保护触发，请检查或重试" in rendered
+    assert "结束原因: 运行保护触发；请检查结果或重试" in rendered
+    assert "Steps:" not in rendered
 
 
 @pytest.mark.asyncio
@@ -313,6 +349,10 @@ async def test_handle_slash_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     handled = await handle_slash_command("/access full_machine", state, mock_client)
     assert handled is True
     assert state.access_scope == "full_machine"
+    assert mock_client.set_world_execution.await_args_list == [
+        call("project", "current_project"),
+        call("full_machine", "current_project"),
+    ]
 
     # 4. Unknown slash command interception
     handled = await handle_slash_command("/hepl", state, mock_client)
@@ -337,28 +377,6 @@ async def test_handle_slash_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     assert handled is True
     assert "Thread Checkpoint" in output_buffer.getvalue()
     assert "Bug fixed successfully" in output_buffer.getvalue()
-
-    # 7. ! shell command execution
-    handled = await handle_slash_command("!echo test_shell_output", state, mock_client)
-    assert handled is True
-    assert "Executing shell command: echo test_shell_output" in output_buffer.getvalue()
-    assert "Command succeeded" in output_buffer.getvalue()
-
-    # 8. ! empty command
-    handled = await handle_slash_command("!", state, mock_client)
-    assert handled is True
-    assert "Usage: !<shell_command>" in output_buffer.getvalue()
-
-    # 9. /copy command
-    state.last_assistant_response = "# Summary\n\nTask completed successfully."
-    monkeypatch.setattr("tui.clipboard.copy_to_clipboard", lambda text: True)
-    handled = await handle_slash_command("/copy", state, mock_client)
-    assert handled is True
-    assert "Copied latest assistant response" in output_buffer.getvalue()
-
-    # 10. /cp alias command
-    handled = await handle_slash_command("/cp", state, mock_client)
-    assert handled is True
 
 
 def test_ask_approval_sync(monkeypatch: pytest.MonkeyPatch) -> None:

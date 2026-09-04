@@ -1,6 +1,4 @@
-"""
-Terminal User Interface (TUI) for Mini Agent.
-"""
+"""Experimental Python SDK/App Server verification TUI for Mini Agent."""
 
 from tui.state import TUIState, console
 

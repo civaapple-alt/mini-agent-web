@@ -1,6 +1,4 @@
-"""
-Mini Agent Terminal User Interface (TUI) Studio Entrypoint and Main Runner.
-"""
+"""Experimental Python SDK/App Server verification TUI."""
 
 from __future__ import annotations
 
@@ -26,7 +24,8 @@ async def run_tui(state: TUIState) -> None:
     """Main interactive TUI loop."""
     console.print(
         Panel.fit(
-            "[bold sky_blue1]Mini Agent Terminal Studio (TUI)[/bold sky_blue1]\n"
+            "[bold sky_blue1]Mini Agent TUI (experimental)[/bold sky_blue1]\n"
+            "[dim]Direct Python SDK/App Server verification surface; Web Studio is the primary user path.[/dim]\n"
             f"[dim]Access: [cyan]{state.access_scope}[/cyan] | Approval: [yellow]{state.approval_mode}[/yellow] | Effort: [green]{state.effort}[/green][/dim]\n"
             "[dim]Type '/help' for commands. Supports [bold yellow]Tab Autocomplete[/bold yellow]. Type '/exit' to leave.[/dim]",
             border_style="cyan",
@@ -108,9 +107,7 @@ async def run_tui(state: TUIState) -> None:
         console.print(
             f"[green]✓ Connected to {init_res.get('serverName')} v{init_res.get('serverVersion')}[/green]\n"
         )
-        await client.start_thread(state.runtime_thread_id)
-        if state.current_thread_id != state.runtime_thread_id:
-            await client.start_thread(state.current_thread_id)
+        await client.start_thread(state.current_thread_id)
 
         async def _ensure_connected() -> None:
             if not client.is_running:
@@ -234,14 +231,14 @@ async def run_tui(state: TUIState) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Mini Agent Terminal User Interface (TUI) Studio"
+        description="Experimental Mini Agent Python SDK/App Server verification TUI"
     )
     parser.add_argument(
         "-p",
         "--access",
         choices=["project", "full_machine"],
         default="project",
-        help="Access scope: project (default) or full_machine",
+        help="SDK verification access scope: project (default) or full_machine",
     )
     parser.add_argument(
         "-a",
@@ -249,7 +246,7 @@ def main() -> None:
         dest="approval_mode",
         choices=["per_action", "current_session", "current_project"],
         default="per_action",
-        help="Approval reuse scope",
+        help="SDK verification approval scope",
     )
     parser.add_argument(
         "-e",

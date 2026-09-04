@@ -15,7 +15,6 @@ Provider Token，并覆盖 SDK、网关、会话管理、安全边界、TUI 和 
 | `test_world_security.py` | World 与安全策略边界 |
 | `test_tui_rendering.py` | TUI 流式输出、失败诊断和 ThreadItem 状态 |
 | `test_tui_commands_expanded.py` | 斜杠命令行为 |
-| `test_clipboard.py` | 剪贴板降级行为 |
 | `test_cookbook_validation.py` | 示例脚本编译和离线协议检查 |
 
 ## 运行

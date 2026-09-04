@@ -62,7 +62,7 @@ def _status_label(status: str) -> str:
         "cancelled": "已取消",
         "failed": "执行失败",
         "steered": "已转向",
-        "step_limit": "运行保护触发",
+        "step_limit": "运行保护触发，请检查或重试",
     }.get(status, status)
 
 
@@ -71,7 +71,7 @@ def _stop_reason_label(reason: str) -> str:
         "completed": "正常完成",
         "cancelled": "用户取消",
         "steered": "用户纠偏后结算",
-        "step_limit": "达到内部运行保护上限；可检查结果后继续",
+        "step_limit": "运行保护触发；请检查结果或重试",
         "error": "运行错误",
     }.get(reason, reason)
 
@@ -294,7 +294,7 @@ async def render_turn_stream(
         parts = [
             f"状态: [{status_style}]{_status_label(metrics.status)}[/{status_style}]"
         ]
-        if metrics.steps > 0:
+        if metrics.steps > 0 and metrics.status != "step_limit":
             parts.append(f"Steps: {metrics.steps}")
         if metrics.stop_reason:
             parts.append(f"结束原因: {_stop_reason_label(metrics.stop_reason)}")
@@ -303,7 +303,7 @@ async def render_turn_stream(
                 f"Tokens: {metrics.input_tokens} in / {metrics.output_tokens} out"
             )
         summary_str = " | ".join(parts)
-        console.print(f"[dim]─── Turn Settled ({summary_str}) ───[/dim]\n")
+        console.print(f"[dim]─── 本轮结果 ({summary_str}) ───[/dim]\n")
 
     except (KeyboardInterrupt, asyncio.CancelledError):
         console.print("\n[yellow]⚠️  Turn interrupted by user (Ctrl+C).[/yellow]\n")

@@ -2,6 +2,7 @@
 Comprehensive unit tests for TUI slash commands and autocompletion.
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -10,40 +11,6 @@ from prompt_toolkit.document import Document
 from tui.commands import handle_slash_command
 from tui.completer import SlashCommandCompleter
 from tui.state import TUIState
-
-
-@pytest.mark.asyncio
-async def test_handle_copy_slash_command(monkeypatch):
-    """Test /copy and /cp with valid assistant response and empty response."""
-    state = TUIState(current_thread_id="test-thread")
-    state.last_assistant_response = "# Assistant Analysis\nEverything is operational."
-    mock_client = AsyncMock()
-
-    clipboard_records = []
-
-    def mock_copy_to_clipboard(text: str) -> bool:
-        clipboard_records.append(text)
-        return True
-
-    monkeypatch.setattr("tui.clipboard.copy_to_clipboard", mock_copy_to_clipboard)
-
-    # 1. /copy copies last_assistant_response
-    handled = await handle_slash_command("/copy", state, mock_client)
-    assert handled is True
-    assert len(clipboard_records) == 1
-    assert "Assistant Analysis" in clipboard_records[0]
-
-    # 2. /cp copies last_assistant_response
-    handled_cp = await handle_slash_command("/cp", state, mock_client)
-    assert handled_cp is True
-    assert len(clipboard_records) == 2
-
-    # 3. Empty assistant response
-    state.last_assistant_response = None
-    handled_empty = await handle_slash_command("/copy", state, mock_client)
-    assert handled_empty is True
-    # Clipboard not updated on empty response
-    assert len(clipboard_records) == 2
 
 
 @pytest.mark.asyncio
@@ -85,6 +52,19 @@ async def test_handle_effort_and_approval_commands():
     )
     assert handled_set_approval is True
     assert state.approval_mode == "current_session"
+    mock_client.set_world_execution.assert_awaited_once_with(
+        "project", "current_session"
+    )
+
+    # Plan is addressed to the selected Thread, not a hidden runtime alias.
+    mock_client.set_collaboration_mode.return_value = SimpleNamespace(
+        collaboration_mode=SimpleNamespace(mode="plan")
+    )
+    handled_plan = await handle_slash_command("/plan on", state, mock_client)
+    assert handled_plan is True
+    mock_client.set_collaboration_mode.assert_awaited_once_with(
+        "plan", thread_id="test-thread"
+    )
 
 
 def test_slash_command_completer():
@@ -96,16 +76,14 @@ def test_slash_command_completer():
     doc_root = Document(text="/", cursor_position=1)
     completions = list(completer.get_completions(doc_root, None))
     cmds = [c.text for c in completions]
-    assert "/copy" in cmds
-    assert "/cp" in cmds
     assert "/help" in cmds
     assert "/steer" in cmds
 
-    # 2. Typing '/co' gives /copy
+    # 2. Removed local convenience commands are not TUI controls.
     doc_co = Document(text="/co", cursor_position=3)
     co_completions = list(completer.get_completions(doc_co, None))
     co_cmds = [c.text for c in co_completions]
-    assert "/copy" in co_cmds
+    assert co_cmds == []
     assert "/clear" not in co_cmds
 
     # 3. Typing '/cl' gives /clear
@@ -114,8 +92,8 @@ def test_slash_command_completer():
     cl_cmds = [c.text for c in cl_completions]
     assert "/clear" in cl_cmds
 
-    # 4. Typing '!' gives shell hints
+    # 4. Shell escape is not a TUI bypass path.
     doc_sh = Document(text="!git", cursor_position=4)
     sh_completions = list(completer.get_completions(doc_sh, None))
     sh_cmds = [c.text for c in sh_completions]
-    assert "!git status" in sh_cmds
+    assert sh_cmds == []

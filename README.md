@@ -1,8 +1,8 @@
 # mini-agent-web
 
 `mini-agent-web` 是 Mini Agent App Server 的 Python SDK、FastAPI 网关、Web
-Studio、TUI 与 Cookbook 工作区。当前发布版本为 `0.7.0`，使用 JSON-RPC
-wire protocol version `1`。
+Studio、实验性 TUI 与 Cookbook 工作区。当前发布版本为 `0.7.0`，使用
+JSON-RPC wire protocol version `1`。
 
 ## 从哪里开始
 
@@ -11,7 +11,7 @@ wire protocol version `1`。
 | 使用或开发 Python SDK | [`sdk/python/README.md`](sdk/python/README.md) |
 | 启动或修改 FastAPI 网关 | [`server/README.md`](server/README.md) |
 | 开发 React Web Studio | [`frontend/README.md`](frontend/README.md) |
-| 使用或修改终端 TUI | [`tui/README.md`](tui/README.md) |
+| 验证 Python SDK/App Server 的实验性 TUI | [`tui/README.md`](tui/README.md) |
 | 运行示例 | [`cookbook/python-demo/README.md`](cookbook/python-demo/README.md) |
 | 查看测试 | [`tests/README.md`](tests/README.md) |
 | 查阅稳定运行文档 | [`docs/README.md`](docs/README.md) |
@@ -24,16 +24,16 @@ README。贡献规则从 [`AGENTS.md`](AGENTS.md) 开始。
 
 ```text
 Web Studio (browser) ── REST / WebSocket ──> FastAPI Server ──> Python SDK ── Stdio JSON-RPC ──> App Server
-TUI ── direct dependency ────────────────────────────────> Python SDK ── Stdio JSON-RPC ──> App Server
+Experimental TUI ── direct dependency ──────────────────> Python SDK ── Stdio JSON-RPC ──> App Server
 Cookbook ── direct dependency ──────────────────────────> Python SDK ── Stdio JSON-RPC ──> App Server
 ```
 
 - App Server 拥有 Thread、Turn、Goal 与 ThreadItem 的运行时语义；
-- Python SDK 是 TUI 和 Cookbook 的直接运行时依赖，负责进程连接、JSON-RPC、
+- Python SDK 是实验性 TUI 和 Cookbook 的直接运行时依赖，负责进程连接、JSON-RPC、
   类型解析和有界事件流；
 - Server 将 SDK 能力映射为 Web API 与 WebSocket；
-- Web Studio 通过 Server 使用 Web API 与 WebSocket；TUI 和 Cookbook 直接使用
-  Python SDK。
+- Web Studio 通过 Server 使用 Web API 与 WebSocket；实验性 TUI 和 Cookbook
+  直接使用 Python SDK。用户主流程是 Gateway → Web Studio；TUI 只用于边界验证。
 
 ## 快速启动
 
@@ -53,7 +53,7 @@ npm install
 npm run dev
 ```
 
-启动终端界面：
+启动实验性 SDK/App Server 验证 TUI：
 
 ```bash
 uv run mini-agent-tui
@@ -79,7 +79,7 @@ uv build --package mini-agent
 sdk/python/           Python SDK
 server/               FastAPI 网关
 frontend/             React Web Studio
-tui/                  终端交互界面
+tui/                  实验性 Python SDK/App Server 验证 TUI
 cookbook/python-demo/ 示例程序
 tests/                Python 测试
 docs/                 稳定运行与参考文档

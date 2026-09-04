@@ -124,6 +124,7 @@ __all__ = [
     "WorldRefreshResult",
     "WorldSetExecutionResult",
     "WorldStateResult",
+    "__version__",
     "parse_event",
     "setup_logging",
 ]

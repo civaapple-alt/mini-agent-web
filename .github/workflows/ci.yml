@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # =========================================================================
+  # 1. 静态检查与版本守卫 (Fast Fail, < 20s)
+  # =========================================================================
+  lint:
+    name: Code Quality & Linting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Python Linter & Formatter Check
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        run: npm --prefix frontend ci
+
+      - name: Frontend ESLint
+        run: npm --prefix frontend run lint
+
+      - name: Check Version Synchronization
+        run: uv run python scripts/check_version_sync.py
+
+  # =========================================================================
+  # 2. Python 模块化测试矩阵 (SDK + Gateway + TUI + Cookbook + Smoke)
+  # =========================================================================
+  python-test:
+    name: Python Test (${{ matrix.python-version }} on ${{ matrix.os }})
+    needs: [ lint ]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest ]
+        python-version: [ "3.10", "3.11", "3.12" ]
+        include:
+          - os: windows-latest
+            python-version: "3.12"
+          - os: macos-latest
+            python-version: "3.12"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install Dependencies
+        run: uv sync --frozen
+
+      - name: Run Full Modular Pytest Suite (Offline)
+        run: uv run pytest -q
+
+  # =========================================================================
+  # 3. 前端单元/组件挂载测试与生产包构建
+  # =========================================================================
+  frontend-test:
+    name: Frontend Tests & Production Build
+    needs: [ lint ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Dependencies
+        run: npm --prefix frontend ci
+
+      - name: Run Frontend Tests (Unit + Vitest Component)
+        run: npm --prefix frontend test
+
+      - name: Vite Production Build
+        run: npm --prefix frontend run build
+
+  # =========================================================================
+  # 4. 发布物构建与工作区卫生检验
+  # =========================================================================
+  package-build:
+    name: Package Build & Clean Worktree
+    needs: [ python-test, frontend-test ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build Python Distribution (Wheel & sdist)
+        run: uv build --package mini-agent
+
+      - name: Verify Clean Worktree (No uncommitted artifacts)
+        run: |
+          git diff --check
+          git status --porcelain
+          test -z "$(git status --porcelain)"

@@ -70,6 +70,20 @@ def create_mock_client(project_name: str = "test-project") -> AsyncMock:
             next_cursor=None,
         )
     )
+    mock.fork_thread = AsyncMock(
+        side_effect=lambda source_thread_id, new_thread_id: SimpleNamespace(
+            thread_id=new_thread_id
+        )
+    )
+    mock.read_thread = AsyncMock(
+        side_effect=lambda thread_id="default": SimpleNamespace(
+            thread_id=thread_id,
+            messages=[],
+            status="idle",
+            next_turn_number=1,
+            raw={},
+        )
+    )
     mock.close_thread = AsyncMock(return_value=True)
     mock.get_workflow_state = AsyncMock(
         return_value=SimpleNamespace(

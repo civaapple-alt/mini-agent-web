@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-COOKBOOK_DIR = Path(__file__).parents[1] / "cookbook" / "python-demo"
+COOKBOOK_DIR = Path(__file__).parents[2] / "cookbook" / "python-demo"
 COOKBOOK_SCRIPTS = sorted(COOKBOOK_DIR.glob("*.py"))
 
 

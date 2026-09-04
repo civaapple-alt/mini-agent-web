@@ -217,6 +217,7 @@ class SessionCatalog:
         summary = _read_json(path / "summary.json")
         goal = _read_json(path / "goal" / "state.json")
         plan = _read_json(path / "plan_mode.json")
+        cleanup = _read_json(path / "plan" / "cleanup.json")
         goal_status = _goal_status(goal.get("status"))
         has_lock, pid = _lock_info(path / "session.lock")
         lock_active = bool(has_lock and pid and _process_alive(pid))
@@ -245,6 +246,7 @@ class SessionCatalog:
             "goal_status": goal_status,
             "goal": goal or None,
             "plan_active": bool(plan.get("active", False)),
+            "cleanup_pending": cleanup.get("status") == "cleanup_pending",
             "active_turn_id": goal.get("active_turn_id") or latest_turn_id
             if runtime_status == "running"
             else None,

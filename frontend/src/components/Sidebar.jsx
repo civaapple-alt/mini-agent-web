@@ -324,6 +324,7 @@ export default function Sidebar({
         runtime_status: t.runtime_status || null,
         session_status: t.session_status || null,
         goal_status: t.goal_status || null,
+        cleanup_pending: Boolean(t.cleanup_pending),
         resumable: Boolean(t.resumable),
         session_id: t.session_id || null,
       };
@@ -657,6 +658,8 @@ export default function Sidebar({
                                   ? '已暂停'
                                 : thread.goal_status === 'paused'
                                   ? '已暂停'
+                                : thread.cleanup_pending
+                                  ? '清理待处理'
                                   : thread.resumable
                                     ? '可恢复'
                                     : '历史'}

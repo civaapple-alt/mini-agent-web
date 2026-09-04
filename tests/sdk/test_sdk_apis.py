@@ -6,7 +6,13 @@ import pytest
 from mini_agent import MiniAgentClient, ThreadCheckpoint
 from mini_agent.errors import ServerProcessError
 
+from tests.conftest import has_app_server
 
+
+@pytest.mark.skipif(
+    not has_app_server(),
+    reason="Live SDK test requires mini-agent-app-server binary (set MINI_AGENT_APP_SERVER_PATH)",
+)
 @pytest.mark.asyncio
 async def test_advanced_thread_and_workflow_apis():
     async with MiniAgentClient(log_dir="logs") as client:

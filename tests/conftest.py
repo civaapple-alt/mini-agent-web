@@ -5,13 +5,115 @@ Guarantees complete isolation of server state from the user's home directory.
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
 
 from server.session_manager import session_manager
+
+
+def has_app_server() -> bool:
+    """Check if a usable mini-agent-app-server binary is present."""
+    explicit = os.environ.get("MINI_AGENT_APP_SERVER_PATH")
+    if explicit and Path(explicit).is_file():
+        return True
+    return shutil.which("mini-agent-app-server") is not None
+
+
+def create_mock_client(project_name: str = "test-project") -> AsyncMock:
+    """Construct an in-memory MockMiniAgentClient for 100% offline Gateway testing."""
+    mock = AsyncMock()
+    mock.initialize = AsyncMock(
+        return_value={
+            "serverName": "mock-app-server",
+            "serverVersion": "0.7.0",
+            "protocolVersion": 1,
+        }
+    )
+    mock.set_world_execution = AsyncMock(return_value=SimpleNamespace(changed=False))
+    mock.start_thread = AsyncMock(side_effect=lambda tid="default": tid)
+    mock.stop = AsyncMock(return_value=None)
+    mock.get_world_state = AsyncMock(
+        return_value=SimpleNamespace(
+            context={"project": project_name},
+            lines=["Mock workspace active"],
+            status="ready",
+            workspace={},
+        )
+    )
+    mock.refresh_world = AsyncMock(
+        return_value=SimpleNamespace(changed=False, state={})
+    )
+    mock.get_mcp_status = AsyncMock(
+        return_value=SimpleNamespace(
+            enabled_servers=["fs-server"],
+            inactive_servers=[],
+            tool_count=5,
+            retry_available=False,
+        )
+    )
+    mock.retry_mcp = AsyncMock(
+        return_value=SimpleNamespace(
+            enabled_servers=["fs-server"],
+            tool_count=5,
+        )
+    )
+    mock.list_threads = AsyncMock(
+        return_value=SimpleNamespace(
+            data=["default"],
+            next_cursor=None,
+        )
+    )
+    mock.close_thread = AsyncMock(return_value=True)
+    mock.get_workflow_state = AsyncMock(
+        return_value=SimpleNamespace(
+            collaboration_mode=SimpleNamespace(mode="default"),
+            builtin_tools=[
+                "read_file",
+                "apply_patch",
+                "shell",
+                "read_image",
+            ],
+            available_builtin_tools=[
+                "read_file",
+                "apply_patch",
+                "shell",
+                "read_image",
+                "web_fetch",
+            ],
+            goal=None,
+            raw={},
+        )
+    )
+
+    def mock_update_thread_settings(mode, builtin_tools=None, thread_id=None):
+        tools = (
+            builtin_tools
+            if builtin_tools is not None
+            else ["read_file", "apply_patch", "shell", "read_image"]
+        )
+        return SimpleNamespace(
+            collaboration_mode=SimpleNamespace(mode=mode),
+            builtin_tools=tools,
+            available_builtin_tools=[
+                "read_file",
+                "apply_patch",
+                "shell",
+                "read_image",
+                "web_fetch",
+            ],
+        )
+
+    mock.update_thread_settings = AsyncMock(side_effect=mock_update_thread_settings)
+    mock.__aenter__ = AsyncMock(return_value=mock)
+    mock.__aexit__ = AsyncMock(return_value=None)
+    return mock
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -70,6 +172,19 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     session_manager._thread_metadata = {}
     session_manager._thread_builtin_tools = {}
     session_manager._load_state()
+
+    if not has_app_server():
+
+        async def mock_create_client(
+            thread_id: str,
+            project: dict[str, Any],
+            session_mode: str,
+            session_id: str | None = None,
+        ) -> AsyncMock:
+            proj_name = str(project.get("name") or "test-project")
+            return create_mock_client(project_name=proj_name)
+
+        monkeypatch.setattr(session_manager, "_create_client", mock_create_client)
 
     yield
 

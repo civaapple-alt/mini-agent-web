@@ -44,7 +44,6 @@ export default function Sidebar({
   const [expandedThreadLists, setExpandedThreadLists] = useState({});
   const [showAllProjects, setShowAllProjects] = useState(false);
   const [showRecentSection, setShowRecentSection] = useState(false);
-  const [activeProjectMenu, setActiveProjectMenu] = useState(null);
 
   // Project Detail Popover (Image 1)
   const [activeProjectPopover, setActiveProjectPopover] = useState(null);

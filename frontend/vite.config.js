@@ -4,6 +4,11 @@ import react from '@vitejs/plugin-react'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  test: {
+    environment: 'happy-dom',
+    globals: true,
+    include: ['src/tests/**/*.test.jsx'],
+  },
   server: {
     port: 5173,
     proxy: {

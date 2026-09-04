@@ -219,9 +219,7 @@ uv run pytest tests/test_sdk_events.py tests/test_cookbook_validation.py -q
 world_state = await client.get_world_state()
 
 # Access and approval are independent Project-owned controls.
-await client.set_world_execution(
-    access="full_machine", approval="current_project"
-)
+await client.set_world_execution(access="full_machine", approval="current_project")
 
 # Enter read-mostly exploration mode. Plan may use bounded scratch exploration
 # and retain plan.md, but formal Project mutations remain locked.

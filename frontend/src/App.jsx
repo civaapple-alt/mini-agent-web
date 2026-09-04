@@ -6,6 +6,7 @@ import InputBar from './components/InputBar';
 import SidePanel from './components/SidePanel';
 import SettingsModal from './components/SettingsModal';
 import Toast from './components/Toast';
+import ErrorBoundary from './components/ErrorBoundary';
 import { api, createAgentWebSocket } from './api';
 import {
   shouldAcceptEventForThread,
@@ -708,19 +709,21 @@ export default function App() {
               </div>
             </div>
           )}
-      <ChatArea
-            messages={messages}
-            isGenerating={isGenerating}
-            pendingApproval={pendingApproval}
-        onRespondApproval={handleRespondApproval}
-        approvalMode={approvalMode}
-            onQuickPrompt={handleSendMessage}
-            onRetryPrompt={handleSendMessage}
-            autoScroll={userSettings.auto_scroll}
-            wordWrap={userSettings.word_wrap}
-            fontSize={userSettings.font_size}
-            isLoadingHistory={isLoadingHistory}
-          />
+          <ErrorBoundary title="对话区域渲染异常 (Chat Area Render Error)">
+            <ChatArea
+              messages={messages}
+              isGenerating={isGenerating}
+              pendingApproval={pendingApproval}
+              onRespondApproval={handleRespondApproval}
+              approvalMode={approvalMode}
+              onQuickPrompt={handleSendMessage}
+              onRetryPrompt={handleSendMessage}
+              autoScroll={userSettings.auto_scroll}
+              wordWrap={userSettings.word_wrap}
+              fontSize={userSettings.font_size}
+              isLoadingHistory={isLoadingHistory}
+            />
+          </ErrorBoundary>
 
           <InputBar
             isGenerating={isGenerating}
@@ -743,17 +746,19 @@ export default function App() {
       </div>
 
       {/* Multi-Tab Side Panel */}
-      <SidePanel
-        isOpen={sidePanelOpen}
-        initialTab={sidePanelTab}
-        onClose={() => setSidePanelOpen(false)}
-        planActive={planActive}
-        goalState={goalState}
-        threadId={currentThread}
-        onGoalChanged={setGoalState}
-        onTogglePlan={handleTogglePlan}
-        onToast={showToast}
-      />
+      <ErrorBoundary title="侧边栏渲染异常 (Side Panel Render Error)">
+        <SidePanel
+          isOpen={sidePanelOpen}
+          initialTab={sidePanelTab}
+          onClose={() => setSidePanelOpen(false)}
+          planActive={planActive}
+          goalState={goalState}
+          threadId={currentThread}
+          onGoalChanged={setGoalState}
+          onTogglePlan={handleTogglePlan}
+          onToast={showToast}
+        />
+      </ErrorBoundary>
 
       {/* System Settings Modal */}
       <SettingsModal

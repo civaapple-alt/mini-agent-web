@@ -5,6 +5,7 @@ Guarantees complete isolation of server state from the user's home directory.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,9 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # bound, and pytest's nested temp paths can otherwise exceed MAX_PATH.
     test_home = Path("C:/m")
     test_home.mkdir(parents=True, exist_ok=True)
+    sessions_dir = test_home / ".mini-agent" / "sessions"
+    if sessions_dir.exists():
+        shutil.rmtree(sessions_dir, ignore_errors=True)
     monkeypatch.setenv("USERPROFILE", str(test_home))
     monkeypatch.setenv("HOME", str(test_home))
     # Initialization validates provider settings even when tests never invoke

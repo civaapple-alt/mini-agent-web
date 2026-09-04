@@ -27,6 +27,7 @@
 - [Local Web Studio 演进路线](proposed/feature/2026-09-02-local-web-studio-evolution-and-roadmap.md)
 - [Rust 原生 TUI](proposed/architecture/2026-09-02-rust-native-tui-ratatui-architecture.md)
 - [Tauri Desktop Shell](proposed/architecture/2026-09-02-tauri-desktop-app-and-app-server-integration.md)
+- [Web Studio 前端测试与质量保障体系](proposed/testing/2026-09-04-web-studio-frontend-test-and-quality-assurance.md)
 
 ## 维护规则
 

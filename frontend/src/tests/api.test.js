@@ -140,13 +140,7 @@ test('createAgentWebSocket provides safe send and isOpen status', (t) => {
     globalThis.window = originalLocation;
   });
 
-  let opened = false;
-  const client = createAgentWebSocket(
-    () => {},
-    () => {
-      opened = true;
-    }
-  );
+  const client = createAgentWebSocket();
 
   assert.equal(client.isOpen(), true);
   const success = client.send({ action: 'ping' });

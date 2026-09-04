@@ -76,9 +76,7 @@ def _process_alive(pid: int) -> bool:
             exit_code = ctypes.c_ulong()
             try:
                 return bool(
-                    kernel32.GetExitCodeProcess(
-                        handle, ctypes.byref(exit_code)
-                    )
+                    kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
                     and exit_code.value == 259
                 )
             finally:
@@ -133,7 +131,9 @@ def _goal_projection(
         "converged": "completed",
         "usage_limited": "usageLimited",
         "budget_limited": "budgetLimited",
-    }.get(str(goal.get("status") or goal_status), str(goal.get("status") or goal_status))
+    }.get(
+        str(goal.get("status") or goal_status), str(goal.get("status") or goal_status)
+    )
     return {
         "thread_id": str(goal.get("thread_id") or thread_id),
         "objective": objective,

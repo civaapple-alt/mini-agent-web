@@ -129,7 +129,9 @@ async def list_threads(
 
 
 @router.post("/{thread_id}/attach", summary="Attach to a resumable Session")
-async def attach_thread(thread_id: str, req: AttachThreadRequest | None = None) -> dict[str, Any]:
+async def attach_thread(
+    thread_id: str, req: AttachThreadRequest | None = None
+) -> dict[str, Any]:
     """Attach to a historical/paused Session, or report a live external lock."""
     try:
         return await session_manager.attach_thread(

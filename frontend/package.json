@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/tests/*.test.js"
+    "lint": "eslint src",
+    "test:unit": "node --test src/tests/*.test.js",
+    "test:ui": "vitest run",
+    "test": "node --test src/tests/*.test.js && vitest run"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -18,9 +21,15 @@
     "remark-gfm": "^4.0.0"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.3",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.0.7"
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "globals": "^17.12.0",
+    "happy-dom": "^20.14.0",
+    "vite": "^6.0.7",
+    "vitest": "^5.0.0"
   }
 }

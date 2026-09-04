@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { Copy, Check, Sparkles, RotateCcw, Layers, Navigation } from 'lucide-react';
 import ThinkingBlock from './ThinkingBlock';
 import ToolCard from './ToolCard';
+import ErrorBoundary from './ErrorBoundary';
 
 export default function MessageItem({
   message,
@@ -151,13 +152,18 @@ export default function MessageItem({
             }
             if (block.type === 'tool') {
               return (
-                <ToolCard
+                <ErrorBoundary
                   key={block.id || `tool_${idx}`}
-                  tool={block}
-                  pendingApproval={isLast ? pendingApproval : null}
-                  onRespondApproval={onRespondApproval}
-                  approvalMode={approvalMode}
-                />
+                  compact
+                  title={`工具 [${block.name || 'tool'}] 渲染异常`}
+                >
+                  <ToolCard
+                    tool={block}
+                    pendingApproval={isLast ? pendingApproval : null}
+                    onRespondApproval={onRespondApproval}
+                    approvalMode={approvalMode}
+                  />
+                </ErrorBoundary>
               );
             }
             if (block.type === 'compaction') {
@@ -210,13 +216,18 @@ export default function MessageItem({
             {tools.length > 0 && (
               <div className="tools-list">
                 {tools.map((t, idx) => (
-                  <ToolCard
+                  <ErrorBoundary
                     key={t.id || idx}
-                    tool={t}
-                    pendingApproval={isLast ? pendingApproval : null}
-                    onRespondApproval={onRespondApproval}
-                    approvalMode={approvalMode}
-                  />
+                    compact
+                    title={`工具 [${t.name || 'tool'}] 渲染异常`}
+                  >
+                    <ToolCard
+                      tool={t}
+                      pendingApproval={isLast ? pendingApproval : null}
+                      onRespondApproval={onRespondApproval}
+                      approvalMode={approvalMode}
+                    />
+                  </ErrorBoundary>
                 ))}
               </div>
             )}

@@ -338,7 +338,9 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
             session = canonical.get("session", {})
             goal = session.get("goal")
             if isinstance(goal, dict) and goal.get("objective"):
-                status = str(goal.get("status") or session.get("goal_status") or "active")
+                status = str(
+                    goal.get("status") or session.get("goal_status") or "active"
+                )
                 goal_dict = {
                     "thread_id": goal.get("thread_id") or target_thread,
                     "objective": goal.get("objective", ""),

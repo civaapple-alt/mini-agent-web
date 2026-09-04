@@ -36,7 +36,9 @@ def create_mock_client(project_name: str = "test-project") -> AsyncMock:
             "protocolVersion": 1,
         }
     )
-    mock.set_world_execution = AsyncMock(return_value=SimpleNamespace(changed=False))
+    mock.set_world_execution = AsyncMock(
+        return_value=SimpleNamespace(changed=False, state={})
+    )
     mock.start_thread = AsyncMock(side_effect=lambda tid="default": tid)
     mock.stop = AsyncMock(return_value=None)
     mock.get_world_state = AsyncMock(

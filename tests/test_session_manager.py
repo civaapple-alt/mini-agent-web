@@ -94,6 +94,13 @@ async def test_session_manager_approval_is_typed_and_not_web_persisted(
     assert result.get("decision") == "approve"
     assert result.get("approval") == "current_project"
 
+    # A second App Server process for the same project/action reuses the
+    # gateway's in-memory grant without creating another UI approval request.
+    second_payload = {**req_payload, "requestId": "req-456"}
+    second_result = await mock_session_manager._handle_approval_request(second_payload)
+    assert second_result["approval"] == "current_project"
+    assert mock_session_manager.list_pending_approvals() == []
+
 
 def test_session_manager_settings_persistence(mock_session_manager, tmp_path):
     """Ensure UI settings and Project execution settings persist separately."""
@@ -206,11 +213,15 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
         ),
         encoding="utf-8",
     )
+    (session_dir / "session.lock").write_text("pid=999999\n", encoding="utf-8")
+    monkeypatch.setattr("server.session_catalog._process_alive", lambda pid: False)
 
     catalog = SessionCatalog()
     listed = catalog.list_sessions(workspace, "project-1")
     assert listed["data"][0]["thread_id"] == "t-1"
     assert listed["data"][0]["session_status"] == "historical"
+    assert listed["data"][0]["resumable"] is True
+    assert listed["data"][0]["locked_by"] is None
     history = catalog.read_thread(workspace, "project-1", "t-1")
     assert history["messages"][0]["text"] == "inspect project"
     assert history["items"][0]["item"]["type"] == "userMessage"

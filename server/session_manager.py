@@ -736,12 +736,25 @@ class SessionManager:
         req_id = str(req.get("requestId") or "")
         if not req_id:
             raise ValueError("approval request is missing requestId")
-        action_name = str(req_data.get("actionSummary") or req_data.get("action") or "")
-        project_id = str(req_data.get("projectId") or self._current_project_id)
+        action_name = str(
+            req_data.get("actionSummary")
+            or req_data.get("action_summary")
+            or req_data.get("action")
+            or ""
+        )
+        project_id = str(
+            req_data.get("projectId")
+            or req_data.get("project_id")
+            or self._current_project_id
+        )
         access = str(req_data.get("access") or self.project_execution()[0])
         grant_key = (project_id, access, action_name)
 
-        allowed_approval_modes = req_data.get("allowedApprovalModes") or []
+        allowed_approval_modes = (
+            req_data.get("allowedApprovalModes")
+            or req_data.get("allowed_approval_modes")
+            or []
+        )
         if (
             action_name
             and grant_key in self._project_approval_grants
@@ -808,9 +821,10 @@ class SessionManager:
         if not details:
             return False
         data = details.get("data", {})
-        if access != data.get("access") or approval not in data.get(
-            "allowedApprovalModes", []
-        ):
+        allowed_approval_modes = data.get("allowedApprovalModes") or data.get(
+            "allowed_approval_modes", []
+        )
+        if access != data.get("access") or approval not in allowed_approval_modes:
             logger.warning("Rejected out-of-scope approval response: %s", request_id)
             return False
         if decision.lower() not in ("approve", "deny"):
@@ -819,8 +833,17 @@ class SessionManager:
         fut = self._pending_approvals.get(request_id)
         if fut and not fut.done():
             if decision.lower() == "approve" and approval == "current_project":
-                project_id = str(data.get("projectId") or self._current_project_id)
-                action_name = str(data.get("actionSummary") or data.get("action") or "")
+                project_id = str(
+                    data.get("projectId")
+                    or data.get("project_id")
+                    or self._current_project_id
+                )
+                action_name = str(
+                    data.get("actionSummary")
+                    or data.get("action_summary")
+                    or data.get("action")
+                    or ""
+                )
                 if action_name:
                     self._project_approval_grants.add((project_id, access, action_name))
             fut.set_result(

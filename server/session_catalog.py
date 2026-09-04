@@ -219,12 +219,13 @@ class SessionCatalog:
         plan = _read_json(path / "plan_mode.json")
         goal_status = _goal_status(goal.get("status"))
         has_lock, pid = _lock_info(path / "session.lock")
+        lock_active = bool(has_lock and pid and _process_alive(pid))
         runtime_status = (
             "paused"
-            if goal_status == "paused" and has_lock and pid and _process_alive(pid)
+            if lock_active and goal_status == "paused"
             else "running"
-            if has_lock and pid and _process_alive(pid)
-            else ("locked" if has_lock else "historical")
+            if lock_active
+            else "historical"
         )
         updated_ms = summary.get("updated_at_ms") or 0
         if latest_checkpoint:
@@ -240,7 +241,7 @@ class SessionCatalog:
             "created_at": _timestamp(summary.get("created_at_ms")),
             "updated_at": _timestamp(updated_ms),
             "runtime_status": runtime_status,
-            "session_status": "locked" if has_lock else "historical",
+            "session_status": "locked" if lock_active else "historical",
             "goal_status": goal_status,
             "goal": goal or None,
             "plan_active": bool(plan.get("active", False)),
@@ -249,8 +250,8 @@ class SessionCatalog:
             else None,
             "checkpoint_seq": latest_checkpoint.get("seq") if latest_checkpoint else 0,
             "turn_count": int(summary.get("turn_count") or turn_count),
-            "locked_by": pid,
-            "resumable": bool(latest_checkpoint) and not has_lock,
+            "locked_by": pid if lock_active else None,
+            "resumable": bool(latest_checkpoint) and not lock_active,
         }
         if include_history:
             entry["messages"] = (

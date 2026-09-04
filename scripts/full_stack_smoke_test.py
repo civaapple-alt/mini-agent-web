@@ -48,6 +48,46 @@ RESET = "\033[0m"
 
 
 # -----------------------------------------------------------------------------
+# Git Metadata Resolution Helpers
+# -----------------------------------------------------------------------------
+
+
+def get_git_info(directory: Path) -> dict[str, str]:
+    """Retrieve git commit hash and commit timestamp for a directory."""
+    try:
+        import subprocess
+
+        cmd = ["git", "log", "-1", "--format=%h|%H|%cd", "--date=iso"]
+        res = subprocess.run(
+            cmd,
+            cwd=str(directory),
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=3.0,
+        )
+        parts = res.stdout.strip().split("|")
+        if len(parts) == 3:
+            return {
+                "short_commit": parts[0],
+                "commit": parts[1],
+                "commit_date": parts[2],
+            }
+    except Exception:  # noqa: BLE001, S110
+        pass
+    return {"short_commit": "unknown", "commit": "unknown", "commit_date": "unknown"}
+
+
+def find_git_root(path: Path) -> Path:
+    """Find the root of the enclosing git repository."""
+    current = path if path.is_dir() else path.parent
+    for parent in [current, *current.parents]:
+        if (parent / ".git").exists():
+            return parent
+    return current
+
+
+# -----------------------------------------------------------------------------
 # Test Report Collector
 # -----------------------------------------------------------------------------
 
@@ -68,9 +108,12 @@ class ReportCollector:
     def __init__(self) -> None:
         self.start_time: datetime = datetime.now().astimezone()
         self.end_time: datetime | None = None
+        ws_info = get_git_info(REPO_ROOT)
         self.metadata: dict[str, str] = {
             "OS": f"{platform.system()} {platform.release()} ({platform.machine()})",
             "Python": f"{platform.python_version()} ({platform.python_implementation()})",
+            "Web Studio Commit ID": f"{ws_info['short_commit']} ({ws_info['commit']})",
+            "Web Studio Commit Time": ws_info["commit_date"],
         }
         self.current_phase: PhaseRecord | None = None
         self.phases: list[PhaseRecord] = []
@@ -109,9 +152,17 @@ class ReportCollector:
             self.end_time.strftime("%Y-%m-%d %H:%M:%S") if self.end_time else start_str
         )
 
+        ws_commit = self.metadata.get("Web Studio Commit ID", "unknown")
+        ws_time = self.metadata.get("Web Studio Commit Time", "unknown")
+        as_version = self.metadata.get("App Server Version", "unknown")
+        as_commit = self.metadata.get("App Server Commit ID", "unknown")
+        as_time = self.metadata.get("App Server Commit Time", "unknown")
+
         lines: list[str] = [
             "# Mini Agent Full-Stack Live LLM Smoke Test Report\n",
             f"> **Status**: **`{overall_status}`** | **Duration**: `{total_dur:.2f}s` | **Date**: `{start_str}`\n",
+            f"> **Web Studio**: `{ws_commit}` ({ws_time})\n",
+            f"> **App Server**: `v{as_version}` @ `{as_commit}` ({as_time})\n",
             "## 1. Execution Metadata\n",
             "| Property | Value |",
             "| :--- | :--- |",
@@ -311,17 +362,25 @@ async def phase_1_preflight(env: dict[str, str], app_server_bin: Path) -> None:
             "itemLifecycleNotifications missing"
         )
         assert caps.get("workflows") is True, "workflows capability missing"
-        log_ok(
-            f"Protocol handshake successful: {init_res.get('serverName')} v{init_res.get('serverVersion')}"
-        )
-        log_ok("Verified App Server capabilities: approvalRequests, workflows, items")
+        as_repo = find_git_root(app_server_bin)
+        as_info = get_git_info(as_repo)
+        server_version = str(init_res.get("serverVersion", "0.7.0"))
 
+        log_ok(
+            f"Web Studio Commit: {report.metadata.get('Web Studio Commit ID')} @ {report.metadata.get('Web Studio Commit Time')}"
+        )
+        log_ok(
+            f"App Server: v{server_version}, commit {as_info['short_commit']} ({as_info['commit']}) @ {as_info['commit_date']}"
+        )
+
+        report.metadata["App Server Version"] = server_version
+        report.metadata["App Server Commit ID"] = (
+            f"{as_info['short_commit']} ({as_info['commit']})"
+        )
+        report.metadata["App Server Commit Time"] = as_info["commit_date"]
+        report.metadata["App Server Binary"] = str(app_server_bin)
         report.metadata["Primary Model"] = f"{model} ({base_url})"
         report.metadata["Verifier Model"] = verifier_model
-        report.metadata["App Server Binary"] = str(app_server_bin)
-        report.metadata["App Server Version"] = str(
-            init_res.get("serverVersion", "0.7.0")
-        )
 
 
 async def phase_2_basic_turn_streaming(
@@ -492,9 +551,7 @@ async def phase_4_approval_security_flow(
         # 1. Test Approval Path
         should_approve = True
         approval_log.clear()
-        prompt_approve = (
-            "Use the shell tool to run a command with pwsh to print 'APPROVAL_TOKEN_PASS_778'."
-        )
+        prompt_approve = "Use the shell tool to run a command with pwsh to print 'APPROVAL_TOKEN_PASS_778'."
         log_info("Step 1: Testing Approved Execution...")
 
         text_chunks: list[str] = []
@@ -520,9 +577,7 @@ async def phase_4_approval_security_flow(
         should_approve = False
         approval_log.clear()
         thread_deny = await client.start_thread("smoke-deny-thread")
-        prompt_deny = (
-            "Use the shell tool to run a command with pwsh to print 'SHOULD_NOT_EXECUTE'."
-        )
+        prompt_deny = "Use the shell tool to run a command with pwsh to print 'SHOULD_NOT_EXECUTE'."
         log_info("Step 2: Testing Denied Execution...")
 
         denied_text_chunks: list[str] = []

@@ -58,7 +58,7 @@ class SessionManager:
         self._active_connections: list[WebSocket] = []
         self._pending_approvals: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._pending_approval_details: dict[str, dict[str, Any]] = {}
-        self._project_approval_grants: set[tuple[str, str, str]] = set()
+        self._project_approval_grants: set[tuple[str, str, str, str, str, str]] = set()
         self._lock = asyncio.Lock()
         self._initialized = False
 
@@ -724,6 +724,44 @@ class SessionManager:
     # Approval Handshake Management
     # -------------------------------------------------------------------------
 
+    @staticmethod
+    def _approval_grant_key(
+        data: dict[str, Any], current_project_id: str
+    ) -> tuple[str, str, str, str, str, str]:
+        """Build the exact identity used by current-project grant reuse."""
+        action_name = str(
+            data.get("actionSummary")
+            or data.get("action_summary")
+            or data.get("action")
+            or ""
+        )
+        project_id = str(
+            data.get("projectId") or data.get("project_id") or current_project_id
+        )
+        access = str(data.get("access") or "")
+        workspace_id = str(data.get("workspaceId") or data.get("workspace_id") or "")
+        workspace_revision = data.get("workspaceRevision")
+        if workspace_revision is None:
+            workspace_revision = data.get("workspace_revision")
+        revision_key = "" if workspace_revision is None else str(workspace_revision)
+        path_scope = data.get("pathScope")
+        if path_scope is None:
+            path_scope = data.get("path_scope")
+        if isinstance(path_scope, (dict, list)):
+            path_scope_key = json.dumps(
+                path_scope, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
+        else:
+            path_scope_key = str(path_scope or "")
+        return (
+            project_id,
+            access,
+            workspace_id,
+            revision_key,
+            path_scope_key,
+            action_name,
+        )
+
     async def _handle_approval_request(
         self,
         req: dict[str, Any],
@@ -736,19 +774,9 @@ class SessionManager:
         req_id = str(req.get("requestId") or "")
         if not req_id:
             raise ValueError("approval request is missing requestId")
-        action_name = str(
-            req_data.get("actionSummary")
-            or req_data.get("action_summary")
-            or req_data.get("action")
-            or ""
-        )
-        project_id = str(
-            req_data.get("projectId")
-            or req_data.get("project_id")
-            or self._current_project_id
-        )
         access = str(req_data.get("access") or self.project_execution()[0])
-        grant_key = (project_id, access, action_name)
+        grant_key = self._approval_grant_key(req_data, self._current_project_id)
+        action_name = grant_key[-1]
 
         allowed_approval_modes = (
             req_data.get("allowedApprovalModes")
@@ -833,19 +861,10 @@ class SessionManager:
         fut = self._pending_approvals.get(request_id)
         if fut and not fut.done():
             if decision.lower() == "approve" and approval == "current_project":
-                project_id = str(
-                    data.get("projectId")
-                    or data.get("project_id")
-                    or self._current_project_id
-                )
-                action_name = str(
-                    data.get("actionSummary")
-                    or data.get("action_summary")
-                    or data.get("action")
-                    or ""
-                )
+                grant_key = self._approval_grant_key(data, self._current_project_id)
+                action_name = grant_key[-1]
                 if action_name:
-                    self._project_approval_grants.add((project_id, access, action_name))
+                    self._project_approval_grants.add(grant_key)
             fut.set_result(
                 {
                     "decision": decision,

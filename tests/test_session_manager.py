@@ -63,6 +63,10 @@ async def test_session_manager_approval_is_typed_and_not_web_persisted(
         "actionClass": "shell_execute",
         "access": "project",
         "allowedApprovalModes": ["per_action", "current_project"],
+        "projectId": "default",
+        "workspaceId": "workspace-1",
+        "workspaceRevision": 7,
+        "pathScope": {"kind": "project", "paths": ["src"]},
         "threadId": "thread-1",
         "turnId": "turn-1",
         "callId": "call-1",
@@ -93,6 +97,13 @@ async def test_session_manager_approval_is_typed_and_not_web_persisted(
     result = await task
     assert result.get("decision") == "approve"
     assert result.get("approval") == "current_project"
+    assert len(mock_session_manager._project_approval_grants) == 1
+    assert (
+        mock_session_manager._approval_grant_key(
+            {**req_payload, "workspaceRevision": 8}, "default"
+        )
+        not in mock_session_manager._project_approval_grants
+    )
 
     # A second App Server process for the same project/action reuses the
     # gateway's in-memory grant without creating another UI approval request.

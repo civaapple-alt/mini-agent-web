@@ -58,6 +58,7 @@ class SessionManager:
         self._active_connections: list[WebSocket] = []
         self._pending_approvals: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._pending_approval_details: dict[str, dict[str, Any]] = {}
+        self._project_approval_grants: set[tuple[str, str, str]] = set()
         self._lock = asyncio.Lock()
         self._initialized = False
 
@@ -572,6 +573,7 @@ class SessionManager:
             self._pending_approval_details.clear()
         for client in set(clients):
             await client.stop()
+        self._project_approval_grants.clear()
         await self.start()
 
     async def stop(self) -> None:
@@ -735,6 +737,23 @@ class SessionManager:
         if not req_id:
             raise ValueError("approval request is missing requestId")
         action_name = str(req_data.get("actionSummary") or req_data.get("action") or "")
+        project_id = str(req_data.get("projectId") or self._current_project_id)
+        access = str(req_data.get("access") or self.project_execution()[0])
+        grant_key = (project_id, access, action_name)
+
+        allowed_approval_modes = req_data.get("allowedApprovalModes") or []
+        if (
+            action_name
+            and grant_key in self._project_approval_grants
+            and "current_project" in allowed_approval_modes
+        ):
+            logger.info("Reusing current-project approval for %s", action_name)
+            return {
+                "decision": "approve",
+                "access": access,
+                "approval": "current_project",
+                "reason": "Reused current-project approval",
+            }
 
         logger.info("Approval requested by server: %s", req_data)
 
@@ -784,7 +803,7 @@ class SessionManager:
         approval: str,
         reason: str | None = None,
     ) -> bool:
-        """Resolve a pending typed approval without storing Web-side grants."""
+        """Resolve a pending typed approval and retain project reuse in memory."""
         details = self._pending_approval_details.get(request_id)
         if not details:
             return False
@@ -799,6 +818,11 @@ class SessionManager:
 
         fut = self._pending_approvals.get(request_id)
         if fut and not fut.done():
+            if decision.lower() == "approve" and approval == "current_project":
+                project_id = str(data.get("projectId") or self._current_project_id)
+                action_name = str(data.get("actionSummary") or data.get("action") or "")
+                if action_name:
+                    self._project_approval_grants.add((project_id, access, action_name))
             fut.set_result(
                 {
                     "decision": decision,
@@ -831,12 +855,17 @@ class SessionManager:
             "approval": approval,
             "pending_requests": pending,
             "grant_store": "app-server-memory",
+            "project_grant_count": sum(
+                grant[0] == self._current_project_id
+                for grant in self._project_approval_grants
+            ),
             "revocable": True,
         }
 
     async def revoke_current_project_approvals(self) -> dict[str, Any]:
         """Restart the project-bound App Server, clearing its in-memory grants."""
         project_id = self._current_project_id
+        self._project_approval_grants.clear()
         self.cancel_active_task()
         await self.restart_for_current_project()
         return {"project_id": project_id, "revoked": True}

@@ -16,18 +16,21 @@ from server.session_manager import session_manager
 
 @pytest_asyncio.fixture(autouse=True)
 async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Isolate the derived Web manifest from the user's ~/.mini-agent/web state."""
-    test_state_dir = tmp_path / "mini_agent_test_state"
+    """Isolate the derived Web manifest and sessions into ~/.mini-agent-tmp."""
+    real_home = Path.home()
+    test_home = real_home / ".mini-agent-tmp"
+    test_home.mkdir(parents=True, exist_ok=True)
+
+    test_state_dir = test_home / "web_test_state"
+    if test_state_dir.exists():
+        shutil.rmtree(test_state_dir, ignore_errors=True)
     test_state_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("MINI_AGENT_WEB_STATE_DIR", str(test_state_dir))
+
     # App Server SessionStore follows the process home directory. Isolate it
     # too, otherwise fixed test thread IDs can collide with a user's local
     # ~/.mini-agent/sessions and make gateway tests read unrelated history.
-    # Keep the synthetic home short: Rust's canonical SessionStore encodes the
-    # absolute workspace path into a Windows directory name with a 240-byte
-    # bound, and pytest's nested temp paths can otherwise exceed MAX_PATH.
-    test_home = Path("C:/m")
-    test_home.mkdir(parents=True, exist_ok=True)
+    # Uniformly isolate test temporary files under ~/.mini-agent-tmp instead of C:/ root.
     sessions_dir = test_home / ".mini-agent" / "sessions"
     if sessions_dir.exists():
         shutil.rmtree(sessions_dir, ignore_errors=True)

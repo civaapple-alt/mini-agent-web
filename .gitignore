@@ -53,6 +53,7 @@ dist/
 logs/
 *.log
 plan.md
+plan/
 plan_mode.json
 goal/
 .pytest_cache/

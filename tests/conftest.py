@@ -8,12 +8,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 from server.session_manager import session_manager
 
 
-@pytest.fixture(autouse=True)
-def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+@pytest_asyncio.fixture(autouse=True)
+async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Isolate the derived Web manifest from the user's ~/.mini-agent/web state."""
     test_state_dir = tmp_path / "mini_agent_test_state"
     test_state_dir.mkdir(parents=True, exist_ok=True)
@@ -64,6 +65,25 @@ def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     session_manager._load_state()
 
     yield
+
+    # Close clients created by this test before its event loop is torn down.
+    # Otherwise Windows' Proactor subprocess transports can outlive the loop
+    # and report unclosed pipes even though all assertions passed.
+    original_clients = {id(client) for client in orig_clients.values()}
+    if orig_client is not None:
+        original_clients.add(id(orig_client))
+    current_clients = list(session_manager._clients.values())
+    if session_manager._client is not None:
+        current_clients.append(session_manager._client)
+    seen_clients: set[int] = set()
+    for client in current_clients:
+        if id(client) in original_clients or id(client) in seen_clients:
+            continue
+        seen_clients.add(id(client))
+        try:
+            await client.stop()
+        except Exception:  # noqa: BLE001, S110
+            pass
 
     # Restore singleton after test finishes
     session_manager._state_dir = orig_state_dir

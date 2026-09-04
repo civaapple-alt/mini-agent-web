@@ -284,23 +284,24 @@ class MiniAgentClient:
 
     async def stop(self) -> None:
         """Gracefully stop the server process."""
+        process = self._proc
         # 1. Terminate/kill the child process first so stdout/stderr receive EOF immediately
-        if self._proc and self._proc.returncode is None:
-            if self._proc.stdin and not self._proc.stdin.is_closing():
+        if process and process.returncode is None:
+            if process.stdin and not process.stdin.is_closing():
                 try:
-                    self._proc.stdin.close()
+                    process.stdin.close()
                 except Exception:  # noqa: BLE001, S110
                     pass
             try:
-                self._proc.terminate()
+                process.terminate()
             except Exception:  # noqa: BLE001, S110
                 pass
             try:
-                await asyncio.wait_for(self._proc.wait(), timeout=1.0)
+                await asyncio.wait_for(process.wait(), timeout=1.0)
             except (asyncio.TimeoutError, Exception):  # noqa: BLE001
                 try:
-                    self._proc.kill()
-                    await asyncio.wait_for(self._proc.wait(), timeout=1.0)
+                    process.kill()
+                    await asyncio.wait_for(process.wait(), timeout=1.0)
                 except Exception:  # noqa: BLE001, S110
                     pass
 
@@ -318,6 +319,22 @@ class MiniAgentClient:
             if not fut.done():
                 fut.set_exception(RuntimeError("App Server stopped"))
         self._pending_requests.clear()
+
+        # Process.wait() reaps the child but does not always close the
+        # Proactor pipe transport on Windows before pytest closes its loop.
+        # Close the transport explicitly and release references so its
+        # destructor cannot report an unclosed stdin/stdout/stderr pipe.
+        if process:
+            transport = getattr(process, "_transport", None)
+            if transport is not None:
+                try:
+                    transport.close()
+                except Exception:  # noqa: BLE001, S110
+                    pass
+                await asyncio.sleep(0)
+        self._proc = None
+        self._reader_task = None
+        self._stderr_task = None
 
     @property
     def is_running(self) -> bool:

@@ -509,11 +509,14 @@ class MiniAgentClient:
     async def _handle_approval_request(self, params: dict[str, Any]) -> None:
         """Handle server approval/request notification."""
         request_id = str(params.get("requestId") or "")
+        default_approval = (
+            "per_action" if self._approval_mode == "automatic" else self._approval_mode
+        )
         response: dict[str, Any] = {
             "requestId": request_id,
             "decision": "deny",
             "access": self._access_scope,
-            "approval": self._approval_mode,
+            "approval": default_approval,
         }
         try:
             if self.approval_handler is not None:
@@ -533,6 +536,15 @@ class MiniAgentClient:
                     raise ValueError("approval access must match the request")
                 if response["approval"] not in params.get("allowedApprovalModes", []):
                     raise ValueError("approval scope is not allowed for the request")
+            elif self._approval_mode == "automatic":
+                allowed = params.get("allowedApprovalModes", ["per_action"])
+                response["decision"] = "approve"
+                response["approval"] = (
+                    "per_action"
+                    if "per_action" in allowed
+                    else (allowed[0] if allowed else "per_action")
+                )
+                response["reason"] = "Automatic approval mode active"
             else:
                 response["reason"] = "No approval handler configured"
         except Exception as err:  # noqa: BLE001
@@ -1016,9 +1028,14 @@ class MiniAgentClient:
         """Set independent access and approval reuse scopes."""
         if access not in ("project", "full_machine"):
             raise ValueError("access must be project or full_machine")
-        if approval not in ("per_action", "current_session", "current_project"):
+        if approval not in (
+            "per_action",
+            "current_session",
+            "current_project",
+            "automatic",
+        ):
             raise ValueError(
-                "approval must be per_action, current_session, or current_project"
+                "approval must be per_action, current_session, current_project, or automatic"
             )
         self._access_scope = access
         self._approval_mode = approval

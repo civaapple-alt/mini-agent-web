@@ -369,3 +369,75 @@ def test_decoupled_persistence_isolation(tmp_path):
     assert mgr.project_execution() == ("full_machine", "current_project")
     assert settings_file.stat().st_mtime_ns == s_mtime_before
     assert threads_file.stat().st_mtime_ns == t_mtime_before
+
+
+@pytest.mark.asyncio
+async def test_session_manager_session_approval_reuse(mock_session_manager):
+    """Ensure current_session approvals are cached per session and reused only within that session."""
+    req_payload = {
+        "requestId": "req-sess-1",
+        "access": "project",
+        "actionSummary": "cargo test",
+        "threadId": "thread-1",
+        "sessionId": "sess-1",
+        "allowedApprovalModes": ["per_action", "current_session", "current_project"],
+    }
+    task = asyncio.create_task(
+        mock_session_manager._handle_approval_request(req_payload)
+    )
+    await asyncio.sleep(0.01)
+    assert "req-sess-1" in mock_session_manager._pending_approvals
+
+    resolved = mock_session_manager.resolve_approval(
+        request_id="req-sess-1",
+        decision="approve",
+        access="project",
+        approval="current_session",
+        reason="Approve for this session",
+    )
+    assert resolved is True
+    result = await task
+    assert result["decision"] == "approve"
+    assert result["approval"] == "current_session"
+    assert len(mock_session_manager._session_approval_grants) == 1
+
+    # Same session reuses grant
+    second_req = {**req_payload, "requestId": "req-sess-2"}
+    second_res = await mock_session_manager._handle_approval_request(second_req)
+    assert second_res["decision"] == "approve"
+    assert second_res["approval"] == "current_session"
+
+    # Different session does NOT reuse session grant
+    diff_session_req = {
+        **req_payload,
+        "requestId": "req-sess-3",
+        "threadId": "thread-2",
+        "sessionId": "sess-2",
+    }
+    task_diff = asyncio.create_task(
+        mock_session_manager._handle_approval_request(diff_session_req)
+    )
+    await asyncio.sleep(0.01)
+    assert "req-sess-3" in mock_session_manager._pending_approvals
+    mock_session_manager.resolve_approval(
+        request_id="req-sess-3",
+        decision="deny",
+        access="project",
+        approval="per_action",
+    )
+    await task_diff
+
+
+@pytest.mark.asyncio
+async def test_session_manager_automatic_approval(mock_session_manager):
+    """Ensure automatic approval policy immediately approves without pending request."""
+    mock_session_manager.set_project_execution("full_machine", "automatic")
+    req_payload = {
+        "requestId": "req-auto-1",
+        "access": "full_machine",
+        "actionSummary": "git status",
+        "allowedApprovalModes": ["per_action", "current_session", "current_project"],
+    }
+    res = await mock_session_manager._handle_approval_request(req_payload)
+    assert res["decision"] == "approve"
+    assert mock_session_manager.list_pending_approvals() == []

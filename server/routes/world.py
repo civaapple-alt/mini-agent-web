@@ -35,8 +35,10 @@ class SetExecutionRequest(BaseModel):
     access: Literal["project", "full_machine"] = Field(
         default="project", description="Project-scoped or machine-wide access"
     )
-    approval: Literal["per_action", "current_session", "current_project"] = Field(
-        default="per_action", description="Approval reuse lifetime"
+    approval: Literal[
+        "per_action", "current_session", "current_project", "automatic"
+    ] = Field(
+        default="per_action", description="Approval reuse lifetime or automatic bypass"
     )
 
 

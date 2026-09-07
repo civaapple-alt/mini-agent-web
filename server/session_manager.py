@@ -74,6 +74,9 @@ class SessionManager:
         self._pending_approvals: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._pending_approval_details: dict[str, dict[str, Any]] = {}
         self._project_approval_grants: set[tuple[str, str, str, str, str, str]] = set()
+        self._session_approval_grants: set[tuple[str, str, str, str, str, str, str]] = (
+            set()
+        )
         self._lock = asyncio.Lock()
         self._initialized = False
 
@@ -728,6 +731,7 @@ class SessionManager:
         for client in set(clients):
             await client.stop()
         self._project_approval_grants.clear()
+        self._session_approval_grants.clear()
         await self.start()
 
     async def stop(self) -> None:
@@ -756,6 +760,8 @@ class SessionManager:
                     await asyncio.wait_for(client.stop(), timeout=3.0)
                 except (asyncio.TimeoutError, Exception):  # noqa: BLE001, S110
                     pass
+            self._project_approval_grants.clear()
+            self._session_approval_grants.clear()
             self._initialized = False
             logger.info("MiniAgentClient processes terminated cleanly.")
 
@@ -867,7 +873,12 @@ class SessionManager:
     def set_project_execution(self, access: str, approval: str) -> None:
         if access not in ("project", "full_machine"):
             raise ValueError("invalid access scope")
-        if approval not in ("per_action", "current_session", "current_project"):
+        if approval not in (
+            "per_action",
+            "current_session",
+            "current_project",
+            "automatic",
+        ):
             raise ValueError("invalid approval scope")
         project = self._projects_registry[self._current_project_id]
         project["access"] = access
@@ -944,6 +955,51 @@ class SessionManager:
             or req_data.get("allowed_approval_modes")
             or []
         )
+        _access_policy, approval_policy = self.project_execution()
+        if approval_policy == "automatic":
+            logger.info(
+                "Automatic approval policy active: auto-approving %s", action_name
+            )
+            return {
+                "decision": "approve",
+                "access": access,
+                "approval": (
+                    "per_action"
+                    if "per_action" in allowed_approval_modes
+                    else (
+                        allowed_approval_modes[0]
+                        if allowed_approval_modes
+                        else "per_action"
+                    )
+                ),
+                "reason": "Automatic approval policy active",
+            }
+
+        session_key = str(
+            req_data.get("threadId")
+            or req_data.get("thread_id")
+            or req_data.get("sessionId")
+            or req_data.get("session_id")
+            or "default"
+        )
+        session_grant = (session_key, *grant_key)
+        if (
+            action_name
+            and session_grant in self._session_approval_grants
+            and "current_session" in allowed_approval_modes
+        ):
+            logger.info(
+                "Reusing current-session approval for %s (session %s)",
+                action_name,
+                session_key,
+            )
+            return {
+                "decision": "approve",
+                "access": access,
+                "approval": "current_session",
+                "reason": "Reused current-session approval",
+            }
+
         if (
             action_name
             and grant_key in self._project_approval_grants
@@ -1005,7 +1061,7 @@ class SessionManager:
         approval: str,
         reason: str | None = None,
     ) -> bool:
-        """Resolve a pending typed approval and retain project reuse in memory."""
+        """Resolve a pending typed approval and retain session/project reuse in memory."""
         details = self._pending_approval_details.get(request_id)
         if not details:
             return False
@@ -1021,11 +1077,21 @@ class SessionManager:
 
         fut = self._pending_approvals.get(request_id)
         if fut and not fut.done():
-            if decision.lower() == "approve" and approval == "current_project":
+            if decision.lower() == "approve":
                 grant_key = self._approval_grant_key(data, self._current_project_id)
                 action_name = grant_key[-1]
                 if action_name:
-                    self._project_approval_grants.add(grant_key)
+                    if approval == "current_session":
+                        session_key = str(
+                            data.get("threadId")
+                            or data.get("thread_id")
+                            or data.get("sessionId")
+                            or data.get("session_id")
+                            or "default"
+                        )
+                        self._session_approval_grants.add((session_key, *grant_key))
+                    elif approval == "current_project":
+                        self._project_approval_grants.add(grant_key)
             fut.set_result(
                 {
                     "decision": decision,
@@ -1062,6 +1128,7 @@ class SessionManager:
                 grant[0] == self._current_project_id
                 for grant in self._project_approval_grants
             ),
+            "session_grant_count": len(self._session_approval_grants),
             "revocable": True,
         }
 
@@ -1069,6 +1136,7 @@ class SessionManager:
         """Restart the project-bound App Server, clearing its in-memory grants."""
         project_id = self._current_project_id
         self._project_approval_grants.clear()
+        self._session_approval_grants.clear()
         self.cancel_active_task()
         await self.restart_for_current_project()
         return {"project_id": project_id, "revoked": True}

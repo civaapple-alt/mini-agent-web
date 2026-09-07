@@ -195,14 +195,27 @@ export default function ToolCard({
               <span>允许一次 (Allow)</span>
             </button>
 
-            <button
-              className="btn-approve-scope"
-              onClick={() => handleApprove(approvalMode)}
-              title={`按当前批准设置复用：${approvalMode}`}
-            >
-              <CheckCheck size={12} />
-              <span>{approvalMode === 'current_project' ? '当前项目复用' : approvalMode === 'current_session' ? '当前会话复用' : '逐次批准'}</span>
-            </button>
+            {(pendingApproval?.data?.allowedApprovalModes || pendingApproval?.data?.allowed_approval_modes || ['per_action', 'current_session', 'current_project']).includes('current_session') && (
+              <button
+                className="btn-approve-scope"
+                onClick={() => handleApprove('current_session')}
+                title="在当前会话中记住此操作的授权"
+              >
+                <CheckCheck size={12} />
+                <span>当前会话复用</span>
+              </button>
+            )}
+
+            {(pendingApproval?.data?.allowedApprovalModes || pendingApproval?.data?.allowed_approval_modes || ['per_action', 'current_session', 'current_project']).includes('current_project') && (
+              <button
+                className="btn-approve-scope"
+                onClick={() => handleApprove('current_project')}
+                title="在当前项目中记住此操作的授权"
+              >
+                <CheckCheck size={12} />
+                <span>当前项目复用</span>
+              </button>
+            )}
 
             <button
               className="btn-deny-inline"

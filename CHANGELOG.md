@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Decoupled Approval Policy & Multi-Scope Action Grants**:
+  - Added `automatic` (Auto Copilot) global approval mode across SDK, Server (`/world/execution`), TUI (`/approval automatic`), and Web Studio settings dropdown, automatically allowing safe tool invocations without repetitive modal interruptions.
+  - Implemented session-level (`current_session`) and project-level (`current_project`) dynamic approval grant caches in `SessionManager`, resolving the issue where previously granted actions re-intercepted within the same session.
+  - Upgraded Composer Approval Dock and `ToolCard` inline security strips to offer fine-grained choices: Allow Once (`per_action`), Remember for Session (`current_session`), and Remember for Project (`current_project`).
+
 - **Web Studio Multi-Layer Frontend Quality Assurance & Error Boundary**:
   - Configured ESLint 9 with `react/jsx-no-undef: 'error'` and `no-undef: 'error'` in `frontend/eslint.config.js`, statically intercepting undeclared identifiers and unimported JSX components in sub-second builds.
   - Added React `ErrorBoundary` with compact retry fallbacks around `ToolCard` in `MessageItem.jsx` and top-level views (`ChatArea`, `SidePanel`) in `App.jsx`, preventing component render failures from crashing the application into a blank screen.

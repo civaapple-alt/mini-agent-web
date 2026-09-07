@@ -219,6 +219,7 @@ async def handle_slash_command(
                 "per_action",
                 "current_session",
                 "current_project",
+                "automatic",
             ):
                 try:
                     await client.set_world_execution(
@@ -232,12 +233,12 @@ async def handle_slash_command(
                     console.print(f"[red]Failed to set approval scope: {err}[/red]")
             else:
                 console.print(
-                    "[yellow]Invalid approval scope. Choose from: per_action, current_session, current_project[/yellow]"
+                    "[yellow]Invalid approval scope. Choose from: per_action, current_session, current_project, automatic[/yellow]"
                 )
         else:
             console.print(
                 f"[sky_blue1]Current Approval Scope: [bold]{state.approval_mode}[/bold]\n"
-                "[dim]Usage: /approval <per_action | current_session | current_project>[/dim][/sky_blue1]"
+                "[dim]Usage: /approval <per_action | current_session | current_project | automatic>[/dim][/sky_blue1]"
             )
         return True
 

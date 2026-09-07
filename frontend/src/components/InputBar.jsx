@@ -37,6 +37,7 @@ const APPROVAL_MODES = [
   { id: 'per_action', label: '逐次批准 (Per-Action)', desc: '每次敏感操作单独确认' },
   { id: 'current_session', label: '当前会话 (Current Session)', desc: '本 Session 内复用精确批准' },
   { id: 'current_project', label: '当前项目 (Current Project)', desc: 'Project 内匹配 Workspace 版本的 Session 复用' },
+  { id: 'automatic', label: '自动放行 (Auto Copilot)', desc: '非高危敏感操作自动放行，无需重复确认' },
 ];
 
 export default function InputBar({
@@ -409,18 +410,32 @@ export default function InputBar({
                 title="允许执行本次操作"
               >
                 <Check size={12} />
-                <span>允许 (Allow)</span>
+                <span>允许本次 (Once)</span>
               </button>
 
-              <button
-                type="button"
-                className="btn-dock-scope"
-                onClick={() => handleApprove(approvalMode)}
-                title={`按当前设置复用：${currentApprovalObj.label}`}
-              >
-                <Check size={12} />
-                <span>{currentApprovalObj.label.split(' ')[0]} (Apply)</span>
-              </button>
+              {(pendingApproval?.data?.allowedApprovalModes || pendingApproval?.data?.allowed_approval_modes || ['per_action', 'current_session', 'current_project']).includes('current_session') && (
+                <button
+                  type="button"
+                  className="btn-dock-scope"
+                  onClick={() => handleApprove('current_session')}
+                  title="在当前会话中记住此操作的授权"
+                >
+                  <Check size={12} />
+                  <span>会话记住 (Session)</span>
+                </button>
+              )}
+
+              {(pendingApproval?.data?.allowedApprovalModes || pendingApproval?.data?.allowed_approval_modes || ['per_action', 'current_session', 'current_project']).includes('current_project') && (
+                <button
+                  type="button"
+                  className="btn-dock-scope"
+                  onClick={() => handleApprove('current_project')}
+                  title="在当前项目中记住此操作的授权"
+                >
+                  <Check size={12} />
+                  <span>项目记住 (Project)</span>
+                </button>
+              )}
 
               <button
                 type="button"
@@ -656,7 +671,7 @@ export default function InputBar({
             </div>
 
             <span className="hint-kbd font-mono">Enter 发送</span>
-            {accessScope === 'full_machine' && approvalMode === 'current_project' && (
+            {accessScope === 'full_machine' && (approvalMode === 'current_project' || approvalMode === 'automatic') && (
               <span className="hint-kbd font-mono" title="Goal + 当前配置可形成 Auto Copilot">
                 Auto Copilot 就绪
               </span>

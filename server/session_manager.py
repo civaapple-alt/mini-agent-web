@@ -549,11 +549,14 @@ class SessionManager:
             read_roots.append(path_text)
             if folder.get("editable", True):
                 write_roots.append(path_text)
-        return {
+        env = {
             "MINI_AGENT_PROJECT_ID": str(project.get("id", self._current_project_id)),
             "MINI_AGENT_EXTRA_READ_ROOTS": os.pathsep.join(read_roots),
             "MINI_AGENT_EXTRA_WRITE_ROOTS": os.pathsep.join(write_roots),
         }
+        if project.get("name"):
+            env["MINI_AGENT_PROJECT_NAME"] = str(project["name"])
+        return env
 
     @property
     def client(self) -> MiniAgentClient:

@@ -11,8 +11,10 @@ Unit and integration tests for Gateway Agent interaction endpoints:
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from dataclasses import dataclass, field
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -296,3 +298,57 @@ def test_gateway_websocket_steer_interrupt_actions(agent_test_app):
         err = ws.receive_json()
         assert err.get("type") == "error"
         assert "没有正在执行的任务轮次" in err.get("message", "")
+
+
+def test_gateway_websocket_reads_approval_while_steer_is_pending(agent_test_app):
+    """Approval responses must not wait behind a slow App Server steer call."""
+    from starlette.testclient import TestClient
+
+    approval_received = threading.Event()
+
+    async def delayed_steer(*_args):
+        # This models the App Server request waiting for the active turn to
+        # reach a safe control point. It can finish only after the approval
+        # branch has run on the same WebSocket receive loop.
+        await asyncio.to_thread(approval_received.wait, 5)
+
+    def resolve_approval(*_args):
+        approval_received.set()
+        return True
+
+    mock_client = AsyncMock()
+    mock_client.steer_turn = AsyncMock(side_effect=delayed_steer)
+    session_manager._client = mock_client
+    session_manager._clients["default"] = mock_client
+
+    client = TestClient(agent_test_app)
+    with patch.object(
+        session_manager, "resolve_approval", side_effect=resolve_approval
+    ), client.websocket_connect("/ws/agent") as ws:
+        ws.send_json(
+            {
+                "action": "steer",
+                "turnId": "turn-ws-deadlock",
+                "text": "continue after approval",
+                "threadId": "default",
+            }
+        )
+        ws.send_json(
+            {
+                "action": "approval_response",
+                "requestId": "approval-ws-deadlock",
+                "decision": "approve",
+                "grantScope": "once",
+            }
+        )
+
+        assert approval_received.wait(1), (
+            "approval response was blocked by the pending steer request"
+        )
+        responses = [ws.receive_json(), ws.receive_json()]
+
+    assert {response["type"] for response in responses} == {
+        "approval_ack",
+        "steer_ack",
+    }
+    assert mock_client.steer_turn.await_count == 1

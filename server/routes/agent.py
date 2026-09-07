@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Coroutine
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -258,6 +259,13 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
     Handles real-time streaming, interactive steering, interrupts, and security approval round-trips.
     """
     await session_manager.connect_ws(websocket)
+    background_tasks: set[asyncio.Task[None]] = set()
+
+    def spawn_background(coroutine: Coroutine[Any, Any, None]) -> None:
+        task = asyncio.create_task(coroutine)
+        background_tasks.add(task)
+        task.add_done_callback(background_tasks.discard)
+
     try:
         while True:
             raw_text = await websocket.receive_text()
@@ -284,7 +292,7 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 enriched_prompt = _process_attachments(prompt, images, referenced_files)
 
                 # Background task to stream turn events back over WebSocket
-                asyncio.create_task(
+                spawn_background(
                     _stream_turn_to_ws(websocket, enriched_prompt, mode, thread_id)
                 )
 
@@ -295,17 +303,12 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 )
                 text = data.get("text", "")
                 if turn_id:
-                    try:
-                        client = await session_manager.get_client_for_thread(thread_id)
-                        await client.steer_turn(turn_id, text, thread_id)
-                        await websocket.send_json(
-                            {"type": "steer_ack", "turnId": turn_id}
-                        )
-                    except Exception as err:  # noqa: BLE001
-                        logger.warning("Failed to steer turn %s: %s", turn_id, err)
-                        await websocket.send_json(
-                            {"type": "error", "message": f"纠偏下发失败: {err}"}
-                        )
+                    # Steering can wait for the App Server to accept the
+                    # action. Keep it off the receive loop so an approval
+                    # response can still be read from this same WebSocket.
+                    spawn_background(
+                        _steer_turn_to_ws(websocket, thread_id, turn_id, text)
+                    )
                 else:
                     await websocket.send_json(
                         {
@@ -328,11 +331,11 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
 
                 # 2. Notify App Server engine
                 if turn_id:
-                    try:
-                        client = await session_manager.get_client_for_thread(thread_id)
-                        await client.interrupt_turn(turn_id, thread_id)
-                    except Exception as err:  # noqa: BLE001
-                        logger.warning("Failed to call client.interrupt_turn: %s", err)
+                    # As with steering, interruption must not stop the
+                    # receive loop from accepting an approval response.
+                    spawn_background(
+                        _interrupt_turn_to_ws(websocket, thread_id, turn_id)
+                    )
 
                 # Send immediate interrupt ack to client (stream CancelledError will emit turn_finished)
                 await websocket.send_json({"type": "interrupt_ack", "turnId": turn_id})
@@ -353,7 +356,47 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
     except Exception:
         logger.exception("WebSocket unhandled exception")
     finally:
+        for task in background_tasks:
+            task.cancel()
         session_manager.disconnect_ws(websocket)
+
+
+async def _steer_turn_to_ws(
+    websocket: WebSocket,
+    thread_id: str,
+    turn_id: str,
+    text: str,
+) -> None:
+    """Submit steering without blocking the WebSocket receive loop."""
+    try:
+        client = await session_manager.get_client_for_thread(thread_id)
+        await client.steer_turn(turn_id, text, thread_id)
+        await websocket.send_json({"type": "steer_ack", "turnId": turn_id})
+    except asyncio.CancelledError:
+        raise
+    except Exception as err:  # noqa: BLE001
+        logger.warning("Failed to steer turn %s: %s", turn_id, err)
+        try:
+            await websocket.send_json(
+                {"type": "error", "message": f"纠偏下发失败: {err}"}
+            )
+        except Exception:
+            logger.debug("WebSocket closed before steer error response", exc_info=True)
+
+
+async def _interrupt_turn_to_ws(
+    websocket: WebSocket,
+    thread_id: str,
+    turn_id: str,
+) -> None:
+    """Notify the App Server of an interrupt without blocking receives."""
+    try:
+        client = await session_manager.get_client_for_thread(thread_id)
+        await client.interrupt_turn(turn_id, thread_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception as err:  # noqa: BLE001
+        logger.warning("Failed to call client.interrupt_turn: %s", err)
 
 
 async def _stream_turn_to_ws(

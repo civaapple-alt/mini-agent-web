@@ -14,7 +14,7 @@ import './SettingsModal.css';
 
 export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToast }) {
   const [settings, setSettings] = useState({
-    reasoning_effort: 'medium',
+    reasoning_effort: 'high',
     theme: 'light',
     auto_scroll: true,
     word_wrap: true,
@@ -81,7 +81,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToas
 
   const handleReset = () => {
     setSettings({
-      reasoning_effort: 'medium',
+      reasoning_effort: 'high',
       theme: 'light',
       auto_scroll: true,
       word_wrap: true,

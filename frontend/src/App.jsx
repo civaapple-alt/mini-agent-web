@@ -39,7 +39,7 @@ export default function App() {
     access: 'project',
     approval: 'per_action',
     default_mode: 'chat',
-    reasoning_effort: 'medium',
+    reasoning_effort: 'high',
     theme: 'light',
     auto_scroll: true,
     word_wrap: true,

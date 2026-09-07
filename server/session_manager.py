@@ -88,7 +88,7 @@ class SessionManager:
             "host": settings.host,
             "port": settings.port,
             "default_mode": "chat",  # chat | plan | goal
-            "reasoning_effort": "medium",
+            "reasoning_effort": "high",
             "theme": "light",
             "auto_scroll": True,
             "word_wrap": True,

@@ -115,9 +115,10 @@ async def test_session_manager_approval_is_typed_and_not_web_persisted(
 
 def test_session_manager_settings_persistence(mock_session_manager, tmp_path):
     """Ensure UI settings and Project execution settings persist separately."""
+    assert mock_session_manager.get_settings()["reasoning_effort"] == "high"
     mock_session_manager.set_project_execution("full_machine", "current_project")
     mock_session_manager.update_settings(
-        {"reasoning_effort": "high", "auto_scroll": False}
+        {"reasoning_effort": "low", "auto_scroll": False}
     )
 
     assert mock_session_manager.project_execution() == (
@@ -126,7 +127,7 @@ def test_session_manager_settings_persistence(mock_session_manager, tmp_path):
     )
     assert mock_session_manager.get_settings()["access"] == "full_machine"
     assert mock_session_manager.get_settings()["approval"] == "current_project"
-    assert mock_session_manager._settings["reasoning_effort"] == "high"
+    assert mock_session_manager._settings["reasoning_effort"] == "low"
     assert mock_session_manager._settings["auto_scroll"] is False
 
     # Create new manager loading from same state file
@@ -136,7 +137,7 @@ def test_session_manager_settings_persistence(mock_session_manager, tmp_path):
     new_mgr._load_state()
 
     assert new_mgr.get_settings()["access"] == "full_machine"
-    assert new_mgr._settings["reasoning_effort"] == "high"
+    assert new_mgr._settings["reasoning_effort"] == "low"
     assert new_mgr._settings["auto_scroll"] is False
 
 

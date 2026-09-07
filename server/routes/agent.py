@@ -372,7 +372,7 @@ async def _stream_turn_to_ws(
     """Stream events from MiniAgentClient directly to the initiating WebSocket."""
     target_thread = thread_id or "default"
     current_task = asyncio.current_task()
-    effort = session_manager.get_settings().get("reasoning_effort", "medium")
+    effort = session_manager.get_settings().get("reasoning_effort", "high")
     try:
         client = await session_manager.get_client_for_thread(target_thread)
         async for item in client.stream_turn(

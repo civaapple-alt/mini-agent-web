@@ -56,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Reclassified architectural decision records (ADRs), proposals, and deep dives into the structured `.agents/notes/` tree (`implemented/` and `proposed/`), indexed by `.agents/notes/README.md`.
   - Streamlined `docs/` to retain strictly essential operational project documentation: `limits.md`, `privacy.md`, `releasing.md`, and `troubleshooting.md`; moved the Python SDK guide to `sdk/python/python-sdk-guide.md` alongside its package.
 
+### Changed
+
+- **Default Reasoning Effort Alignment**: Set the system-wide default `reasoning_effort` to `high` across `SessionManager` runtime defaults, WebSocket turn stream fallback routing, and Web Studio frontend initial state / settings reset, ensuring deep reasoning depth by default for complex coding agent workflows.
+
 ### Fixed
 
 - **Web Studio Project Management & Hover Floating Interactions**:

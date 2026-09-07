@@ -16,6 +16,20 @@ import {
 } from './utils/messageState';
 import './App.css';
 
+function normalizeInputPayload(inputPayload) {
+  if (typeof inputPayload === 'string') {
+    return { prompt: inputPayload, images: [], referencedFiles: [] };
+  }
+  if (typeof inputPayload === 'object' && inputPayload !== null) {
+    return {
+      prompt: inputPayload.prompt || '',
+      images: inputPayload.images || [],
+      referencedFiles: inputPayload.referencedFiles || [],
+    };
+  }
+  return { prompt: '', images: [], referencedFiles: [] };
+}
+
 export default function App() {
   const [threads, setThreads] = useState([]);
   const [currentThread, setCurrentThread] = useState('default');
@@ -27,6 +41,8 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState(null);
   const [pendingApproval, setPendingApproval] = useState(null);
+  const [pendingMessages, setPendingMessages] = useState([]);
+  const [composerDraft, setComposerDraft] = useState(null);
   const [lastTurnResult, setLastTurnResult] = useState(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [toasts, setToasts] = useState([]);
@@ -54,6 +70,8 @@ export default function App() {
   const [isConnected, setIsConnected] = useState(false);
 
   const wsRef = useRef(null);
+  const queueDispatchingRef = useRef(false);
+  const interruptPendingRef = useRef(false);
   const currentThreadRef = useRef(currentThread);
   currentThreadRef.current = currentThread;
 
@@ -233,6 +251,8 @@ export default function App() {
       if (turnId) {
         setActiveTurnId(turnId);
         setIsGenerating(true);
+        queueDispatchingRef.current = false;
+        interruptPendingRef.current = false;
         setLastTurnResult(null);
       }
       return;
@@ -252,6 +272,8 @@ export default function App() {
     if (data.type === 'error') {
       showToast(`⚠️ ${data.message || '操作异常'}`, 'error', 4000);
       if (data.terminal && data.scope === 'turn') {
+        queueDispatchingRef.current = false;
+        interruptPendingRef.current = false;
         setIsGenerating(false);
         setActiveTurnId(null);
         setPendingApproval(null);
@@ -328,6 +350,7 @@ export default function App() {
           }
           setIsGenerating(false);
           setActiveTurnId(null);
+          interruptPendingRef.current = false;
           loadThreads();
         }
       }
@@ -340,24 +363,14 @@ export default function App() {
   // ---------------------------------------------------------------------------
 
   const handleSendMessage = (inputPayload) => {
-    let promptText = '';
-    let images = [];
-    let referencedFiles = [];
+    const { prompt: promptText, images, referencedFiles } = normalizeInputPayload(inputPayload);
 
-    if (typeof inputPayload === 'string') {
-      promptText = inputPayload;
-    } else if (typeof inputPayload === 'object' && inputPayload !== null) {
-      promptText = inputPayload.prompt || '';
-      images = inputPayload.images || [];
-      referencedFiles = inputPayload.referencedFiles || [];
-    }
-
-    if (!promptText.trim() && images.length === 0) return;
+    if (!promptText.trim() && images.length === 0) return false;
 
     // A1: Check WebSocket ready state (isOpen) before sending
     if (!wsRef.current || !wsRef.current.isOpen || !wsRef.current.isOpen()) {
       showToast('⚠️ 无法发送消息：当前与服务端的 WebSocket 连接尚未就绪，请稍候重试。', 'warning');
-      return;
+      return false;
     }
 
     // R1: Do not send 'mode: chat' or 'effort' (preserve standard turn contract)
@@ -372,7 +385,7 @@ export default function App() {
     const sent = wsRef.current.send(payload);
     if (!sent) {
       showToast('⚠️ 消息发送失败：底层连接异常断开。', 'error');
-      return;
+      return false;
     }
 
     setMessages((prev) => [
@@ -388,7 +401,57 @@ export default function App() {
         blocks: [{ type: 'text', content: promptText }],
       },
     ]);
+    return true;
   };
+
+  const handleQueueMessage = (inputPayload) => {
+    const normalized = normalizeInputPayload(inputPayload);
+    if (!normalized.prompt.trim() && normalized.images.length === 0) return;
+
+    setPendingMessages((prev) => [
+      ...prev,
+      {
+        id: `queued_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        ...normalized,
+        status: 'queued',
+      },
+    ]);
+    showToast('已加入待处理队列，当前任务结束后按顺序发送', 'info', 2200);
+  };
+
+  const handleRemoveQueuedMessage = (messageId) => {
+    setPendingMessages((prev) => prev.filter((item) => item.id !== messageId));
+  };
+
+  const handleEditQueuedMessage = (item) => {
+    setPendingMessages((prev) => prev.filter((queued) => queued.id !== item.id));
+    setComposerDraft({ ...item, editToken: Date.now() });
+    showToast('已将消息退回输入框，可编辑后重新发送', 'info', 1800);
+  };
+
+  const handleUpdateQueuedMessage = (messageId, prompt) => {
+    setPendingMessages((prev) => prev.map((item) => (
+      item.id === messageId ? { ...item, prompt } : item
+    )));
+  };
+
+  const handleSteerQueuedMessage = (item) => {
+    setPendingMessages((prev) => prev.filter((queued) => queued.id !== item.id));
+    handleSteerMessage(item);
+  };
+
+  useEffect(() => {
+    if (isGenerating || interruptPendingRef.current || queueDispatchingRef.current) return;
+    const nextMessage = pendingMessages.find((item) => item.status === 'queued');
+    if (!nextMessage) return;
+
+    queueDispatchingRef.current = true;
+    setPendingMessages((prev) => prev.filter((item) => item.id !== nextMessage.id));
+    if (!handleSendMessage(nextMessage)) {
+      queueDispatchingRef.current = false;
+      setPendingMessages((prev) => [nextMessage, ...prev]);
+    }
+  }, [isGenerating, pendingMessages]);
 
   const handleClearChat = () => {
     if (isGenerating) {
@@ -431,19 +494,24 @@ export default function App() {
   };
 
   const handleSteerMessage = (text) => {
+    const { prompt: promptText, images, referencedFiles } = normalizeInputPayload(text);
+    if (!promptText.trim() && images.length === 0) return;
+
     // 1. Render user's steer prompt in chat log immediately so it is clearly visible
     setMessages((prev) => [
       ...prev,
       {
         id: 'user_steer_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
         role: 'user',
-        text,
+        text: promptText,
         isSteer: true,
-        images: [],
-        referencedFiles: [],
+        messageKind: 'steer',
+        steerTurnId: activeTurnId,
+        images,
+        referencedFiles,
         thinking: '',
         tools: [],
-        blocks: [{ type: 'text', content: text }],
+        blocks: [{ type: 'text', content: promptText }],
       },
     ]);
 
@@ -452,7 +520,7 @@ export default function App() {
       wsRef.current.send({
         action: 'steer',
         turnId: activeTurnId,
-        text,
+        text: promptText,
         threadId: currentThread,
       });
       showToast('已发送实时纠偏指令 (Steer)', 'info', 2000);
@@ -460,6 +528,7 @@ export default function App() {
   };
 
   const handleInterrupt = () => {
+    interruptPendingRef.current = true;
     setIsGenerating(false);
     if (wsRef.current) {
       wsRef.current.send({
@@ -513,7 +582,10 @@ export default function App() {
     const selected = threads.find((thread) => thread.thread_id === threadId);
     setIsGenerating(false);
     setActiveTurnId(null);
+    interruptPendingRef.current = false;
     setPendingApproval(null);
+    setPendingMessages([]);
+    setComposerDraft(null);
     setLastTurnResult(null);
     setCurrentThread(threadId);
     if (selected) {
@@ -543,6 +615,9 @@ export default function App() {
       setCurrentThread(tid);
       setCurrentThreadMeta({ title: finalTitle, summary: '' });
       setMessages([]);
+      setPendingMessages([]);
+      setComposerDraft(null);
+      interruptPendingRef.current = false;
       setLastTurnResult(null);
       showToast(`已创建新会话: ${finalTitle}`, 'success');
     } catch (err) {
@@ -556,6 +631,9 @@ export default function App() {
       await api.forkThread(sourceThreadId, newId);
       await loadThreads();
       setCurrentThread(newId);
+      setPendingMessages([]);
+      setComposerDraft(null);
+      interruptPendingRef.current = false;
       setLastTurnResult(null);
       loadThreadHistory(newId);
       showToast(`已派生分支会话: ${newId}`, 'success');
@@ -766,7 +844,15 @@ export default function App() {
             onChangeExecution={handleUpdateExecution}
             onStartGoal={handleStartGoal}
             onSendMessage={handleSendMessage}
+            onQueueMessage={handleQueueMessage}
             onSteerMessage={handleSteerMessage}
+            pendingMessages={pendingMessages}
+            onSteerQueuedMessage={handleSteerQueuedMessage}
+            onEditQueuedMessage={handleEditQueuedMessage}
+            onUpdateQueuedMessage={handleUpdateQueuedMessage}
+            onRemoveQueuedMessage={handleRemoveQueuedMessage}
+            composerDraft={composerDraft}
+            onComposerDraftApplied={() => setComposerDraft(null)}
             onInterrupt={handleInterrupt}
             onClearChat={handleClearChat}
             onOpenStatus={handleOpenStatus}

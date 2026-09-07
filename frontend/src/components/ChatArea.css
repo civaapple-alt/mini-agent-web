@@ -115,6 +115,10 @@
   justify-content: flex-end;
 }
 
+.message-row.user.steer-message-row {
+  margin-top: -10px;
+}
+
 .user-bubble-container {
   display: flex;
   flex-direction: column;
@@ -179,6 +183,30 @@
   white-space: pre-wrap;
   word-break: break-word;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.steer-message-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #9333ea;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.steer-message-label-separator {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.steer-bubble {
+  border-color: rgba(168, 85, 247, 0.32);
+  background: rgba(168, 85, 247, 0.08);
+  border-radius: 12px 12px 4px 12px;
+}
+
+.steer-text {
+  display: block;
 }
 
 .steer-tag {

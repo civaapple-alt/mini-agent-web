@@ -28,7 +28,7 @@ export default function MessageItem({
   if (role === 'user') {
     const { images = [], referencedFiles = [] } = message;
     return (
-      <div className="message-row user">
+      <div className={`message-row user ${message.isSteer ? 'steer-message-row' : ''}`}>
         <div className="user-bubble-container">
           {/* Render Attached Images in User Bubble */}
           {images && images.length > 0 && (
@@ -91,14 +91,16 @@ export default function MessageItem({
             </div>
           )}
 
-          <div className="user-bubble">
-            {message.isSteer && (
-              <span className="steer-tag font-mono">
-                <Navigation size={10} style={{ marginRight: 3, verticalAlign: '-1px' }} />
-                实时纠偏
-              </span>
-            )}
-            {text}
+          {message.isSteer && (
+            <div className="steer-message-label font-mono">
+              <Navigation size={11} />
+              <span>实时纠偏</span>
+              <span className="steer-message-label-separator">·</span>
+              <span>已注入当前运行</span>
+            </div>
+          )}
+          <div className={`user-bubble ${message.isSteer ? 'steer-bubble' : ''}`}>
+            <span className={message.isSteer ? 'steer-text' : ''}>{text}</span>
           </div>
           <div className="user-actions">
             <button

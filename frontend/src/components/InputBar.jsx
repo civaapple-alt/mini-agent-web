@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 import { parseAndExecuteSlashCommand } from '../utils/slashCommands';
+import PendingMessageDock from './PendingMessageDock';
 import './InputBar.css';
 
 const SLASH_COMMANDS = [
@@ -47,7 +48,15 @@ export default function InputBar({
   onChangeExecution,
   onStartGoal,
   onSendMessage,
+  onQueueMessage,
   onSteerMessage,
+  pendingMessages = [],
+  onSteerQueuedMessage,
+  onEditQueuedMessage,
+  onUpdateQueuedMessage,
+  onRemoveQueuedMessage,
+  composerDraft,
+  onComposerDraftApplied,
   onInterrupt,
   onClearChat,
   onOpenStatus,
@@ -83,6 +92,22 @@ export default function InputBar({
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 180)}px`;
     }
   }, [prompt]);
+
+  useEffect(() => {
+    if (!composerDraft) return;
+    setPrompt(composerDraft.prompt || '');
+    setAttachedImages(
+      (composerDraft.images || []).map((dataUrl, index) => ({
+        id: `restored_${Date.now()}_${index}`,
+        name: `附件 ${index + 1}`,
+        dataUrl,
+        size: 0,
+      })),
+    );
+    setReferencedFiles(composerDraft.referencedFiles || []);
+    onComposerDraftApplied?.();
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [composerDraft, onComposerDraftApplied]);
 
   // Close popup menus when clicking outside
   useEffect(() => {
@@ -276,7 +301,7 @@ export default function InputBar({
     };
 
     if (isGenerating) {
-      onSteerMessage(text);
+      onQueueMessage?.(payload);
     } else {
       onSendMessage(payload);
     }
@@ -390,6 +415,16 @@ export default function InputBar({
 
   return (
     <div className="input-bar-container">
+      {pendingMessages.length > 0 && (
+        <PendingMessageDock
+          messages={pendingMessages}
+          onSteer={onSteerQueuedMessage}
+          onEdit={onEditQueuedMessage}
+          onUpdate={onUpdateQueuedMessage}
+          onRemove={onRemoveQueuedMessage}
+        />
+      )}
+
       {/* Attached Composer Approval Dock */}
       {pendingApproval && (
         <div className="composer-approval-dock">
@@ -640,7 +675,7 @@ export default function InputBar({
               pendingApproval
                 ? '⚠️ 等待上方安全权限审批确认后继续...'
                 : isGenerating
-                ? 'Agent 执行中... 输入内容并按回车可动态纠偏 (Steer)'
+                ? 'Agent 执行中... 按回车排队；需要立即调整方向可输入 /steer'
                 : '输入任务、指令或问题... (支持 Ctrl+V 粘贴截图、输入 @ 引用文件、输入 / 查看快捷命令)'
             }
             className="chat-textarea"

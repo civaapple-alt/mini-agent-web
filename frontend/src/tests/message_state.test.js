@@ -93,6 +93,42 @@ test('thread isolation rejects foreign thread events', () => {
   assert.equal(shouldAcceptEventForThread(genericEvent, activeThread), true);
 });
 
+test('steer events start a new assistant segment instead of appending to the steer message', () => {
+  let messages = aggregateStreamEvent([], {
+    type: 'event',
+    turnId: 'turn-steer',
+    event: { type: 'turn_started' },
+  });
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-steer',
+    event: { type: 'assistant_text_delta', delta: '原始回答' },
+  });
+  messages = [
+    ...messages,
+    {
+      id: 'steer-1',
+      role: 'user',
+      isSteer: true,
+      steerTurnId: 'turn-steer',
+      text: '1',
+      blocks: [{ type: 'text', content: '1' }],
+    },
+  ];
+
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-steer',
+    event: { type: 'assistant_text_delta', delta: '纠偏后的回答' },
+  });
+
+  assert.equal(messages[1].role, 'user');
+  assert.equal(messages[1].text, '1');
+  assert.equal(messages[1].blocks[0].content, '1');
+  assert.equal(messages[2].role, 'assistant');
+  assert.equal(messages[2].text, '纠偏后的回答');
+});
+
 test('ThreadItem tool projections update one stable tool block', () => {
   let messages = aggregateStreamEvent([], {
     type: 'event',

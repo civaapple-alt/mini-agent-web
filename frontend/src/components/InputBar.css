@@ -5,6 +5,139 @@
   position: relative;
 }
 
+/* In-app confirmation for the project access boundary. */
+.access-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.38);
+  backdrop-filter: blur(2px);
+}
+
+.access-confirm-dialog {
+  width: min(440px, 100%);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
+  color: var(--text-primary);
+  animation: accessConfirmIn 0.15s ease-out;
+}
+
+@keyframes accessConfirmIn {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.access-confirm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.access-confirm-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.access-confirm-title-group h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.access-confirm-icon {
+  color: #d97706;
+}
+
+.access-confirm-close {
+  display: flex;
+  padding: 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.access-confirm-close:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.access-confirm-body {
+  padding: 15px 16px 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.access-confirm-body p {
+  margin: 0 0 8px;
+  color: var(--text-primary);
+}
+
+.access-confirm-body ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.access-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px 15px;
+}
+
+.access-confirm-cancel,
+.access-confirm-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.access-confirm-cancel {
+  border: 1px solid var(--border-color);
+  background: var(--bg-app);
+  color: var(--text-secondary);
+}
+
+.access-confirm-submit {
+  border: 1px solid #b45309;
+  background: #d97706;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.access-confirm-submit:hover {
+  background: #b45309;
+}
+
+body.theme-dark .access-confirm-overlay,
+body.theme-midnight .access-confirm-overlay,
+body.theme-cyberpunk .access-confirm-overlay {
+  background: rgba(0, 0, 0, 0.58);
+}
+
 /* Attached Composer Approval Dock */
 .composer-approval-dock {
   background-color: #fffbeb;

@@ -60,6 +60,7 @@ export default function InputBar({
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [showAccessMenu, setShowAccessMenu] = useState(false);
   const [showApprovalMenu, setShowApprovalMenu] = useState(false);
+  const [showFullAccessConfirm, setShowFullAccessConfirm] = useState(false);
   const [denyReason, setDenyReason] = useState('');
   const [showDenyInput, setShowDenyInput] = useState(false);
 
@@ -97,6 +98,15 @@ export default function InputBar({
       window.removeEventListener('click', handleDocumentClick);
     };
   }, [showAccessMenu, showApprovalMenu, showMentionPopup]);
+
+  useEffect(() => {
+    if (!showFullAccessConfirm) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setShowFullAccessConfirm(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showFullAccessConfirm]);
 
   const loadWorkspaceFiles = async (q) => {
     try {
@@ -357,6 +367,20 @@ export default function InputBar({
   const currentAccessObj = ACCESS_SCOPES.find((item) => item.id === accessScope) || ACCESS_SCOPES[0];
   const currentPolicyObj = POLICIES.find((item) => item.id === policy) || POLICIES[0];
 
+  const handleAccessScopeSelect = (nextScope) => {
+    setShowAccessMenu(false);
+    if (nextScope === 'full_machine' && accessScope !== 'full_machine') {
+      setShowFullAccessConfirm(true);
+      return;
+    }
+    if (onChangeExecution) onChangeExecution(nextScope, policy);
+  };
+
+  const confirmFullAccess = () => {
+    if (onChangeExecution) onChangeExecution('full_machine', policy);
+    setShowFullAccessConfirm(false);
+  };
+
   // Format pending approval action text
   const approvalActionText = pendingApproval
     ? typeof pendingApproval.data === 'object' && pendingApproval.data !== null
@@ -490,6 +514,64 @@ export default function InputBar({
         </div>
       )}
 
+      {showFullAccessConfirm && (
+        <div
+          className="access-confirm-overlay"
+          role="presentation"
+          onClick={() => setShowFullAccessConfirm(false)}
+        >
+          <div
+            className="access-confirm-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="full-access-confirm-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="access-confirm-header">
+              <div className="access-confirm-title-group">
+                <ShieldAlert size={17} className="access-confirm-icon" />
+                <h3 id="full-access-confirm-title">确认启用完全访问</h3>
+              </div>
+              <button
+                type="button"
+                className="access-confirm-close"
+                onClick={() => setShowFullAccessConfirm(false)}
+                aria-label="关闭确认框"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <div className="access-confirm-body">
+              <p>Agent 将获得整机路径范围的访问能力。</p>
+              <ul>
+                <li>Deny 规则、Plan 锁和工具可用性仍然有效。</li>
+                <li>高风险操作仍需要单独的安全审批。</li>
+                <li>只有明确需要访问项目外路径时才建议启用。</li>
+              </ul>
+            </div>
+
+            <div className="access-confirm-actions">
+              <button
+                type="button"
+                className="access-confirm-cancel"
+                onClick={() => setShowFullAccessConfirm(false)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="access-confirm-submit"
+                onClick={confirmFullAccess}
+              >
+                <Shield size={13} />
+                确认启用
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Composer Box */}
       <form className="input-form" onSubmit={handleSubmit}>
         {/* Hidden Image File Input */}
@@ -601,19 +683,7 @@ export default function InputBar({
                     <div
                       key={item.id}
                       className={`composer-popup-item ${item.id === accessScope ? 'active' : ''}`}
-                      onClick={() => {
-                        if (
-                          item.id === 'full_machine' &&
-                          accessScope !== 'full_machine' &&
-                          !window.confirm(
-                            '完全访问将允许 Agent 访问整机路径范围，但仍受 Deny、Plan 锁、工具可用性和高风险确认约束。继续吗？'
-                          )
-                        ) {
-                          return;
-                        }
-                        if (onChangeExecution) onChangeExecution(item.id, policy);
-                        setShowAccessMenu(false);
-                      }}
+                      onClick={() => handleAccessScopeSelect(item.id)}
                     >
                       <div className="item-header">
                         <div className="item-title-wrap">

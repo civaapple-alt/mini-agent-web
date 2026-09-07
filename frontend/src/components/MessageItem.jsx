@@ -11,7 +11,6 @@ export default function MessageItem({
   isLast,
   isGenerating,
   pendingApproval,
-  onRespondApproval,
   policy = 'interactive',
   onRetryPrompt,
 }) {
@@ -160,7 +159,6 @@ export default function MessageItem({
                   <ToolCard
                     tool={block}
                     pendingApproval={isLast ? pendingApproval : null}
-                    onRespondApproval={onRespondApproval}
                     policy={policy}
                   />
                 </ErrorBoundary>
@@ -224,7 +222,6 @@ export default function MessageItem({
                     <ToolCard
                       tool={t}
                       pendingApproval={isLast ? pendingApproval : null}
-                      onRespondApproval={onRespondApproval}
                       policy={policy}
                     />
                   </ErrorBoundary>

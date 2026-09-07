@@ -7,7 +7,6 @@ export default function ChatArea({
   messages,
   isGenerating,
   pendingApproval,
-  onRespondApproval,
   policy = 'interactive',
   onQuickPrompt,
   onRetryPrompt,
@@ -98,7 +97,6 @@ export default function ChatArea({
               isLast={index === messages.length - 1}
               isGenerating={isGenerating}
               pendingApproval={pendingApproval}
-              onRespondApproval={onRespondApproval}
               policy={policy}
               onRetryPrompt={onRetryPrompt}
             />

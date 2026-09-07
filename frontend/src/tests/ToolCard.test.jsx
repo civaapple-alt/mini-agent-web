@@ -60,7 +60,7 @@ describe('ToolCard Component Rendering & Interaction', () => {
     expect(screen.getByText('Command failed with exit code 1')).toBeDefined();
   });
 
-  it('renders awaiting-approval state and triggers onRespondApproval on approve/deny', () => {
+  it('renders awaiting-approval state without a second approval action area', () => {
     const tool = {
       id: 'call_99',
       name: 'shell',
@@ -76,40 +76,18 @@ describe('ToolCard Component Rendering & Interaction', () => {
         allowedGrantScopes: ['once', 'project'],
       },
     };
-    const onRespondApproval = vi.fn();
-
     render(
       <ToolCard
         tool={tool}
         pendingApproval={pendingApproval}
-        onRespondApproval={onRespondApproval}
         policy="interactive"
       />
     );
 
     expect(screen.getByText('等待授权')).toBeDefined();
-    expect(screen.getByText('安全权限审批 (Security Approval)')).toBeDefined();
-    expect(screen.getByText('删除临时文件')).toBeDefined();
-
-    // Verify CheckCheck icon renders inside current project button
-    expect(screen.getByText('当前项目复用')).toBeDefined();
-
-    // Click Allow
-    const allowBtn = screen.getByText('允许一次 (Allow)');
-    fireEvent.click(allowBtn);
-    expect(onRespondApproval).toHaveBeenCalledWith('req_123', 'approve', '', 'once');
-
-    // Click Deny to open input
-    const denyBtn = screen.getByText('拒绝 (Deny)');
-    fireEvent.click(denyBtn);
-    expect(screen.getByPlaceholderText('输入拒绝原因 (可选，回车确认)...')).toBeDefined();
-
-    // Enter reason and confirm
-    const input = screen.getByPlaceholderText('输入拒绝原因 (可选，回车确认)...');
-    fireEvent.change(input, { target: { value: '不安全' } });
-    const confirmDenyBtn = screen.getByText('确认拒绝');
-    fireEvent.click(confirmDenyBtn);
-    expect(onRespondApproval).toHaveBeenCalledWith('req_123', 'deny', '不安全', null);
+    expect(screen.queryByText('安全权限审批 (Security Approval)')).toBeNull();
+    expect(screen.queryByText('允许一次 (Allow)')).toBeNull();
+    expect(screen.queryByText('拒绝 (Deny)')).toBeNull();
   });
 });
 

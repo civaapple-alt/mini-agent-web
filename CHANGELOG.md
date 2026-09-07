@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Decoupled Approval Policy & Multi-Scope Action Grants**:
   - Added `automatic` (Auto Copilot) global approval mode across SDK, Server (`/world/execution`), TUI (`/approval automatic`), and Web Studio settings dropdown, automatically allowing safe tool invocations without repetitive modal interruptions.
   - Implemented session-level (`current_session`) and project-level (`current_project`) dynamic approval grant caches in `SessionManager`, resolving the issue where previously granted actions re-intercepted within the same session.
-  - Upgraded Composer Approval Dock and `ToolCard` inline security strips to offer fine-grained choices: Allow Once (`per_action`), Remember for Session (`current_session`), and Remember for Project (`current_project`).
+  - Upgraded the Composer Approval Dock to offer fine-grained choices: Allow Once, Remember for Session, and Remember for Project. It is the single actionable approval surface; tool cards only project the pending status.
 
 - **Web Studio Multi-Layer Frontend Quality Assurance & Error Boundary**:
   - Configured ESLint 9 with `react/jsx-no-undef: 'error'` and `no-undef: 'error'` in `frontend/eslint.config.js`, statically intercepting undeclared identifiers and unimported JSX components in sub-second builds.
@@ -70,6 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Default Reasoning Effort Alignment**: Set the system-wide default `reasoning_effort` to `high` across `SessionManager` runtime defaults, WebSocket turn stream fallback routing, and Web Studio frontend initial state / settings reset, ensuring deep reasoning depth by default for complex coding agent workflows.
 
 ### Fixed
+
+- **Duplicate Web Studio Approval Controls**: Removed the second actionable approval strip from `ToolCard`; each pending approval now has one canonical action area in the fixed Composer Approval Dock.
 
 - **Project Duplication & Thread Affinity Preservation on Restart**:
   - Prevented redundant project creation in `SessionManager._load_state()` when the active workspace path is already bound to a registered project with a distinct custom ID or display name.

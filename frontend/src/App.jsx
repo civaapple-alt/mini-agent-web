@@ -713,7 +713,6 @@ export default function App() {
               messages={messages}
               isGenerating={isGenerating}
               pendingApproval={pendingApproval}
-              onRespondApproval={handleRespondApproval}
               policy={policy}
               onQuickPrompt={handleSendMessage}
               onRetryPrompt={handleSendMessage}

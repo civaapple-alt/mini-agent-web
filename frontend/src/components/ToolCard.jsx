@@ -11,22 +11,17 @@ import {
   ChevronRight,
   Copy,
   Check,
-  CheckCheck,
   Loader2,
   ShieldAlert,
-  X,
 } from 'lucide-react';
 import './ToolCard.css';
 
 export default function ToolCard({
   tool,
   pendingApproval,
-  onRespondApproval,
 }) {
   const [showOutput, setShowOutput] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [denyReason, setDenyReason] = useState('');
-  const [showDenyInput, setShowDenyInput] = useState(false);
 
   const { status, output, error, id } = tool;
   const name = tool.name || tool.toolName || tool.tool || tool.tool_name || '';
@@ -99,22 +94,6 @@ export default function ToolCard({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleApprove = (scope = 'once') => {
-    if (onRespondApproval && pendingApproval) {
-      onRespondApproval(pendingApproval.requestId, 'approve', '', scope);
-    }
-  };
-
-  const handleDeny = () => {
-    if (!showDenyInput) {
-      setShowDenyInput(true);
-      return;
-    }
-    if (onRespondApproval && pendingApproval) {
-      onRespondApproval(pendingApproval.requestId, 'deny', denyReason.trim(), null);
-    }
-  };
-
   return (
     <div
       className={`tool-card notranslate ${normalizedStatus || 'running'} ${isFailed ? 'has-error' : ''} ${isAwaitingApproval ? 'awaiting-approval' : ''}`}
@@ -156,77 +135,6 @@ export default function ToolCard({
           )}
         </div>
       </div>
-
-      {/* Inline Security Approval Strip (Codex Native Style) */}
-      {isAwaitingApproval && (
-        <div className="tool-inline-approval">
-          <div className="approval-callout">
-            <ShieldAlert size={14} className="callout-icon" />
-            <div className="callout-text">
-              <span className="callout-title font-mono">安全权限审批 (Security Approval)</span>
-              <p className="callout-desc">
-                {pendingApproval.data?.actionSummary || `执行敏感操作: ${name}`}
-              </p>
-            </div>
-          </div>
-
-          {showDenyInput && (
-            <div className="deny-reason-inline">
-              <input
-                type="text"
-                className="deny-inline-input font-mono"
-                placeholder="输入拒绝原因 (可选，回车确认)..."
-                value={denyReason}
-                onChange={(e) => setDenyReason(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleDeny()}
-                autoFocus
-              />
-            </div>
-          )}
-
-          <div className="inline-approval-btn-group">
-            <button
-              className="btn-approve-primary"
-              onClick={() => handleApprove('once')}
-              title="允许执行本次操作"
-            >
-              <Check size={12} />
-              <span>允许一次 (Allow)</span>
-            </button>
-
-            {(pendingApproval?.data?.allowedGrantScopes || ['once']).includes('session') && (
-              <button
-                className="btn-approve-scope"
-                onClick={() => handleApprove('session')}
-                title="在当前会话中记住此操作的授权"
-              >
-                <CheckCheck size={12} />
-                <span>当前会话复用</span>
-              </button>
-            )}
-
-            {(pendingApproval?.data?.allowedGrantScopes || ['once']).includes('project') && (
-              <button
-                className="btn-approve-scope"
-                onClick={() => handleApprove('project')}
-                title="在当前项目中记住此操作的授权"
-              >
-                <CheckCheck size={12} />
-                <span>当前项目复用</span>
-              </button>
-            )}
-
-            <button
-              className="btn-deny-inline"
-              onClick={handleDeny}
-              title="拒绝执行"
-            >
-              <X size={12} />
-              <span>{showDenyInput ? '确认拒绝' : '拒绝 (Deny)'}</span>
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Output Section (Foldable) */}
       {(!isAwaitingApproval || !isRunning) && (

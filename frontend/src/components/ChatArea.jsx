@@ -8,7 +8,7 @@ export default function ChatArea({
   isGenerating,
   pendingApproval,
   onRespondApproval,
-  approvalMode = 'per_action',
+  policy = 'interactive',
   onQuickPrompt,
   onRetryPrompt,
   autoScroll = true,
@@ -99,7 +99,7 @@ export default function ChatArea({
               isGenerating={isGenerating}
               pendingApproval={pendingApproval}
               onRespondApproval={onRespondApproval}
-              approvalMode={approvalMode}
+              policy={policy}
               onRetryPrompt={onRetryPrompt}
             />
           ))}

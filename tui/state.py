@@ -45,7 +45,7 @@ class TUIState:
     """Runtime mutable state for the active TUI session."""
 
     access_scope: str = "project"  # project | full_machine
-    approval_mode: str = "per_action"  # per_action | current_session | current_project
+    policy: str = "interactive"  # interactive | automatic
     effort: str = "medium"  # low | medium | high
     current_thread_id: str = "default"
     turn_counts: dict[str, int] = field(default_factory=dict)

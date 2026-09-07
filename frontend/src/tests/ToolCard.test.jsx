@@ -73,6 +73,7 @@ describe('ToolCard Component Rendering & Interaction', () => {
         callId: 'call_99',
         toolName: 'shell',
         actionSummary: '删除临时文件',
+        allowedGrantScopes: ['once', 'project'],
       },
     };
     const onRespondApproval = vi.fn();
@@ -82,7 +83,7 @@ describe('ToolCard Component Rendering & Interaction', () => {
         tool={tool}
         pendingApproval={pendingApproval}
         onRespondApproval={onRespondApproval}
-        approvalMode="current_project"
+        policy="interactive"
       />
     );
 
@@ -96,7 +97,7 @@ describe('ToolCard Component Rendering & Interaction', () => {
     // Click Allow
     const allowBtn = screen.getByText('允许一次 (Allow)');
     fireEvent.click(allowBtn);
-    expect(onRespondApproval).toHaveBeenCalledWith('req_123', 'approve', '', 'per_action');
+    expect(onRespondApproval).toHaveBeenCalledWith('req_123', 'approve', '', 'once');
 
     // Click Deny to open input
     const denyBtn = screen.getByText('拒绝 (Deny)');
@@ -108,7 +109,7 @@ describe('ToolCard Component Rendering & Interaction', () => {
     fireEvent.change(input, { target: { value: '不安全' } });
     const confirmDenyBtn = screen.getByText('确认拒绝');
     fireEvent.click(confirmDenyBtn);
-    expect(onRespondApproval).toHaveBeenCalledWith('req_123', 'deny', '不安全', 'current_project');
+    expect(onRespondApproval).toHaveBeenCalledWith('req_123', 'deny', '不安全', null);
   });
 });
 

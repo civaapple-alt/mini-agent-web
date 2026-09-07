@@ -529,8 +529,7 @@ async def phase_4_approval_security_flow(
         log_info(f"Submitting typed decision: {decision}")
         return {
             "decision": decision,
-            "access": req.get("access", "project"),
-            "approval": "per_action",
+            "grantScope": "once" if decision == "approve" else None,
             "reason": "Smoke test decision",
         }
 

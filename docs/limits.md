@@ -37,7 +37,7 @@
 
 ### 2.3 访问范围、批准与工作流
 - **访问范围**：`project` 限定在当前 Project 的主目录及关联目录；`full_machine` 只扩大路径范围到整机，不等于全部 Allow，Deny、Plan 锁和高风险动作确认仍有效；
-- **批准生命周期**：`per_action`、`current_session`、`current_project` 分别对应单次、当前会话和当前 Project；current-project grant 只驻留网关/App Server 内存，绑定 Project、workspace identity、revision、path scope 与 action，切换 Project、策略变更或撤销时失效；
+- **批准策略与授权**：Project 的 `policy` 只有 `interactive` / `automatic`；审批响应的 `grantScope` 只有 `once` / `session` / `project`。Web 只展示和转发 pending request，action key、grant store、撤销与恢复由 Host/Capabilities 持有；`automatic` 只放行低风险 action，高风险仍需显式审批。
 - **Goal 顶部控制**：活动 Goal 在当前 Thread 顶部显示，支持暂停、恢复、更新和删除；Goal 状态由 App Server canonical state 提供，页面刷新或切换 Session 后重新读取。
 
 ---

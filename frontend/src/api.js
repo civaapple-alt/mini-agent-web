@@ -128,11 +128,11 @@ export const api = {
     return res.json();
   },
 
-  async setWorldExecution(access = 'project', approval = 'per_action') {
+  async setWorldExecution(access = 'project', policy = 'interactive') {
     const res = await fetch(`${API_BASE}/api/world/execution`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ access, approval }),
+      body: JSON.stringify({ access, policy }),
     });
     if (!res.ok) throw new Error('Failed to set execution scope');
     return res.json();
@@ -360,15 +360,14 @@ export const api = {
   // Security Approval Response
   // ---------------------------------------------------------------------------
 
-  async respondApproval(requestId, decision, access, approval, reason = '') {
+  async respondApproval(requestId, decision, grantScope, reason = '') {
     const res = await fetch(`${API_BASE}/api/approval/respond`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         request_id: requestId,
         decision,
-        access,
-        approval,
+        grant_scope: grantScope,
         reason,
       }),
     });

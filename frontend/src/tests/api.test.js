@@ -18,7 +18,7 @@ test('api client methods construct expected fetch endpoints and payloads', async
       return {
         ok: true,
         json: async () => ({
-          settings: { access: 'project', approval: 'per_action' },
+          settings: { access: 'project', policy: 'interactive' },
         }),
       };
     }
@@ -51,12 +51,12 @@ test('api client methods construct expected fetch endpoints and payloads', async
   const setRes = await api.updateSettings({ reasoning_effort: 'high' });
   assert.equal(setRes.settings.access, 'project');
 
-  await api.setWorldExecution('full_machine', 'current_project');
+  await api.setWorldExecution('full_machine', 'automatic');
   const executionCall = calls[calls.length - 1];
   assert.equal(executionCall.url, '/api/world/execution');
   assert.deepEqual(JSON.parse(executionCall.options.body), {
     access: 'full_machine',
-    approval: 'current_project',
+    policy: 'automatic',
   });
 
   // 2b. Thread settings and Goal Runtime APIs
@@ -90,8 +90,7 @@ test('api client methods construct expected fetch endpoints and payloads', async
   const appRes = await api.respondApproval(
     'req-1',
     'approve',
-    'full_machine',
-    'current_project',
+    'project',
     ''
   );
   assert.equal(appRes.status, 'resolved');
@@ -99,8 +98,7 @@ test('api client methods construct expected fetch endpoints and payloads', async
   const parsedBody = JSON.parse(lastCall.options.body);
   assert.equal(parsedBody.request_id, 'req-1');
   assert.equal(parsedBody.decision, 'approve');
-  assert.equal(parsedBody.access, 'full_machine');
-  assert.equal(parsedBody.approval, 'current_project');
+  assert.equal(parsedBody.grant_scope, 'project');
 });
 
 test('createAgentWebSocket provides safe send and isOpen status', (t) => {

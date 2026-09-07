@@ -51,11 +51,8 @@ class ApprovalResponseRequest(BaseModel):
     decision: Literal["approve", "deny"] = Field(
         ..., description="Decision: approve or deny"
     )
-    access: Literal["project", "full_machine"] = Field(
-        ..., description="Must match the approval request access"
-    )
-    approval: Literal["per_action", "current_session", "current_project"] = Field(
-        ..., description="Approval reuse scope"
+    grant_scope: Literal["once", "session", "project"] | None = Field(
+        ..., description="Requested lifetime for the Host-owned action grant"
     )
     reason: str | None = Field(
         default=None, description="Optional explanation or restriction"
@@ -225,8 +222,7 @@ async def respond_approval(req: ApprovalResponseRequest) -> dict[str, Any]:
     resolved = session_manager.resolve_approval(
         request_id=req.request_id,
         decision=req.decision,
-        access=req.access,
-        approval=req.approval,
+        grant_scope=req.grant_scope,
         reason=req.reason,
     )
     if not resolved:
@@ -344,12 +340,9 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
             elif action == "approval_response":
                 req_id = data.get("requestId", "")
                 decision = data.get("decision", "denied")
-                access = data.get("access", "")
-                approval = data.get("approval", "")
+                grant_scope = data.get("grantScope")
                 reason = data.get("reason")
-                session_manager.resolve_approval(
-                    req_id, decision, access, approval, reason
-                )
+                session_manager.resolve_approval(req_id, decision, grant_scope, reason)
                 await websocket.send_json({"type": "approval_ack", "requestId": req_id})
 
             elif action == "ping":

@@ -35,10 +35,8 @@ class SetExecutionRequest(BaseModel):
     access: Literal["project", "full_machine"] = Field(
         default="project", description="Project-scoped or machine-wide access"
     )
-    approval: Literal[
-        "per_action", "current_session", "current_project", "automatic"
-    ] = Field(
-        default="per_action", description="Approval reuse lifetime or automatic bypass"
+    policy: Literal["interactive", "automatic"] = Field(
+        default="interactive", description="Interactive approval or bounded automation"
     )
 
 
@@ -87,8 +85,8 @@ class UpdateProjectRequest(BaseModel):
     access: Literal["project", "full_machine"] | None = Field(
         default=None, description="Project access scope"
     )
-    approval: Literal["per_action", "current_session", "current_project"] | None = (
-        Field(default=None, description="Project approval lifetime")
+    policy: Literal["interactive", "automatic"] | None = Field(
+        default=None, description="Project execution policy"
     )
 
 
@@ -255,23 +253,20 @@ async def refresh_world() -> dict[str, Any]:
 
 @router.post("/world/execution", summary="Configure execution policy")
 async def set_world_execution(req: SetExecutionRequest) -> dict[str, Any]:
-    """Configure independent access and approval reuse scopes."""
+    """Configure independent access and approval policy."""
     try:
         previous_execution = session_manager.project_execution()
         res = await session_manager.client.set_world_execution(
             access=req.access,
-            approval=req.approval,
+            policy=req.policy,
         )
-        session_manager.set_project_execution(req.access, req.approval)
-        if previous_execution != (req.access, req.approval):
-            # Approval grants are keyed by action and scope. Restarting on a
-            # policy change prevents a grant created under a wider policy from
-            # leaking into the new project/session policy.
+        session_manager.set_project_execution(req.access, req.policy)
+        if previous_execution != (req.access, req.policy):
             await session_manager.restart_for_current_project()
         return {
             "changed": res.changed,
             "access": req.access,
-            "approval": req.approval,
+            "policy": req.policy,
             "state": res.state,
         }
     except AppServerError as err:

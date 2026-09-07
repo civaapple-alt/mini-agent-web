@@ -22,7 +22,6 @@ export default function ToolCard({
   tool,
   pendingApproval,
   onRespondApproval,
-  approvalMode = 'per_action',
 }) {
   const [showOutput, setShowOutput] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -100,7 +99,7 @@ export default function ToolCard({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleApprove = (scope = approvalMode) => {
+  const handleApprove = (scope = 'once') => {
     if (onRespondApproval && pendingApproval) {
       onRespondApproval(pendingApproval.requestId, 'approve', '', scope);
     }
@@ -112,7 +111,7 @@ export default function ToolCard({
       return;
     }
     if (onRespondApproval && pendingApproval) {
-      onRespondApproval(pendingApproval.requestId, 'deny', denyReason.trim(), approvalMode);
+      onRespondApproval(pendingApproval.requestId, 'deny', denyReason.trim(), null);
     }
   };
 
@@ -188,17 +187,17 @@ export default function ToolCard({
           <div className="inline-approval-btn-group">
             <button
               className="btn-approve-primary"
-              onClick={() => handleApprove('per_action')}
+              onClick={() => handleApprove('once')}
               title="允许执行本次操作"
             >
               <Check size={12} />
               <span>允许一次 (Allow)</span>
             </button>
 
-            {(pendingApproval?.data?.allowedApprovalModes || pendingApproval?.data?.allowed_approval_modes || ['per_action', 'current_session', 'current_project']).includes('current_session') && (
+            {(pendingApproval?.data?.allowedGrantScopes || ['once']).includes('session') && (
               <button
                 className="btn-approve-scope"
-                onClick={() => handleApprove('current_session')}
+                onClick={() => handleApprove('session')}
                 title="在当前会话中记住此操作的授权"
               >
                 <CheckCheck size={12} />
@@ -206,10 +205,10 @@ export default function ToolCard({
               </button>
             )}
 
-            {(pendingApproval?.data?.allowedApprovalModes || pendingApproval?.data?.allowed_approval_modes || ['per_action', 'current_session', 'current_project']).includes('current_project') && (
+            {(pendingApproval?.data?.allowedGrantScopes || ['once']).includes('project') && (
               <button
                 className="btn-approve-scope"
-                onClick={() => handleApprove('current_project')}
+                onClick={() => handleApprove('project')}
                 title="在当前项目中记住此操作的授权"
               >
                 <CheckCheck size={12} />

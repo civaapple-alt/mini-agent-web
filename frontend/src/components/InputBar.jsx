@@ -33,17 +33,15 @@ const ACCESS_SCOPES = [
   { id: 'full_machine', label: '完全访问 (Full access)', desc: '整机路径范围；不会绕过 Deny 或沙箱' },
 ];
 
-const APPROVAL_MODES = [
-  { id: 'per_action', label: '逐次批准 (Per-Action)', desc: '每次敏感操作单独确认' },
-  { id: 'current_session', label: '当前会话 (Current Session)', desc: '本 Session 内复用精确批准' },
-  { id: 'current_project', label: '当前项目 (Current Project)', desc: 'Project 内匹配 Workspace 版本的 Session 复用' },
-  { id: 'automatic', label: '自动放行 (Auto Copilot)', desc: '非高危敏感操作自动放行，无需重复确认' },
+const POLICIES = [
+  { id: 'interactive', label: '交互批准 (Interactive)', desc: '高风险敏感操作需要显式确认' },
+  { id: 'automatic', label: '自动策略 (Automatic)', desc: '低风险操作自动放行，高风险仍需显式确认' },
 ];
 
 export default function InputBar({
   isGenerating,
   accessScope = 'project',
-  approvalMode = 'per_action',
+  policy = 'interactive',
   pendingApproval,
   onRespondApproval,
   onChangeExecution,
@@ -336,7 +334,7 @@ export default function InputBar({
     }
   };
 
-  const handleApprove = (scope = approvalMode) => {
+  const handleApprove = (scope = 'once') => {
     if (onRespondApproval && pendingApproval) {
       onRespondApproval(pendingApproval.requestId, 'approve', '', scope);
       setShowDenyInput(false);
@@ -350,14 +348,14 @@ export default function InputBar({
       return;
     }
     if (onRespondApproval && pendingApproval) {
-      onRespondApproval(pendingApproval.requestId, 'deny', denyReason.trim(), approvalMode);
+      onRespondApproval(pendingApproval.requestId, 'deny', denyReason.trim(), null);
       setShowDenyInput(false);
       setDenyReason('');
     }
   };
 
   const currentAccessObj = ACCESS_SCOPES.find((item) => item.id === accessScope) || ACCESS_SCOPES[0];
-  const currentApprovalObj = APPROVAL_MODES.find((item) => item.id === approvalMode) || APPROVAL_MODES[0];
+  const currentPolicyObj = POLICIES.find((item) => item.id === policy) || POLICIES[0];
 
   // Format pending approval action text
   const approvalActionText = pendingApproval
@@ -406,18 +404,18 @@ export default function InputBar({
               <button
                 type="button"
                 className="btn-dock-approve"
-                onClick={() => handleApprove('per_action')}
+                onClick={() => handleApprove('once')}
                 title="允许执行本次操作"
               >
                 <Check size={12} />
                 <span>允许本次 (Once)</span>
               </button>
 
-              {(pendingApproval?.data?.allowedApprovalModes || pendingApproval?.data?.allowed_approval_modes || ['per_action', 'current_session', 'current_project']).includes('current_session') && (
+              {(pendingApproval?.data?.allowedGrantScopes || ['once']).includes('session') && (
                 <button
                   type="button"
                   className="btn-dock-scope"
-                  onClick={() => handleApprove('current_session')}
+                  onClick={() => handleApprove('session')}
                   title="在当前会话中记住此操作的授权"
                 >
                   <Check size={12} />
@@ -425,11 +423,11 @@ export default function InputBar({
                 </button>
               )}
 
-              {(pendingApproval?.data?.allowedApprovalModes || pendingApproval?.data?.allowed_approval_modes || ['per_action', 'current_session', 'current_project']).includes('current_project') && (
+              {(pendingApproval?.data?.allowedGrantScopes || ['once']).includes('project') && (
                 <button
                   type="button"
                   className="btn-dock-scope"
-                  onClick={() => handleApprove('current_project')}
+                  onClick={() => handleApprove('project')}
                   title="在当前项目中记住此操作的授权"
                 >
                   <Check size={12} />
@@ -613,7 +611,7 @@ export default function InputBar({
                         ) {
                           return;
                         }
-                        if (onChangeExecution) onChangeExecution(item.id, approvalMode);
+                        if (onChangeExecution) onChangeExecution(item.id, policy);
                         setShowAccessMenu(false);
                       }}
                     >
@@ -631,7 +629,7 @@ export default function InputBar({
               )}
             </div>
 
-            {/* 2. Approval lifetime selector */}
+            {/* 2. Approval policy selector */}
             <div className="composer-popover-wrapper" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
@@ -640,20 +638,20 @@ export default function InputBar({
                   setShowApprovalMenu(!showApprovalMenu);
                   setShowAccessMenu(false);
                 }}
-                title="设置批准生命周期"
+                title="设置批准策略"
               >
                 <Shield size={11} className="text-amber" />
-                <span>批准: {currentApprovalObj.label.split(' ')[0]}</span>
+                <span>策略: {currentPolicyObj.label.split(' ')[0]}</span>
                 <ChevronDown size={10} className="text-muted" />
               </button>
 
               {showApprovalMenu && (
                 <div className="composer-popup-menu custom-scrollbar">
-                  <div className="composer-popup-title">批准生命周期 (Approval)</div>
-                  {APPROVAL_MODES.map((item) => (
+                  <div className="composer-popup-title">批准策略 (Policy)</div>
+                  {POLICIES.map((item) => (
                     <div
                       key={item.id}
-                      className={`composer-popup-item ${item.id === approvalMode ? 'active' : ''}`}
+                      className={`composer-popup-item ${item.id === policy ? 'active' : ''}`}
                       onClick={() => {
                         if (onChangeExecution) onChangeExecution(accessScope, item.id);
                         setShowApprovalMenu(false);
@@ -661,7 +659,7 @@ export default function InputBar({
                     >
                       <div className="item-header">
                         <span className="item-name font-mono">{item.label}</span>
-                        {item.id === approvalMode && <Check size={12} className="text-green" />}
+                        {item.id === policy && <Check size={12} className="text-green" />}
                       </div>
                       <span className="item-desc">{item.desc}</span>
                     </div>
@@ -671,7 +669,7 @@ export default function InputBar({
             </div>
 
             <span className="hint-kbd font-mono">Enter 发送</span>
-            {accessScope === 'full_machine' && (approvalMode === 'current_project' || approvalMode === 'automatic') && (
+            {accessScope === 'full_machine' && policy === 'automatic' && (
               <span className="hint-kbd font-mono" title="Goal + 当前配置可形成 Auto Copilot">
                 Auto Copilot 就绪
               </span>

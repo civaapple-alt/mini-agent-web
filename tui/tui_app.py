@@ -26,7 +26,7 @@ async def run_tui(state: TUIState) -> None:
         Panel.fit(
             "[bold sky_blue1]Mini Agent TUI (experimental)[/bold sky_blue1]\n"
             "[dim]Direct Python SDK/App Server verification surface; Web Studio is the primary user path.[/dim]\n"
-            f"[dim]Access: [cyan]{state.access_scope}[/cyan] | Approval: [yellow]{state.approval_mode}[/yellow] | Effort: [green]{state.effort}[/green][/dim]\n"
+            f"[dim]Access: [cyan]{state.access_scope}[/cyan] | Policy: [yellow]{state.policy}[/yellow] | Effort: [green]{state.effort}[/green][/dim]\n"
             "[dim]Type '/help' for commands. Supports [bold yellow]Tab Autocomplete[/bold yellow]. Type '/exit' to leave.[/dim]",
             border_style="cyan",
         )
@@ -93,8 +93,7 @@ async def run_tui(state: TUIState) -> None:
         )
         return {
             "decision": "approve" if decision == "approved" else "deny",
-            "access": state.access_scope,
-            "approval": state.approval_mode,
+            "grantScope": "once" if decision == "approved" else None,
         }
 
     console.print("[dim]Connecting to App Server...[/dim]")
@@ -102,7 +101,7 @@ async def run_tui(state: TUIState) -> None:
         init_res = await client.initialize()
         await client.set_world_execution(
             access=state.access_scope,
-            approval=state.approval_mode,
+            policy=state.policy,
         )
         console.print(
             f"[green]✓ Connected to {init_res.get('serverName')} v{init_res.get('serverVersion')}[/green]\n"
@@ -242,11 +241,10 @@ def main() -> None:
     )
     parser.add_argument(
         "-a",
-        "--approval",
-        dest="approval_mode",
-        choices=["per_action", "current_session", "current_project"],
-        default="per_action",
-        help="SDK verification approval scope",
+        "--policy",
+        choices=["interactive", "automatic"],
+        default="interactive",
+        help="Execution approval policy",
     )
     parser.add_argument(
         "-e",
@@ -266,7 +264,7 @@ def main() -> None:
     args = parser.parse_args()
     state = TUIState(
         access_scope=args.access,
-        approval_mode=args.approval_mode,
+        policy=args.policy,
         effort=args.effort,
         current_thread_id=args.thread_id,
     )

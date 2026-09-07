@@ -34,10 +34,10 @@ export default function App() {
   const [planActive, setPlanActive] = useState(false);
   const [goalState, setGoalState] = useState(null);
   const [accessScope, setAccessScope] = useState('project');
-  const [approvalMode, setApprovalMode] = useState('per_action');
+  const [policy, setPolicy] = useState('interactive');
   const [userSettings, setUserSettings] = useState({
     access: 'project',
-    approval: 'per_action',
+    policy: 'interactive',
     default_mode: 'chat',
     reasoning_effort: 'high',
     theme: 'light',
@@ -113,7 +113,7 @@ export default function App() {
       const data = await api.getSettings();
       setUserSettings((prev) => ({ ...prev, ...data }));
       if (data.access) setAccessScope(data.access);
-      if (data.approval) setApprovalMode(data.approval);
+      if (data.policy) setPolicy(data.policy);
       const activeTheme = data.theme || 'light';
       document.body.className = `theme-${activeTheme}`;
     } catch (err) {
@@ -457,23 +457,22 @@ export default function App() {
     });
   };
 
-  const handleRespondApproval = async (requestId, decision, reason = '', requestedApproval = approvalMode) => {
+  const handleRespondApproval = async (requestId, decision, reason = '', requestedScope = 'once') => {
     const approval = pendingApproval?.data || {};
-    const selectedAccess = approval.access || accessScope;
-    const selectedApproval = approval.allowedApprovalModes?.includes(requestedApproval)
-      ? requestedApproval
-      : approval.allowedApprovalModes?.[0] || approvalMode;
+    const allowedScopes = approval.allowedGrantScopes || [];
+    const selectedScope = allowedScopes.includes(requestedScope)
+      ? requestedScope
+      : decision === 'approve' ? allowedScopes[0] : null;
     if (wsRef.current) {
       wsRef.current.send({
         action: 'approval_response',
         requestId,
         decision,
         reason,
-        access: selectedAccess,
-        approval: selectedApproval,
+        grantScope: decision === 'approve' ? selectedScope : null,
       });
     } else {
-      await api.respondApproval(requestId, decision, selectedAccess, selectedApproval, reason);
+      await api.respondApproval(requestId, decision, decision === 'approve' ? selectedScope : null, reason);
     }
     setPendingApproval(null);
     showToast(`已提交安全审批决定: ${decision === 'approve' ? '允许执行' : '拒绝'}`, 'info', 2000);
@@ -645,15 +644,15 @@ export default function App() {
     setSidePanelOpen(true);
   };
 
-  const handleUpdateExecution = async (nextAccess, nextApproval) => {
+  const handleUpdateExecution = async (nextAccess, nextPolicy) => {
     try {
-      await api.setWorldExecution(nextAccess, nextApproval);
+      await api.setWorldExecution(nextAccess, nextPolicy);
       setAccessScope(nextAccess);
-      setApprovalMode(nextApproval);
+      setPolicy(nextPolicy);
       setUserSettings((prev) => ({
         ...prev,
         access: nextAccess,
-        approval: nextApproval,
+        policy: nextPolicy,
       }));
     } catch (err) {
       showToast(`更新执行范围失败: ${err.message}`, 'error');
@@ -715,7 +714,7 @@ export default function App() {
               isGenerating={isGenerating}
               pendingApproval={pendingApproval}
               onRespondApproval={handleRespondApproval}
-              approvalMode={approvalMode}
+              policy={policy}
               onQuickPrompt={handleSendMessage}
               onRetryPrompt={handleSendMessage}
               autoScroll={userSettings.auto_scroll}
@@ -728,7 +727,7 @@ export default function App() {
           <InputBar
             isGenerating={isGenerating}
             accessScope={accessScope}
-            approvalMode={approvalMode}
+            policy={policy}
             pendingApproval={pendingApproval}
             onRespondApproval={handleRespondApproval}
             onChangeExecution={handleUpdateExecution}

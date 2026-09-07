@@ -72,9 +72,8 @@ class SlashCommandCompleter(Completer):
 
         if cmd == "/approval":
             policies = [
-                ("per_action", "每次敏感操作单独确认"),
-                ("current_session", "当前 Session 内复用批准"),
-                ("current_project", "当前 Project 内复用批准"),
+                ("interactive", "高风险操作显式确认"),
+                ("automatic", "低风险自动放行，高风险仍确认"),
             ]
             for p_name, p_desc in policies:
                 if p_name.startswith(sub_prefix):

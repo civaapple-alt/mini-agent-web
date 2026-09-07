@@ -52,8 +52,8 @@ def print_help_table(state: TUIState) -> None:
     # 3. 安全与审批范围
     table.add_row(
         "安全与审批",
-        "/approval [scope]",
-        f"切换批准复用范围: per_action, current_session, current_project (当前: [bold cyan]{state.approval_mode}[/bold cyan])",
+        "/approval [policy]",
+        f"切换批准策略: interactive, automatic (当前: [bold cyan]{state.policy}[/bold cyan])",
     )
     table.add_row(
         "",
@@ -171,7 +171,7 @@ async def handle_slash_command(
         table.add_row("Server", server_info)
         table.add_row("Workspace Root", str(Path.cwd().resolve()))
         table.add_row("Access Scope", state.access_scope)
-        table.add_row("Approval Scope", state.approval_mode)
+        table.add_row("Approval Policy", state.policy)
         table.add_row("Reasoning Effort", state.effort)
         table.add_row("Active Thread", state.current_thread_id)
         table.add_row(
@@ -193,7 +193,7 @@ async def handle_slash_command(
             target_access = parts[1].strip().lower()
             if target_access in ("project", "full_machine"):
                 try:
-                    await client.set_world_execution(target_access, state.approval_mode)
+                    await client.set_world_execution(target_access, state.policy)
                     state.access_scope = target_access
                     console.print(
                         f"[green]✓ App Server access scope: [bold]{state.access_scope}[/bold][/green]"
@@ -214,31 +214,24 @@ async def handle_slash_command(
     if lower_text.startswith("/approval"):
         parts = text.split(maxsplit=1)
         if len(parts) > 1:
-            target_approval = parts[1].strip().lower()
-            if target_approval in (
-                "per_action",
-                "current_session",
-                "current_project",
-                "automatic",
-            ):
+            target_policy = parts[1].strip().lower()
+            if target_policy in ("interactive", "automatic"):
                 try:
-                    await client.set_world_execution(
-                        state.access_scope, target_approval
-                    )
-                    state.approval_mode = target_approval
+                    await client.set_world_execution(state.access_scope, target_policy)
+                    state.policy = target_policy
                     console.print(
-                        f"[green]✓ App Server approval scope: [bold]{state.approval_mode}[/bold][/green]"
+                        f"[green]✓ App Server approval policy: [bold]{state.policy}[/bold][/green]"
                     )
                 except Exception as err:  # noqa: BLE001
-                    console.print(f"[red]Failed to set approval scope: {err}[/red]")
+                    console.print(f"[red]Failed to set approval policy: {err}[/red]")
             else:
                 console.print(
-                    "[yellow]Invalid approval scope. Choose from: per_action, current_session, current_project, automatic[/yellow]"
+                    "[yellow]Invalid approval policy. Choose from: interactive, automatic[/yellow]"
                 )
         else:
             console.print(
-                f"[sky_blue1]Current Approval Scope: [bold]{state.approval_mode}[/bold]\n"
-                "[dim]Usage: /approval <per_action | current_session | current_project | automatic>[/dim][/sky_blue1]"
+                f"[sky_blue1]Current Approval Policy: [bold]{state.policy}[/bold]\n"
+                "[dim]Usage: /approval <interactive | automatic>[/dim][/sky_blue1]"
             )
         return True
 

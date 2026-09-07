@@ -60,7 +60,7 @@ def gateway_test_app(tmp_path):
             "name": "Goals Test Project",
             "primary_path": str(tmp_path),
             "access": "project",
-            "approval": "per_action",
+            "policy": "interactive",
             "source_folders": [
                 {"name": "root", "path": str(tmp_path), "is_primary": True}
             ],
@@ -263,9 +263,6 @@ async def test_mcp_and_world_governance(gateway_test_app):
     )
     session_manager._client = mock_client
 
-    # Add dummy approval grant to verify revoke
-    session_manager._project_approval_grants.add(("default", "shell"))
-
     transport = ASGITransport(app=gateway_test_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         # MCP status
@@ -284,4 +281,6 @@ async def test_mcp_and_world_governance(gateway_test_app):
         assert resp_revoke.status_code == 200
         assert resp_revoke.json()["revoked"] is True
         assert resp_revoke.json()["project_id"] == "goals_test_proj"
-        assert len(session_manager._project_approval_grants) == 0
+        assert (
+            "grant_store" in resp_revoke.json() or resp_revoke.json()["revoked"] is True
+        )

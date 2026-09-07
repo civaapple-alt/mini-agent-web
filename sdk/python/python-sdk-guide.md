@@ -115,14 +115,15 @@ Sensitive actions (shell execution, workspace file modification, web fetching) t
 
 If `approval_handler` is omitted, the SDK denies approval requests by default.
 Applications that have a human or other trusted decision authority should return
-a typed `{ "decision": "approve"|"deny", "access": ..., "approval": ... }`
-object. The App Server still enforces security Deny, Plan locks, tool exposure,
+a typed `{ "decision": "approve"|"deny", "grantScope": ... }`
+object. `grantScope` is `once`, `session`, or `project`; it is an action grant
+request, not an access-policy setting. The App Server still enforces security Deny, Plan locks, tool exposure,
 and the trusted Project/Session binding.
 
 ```python
-async def custom_approver(request_id: str, action: str, params: dict) -> dict:
-    print(f"[SECURITY ALERT] Request: {action}")
-    return {"decision": "approve", "access": "project", "approval": "per_action"}
+async def custom_approver(params: dict) -> dict:
+    print(f"[SECURITY ALERT] Request: {params.get('actionSummary', '')}")
+    return {"decision": "approve", "grantScope": "once"}
 
 
 client = MiniAgentClient(approval_handler=custom_approver)
@@ -218,8 +219,8 @@ uv run pytest tests/test_sdk_events.py tests/test_cookbook_validation.py -q
 # Inspect system environment & available tools
 world_state = await client.get_world_state()
 
-# Access and approval are independent Project-owned controls.
-await client.set_world_execution(access="full_machine", approval="current_project")
+# Access and approval policy are independent Project-owned controls.
+await client.set_world_execution(access="full_machine", policy="interactive")
 
 # Enter read-mostly exploration mode. Plan may use bounded scratch exploration
 # and retain plan.md, but formal Project mutations remain locked.

@@ -73,10 +73,6 @@ class SessionManager:
         self._active_connections: list[WebSocket] = []
         self._pending_approvals: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._pending_approval_details: dict[str, dict[str, Any]] = {}
-        self._project_approval_grants: set[tuple[str, str, str, str, str, str]] = set()
-        self._session_approval_grants: set[tuple[str, str, str, str, str, str, str]] = (
-            set()
-        )
         self._lock = asyncio.Lock()
         self._initialized = False
 
@@ -153,6 +149,8 @@ class SessionManager:
                 loaded_projects = p_data.get("projects", {})
                 clean_projects = {}
                 for pid, p in loaded_projects.items():
+                    p.pop("approval", None)
+                    p.setdefault("policy", "interactive")
                     p_path = p.get("primary_path", "")
                     if (
                         "pytest" in p_path.lower() or "temp" in p_path.lower()
@@ -213,7 +211,7 @@ class SessionManager:
                     }
                 ],
                 "access": "project",
-                "approval": "per_action",
+                "policy": "interactive",
             }
 
         # If current project ID is missing from registry, default to the active workspace project
@@ -384,7 +382,7 @@ class SessionManager:
             "primary_path": str(target_dir),
             "source_folders": sources,
             "access": "project",
-            "approval": "per_action",
+            "policy": "interactive",
         }
         self._projects_registry[proj_id] = proj_info
         self._current_project_id = proj_id
@@ -413,12 +411,8 @@ class SessionManager:
             proj["pinned"] = bool(updates["pinned"])
         if "access" in updates and updates["access"] in ("project", "full_machine"):
             proj["access"] = updates["access"]
-        if "approval" in updates and updates["approval"] in (
-            "per_action",
-            "current_session",
-            "current_project",
-        ):
-            proj["approval"] = updates["approval"]
+        if "policy" in updates and updates["policy"] in ("interactive", "automatic"):
+            proj["policy"] = updates["policy"]
         if "source_folders" in updates and isinstance(updates["source_folders"], list):
             proj["source_folders"] = updates["source_folders"]
             # Find primary folder
@@ -497,7 +491,7 @@ class SessionManager:
             "primary_path": str(p),
             "source_folders": [{"name": p.name, "path": str(p), "is_primary": True}],
             "access": "project",
-            "approval": "per_action",
+            "policy": "interactive",
         }
         self._projects_registry[proj_id] = proj_info
         self._current_project_id = proj_id
@@ -612,8 +606,8 @@ class SessionManager:
         try:
             init_res = await client.initialize()
             access = str(project.get("access", "project"))
-            approval = str(project.get("approval", "per_action"))
-            await client.set_world_execution(access=access, approval=approval)
+            policy = str(project.get("policy", "interactive"))
+            await client.set_world_execution(access=access, policy=policy)
             await client.start_thread(thread_id)
             logger.info(
                 "MiniAgentClient initialized for thread %s: %s v%s",
@@ -733,8 +727,6 @@ class SessionManager:
             self._pending_approval_details.clear()
         for client in set(clients):
             await client.stop()
-        self._project_approval_grants.clear()
-        self._session_approval_grants.clear()
         await self.start()
 
     async def stop(self) -> None:
@@ -763,8 +755,6 @@ class SessionManager:
                     await asyncio.wait_for(client.stop(), timeout=3.0)
                 except (asyncio.TimeoutError, Exception):  # noqa: BLE001, S110
                     pass
-            self._project_approval_grants.clear()
-            self._session_approval_grants.clear()
             self._initialized = False
             logger.info("MiniAgentClient processes terminated cleanly.")
 
@@ -863,29 +853,24 @@ class SessionManager:
         return {
             **self._settings,
             "access": project.get("access", "project"),
-            "approval": project.get("approval", "per_action"),
+            "policy": project.get("policy", "interactive"),
         }
 
     def project_execution(self) -> tuple[str, str]:
         project = self._projects_registry.get(self._current_project_id, {})
         return (
             str(project.get("access", "project")),
-            str(project.get("approval", "per_action")),
+            str(project.get("policy", "interactive")),
         )
 
-    def set_project_execution(self, access: str, approval: str) -> None:
+    def set_project_execution(self, access: str, policy: str) -> None:
         if access not in ("project", "full_machine"):
             raise ValueError("invalid access scope")
-        if approval not in (
-            "per_action",
-            "current_session",
-            "current_project",
-            "automatic",
-        ):
-            raise ValueError("invalid approval scope")
+        if policy not in ("interactive", "automatic"):
+            raise ValueError("invalid execution policy")
         project = self._projects_registry[self._current_project_id]
         project["access"] = access
-        project["approval"] = approval
+        project["policy"] = policy
         self._save_projects()
 
     def update_settings(self, updates: dict[str, Any]) -> dict[str, Any]:
@@ -899,44 +884,6 @@ class SessionManager:
     # Approval Handshake Management
     # -------------------------------------------------------------------------
 
-    @staticmethod
-    def _approval_grant_key(
-        data: dict[str, Any], current_project_id: str
-    ) -> tuple[str, str, str, str, str, str]:
-        """Build the exact identity used by current-project grant reuse."""
-        action_name = str(
-            data.get("actionSummary")
-            or data.get("action_summary")
-            or data.get("action")
-            or ""
-        )
-        project_id = str(
-            data.get("projectId") or data.get("project_id") or current_project_id
-        )
-        access = str(data.get("access") or "")
-        workspace_id = str(data.get("workspaceId") or data.get("workspace_id") or "")
-        workspace_revision = data.get("workspaceRevision")
-        if workspace_revision is None:
-            workspace_revision = data.get("workspace_revision")
-        revision_key = "" if workspace_revision is None else str(workspace_revision)
-        path_scope = data.get("pathScope")
-        if path_scope is None:
-            path_scope = data.get("path_scope")
-        if isinstance(path_scope, (dict, list)):
-            path_scope_key = json.dumps(
-                path_scope, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-            )
-        else:
-            path_scope_key = str(path_scope or "")
-        return (
-            project_id,
-            access,
-            workspace_id,
-            revision_key,
-            path_scope_key,
-            action_name,
-        )
-
     async def _handle_approval_request(
         self,
         req: dict[str, Any],
@@ -949,73 +896,7 @@ class SessionManager:
         req_id = str(req.get("requestId") or "")
         if not req_id:
             raise ValueError("approval request is missing requestId")
-        access = str(req_data.get("access") or self.project_execution()[0])
-        grant_key = self._approval_grant_key(req_data, self._current_project_id)
-        action_name = grant_key[-1]
-
-        allowed_approval_modes = (
-            req_data.get("allowedApprovalModes")
-            or req_data.get("allowed_approval_modes")
-            or []
-        )
-        _access_policy, approval_policy = self.project_execution()
-        if approval_policy == "automatic":
-            logger.info(
-                "Automatic approval policy active: auto-approving %s", action_name
-            )
-            return {
-                "decision": "approve",
-                "access": access,
-                "approval": (
-                    "per_action"
-                    if "per_action" in allowed_approval_modes
-                    else (
-                        allowed_approval_modes[0]
-                        if allowed_approval_modes
-                        else "per_action"
-                    )
-                ),
-                "reason": "Automatic approval policy active",
-            }
-
-        session_key = str(
-            req_data.get("threadId")
-            or req_data.get("thread_id")
-            or req_data.get("sessionId")
-            or req_data.get("session_id")
-            or "default"
-        )
-        session_grant = (session_key, *grant_key)
-        if (
-            action_name
-            and session_grant in self._session_approval_grants
-            and "current_session" in allowed_approval_modes
-        ):
-            logger.info(
-                "Reusing current-session approval for %s (session %s)",
-                action_name,
-                session_key,
-            )
-            return {
-                "decision": "approve",
-                "access": access,
-                "approval": "current_session",
-                "reason": "Reused current-session approval",
-            }
-
-        if (
-            action_name
-            and grant_key in self._project_approval_grants
-            and "current_project" in allowed_approval_modes
-        ):
-            logger.info("Reusing current-project approval for %s", action_name)
-            return {
-                "decision": "approve",
-                "access": access,
-                "approval": "current_project",
-                "reason": "Reused current-project approval",
-            }
-
+        action_name = str(req.get("actionSummary") or req.get("action") or "")
         logger.info("Approval requested by server: %s", req_data)
 
         loop = asyncio.get_running_loop()
@@ -1041,11 +922,9 @@ class SessionManager:
             return decision
         except (asyncio.TimeoutError, asyncio.CancelledError):
             logger.warning("Approval request %s timed out or was cancelled", req_id)
-            access, approval = self.project_execution()
             return {
                 "decision": "deny",
-                "access": req_data.get("access", access),
-                "approval": approval,
+                "grantScope": None,
                 "reason": "Approval request timed out or cancelled",
             }
         finally:
@@ -1060,46 +939,29 @@ class SessionManager:
         self,
         request_id: str,
         decision: str,
-        access: str,
-        approval: str,
+        grant_scope: str | None,
         reason: str | None = None,
     ) -> bool:
-        """Resolve a pending typed approval and retain session/project reuse in memory."""
+        """Resolve a pending approval; grant authority remains in Host/Capabilities."""
         details = self._pending_approval_details.get(request_id)
         if not details:
             return False
         data = details.get("data", {})
-        allowed_approval_modes = data.get("allowedApprovalModes") or data.get(
-            "allowed_approval_modes", []
-        )
-        if access != data.get("access") or approval not in allowed_approval_modes:
+        allowed_grant_scopes = data.get("allowedGrantScopes", [])
+        if decision.lower() == "approve" and grant_scope not in allowed_grant_scopes:
             logger.warning("Rejected out-of-scope approval response: %s", request_id)
+            return False
+        if decision.lower() == "deny" and grant_scope is not None:
             return False
         if decision.lower() not in ("approve", "deny"):
             return False
 
         fut = self._pending_approvals.get(request_id)
         if fut and not fut.done():
-            if decision.lower() == "approve":
-                grant_key = self._approval_grant_key(data, self._current_project_id)
-                action_name = grant_key[-1]
-                if action_name:
-                    if approval == "current_session":
-                        session_key = str(
-                            data.get("threadId")
-                            or data.get("thread_id")
-                            or data.get("sessionId")
-                            or data.get("session_id")
-                            or "default"
-                        )
-                        self._session_approval_grants.add((session_key, *grant_key))
-                    elif approval == "current_project":
-                        self._project_approval_grants.add(grant_key)
             fut.set_result(
                 {
                     "decision": decision,
-                    "access": access,
-                    "approval": approval,
+                    "grantScope": grant_scope,
                     "reason": reason or "",
                 }
             )
@@ -1111,7 +973,7 @@ class SessionManager:
 
     def approval_snapshot(self) -> dict[str, Any]:
         """Expose project policy and pending requests without exposing grants."""
-        access, approval = self.project_execution()
+        access, policy = self.project_execution()
         pending = []
         for request_id, details in self._pending_approval_details.items():
             pending.append(
@@ -1124,22 +986,15 @@ class SessionManager:
         return {
             "project_id": self._current_project_id,
             "access": access,
-            "approval": approval,
+            "policy": policy,
             "pending_requests": pending,
-            "grant_store": "app-server-memory",
-            "project_grant_count": sum(
-                grant[0] == self._current_project_id
-                for grant in self._project_approval_grants
-            ),
-            "session_grant_count": len(self._session_approval_grants),
+            "grant_store": "host-capabilities",
             "revocable": True,
         }
 
     async def revoke_current_project_approvals(self) -> dict[str, Any]:
-        """Restart the project-bound App Server, clearing its in-memory grants."""
+        """Restart the project-bound App Server; Host/Capabilities revoke grants."""
         project_id = self._current_project_id
-        self._project_approval_grants.clear()
-        self._session_approval_grants.clear()
         self.cancel_active_task()
         await self.restart_for_current_project()
         return {"project_id": project_id, "revoked": True}

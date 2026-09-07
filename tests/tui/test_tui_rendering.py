@@ -339,19 +339,17 @@ async def test_handle_slash_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "Completed Turns" in output_buffer.getvalue()
 
     # 2. /approval switch
-    handled = await handle_slash_command(
-        "/approval current_project", state, mock_client
-    )
+    handled = await handle_slash_command("/approval automatic", state, mock_client)
     assert handled is True
-    assert state.approval_mode == "current_project"
+    assert state.policy == "automatic"
 
     # 3. /access switch
     handled = await handle_slash_command("/access full_machine", state, mock_client)
     assert handled is True
     assert state.access_scope == "full_machine"
     assert mock_client.set_world_execution.await_args_list == [
-        call("project", "current_project"),
-        call("full_machine", "current_project"),
+        call("project", "automatic"),
+        call("full_machine", "automatic"),
     ]
 
     # 4. Unknown slash command interception
@@ -385,6 +383,6 @@ def test_ask_approval_sync(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("tui.approvals.console", test_con)
 
     monkeypatch.setattr("tui.approvals.Prompt.ask", lambda *args, **kwargs: "yes")
-    state = TUIState(approval_mode="current_project")
+    state = TUIState(policy="automatic")
     decision = _ask_approval_sync(state, "Run cmd", "req-1", "shell")
     assert decision == "approved"

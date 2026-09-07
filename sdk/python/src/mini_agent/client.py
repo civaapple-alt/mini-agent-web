@@ -216,7 +216,7 @@ class MiniAgentClient:
         self.approval_handler = approval_handler
         self.notification_handler = notification_handler
         self._access_scope = "project"
-        self._approval_mode = "per_action"
+        self._policy = "interactive"
 
         # Configure file logging if log_dir, log_file or env specified
         eff_dir = log_dir or self.env.get("MINI_AGENT_LOG_DIR")
@@ -509,14 +509,10 @@ class MiniAgentClient:
     async def _handle_approval_request(self, params: dict[str, Any]) -> None:
         """Handle server approval/request notification."""
         request_id = str(params.get("requestId") or "")
-        default_approval = (
-            "per_action" if self._approval_mode == "automatic" else self._approval_mode
-        )
         response: dict[str, Any] = {
             "requestId": request_id,
             "decision": "deny",
-            "access": self._access_scope,
-            "approval": default_approval,
+            "grantScope": None,
         }
         try:
             if self.approval_handler is not None:
@@ -529,22 +525,17 @@ class MiniAgentClient:
                 decision = str(res.get("decision", "")).lower()
                 if decision not in ("approve", "deny"):
                     raise ValueError("approval decision must be approve or deny")
-                response.update(res)
                 response["requestId"] = request_id
                 response["decision"] = decision
-                if response["access"] != params.get("access"):
-                    raise ValueError("approval access must match the request")
-                if response["approval"] not in params.get("allowedApprovalModes", []):
-                    raise ValueError("approval scope is not allowed for the request")
-            elif self._approval_mode == "automatic":
-                allowed = params.get("allowedApprovalModes", ["per_action"])
-                response["decision"] = "approve"
-                response["approval"] = (
-                    "per_action"
-                    if "per_action" in allowed
-                    else (allowed[0] if allowed else "per_action")
-                )
-                response["reason"] = "Automatic approval mode active"
+                response["grantScope"] = res.get("grantScope")
+                if "reason" in res:
+                    response["reason"] = res["reason"]
+                allowed_scopes = params.get("allowedGrantScopes", [])
+                if decision == "approve":
+                    if response.get("grantScope") not in allowed_scopes:
+                        raise ValueError("grant scope is not allowed for the request")
+                elif response.get("grantScope") is not None:
+                    raise ValueError("denied approval cannot grant a scope")
             else:
                 response["reason"] = "No approval handler configured"
         except Exception as err:  # noqa: BLE001
@@ -1011,7 +1002,7 @@ class MiniAgentClient:
         return SessionInfo.from_dict(res)
 
     async def get_world_state(self) -> WorldStateResult:
-        """Get snapshot of current workspace, sandbox, and approval mode."""
+        """Get snapshot of current workspace, sandbox, and execution policy."""
         res = await self._send_request("world/state", {})
         return WorldStateResult.from_dict(res)
 
@@ -1023,27 +1014,20 @@ class MiniAgentClient:
     async def set_world_execution(
         self,
         access: str = "project",
-        approval: str = "per_action",
+        policy: str = "interactive",
     ) -> WorldSetExecutionResult:
-        """Set independent access and approval reuse scopes."""
+        """Set independent access and approval policy."""
         if access not in ("project", "full_machine"):
             raise ValueError("access must be project or full_machine")
-        if approval not in (
-            "per_action",
-            "current_session",
-            "current_project",
-            "automatic",
-        ):
-            raise ValueError(
-                "approval must be per_action, current_session, current_project, or automatic"
-            )
+        if policy not in ("interactive", "automatic"):
+            raise ValueError("policy must be interactive or automatic")
         self._access_scope = access
-        self._approval_mode = approval
+        self._policy = policy
         res = await self._send_request(
             "world/set_execution",
             {
                 "access": access,
-                "approval": approval,
+                "policy": policy,
             },
         )
         return WorldSetExecutionResult.from_dict(res)

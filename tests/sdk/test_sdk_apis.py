@@ -72,7 +72,7 @@ async def test_advanced_thread_and_workflow_apis():
         assert hasattr(refresh_res, "changed")
 
         exec_res = await client.set_world_execution(
-            access="project", approval="per_action"
+            access="project", policy="interactive"
         )
         assert hasattr(exec_res, "changed")
 
@@ -142,7 +142,7 @@ async def test_sdk_approval_response_uses_typed_decision():
         assert params["requestId"] == "approval-1"
         assert params["actionSummary"] == "shell"
         assert params["callId"] == "call-1"
-        return {"decision": "approve", "access": "project", "approval": "per_action"}
+        return {"decision": "approve", "grantScope": "once"}
 
     client = MiniAgentClient(approval_handler=approval_handler)
     calls = []
@@ -158,7 +158,7 @@ async def test_sdk_approval_response_uses_typed_decision():
             "requestId": "approval-1",
             "actionSummary": "shell",
             "access": "project",
-            "allowedApprovalModes": ["per_action"],
+            "allowedGrantScopes": ["once"],
             "threadId": "thread-1",
             "turnId": "turn-1",
             "callId": "call-1",
@@ -171,8 +171,7 @@ async def test_sdk_approval_response_uses_typed_decision():
             {
                 "requestId": "approval-1",
                 "decision": "approve",
-                "access": "project",
-                "approval": "per_action",
+                "grantScope": "once",
             },
         )
     ]

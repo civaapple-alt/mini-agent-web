@@ -20,10 +20,10 @@ uv run python -m tui.tui_app
 常用参数：
 
 ```bash
-uv run mini-agent-tui --access project --approval per_action --effort high --thread default
+uv run mini-agent-tui --access project --policy interactive --effort high --thread default
 ```
 
-参数包括 `--access`、`--approval`、`--effort` 和 `--thread`。它们只选择这次
+参数包括 `--access`、`--policy`、`--effort` 和 `--thread`。它们只选择这次
 验证客户端的初始设置，不构成 Profile。运行时按 `/help` 查看当前命令表。
 
 ## 命令分组

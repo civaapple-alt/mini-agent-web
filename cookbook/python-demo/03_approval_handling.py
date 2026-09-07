@@ -28,7 +28,10 @@ async def interactive_approval_handler(request: dict) -> dict:
     )
     decision = "approve" if user_choice in ("y", "yes") else "deny"
     print(f"-> Decision: {decision.upper()}\n", flush=True)
-    return {"decision": decision, "access": "project", "approval": "per_action"}
+    return {
+        "decision": decision,
+        "grantScope": "once" if decision == "approve" else None,
+    }
 
 
 async def main():

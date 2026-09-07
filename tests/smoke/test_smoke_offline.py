@@ -35,7 +35,7 @@ def smoke_test_app(tmp_path):
             "name": "Smoke Test Project",
             "primary_path": str(tmp_path),
             "access": "project",
-            "approval": "per_action",
+            "policy": "interactive",
             "source_folders": [
                 {"name": "root", "path": str(tmp_path), "is_primary": True}
             ],

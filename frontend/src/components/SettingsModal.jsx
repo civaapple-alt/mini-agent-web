@@ -126,8 +126,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToas
               <div>
                 <span className="setting-title">当前项目批准缓存</span>
                 <span className="setting-desc">
-                  {approvalInfo?.pending_requests?.length || 0} 个待处理请求 · {approvalInfo?.grant_store || 'App Server'}
-                  {' · '}{approvalInfo?.project_grant_count || 0} 个项目内复用批准
+                  {approvalInfo?.pending_requests?.length || 0} 个待处理请求 · 授权存储：{approvalInfo?.grant_store || 'Host/Capabilities'}
                 </span>
               </div>
               <button

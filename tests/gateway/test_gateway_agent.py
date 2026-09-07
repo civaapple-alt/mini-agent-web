@@ -35,7 +35,7 @@ def agent_test_app(tmp_path):
             "name": "Agent Test Project",
             "primary_path": str(tmp_path),
             "access": "project",
-            "approval": "per_action",
+            "policy": "interactive",
             "source_folders": [
                 {"name": "root", "path": str(tmp_path), "is_primary": True}
             ],
@@ -220,7 +220,7 @@ async def test_approval_respond_http_endpoint(agent_test_app):
             "actionSummary": "Execute command",
             "projectId": "default",
             "access": "project",
-            "allowedApprovalModes": ["per_action", "current_project"],
+            "allowedGrantScopes": ["once", "project"],
         }
     }
 
@@ -232,8 +232,7 @@ async def test_approval_respond_http_endpoint(agent_test_app):
             json={
                 "request_id": req_id,
                 "decision": "approve",
-                "access": "project",
-                "approval": "per_action",
+                "grant_scope": "once",
                 "reason": "Approved by developer",
             },
         )
@@ -248,8 +247,7 @@ async def test_approval_respond_http_endpoint(agent_test_app):
             json={
                 "request_id": "non-existent-id",
                 "decision": "deny",
-                "access": "project",
-                "approval": "per_action",
+                "grant_scope": None,
             },
         )
         assert resp_404.status_code == 404

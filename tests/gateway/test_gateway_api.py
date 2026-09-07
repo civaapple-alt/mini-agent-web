@@ -164,7 +164,7 @@ async def test_gateway_threads_and_workflows(test_app):
             resp_settings = await client.get("/api/settings")
             assert resp_settings.status_code == 200
             assert resp_settings.json()["access"] == "project"
-            assert resp_settings.json()["approval"] == "per_action"
+            assert resp_settings.json()["policy"] == "interactive"
 
             resp_set_update = await client.post(
                 "/api/settings",
@@ -177,11 +177,11 @@ async def test_gateway_threads_and_workflows(test_app):
 
             resp_execution = await client.post(
                 "/api/world/execution",
-                json={"access": "full_machine", "approval": "current_project"},
+                json={"access": "full_machine", "policy": "automatic"},
             )
             assert resp_execution.status_code == 200
             assert resp_execution.json()["access"] == "full_machine"
-            assert resp_execution.json()["approval"] == "current_project"
+            assert resp_execution.json()["policy"] == "automatic"
 
     finally:
         await session_manager.stop()

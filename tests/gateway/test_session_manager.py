@@ -24,7 +24,7 @@ def mock_session_manager(tmp_path):
             "name": "Default Project",
             "primary_path": str(tmp_path),
             "access": "project",
-            "approval": "per_action",
+            "policy": "interactive",
             "source_folders": [
                 {"name": "default", "path": str(tmp_path), "is_primary": True}
             ],
@@ -61,7 +61,7 @@ async def test_session_manager_approval_is_typed_and_not_web_persisted(
         "toolName": "shell",
         "actionClass": "shell_execute",
         "access": "project",
-        "allowedApprovalModes": ["per_action", "current_project"],
+        "allowedGrantScopes": ["once", "project"],
         "projectId": "default",
         "workspaceId": "workspace-1",
         "workspaceRevision": 7,
@@ -87,45 +87,42 @@ async def test_session_manager_approval_is_typed_and_not_web_persisted(
     resolved = mock_session_manager.resolve_approval(
         request_id="req-123",
         decision="approve",
-        access="project",
-        approval="current_project",
+        grant_scope="project",
         reason="User approved permanently",
     )
     assert resolved is True
 
     result = await task
     assert result.get("decision") == "approve"
-    assert result.get("approval") == "current_project"
-    assert len(mock_session_manager._project_approval_grants) == 1
-    assert (
-        mock_session_manager._approval_grant_key(
-            {**req_payload, "workspaceRevision": 8}, "default"
-        )
-        not in mock_session_manager._project_approval_grants
-    )
+    assert result.get("grantScope") == "project"
+    assert not hasattr(mock_session_manager, "_project_approval_grants")
+    assert not hasattr(mock_session_manager, "_session_approval_grants")
 
-    # A second App Server process for the same project/action reuses the
-    # gateway's in-memory grant without creating another UI approval request.
+    # A second request is still relayed; Host/Capabilities owns grant reuse.
     second_payload = {**req_payload, "requestId": "req-456"}
-    second_result = await mock_session_manager._handle_approval_request(second_payload)
-    assert second_result["approval"] == "current_project"
-    assert mock_session_manager.list_pending_approvals() == []
+    second_task = asyncio.create_task(
+        mock_session_manager._handle_approval_request(second_payload)
+    )
+    await asyncio.sleep(0.01)
+    assert mock_session_manager.list_pending_approvals() == ["req-456"]
+    mock_session_manager.resolve_approval("req-456", "deny", None)
+    await second_task
 
 
 def test_session_manager_settings_persistence(mock_session_manager, tmp_path):
     """Ensure UI settings and Project execution settings persist separately."""
     assert mock_session_manager.get_settings()["reasoning_effort"] == "high"
-    mock_session_manager.set_project_execution("full_machine", "current_project")
+    mock_session_manager.set_project_execution("full_machine", "automatic")
     mock_session_manager.update_settings(
         {"reasoning_effort": "low", "auto_scroll": False}
     )
 
     assert mock_session_manager.project_execution() == (
         "full_machine",
-        "current_project",
+        "automatic",
     )
     assert mock_session_manager.get_settings()["access"] == "full_machine"
-    assert mock_session_manager.get_settings()["approval"] == "current_project"
+    assert mock_session_manager.get_settings()["policy"] == "automatic"
     assert mock_session_manager._settings["reasoning_effort"] == "low"
     assert mock_session_manager._settings["auto_scroll"] is False
 
@@ -140,14 +137,16 @@ def test_session_manager_settings_persistence(mock_session_manager, tmp_path):
 
 
 def test_approval_snapshot_exposes_policy_without_web_grants(mock_session_manager):
-    mock_session_manager.set_project_execution("full_machine", "current_project")
+    mock_session_manager.set_project_execution("full_machine", "automatic")
 
     snapshot = mock_session_manager.approval_snapshot()
 
     assert snapshot["project_id"] == "default"
     assert snapshot["access"] == "full_machine"
-    assert snapshot["approval"] == "current_project"
-    assert snapshot["grant_store"] == "app-server-memory"
+    assert snapshot["policy"] == "automatic"
+    assert snapshot["grant_store"] == "host-capabilities"
+    assert "project_grant_count" not in snapshot
+    assert "session_grant_count" not in snapshot
     assert snapshot["pending_requests"] == []
 
 
@@ -299,7 +298,7 @@ def test_session_manager_avoids_duplicate_project_for_custom_id_path(tmp_path):
                     {"name": "pi", "path": str(custom_ws), "is_primary": True}
                 ],
                 "access": "project",
-                "approval": "per_action",
+                "policy": "interactive",
             }
         },
     }
@@ -364,23 +363,23 @@ def test_decoupled_persistence_isolation(tmp_path):
     # 3. Update project execution -> only projects.json changes
     s_mtime_before = settings_file.stat().st_mtime_ns
     t_mtime_before = threads_file.stat().st_mtime_ns
-    mgr.set_project_execution("full_machine", "current_project")
+    mgr.set_project_execution("full_machine", "automatic")
 
-    assert mgr.project_execution() == ("full_machine", "current_project")
+    assert mgr.project_execution() == ("full_machine", "automatic")
     assert settings_file.stat().st_mtime_ns == s_mtime_before
     assert threads_file.stat().st_mtime_ns == t_mtime_before
 
 
 @pytest.mark.asyncio
-async def test_session_manager_session_approval_reuse(mock_session_manager):
-    """Ensure current_session approvals are cached per session and reused only within that session."""
+async def test_session_manager_does_not_cache_session_approvals(mock_session_manager):
+    """Web relays each request; Host/Capabilities owns session grant reuse."""
     req_payload = {
         "requestId": "req-sess-1",
         "access": "project",
         "actionSummary": "cargo test",
         "threadId": "thread-1",
         "sessionId": "sess-1",
-        "allowedApprovalModes": ["per_action", "current_session", "current_project"],
+        "allowedGrantScopes": ["once", "session", "project"],
     }
     task = asyncio.create_task(
         mock_session_manager._handle_approval_request(req_payload)
@@ -391,21 +390,24 @@ async def test_session_manager_session_approval_reuse(mock_session_manager):
     resolved = mock_session_manager.resolve_approval(
         request_id="req-sess-1",
         decision="approve",
-        access="project",
-        approval="current_session",
+        grant_scope="session",
         reason="Approve for this session",
     )
     assert resolved is True
     result = await task
     assert result["decision"] == "approve"
-    assert result["approval"] == "current_session"
-    assert len(mock_session_manager._session_approval_grants) == 1
+    assert result["grantScope"] == "session"
+    assert not hasattr(mock_session_manager, "_session_approval_grants")
 
-    # Same session reuses grant
+    # Same session still creates a new pending request.
     second_req = {**req_payload, "requestId": "req-sess-2"}
-    second_res = await mock_session_manager._handle_approval_request(second_req)
-    assert second_res["decision"] == "approve"
-    assert second_res["approval"] == "current_session"
+    second_task = asyncio.create_task(
+        mock_session_manager._handle_approval_request(second_req)
+    )
+    await asyncio.sleep(0.01)
+    assert "req-sess-2" in mock_session_manager._pending_approvals
+    mock_session_manager.resolve_approval("req-sess-2", "deny", None)
+    await second_task
 
     # Different session does NOT reuse session grant
     diff_session_req = {
@@ -422,22 +424,28 @@ async def test_session_manager_session_approval_reuse(mock_session_manager):
     mock_session_manager.resolve_approval(
         request_id="req-sess-3",
         decision="deny",
-        access="project",
-        approval="per_action",
+        grant_scope=None,
     )
     await task_diff
 
 
 @pytest.mark.asyncio
-async def test_session_manager_automatic_approval(mock_session_manager):
-    """Ensure automatic approval policy immediately approves without pending request."""
+async def test_session_manager_automatic_policy_is_not_web_auto_approval(
+    mock_session_manager,
+):
+    """Automatic decisions are made by Host/Capabilities, not Web."""
     mock_session_manager.set_project_execution("full_machine", "automatic")
     req_payload = {
         "requestId": "req-auto-1",
         "access": "full_machine",
         "actionSummary": "git status",
-        "allowedApprovalModes": ["per_action", "current_session", "current_project"],
+        "allowedGrantScopes": ["once", "session", "project"],
     }
-    res = await mock_session_manager._handle_approval_request(req_payload)
-    assert res["decision"] == "approve"
-    assert mock_session_manager.list_pending_approvals() == []
+    task = asyncio.create_task(
+        mock_session_manager._handle_approval_request(req_payload)
+    )
+    await asyncio.sleep(0.01)
+    assert "req-auto-1" in mock_session_manager.list_pending_approvals()
+    mock_session_manager.resolve_approval("req-auto-1", "deny", None)
+    res = await task
+    assert res["decision"] == "deny"

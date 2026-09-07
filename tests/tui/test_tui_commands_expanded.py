@@ -46,15 +46,13 @@ async def test_handle_effort_and_approval_commands():
     assert handled_set_effort is True
     assert state.effort == "high"
 
-    # Set approval scope
+    # Set approval policy
     handled_set_approval = await handle_slash_command(
-        "/approval current_session", state, mock_client
+        "/approval automatic", state, mock_client
     )
     assert handled_set_approval is True
-    assert state.approval_mode == "current_session"
-    mock_client.set_world_execution.assert_awaited_once_with(
-        "project", "current_session"
-    )
+    assert state.policy == "automatic"
+    mock_client.set_world_execution.assert_awaited_once_with("project", "automatic")
 
     # Plan is addressed to the selected Thread, not a hidden runtime alias.
     mock_client.set_collaboration_mode.return_value = SimpleNamespace(

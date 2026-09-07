@@ -92,6 +92,17 @@ Turn 发送后，流式输出了部分思考链，随后一直停留在某个工
   - 在 TUI 中，控制台会弹出 `[y]es / [n]o / [a]lways` 的选项提示；
   - 在自动化测试或无头脚本中，请提供自定义 `approval_handler` 或使用默认的自动放行策略。
 
+### Goal 运行与控制
+
+- 从斜杠菜单选择 `/goal` 只会把 `/goal ` 填入输入框；输入目标后再按 Enter 才会创建 Goal。
+- 信息流中的 Goal 卡片是内部自治 turn 的用户可见投影；`Autonomous Goal Mode is active...`
+  这类完整提示不会作为普通用户消息重复显示。
+- Goal 的 `goal/plan.md` 是 Session 已创建的受控文件。应使用相对别名读取，并用
+  `*** Update File: goal/plan.md` 更新，不能用 `*** Add File`；`prompt_context.json`、绝对
+  `~/.mini-agent/sessions/...` 路径以及包含 `..` 的逃逸路径均属于内部或越界路径，不应读取。
+- 活动 Goal 点击“暂停”时，网关只提交 `status=paused` 的安全状态变更，然后当前 turn 在安全边界
+  结算；如果仍看到 `thread already has an active turn`，请确认网关和 App Server 已使用本次修复后的版本。
+
 ---
 
 ## 6. Windows 下 Shell 工具报错或找不到 `pwsh`

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Copy, Check, Sparkles, RotateCcw, Layers, Navigation } from 'lucide-react';
+import { Copy, Check, Sparkles, RotateCcw, Layers, Navigation, Target } from 'lucide-react';
 import ThinkingBlock from './ThinkingBlock';
 import ToolCard from './ToolCard';
 import ErrorBoundary from './ErrorBoundary';
@@ -28,7 +28,7 @@ export default function MessageItem({
   if (role === 'user') {
     const { images = [], referencedFiles = [] } = message;
     return (
-      <div className={`message-row user ${message.isSteer ? 'steer-message-row' : ''}`}>
+      <div className={`message-row user ${message.isSteer ? 'steer-message-row' : ''} ${message.isGoal ? 'goal-message-row' : ''}`}>
         <div className="user-bubble-container">
           {/* Render Attached Images in User Bubble */}
           {images && images.length > 0 && (
@@ -99,8 +99,16 @@ export default function MessageItem({
               <span>已注入当前运行</span>
             </div>
           )}
-          <div className={`user-bubble ${message.isSteer ? 'steer-bubble' : ''}`}>
-            <span className={message.isSteer ? 'steer-text' : ''}>{text}</span>
+          {message.isGoal && (
+            <div className="goal-message-label font-mono">
+              <Target size={11} />
+              <span>Goal 目标</span>
+              <span className="goal-message-label-separator">·</span>
+              <span>已设置</span>
+            </div>
+          )}
+          <div className={`user-bubble ${message.isSteer ? 'steer-bubble' : ''} ${message.isGoal ? 'goal-bubble' : ''}`}>
+            <span className={message.isSteer ? 'steer-text' : message.isGoal ? 'goal-text' : ''}>{text}</span>
           </div>
           <div className="user-actions">
             <button
@@ -110,7 +118,7 @@ export default function MessageItem({
             >
               {copied ? <Check size={11} className="text-green" /> : <Copy size={11} />}
             </button>
-            {onRetryPrompt && (
+            {onRetryPrompt && !message.isGoal && (
               <button
                 className="msg-action-btn"
                 onClick={() => onRetryPrompt(text)}

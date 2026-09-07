@@ -474,9 +474,12 @@ async def pause_goal(thread_id: str) -> dict[str, Any]:
         if not current.goal:
             raise HTTPException(status_code=404, detail="Thread Goal not found")
         result = await client.set_goal(
-            objective=current.goal.objective,
+            # A status-only pause is explicitly admitted by the runtime while
+            # a Goal turn is active. Re-sending objective/token budget makes
+            # the mutation look like a replacement and is rejected as Busy.
+            objective=None,
             status="paused",
-            token_budget=current.goal.token_budget,
+            token_budget=None,
             thread_id=thread_id,
         )
         return {"goal": _goal_dict(result.goal)}

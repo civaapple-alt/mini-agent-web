@@ -125,6 +125,7 @@ async def test_thread_items_cursor_pagination(gateway_test_app):
 async def test_goal_lifecycle_full_state_machine(gateway_test_app):
     """Test POST, GET, PAUSE, RESUME, DELETE endpoints for Thread Goals."""
     current_goal = None
+    set_goal_calls = []
 
     mock_client = AsyncMock()
 
@@ -132,6 +133,15 @@ async def test_goal_lifecycle_full_state_machine(gateway_test_app):
         objective, status=None, token_budget=None, thread_id="default"
     ):
         nonlocal current_goal
+        set_goal_calls.append({
+            "objective": objective,
+            "status": status,
+            "token_budget": token_budget,
+            "thread_id": thread_id,
+        })
+        if current_goal is not None:
+            objective = objective if objective is not None else current_goal.objective
+            token_budget = token_budget if token_budget is not None else current_goal.token_budget
         current_goal = MockGoalObject(
             thread_id=thread_id,
             objective=objective,
@@ -176,6 +186,13 @@ async def test_goal_lifecycle_full_state_machine(gateway_test_app):
         resp_pause = await client.post("/api/threads/t-goal/goal/pause")
         assert resp_pause.status_code == 200
         assert resp_pause.json()["goal"]["status"] == "paused"
+        assert set_goal_calls[1] == {
+            "objective": None,
+            "status": "paused",
+            "token_budget": None,
+            "thread_id": "t-goal",
+        }
+        assert resp_pause.json()["goal"]["objective"] == "重构网关测试体系"
 
         # 4. Resume Goal
         resp_resume = await client.post("/api/threads/t-goal/goal/resume")

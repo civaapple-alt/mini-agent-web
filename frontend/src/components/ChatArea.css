@@ -214,6 +214,34 @@
   display: block;
 }
 
+.goal-message-row {
+  margin-top: -4px;
+}
+
+.goal-message-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #0f766e;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.goal-message-label-separator {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.goal-bubble {
+  border-color: rgba(13, 148, 136, 0.35);
+  background: rgba(20, 184, 166, 0.08);
+  border-radius: 12px 12px 4px 12px;
+}
+
+.goal-text {
+  display: block;
+}
+
 .steer-tag {
   display: inline-flex;
   align-items: center;

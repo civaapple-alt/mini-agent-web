@@ -16,13 +16,13 @@ import {
   FileCode,
 } from 'lucide-react';
 import { api } from '../api';
-import { parseAndExecuteSlashCommand } from '../utils/slashCommands';
+import { getSlashCommandDraft, parseAndExecuteSlashCommand } from '../utils/slashCommands';
 import PendingMessageDock from './PendingMessageDock';
 import './InputBar.css';
 
 const SLASH_COMMANDS = [
   { cmd: '/plan', desc: '开启/切换 Plan 规划探索模式', icon: <Compass size={13} className="text-amber" /> },
-  { cmd: '/goal', desc: '创建并启动一个跨回合 Goal', icon: <Target size={13} className="text-green" /> },
+  { cmd: '/goal', desc: '填入目标后启动跨回合 Goal', icon: <Target size={13} className="text-green" /> },
   { cmd: '/clear', desc: '清空当前聊天记录', icon: <Sparkles size={13} className="text-sky" /> },
   { cmd: '/status', desc: '打开工作区探测与环境状态面板', icon: <Command size={13} className="text-emerald" /> },
   { cmd: '/copy', desc: '复制模型最新回复/文档 Markdown 到剪贴板', icon: <Sparkles size={13} className="text-purple" /> },
@@ -221,8 +221,9 @@ export default function InputBar({
   };
 
   const handleSelectSlashCommand = (cmdObj) => {
-    if (cmdObj.cmd === '/steer') {
-      setPrompt('/steer ');
+    const draft = getSlashCommandDraft(cmdObj.cmd);
+    if (draft) {
+      setPrompt(draft);
     } else {
       executeSlashCommand(cmdObj.cmd);
     }

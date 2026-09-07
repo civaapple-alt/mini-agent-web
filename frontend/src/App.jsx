@@ -14,6 +14,11 @@ import {
   aggregateStreamEvent,
   aggregateThreadItems,
 } from './utils/messageState';
+import {
+  appendGoalMessage as appendGoalMessageToMessages,
+  createGoalMessage,
+  extractGoalObjective,
+} from './utils/goalMessages';
 import './App.css';
 
 function normalizeInputPayload(inputPayload) {
@@ -211,14 +216,26 @@ export default function App() {
         setLastTurnResult(null);
       }
       const rawMessages = cp.messages || [];
-      const formatted = rawMessages
-        .filter((m) => {
-          if (m.role === 'system') return false;
-          const text = (m.text || '').trim();
-          if (text.startsWith('<world_state') || text.includes('</world_state>')) return false;
-          return true;
-        })
-        .map((m, idx) => ({
+      const persistedGoalObjective = cp.session?.goal?.objective?.trim() || '';
+      let historyGoalObjective = persistedGoalObjective;
+      let goalMessageAdded = false;
+      const formatted = rawMessages.reduce((result, m, idx) => {
+        const text = (m.text || '').trim();
+        const internalGoalObjective = extractGoalObjective(text);
+        if (internalGoalObjective) {
+          historyGoalObjective = historyGoalObjective || internalGoalObjective;
+          if (!goalMessageAdded) {
+            result.push(createGoalMessage(
+              historyGoalObjective,
+              `goal_hist_${threadId}_${idx}`,
+            ));
+            goalMessageAdded = true;
+          }
+          return result;
+        }
+        if (m.role === 'system') return result;
+        if (text.startsWith('<world_state') || text.includes('</world_state>')) return result;
+        result.push({
           id: m.id || `hist_${threadId}_${idx}`,
           role: m.role,
           text: m.text || '',
@@ -230,7 +247,12 @@ export default function App() {
               content: m.text || '',
             },
           ],
-        }));
+        });
+        return result;
+      }, []);
+      if (historyGoalObjective && !goalMessageAdded) {
+        formatted.push(createGoalMessage(historyGoalObjective, `goal_hist_${threadId}`));
+      }
       setMessages(aggregateThreadItems(formatted, itemPage.data || []));
     } catch (err) {
       console.error(`Failed to load thread ${threadId}:`, err);
@@ -360,6 +382,7 @@ export default function App() {
         setPlanActive(notification.collaborationMode?.mode === 'plan');
       } else if (data.method === 'thread/goal/updated') {
         setGoalState(notification.goal || null);
+        setMessages((prev) => appendGoalMessageToMessages(prev, notification.goal));
       } else if (data.method === 'thread/goal/cleared') {
         setGoalState(null);
       }
@@ -373,6 +396,10 @@ export default function App() {
       }
       const evt = data.event || {};
       if (evt.type === 'turn_started') {
+        const goalObjective = extractGoalObjective(evt.prompt);
+        if (goalObjective) {
+          setMessages((prev) => appendGoalMessageToMessages(prev, goalObjective));
+        }
         setIsGenerating(true);
       } else if (evt.type === 'run_failed') {
         // RunFailed is diagnostic only. The durable turn_finished event below
@@ -785,7 +812,9 @@ export default function App() {
   const handleStartGoal = async (objective) => {
     try {
       const result = await api.setGoal(objective, null, 'active', currentThread);
-      setGoalState(result.goal || result);
+      const goal = result.goal || result;
+      setGoalState(goal);
+      setMessages((prev) => appendGoalMessageToMessages(prev, goal));
       showToast('Goal 已启动，并会在当前任务顶部持续显示', 'success');
     } catch (err) {
       showToast(`启动 Goal 失败: ${err.message}`, 'error');
@@ -794,9 +823,9 @@ export default function App() {
 
   const handlePauseGoal = async () => {
     try {
-      if (isGenerating) handleInterrupt();
       const result = await api.pauseGoal(currentThread);
       setGoalState(result.goal || null);
+      if (isGenerating) handleInterrupt('goal-pause');
       showToast('Goal 已暂停，可随时恢复', 'info');
     } catch (err) {
       showToast(`暂停 Goal 失败: ${err.message}`, 'error');
@@ -819,7 +848,9 @@ export default function App() {
     if (!objective || objective.trim() === goalState.objective.trim()) return;
     try {
       const result = await api.updateGoal(objective.trim(), goalState.token_budget, currentThread);
-      setGoalState(result.goal || null);
+      const goal = result.goal || null;
+      setGoalState(goal);
+      setMessages((prev) => appendGoalMessageToMessages(prev, goal));
       showToast('Goal 目标已更新', 'success');
     } catch (err) {
       showToast(`更新 Goal 失败: ${err.message}`, 'error');

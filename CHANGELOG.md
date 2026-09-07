@@ -83,6 +83,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and steering requests now carry and log their UI source.
 - **Duplicate Web Studio Approval Controls**: Removed the second actionable approval strip from `ToolCard`; each pending approval now has one canonical action area in the fixed Composer Approval Dock.
 - **Approval/Steering Terminal State**: Kept approval responses readable while steering is pending, flushed queued App Server responses when stdin closes during initialization, and marked gateway stream failures as terminal so Web Studio cannot remain stuck in `运行中` after a failed turn.
+- **Goal Composer and Runtime Boundaries**: Selecting `/goal` now prepares the
+  composer for the objective instead of executing an empty command; autonomous
+  Goal prompts render as a concise, deduplicated Goal message in Studio. Goal
+  pause is now a status-only mutation admitted during an active turn, and
+  Session-owned `goal/plan.md` guidance explicitly requires `Update File` while
+  keeping `prompt_context.json` and absolute Session paths internal.
 
 - **Project Duplication & Thread Affinity Preservation on Restart**:
   - Prevented redundant project creation in `SessionManager._load_state()` when the active workspace path is already bound to a registered project with a distinct custom ID or display name.

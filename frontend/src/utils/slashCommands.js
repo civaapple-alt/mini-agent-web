@@ -4,13 +4,26 @@
 
 export const SLASH_COMMANDS = [
   { cmd: '/plan', desc: '开启/切换 Plan 规划探索模式' },
-  { cmd: '/goal', desc: '创建并启动跨回合 Goal' },
+  { cmd: '/goal', desc: '填入目标后启动跨回合 Goal' },
   { cmd: '/clear', desc: '清空当前界面交互与消息历史' },
   { cmd: '/status', desc: '打开右侧诊断抽屉与环境看板' },
   { cmd: '/copy', desc: '复制模型最新的 Markdown 回复' },
   { cmd: '/cp', desc: '快捷复制模型最新回复别名' },
   { cmd: '/steer', desc: '向运行中的任务注入实时纠偏指令' },
 ];
+
+/**
+ * Return the composer draft used when a command needs user-supplied text.
+ * Selection from the popup must prepare the input; execution happens only
+ * after the user submits the completed command.
+ */
+export function getSlashCommandDraft(command) {
+  const cleanCommand = (command || '').trim().toLowerCase();
+  if (cleanCommand === '/goal' || cleanCommand === '/steer') {
+    return `${cleanCommand} `;
+  }
+  return null;
+}
 
 /**
  * Parses and executes a slash command.

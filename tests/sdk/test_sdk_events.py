@@ -201,6 +201,34 @@ async def test_stream_turn_returns_when_submission_has_no_turn_id():
     assert items[0]["data"]["status"] == "queued"
 
 
+@pytest.mark.asyncio
+async def test_stream_turn_preserves_step_limit_as_non_completed():
+    client = MiniAgentClient()
+
+    async def fake_start_turn(prompt, mode="start", thread_id=None):
+        return TurnSubmissionResult(status="started", turn_id="turn-limited")
+
+    client.start_turn = fake_start_turn
+    stream = client.stream_turn("inspect", thread_id="thread-1")
+    await anext(stream)
+
+    await client._event_queues[0].put(
+        {
+            "threadId": "thread-1",
+            "turnId": "turn-limited",
+            "event": {
+                "type": "turn_finished",
+                "status": "step_limit",
+            },
+        }
+    )
+
+    finished = await anext(stream)
+    assert finished["event"]["status"] == "step_limit"
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+
+
 def test_thread_item_lifecycle_and_list_projection_parse_camel_case_wire_shape():
     started = ItemLifecycleNotification.from_dict(
         "item/started",

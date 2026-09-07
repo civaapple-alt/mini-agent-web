@@ -817,9 +817,16 @@ class SessionManager:
 
     def list_all_project_sessions(self, limit: int = 128) -> list[dict[str, Any]]:
         """Return a bounded cross-project SessionStore view for the sidebar."""
-        sessions: list[dict[str, Any]] = []
+        sessions_by_key: dict[tuple[str, str], dict[str, Any]] = {}
         for project_id in self._projects_registry:
-            sessions.extend(self.list_project_sessions(project_id, limit=limit)["data"])
+            project_sessions = self.list_project_sessions(project_id, limit=limit)["data"]
+            for session in project_sessions:
+                key = (
+                    str(session.get("workspace_id") or project_id),
+                    str(session.get("session_id") or ""),
+                )
+                sessions_by_key.setdefault(key, session)
+        sessions = list(sessions_by_key.values())
         sessions.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
         return sessions[: max(1, min(limit, 128))]
 
@@ -837,7 +844,22 @@ class SessionManager:
 
     def read_any_project_thread(self, thread_id: str) -> dict[str, Any] | None:
         """Find one canonical SessionStore thread without changing the active Project."""
-        for project_id in self._projects_registry:
+        metadata_project = self._thread_metadata.get(thread_id, {}).get("project")
+        ordered_ids: list[str] = []
+        if metadata_project in self._projects_registry:
+            ordered_ids.append(metadata_project)
+        ordered_ids.extend(
+            project_id
+            for project_id in self._projects_registry
+            if project_id not in ordered_ids
+        )
+        seen_workspaces: set[str] = set()
+        for project_id in ordered_ids:
+            project = self._projects_registry[project_id]
+            workspace_key = str(Path(project["primary_path"]).resolve()).casefold()
+            if workspace_key in seen_workspaces:
+                continue
+            seen_workspaces.add(workspace_key)
             result = self.read_project_thread(thread_id, project_id)
             if result:
                 return result

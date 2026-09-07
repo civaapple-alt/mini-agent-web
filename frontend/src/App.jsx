@@ -27,6 +27,7 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState(null);
   const [pendingApproval, setPendingApproval] = useState(null);
+  const [lastTurnResult, setLastTurnResult] = useState(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [toasts, setToasts] = useState([]);
 
@@ -167,6 +168,16 @@ export default function App() {
         setPlanActive(Boolean(cp.session.plan_active));
         setGoalState(cp.session.goal || null);
       }
+      const persistedTurn = cp.last_turn_status || cp.session?.last_turn_status;
+      if (persistedTurn && persistedTurn !== 'completed') {
+        setLastTurnResult({
+          status: persistedTurn,
+          stopReason: cp.last_stop_reason || cp.session?.last_stop_reason || null,
+          steps: cp.last_turn_steps || cp.session?.last_turn_steps || 0,
+        });
+      } else {
+        setLastTurnResult(null);
+      }
       const rawMessages = cp.messages || [];
       const formatted = rawMessages
         .filter((m) => {
@@ -222,6 +233,7 @@ export default function App() {
       if (turnId) {
         setActiveTurnId(turnId);
         setIsGenerating(true);
+        setLastTurnResult(null);
       }
       return;
     }
@@ -299,9 +311,21 @@ export default function App() {
         evt.type === 'run_finished' ||
         evt.type === 'run_failed'
       ) {
-        if (evt.type === 'turn_finished' && evt.stop_reason === 'steered') {
-          showToast('✓ 纠偏已生效，正在应用新指令继续生成...', 'info', 2500);
+        const turnStatus = evt.status || evt.stop_reason || 'unknown';
+        if (turnStatus === 'steered') {
+          if (evt.type === 'turn_finished') {
+            showToast('✓ 纠偏已生效，正在应用新指令继续生成...', 'info', 2500);
+          }
         } else {
+          if (turnStatus !== 'completed') {
+            setLastTurnResult({
+              status: turnStatus,
+              stopReason: evt.stop_reason || evt.status || null,
+              steps: evt.steps || 0,
+            });
+          } else {
+            setLastTurnResult(null);
+          }
           setIsGenerating(false);
           setActiveTurnId(null);
           loadThreads();
@@ -490,6 +514,7 @@ export default function App() {
     setIsGenerating(false);
     setActiveTurnId(null);
     setPendingApproval(null);
+    setLastTurnResult(null);
     setCurrentThread(threadId);
     if (selected) {
       setCurrentThreadMeta({
@@ -518,6 +543,7 @@ export default function App() {
       setCurrentThread(tid);
       setCurrentThreadMeta({ title: finalTitle, summary: '' });
       setMessages([]);
+      setLastTurnResult(null);
       showToast(`已创建新会话: ${finalTitle}`, 'success');
     } catch (err) {
       showToast(`创建新会话失败: ${err.message}`, 'error');
@@ -530,6 +556,7 @@ export default function App() {
       await api.forkThread(sourceThreadId, newId);
       await loadThreads();
       setCurrentThread(newId);
+      setLastTurnResult(null);
       loadThreadHistory(newId);
       showToast(`已派生分支会话: ${newId}`, 'success');
     } catch (err) {
@@ -719,6 +746,7 @@ export default function App() {
               messages={messages}
               isGenerating={isGenerating}
               pendingApproval={pendingApproval}
+              lastTurnResult={lastTurnResult}
               policy={policy}
               onQuickPrompt={handleSendMessage}
               onRetryPrompt={handleSendMessage}

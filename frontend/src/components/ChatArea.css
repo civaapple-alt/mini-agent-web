@@ -84,6 +84,27 @@
   gap: 22px;
 }
 
+.turn-status-banner {
+  max-width: 860px;
+  width: 100%;
+  margin: 12px auto 0;
+  padding: 10px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: baseline;
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.09);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.turn-status-banner strong {
+  color: #b45309;
+}
+
 .message-row {
   display: flex;
   gap: 12px;

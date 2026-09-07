@@ -7,6 +7,7 @@ export default function ChatArea({
   messages,
   isGenerating,
   pendingApproval,
+  lastTurnResult,
   policy = 'interactive',
   onQuickPrompt,
   onRetryPrompt,
@@ -101,6 +102,24 @@ export default function ChatArea({
               onRetryPrompt={onRetryPrompt}
             />
           ))}
+        </div>
+      )}
+
+      {lastTurnResult && (
+        <div className="turn-status-banner" role="status">
+          <strong>
+            {lastTurnResult.status === 'step_limit'
+              ? '本轮达到运行步数上限'
+              : lastTurnResult.status === 'cancelled' || lastTurnResult.status === 'interrupted'
+                ? '本轮已中断'
+                : '本轮未完整结束'}
+          </strong>
+          <span>
+            {lastTurnResult.steps
+              ? `已执行 ${lastTurnResult.steps} 步。`
+              : '已保留当前检查点。'}
+            {' '}当前回答可能不完整，可以继续发送指令。
+          </span>
         </div>
       )}
 

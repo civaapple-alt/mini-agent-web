@@ -861,9 +861,13 @@ class MiniAgentClient:
                 }
 
                 event_type = event_dict.get("type")
-                stop_reason = event_dict.get("stop_reason")
+                # turn_finished carries the durable TurnStatus, while
+                # run_finished carries the Core StopReason. Normalize both so
+                # callers do not mistake a step-limited turn for completion.
+                status = event_dict.get("status")
+                stop_reason = event_dict.get("stop_reason") or status
                 if event_type == "turn_finished":
-                    if stop_reason == "steered":
+                    if status == "steered" or stop_reason == "steered":
                         steered = True
                         continue
                     break

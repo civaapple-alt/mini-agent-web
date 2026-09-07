@@ -198,7 +198,14 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
             "turn_id": "turn-1",
             "message": {"role": "user", "text": "inspect project"},
         },
-        {"seq": 5, "kind": "turn_settled", "thread_id": "t-1", "turn_id": "turn-1"},
+        {
+            "seq": 5,
+            "kind": "turn_settled",
+            "thread_id": "t-1",
+            "turn_id": "turn-1",
+            "status": "step_limit",
+            "steps": 8,
+        },
         {
             "seq": 6,
             "kind": "checkpoint",
@@ -218,7 +225,15 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
                 "updated_at_ms": 2000,
                 "turn_count": 1,
                 "last_prompt": "inspect project",
+                # Deliberately stale: the settled record is authoritative.
+                "last_status": "completed",
             }
+        ),
+        encoding="utf-8",
+    )
+    (_session_base(workspace) / "thread_index.json").write_text(
+        json.dumps(
+            {"version": 1, "threads": {"t-1": {"session_id": "s-1"}}}
         ),
         encoding="utf-8",
     )
@@ -231,9 +246,14 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     assert listed["data"][0]["session_status"] == "historical"
     assert listed["data"][0]["resumable"] is True
     assert listed["data"][0]["locked_by"] is None
+    assert listed["data"][0]["last_turn_status"] == "step_limit"
+    assert listed["data"][0]["last_stop_reason"] == "step_limit"
+    assert listed["data"][0]["last_turn_steps"] == 8
+    assert listed["data"][0]["last_turn_complete"] is False
     history = catalog.read_thread(workspace, "project-1", "t-1")
     assert history["messages"][0]["text"] == "inspect project"
     assert history["items"][0]["item"]["type"] == "userMessage"
+    assert history["last_turn_status"] == "step_limit"
 
 
 def test_session_catalog_keeps_user_paused_state_after_lock_release(

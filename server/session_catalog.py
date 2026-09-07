@@ -20,6 +20,7 @@ from urllib.parse import quote
 MAX_SESSIONS = 128
 MAX_SESSION_BYTES = 8 * 1024 * 1024
 MAX_RECORD_BYTES = 64 * 1024
+THREAD_INDEX_FILE_NAME = "thread_index.json"
 
 
 def _workspace_key(workspace: Path) -> str:
@@ -44,6 +45,30 @@ def _read_json(path: Path) -> dict[str, Any]:
     except (OSError, UnicodeError, json.JSONDecodeError):
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def _read_thread_index(base: Path) -> dict[str, str]:
+    """Read the App Server's bounded thread -> session index."""
+    value = _read_json(base / THREAD_INDEX_FILE_NAME)
+    threads = value.get("threads")
+    if not isinstance(threads, dict):
+        return {}
+    result: dict[str, str] = {}
+    for thread_id, entry in threads.items():
+        if not isinstance(thread_id, str) or not isinstance(entry, dict):
+            continue
+        session_id = entry.get("session_id")
+        if isinstance(session_id, str) and session_id:
+            result[thread_id] = session_id
+    return result
+
+
+def _bounded_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        return max(0, int(value))
+    return 0
 
 
 def _process_alive(pid: int) -> bool:
@@ -216,6 +241,23 @@ class SessionCatalog:
         base = _session_base(workspace)
         if not base.is_dir():
             return None
+
+        indexed_session_id = _read_thread_index(base).get(thread_id)
+        if indexed_session_id:
+            indexed_path = base / indexed_session_id
+            if (
+                indexed_path.name == indexed_session_id
+                and indexed_path.is_dir()
+                and (indexed_path / "session.jsonl").is_file()
+            ):
+                entry = self._read_session(
+                    indexed_path, project_id, include_history=True
+                )
+                if entry and entry.get("thread_id") == thread_id:
+                    return entry
+
+        # Legacy sessions created before thread_index.json remain readable. This
+        # is a migration fallback, not the normal request-time lookup path.
         for path in base.iterdir():
             if not path.is_dir() or not (path / "session.jsonl").is_file():
                 continue
@@ -233,6 +275,10 @@ class SessionCatalog:
         return {
             "thread_id": entry["thread_id"],
             "status": "running" if entry["runtime_status"] == "running" else "idle",
+            "last_turn_status": entry.get("last_turn_status"),
+            "last_stop_reason": entry.get("last_stop_reason"),
+            "last_turn_steps": entry.get("last_turn_steps", 0),
+            "last_turn_complete": entry.get("last_turn_complete", False),
             "next_turn_number": entry["turn_count"] + 1,
             "messages": entry.get("messages", []),
             "items": entry.get("items", []),
@@ -264,6 +310,11 @@ class SessionCatalog:
         thread_id = ""
         latest_checkpoint: dict[str, Any] | None = None
         latest_turn_id = None
+        latest_turn_status: str | None = None
+        latest_stop_reason: str | None = None
+        latest_turn_steps = 0
+        latest_turn_settled = False
+        latest_turn_timestamp = 0
         turn_count = 0
         for record in records:
             kind = record.get("kind")
@@ -272,6 +323,19 @@ class SessionCatalog:
             elif kind == "turn_started":
                 turn_count += 1
                 latest_turn_id = record.get("turn_id")
+                latest_turn_status = None
+                latest_stop_reason = None
+                latest_turn_steps = 0
+                latest_turn_settled = False
+            elif kind == "turn_settled":
+                if record.get("turn_id") == latest_turn_id:
+                    latest_turn_status = str(record.get("status") or "failed")
+                    latest_stop_reason = str(
+                        record.get("stop_reason") or latest_turn_status
+                    )
+                    latest_turn_steps = _bounded_int(record.get("steps"))
+                    latest_turn_settled = True
+                    latest_turn_timestamp = _bounded_int(record.get("timestamp_ms"))
             elif kind == "checkpoint":
                 latest_checkpoint = record
         if not thread_id:
@@ -295,9 +359,20 @@ class SessionCatalog:
             if lock_active
             else "historical"
         )
-        updated_ms = summary.get("updated_at_ms") or 0
+        updated_ms = _bounded_int(summary.get("updated_at_ms"))
+        updated_ms = max(updated_ms, latest_turn_timestamp)
         if latest_checkpoint:
-            updated_ms = max(updated_ms, latest_checkpoint.get("timestamp_ms") or 0)
+            updated_ms = max(
+                updated_ms, _bounded_int(latest_checkpoint.get("timestamp_ms"))
+            )
+        if latest_turn_id and not latest_turn_settled:
+            last_turn_status = "in_progress"
+            last_stop_reason = None
+            last_turn_complete = False
+        else:
+            last_turn_status = latest_turn_status or summary.get("last_status")
+            last_stop_reason = latest_stop_reason or summary.get("last_stop_reason")
+            last_turn_complete = last_turn_status == "completed"
         workspace_id = hashlib.sha256(str(path.parent).encode("utf-8")).hexdigest()[:16]
         entry: dict[str, Any] = {
             "session_id": path.name,
@@ -324,7 +399,13 @@ class SessionCatalog:
             if runtime_status == "running"
             else None,
             "checkpoint_seq": latest_checkpoint.get("seq") if latest_checkpoint else 0,
-            "turn_count": int(summary.get("turn_count") or turn_count),
+            "turn_count": _bounded_int(summary.get("turn_count")) or turn_count,
+            "last_turn_status": last_turn_status,
+            "last_stop_reason": last_stop_reason,
+            "last_turn_steps": latest_turn_steps
+            if latest_turn_settled
+            else _bounded_int(summary.get("last_steps")),
+            "last_turn_complete": last_turn_complete,
             "locked_by": pid if lock_active else None,
             "resumable": bool(latest_checkpoint) and not lock_active,
         }

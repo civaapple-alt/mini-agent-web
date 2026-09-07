@@ -115,6 +115,12 @@ async def list_threads(
                         "goal_status": catalog_entry["goal_status"],
                         "cleanup_pending": catalog_entry["cleanup_pending"],
                         "resumable": catalog_entry["resumable"],
+                        "last_turn_status": catalog_entry.get("last_turn_status"),
+                        "last_stop_reason": catalog_entry.get("last_stop_reason"),
+                        "last_turn_steps": catalog_entry.get("last_turn_steps", 0),
+                        "last_turn_complete": catalog_entry.get(
+                            "last_turn_complete", False
+                        ),
                     }
                 )
             enriched_threads.append(item)

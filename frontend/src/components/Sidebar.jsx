@@ -325,6 +325,9 @@ export default function Sidebar({
         goal_status: t.goal_status || null,
         cleanup_pending: Boolean(t.cleanup_pending),
         resumable: Boolean(t.resumable),
+        last_turn_status: t.last_turn_status || null,
+        last_stop_reason: t.last_stop_reason || null,
+        last_turn_complete: Boolean(t.last_turn_complete),
         session_id: t.session_id || null,
       };
     });
@@ -657,7 +660,11 @@ export default function Sidebar({
                                   ? '已暂停'
                                 : thread.goal_status === 'paused'
                                   ? '已暂停'
-                                : thread.cleanup_pending
+                                : thread.last_turn_status === 'step_limit'
+                                  ? '回答未完成'
+                                : thread.last_turn_status === 'failed'
+                                  ? '运行失败'
+                                  : thread.cleanup_pending
                                   ? '清理待处理'
                                   : thread.resumable
                                     ? '可恢复'

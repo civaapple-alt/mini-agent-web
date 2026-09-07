@@ -171,7 +171,6 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     # Backup singleton fields
     orig_state_dir = session_manager._state_dir
-    orig_state_file = session_manager._state_file
     orig_projects = dict(session_manager._projects_registry)
     orig_threads = dict(session_manager._thread_metadata)
     orig_client = session_manager._client
@@ -184,7 +183,6 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Point to isolated test state
     monkeypatch.setenv("MINI_AGENT_WEB_STATE_DIR", str(test_state_dir))
     session_manager._state_dir = test_state_dir
-    session_manager._state_file = test_state_dir / "state.json"
     session_manager._projects_registry = {}
     session_manager._thread_metadata = {}
     session_manager._thread_builtin_tools = {}
@@ -226,7 +224,6 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     # Restore singleton after test finishes
     session_manager._state_dir = orig_state_dir
-    session_manager._state_file = orig_state_file
     session_manager._projects_registry = orig_projects
     session_manager._thread_metadata = orig_threads
     session_manager._client = orig_client

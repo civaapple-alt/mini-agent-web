@@ -118,7 +118,6 @@ class SessionManager:
         self._settings_file = base_dir / "settings.json"
         self._projects_file = base_dir / "projects.json"
         self._projects_dir = base_dir / "projects"
-        self._legacy_state_file = base_dir / "state.json"
 
     @property
     def _state_dir(self) -> Path:
@@ -128,81 +127,24 @@ class SessionManager:
     def _state_dir(self, val: Path) -> None:
         self._set_state_paths(val)
 
-    @property
-    def _state_file(self) -> Path:
-        return self._legacy_state_file
-
-    @_state_file.setter
-    def _state_file(self, val: Path) -> None:
-        self._legacy_state_file = val
-        self._set_state_paths(val.parent)
-        self._legacy_state_file = val
-
     def _load_state(self) -> None:
-        """Load projects, settings, and session metadata, migrating legacy state.json if present."""
-        legacy_loaded = False
-        # 1. Check if legacy state.json exists and new projects.json does not yet
-        if not self._projects_file.is_file() and self._legacy_state_file.is_file():
+        """Load projects, settings, and session metadata from decoupled files."""
+        # 1. Load settings
+        if self._settings_file.is_file():
             try:
-                data = json.loads(self._legacy_state_file.read_text(encoding="utf-8"))
-                loaded_projects = data.get("projects", {})
-                clean_projects: dict[str, dict[str, Any]] = {}
-                for pid, p in loaded_projects.items():
-                    p_path = p.get("primary_path", "")
-                    if (
-                        "pytest" in p_path.lower() or "temp" in p_path.lower()
-                    ) and not Path(p_path).exists():
-                        continue
-                    clean_projects[pid] = p
-
-                self._projects_registry = clean_projects
-                self._thread_metadata = data.get("thread_metadata", {})
-                if "settings" in data and isinstance(data["settings"], dict):
+                s_data = json.loads(self._settings_file.read_text(encoding="utf-8"))
+                if isinstance(s_data, dict):
                     allowed_settings = set(self._settings)
                     self._settings.update(
-                        {
-                            key: value
-                            for key, value in data["settings"].items()
-                            if key in allowed_settings
-                        }
+                        {k: v for k, v in s_data.items() if k in allowed_settings}
                     )
-                persisted_cur_id = data.get("current_project_id")
-                if persisted_cur_id and persisted_cur_id in self._projects_registry:
-                    self._current_project_id = persisted_cur_id
-                    self._current_project_path = Path(
-                        self._projects_registry[persisted_cur_id].get(
-                            "primary_path", str(self._current_project_path)
-                        )
-                    )
-                legacy_loaded = True
-                logger.info(
-                    "Detected legacy state file %s; migrating to decoupled layout",
-                    self._legacy_state_file,
-                )
             except Exception as err:  # noqa: BLE001
                 logger.warning(
-                    "Failed to parse %s, initializing clean state: %s",
-                    self._legacy_state_file,
-                    err,
+                    "Failed to parse settings from %s: %s", self._settings_file, err
                 )
 
-        # 2. Decoupled layout: load settings, projects, and per-project threads
-        elif self._projects_file.is_file():
-            # Load settings
-            if self._settings_file.is_file():
-                try:
-                    s_data = json.loads(self._settings_file.read_text(encoding="utf-8"))
-                    if isinstance(s_data, dict):
-                        allowed_settings = set(self._settings)
-                        self._settings.update(
-                            {k: v for k, v in s_data.items() if k in allowed_settings}
-                        )
-                except Exception as err:  # noqa: BLE001
-                    logger.warning(
-                        "Failed to parse settings from %s: %s", self._settings_file, err
-                    )
-
-            # Load projects
+        # 2. Load projects
+        if self._projects_file.is_file():
             try:
                 p_data = json.loads(self._projects_file.read_text(encoding="utf-8"))
                 loaded_projects = p_data.get("projects", {})
@@ -228,26 +170,26 @@ class SessionManager:
                     "Failed to parse projects from %s: %s", self._projects_file, err
                 )
 
-            # Load threads partitioned across projects/<pid>/threads.json
-            self._thread_metadata = {}
-            if self._projects_dir.is_dir():
-                for pdir in self._projects_dir.iterdir():
-                    t_file = pdir / "threads.json"
-                    if pdir.is_dir() and t_file.is_file():
-                        try:
-                            t_data = json.loads(t_file.read_text(encoding="utf-8"))
-                            if isinstance(t_data, dict):
-                                for tid, t_meta in t_data.items():
-                                    if isinstance(t_meta, dict):
-                                        if not t_meta.get("project"):
-                                            t_meta["project"] = pdir.name
-                                        self._thread_metadata[tid] = t_meta
-                        except Exception as err:  # noqa: BLE001
-                            logger.warning(
-                                "Failed to load threads from %s: %s", t_file, err
-                            )
+        # 3. Load threads partitioned across projects/<pid>/threads.json
+        self._thread_metadata = {}
+        if self._projects_dir.is_dir():
+            for pdir in self._projects_dir.iterdir():
+                t_file = pdir / "threads.json"
+                if pdir.is_dir() and t_file.is_file():
+                    try:
+                        t_data = json.loads(t_file.read_text(encoding="utf-8"))
+                        if isinstance(t_data, dict):
+                            for tid, t_meta in t_data.items():
+                                if isinstance(t_meta, dict):
+                                    if not t_meta.get("project"):
+                                        t_meta["project"] = pdir.name
+                                    self._thread_metadata[tid] = t_meta
+                    except Exception as err:  # noqa: BLE001
+                        logger.warning(
+                            "Failed to load threads from %s: %s", t_file, err
+                        )
 
-        # 3. Always ensure the active workspace directory is registered in projects
+        # 4. Always ensure the active workspace directory is registered in projects
         cur_name = self._current_project_path.name
         cur_resolved = self._current_project_path.resolve()
         already_registered = any(
@@ -296,28 +238,10 @@ class SessionManager:
                 }
             }
 
-        # 4. Save state / finish migration
-        if legacy_loaded:
-            self._save_state()
-            try:
-                migrated_backup = self._legacy_state_file.with_name(
-                    "state.json.migrated"
-                )
-                if not migrated_backup.exists():
-                    self._legacy_state_file.rename(migrated_backup)
-                else:
-                    self._legacy_state_file.unlink(missing_ok=True)
-                logger.info(
-                    "Migrated legacy state to decoupled files and archived %s",
-                    migrated_backup,
-                )
-            except Exception as err:  # noqa: BLE001
-                logger.warning("Failed to archive legacy state file: %s", err)
-        else:
-            self._save_projects()
-            self._save_settings()
-            if self._current_project_id:
-                self._save_project_threads(self._current_project_id)
+        self._save_projects()
+        self._save_settings()
+        if self._current_project_id:
+            self._save_project_threads(self._current_project_id)
 
     def _save_settings(self) -> None:
         """Persist system and UI settings to settings.json atomically."""

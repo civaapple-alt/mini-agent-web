@@ -61,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Decoupled State Persistence Architecture**:
   - Replaced the single monolithic `state.json` with fine-grained decoupled files: `settings.json` for global preferences, `projects.json` for project workspace registries, and `projects/<project_id>/threads.json` for per-project thread metadata.
   - Introduced atomic writes via temporary files and `os.replace` to prevent corrupted writes or race conditions under concurrency.
-  - Implemented seamless automatic migration from legacy `state.json` on startup with non-destructive archival to `state.json.migrated`.
+  - Removed legacy `state.json` migration and backward-compatibility shims to keep persistence logic clean, lean, and directly bound to the decoupled files.
 - **Default Reasoning Effort Alignment**: Set the system-wide default `reasoning_effort` to `high` across `SessionManager` runtime defaults, WebSocket turn stream fallback routing, and Web Studio frontend initial state / settings reset, ensuring deep reasoning depth by default for complex coding agent workflows.
 
 ### Fixed
@@ -69,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Project Duplication & Thread Affinity Preservation on Restart**:
   - Prevented redundant project creation in `SessionManager._load_state()` when the active workspace path is already bound to a registered project with a distinct custom ID or display name.
   - Preserved explicit user project assignments in `/api/threads` enriched items so that catalog session projections do not overwrite `meta.project`.
-  - Injected `MINI_AGENT_WEB_STATE_DIR` into pytest harness fixtures in `tests/conftest.py` to prevent test runs from polluting user-level `state.json`.
+  - Injected `MINI_AGENT_WEB_STATE_DIR` into pytest harness fixtures in `tests/conftest.py` to prevent test runs from polluting user-level state files.
 - **Web Studio Project Management & Hover Floating Interactions**:
   - Imported missing `FolderPlus` and `SquarePen` icons in `Sidebar.jsx`, preventing React runtime crashes on project creation, folder management, and details popover rendering.
   - Fixed project creation path passthrough to bind the primary directory path selected by the user instead of defaulting to null.

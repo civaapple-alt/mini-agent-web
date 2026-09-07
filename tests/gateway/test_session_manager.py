@@ -16,7 +16,6 @@ def mock_session_manager(tmp_path):
     """Create an isolated SessionManager instance using tmp_path for storage."""
     mgr = SessionManager()
     mgr._state_dir = tmp_path
-    mgr._state_file = tmp_path / "state.json"
     mgr._current_project_id = "default"
     mgr._current_project_path = tmp_path
     mgr._projects_registry = {
@@ -130,10 +129,9 @@ def test_session_manager_settings_persistence(mock_session_manager, tmp_path):
     assert mock_session_manager._settings["reasoning_effort"] == "low"
     assert mock_session_manager._settings["auto_scroll"] is False
 
-    # Create new manager loading from same state file
+    # Create new manager loading from same state dir
     new_mgr = SessionManager()
     new_mgr._state_dir = tmp_path
-    new_mgr._state_file = mock_session_manager._state_file
     new_mgr._load_state()
 
     assert new_mgr.get_settings()["access"] == "full_machine"
@@ -289,8 +287,8 @@ def test_session_manager_avoids_duplicate_project_for_custom_id_path(tmp_path):
     """Ensure _load_state does not duplicate a project when its name differs from directory basename."""
     custom_ws = tmp_path / "pi"
     custom_ws.mkdir()
-    state_file = tmp_path / "state.json"
-    state_data = {
+    projects_file = tmp_path / "projects.json"
+    projects_data = {
         "current_project_id": "pi-fx",
         "projects": {
             "pi-fx": {
@@ -304,14 +302,18 @@ def test_session_manager_avoids_duplicate_project_for_custom_id_path(tmp_path):
                 "approval": "per_action",
             }
         },
-        "thread_metadata": {"t-1": {"title": "My Thread", "project": "pi-fx"}},
-        "settings": {},
     }
-    state_file.write_text(json.dumps(state_data), encoding="utf-8")
+    projects_file.write_text(json.dumps(projects_data), encoding="utf-8")
+    threads_dir = tmp_path / "projects" / "pi-fx"
+    threads_dir.mkdir(parents=True)
+    threads_file = threads_dir / "threads.json"
+    threads_file.write_text(
+        json.dumps({"t-1": {"title": "My Thread", "project": "pi-fx"}}),
+        encoding="utf-8",
+    )
 
     mgr = SessionManager()
     mgr._state_dir = tmp_path
-    mgr._state_file = state_file
     mgr._load_state()
 
     assert "pi-fx" in mgr._projects_registry
@@ -320,7 +322,8 @@ def test_session_manager_avoids_duplicate_project_for_custom_id_path(tmp_path):
     assert (tmp_path / "projects.json").is_file()
     assert (tmp_path / "settings.json").is_file()
     assert (tmp_path / "projects" / "pi-fx" / "threads.json").is_file()
-    assert (tmp_path / "state.json.migrated").is_file()
+    assert not (tmp_path / "state.json").exists()
+    assert not (tmp_path / "state.json.migrated").exists()
 
 
 def test_decoupled_persistence_isolation(tmp_path):

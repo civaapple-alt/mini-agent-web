@@ -79,7 +79,7 @@ async def list_threads(
                 all_thread_ids.append(tid)
                 seen.add(tid)
 
-        # The Web gateway's state.json is UI metadata only. Add canonical
+        # The Web gateway's thread metadata is UI metadata only. Add canonical
         # SessionStore sessions so historical, running, and paused sessions are
         # visible even when the current App Server process did not create them.
         catalog_entries = {

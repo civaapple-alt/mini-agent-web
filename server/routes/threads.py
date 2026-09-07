@@ -108,7 +108,7 @@ async def list_threads(
             if catalog_entry:
                 item.update(
                     {
-                        "project": catalog_entry["project_id"],
+                        "project": meta.get("project") or catalog_entry["project_id"],
                         "session_id": catalog_entry["session_id"],
                         "session_status": catalog_entry["session_status"],
                         "runtime_status": catalog_entry["runtime_status"],

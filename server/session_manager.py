@@ -142,7 +142,12 @@ class SessionManager:
 
         # Always ensure the active workspace directory is registered in projects
         cur_name = self._current_project_path.name
-        if cur_name not in self._projects_registry:
+        cur_resolved = self._current_project_path.resolve()
+        already_registered = any(
+            Path(p.get("primary_path", "")).resolve() == cur_resolved
+            for p in self._projects_registry.values()
+        )
+        if not already_registered and cur_name not in self._projects_registry:
             self._projects_registry[cur_name] = {
                 "id": cur_name,
                 "name": cur_name,
@@ -161,7 +166,15 @@ class SessionManager:
 
         # If current project ID is missing from registry, default to the active workspace project
         if self._current_project_id not in self._projects_registry:
-            self._current_project_id = cur_name
+            matching_proj = next(
+                (
+                    pid
+                    for pid, p in self._projects_registry.items()
+                    if Path(p.get("primary_path", "")).resolve() == cur_resolved
+                ),
+                None,
+            )
+            self._current_project_id = matching_proj or cur_name
 
         # Ensure default thread exists
         if not self._thread_metadata:

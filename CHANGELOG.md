@@ -62,6 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Project Duplication & Thread Affinity Preservation on Restart**:
+  - Prevented redundant project creation in `SessionManager._load_state()` when the active workspace path is already bound to a registered project with a distinct custom ID or display name.
+  - Preserved explicit user project assignments in `/api/threads` enriched items so that catalog session projections do not overwrite `meta.project`.
+  - Injected `MINI_AGENT_WEB_STATE_DIR` into pytest harness fixtures in `tests/conftest.py` to prevent test runs from polluting user-level `state.json`.
 - **Web Studio Project Management & Hover Floating Interactions**:
   - Imported missing `FolderPlus` and `SquarePen` icons in `Sidebar.jsx`, preventing React runtime crashes on project creation, folder management, and details popover rendering.
   - Fixed project creation path passthrough to bind the primary directory path selected by the user instead of defaulting to null.

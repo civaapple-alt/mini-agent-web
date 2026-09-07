@@ -283,3 +283,37 @@ def test_session_catalog_keeps_user_paused_state_after_lock_release(
     assert entry["session_status"] == "paused"
     assert entry["resumable"] is True
     assert entry["goal_status"] == "paused"
+
+
+def test_session_manager_avoids_duplicate_project_for_custom_id_path(tmp_path):
+    """Ensure _load_state does not duplicate a project when its name differs from directory basename."""
+    custom_ws = tmp_path / "pi"
+    custom_ws.mkdir()
+    state_file = tmp_path / "state.json"
+    state_data = {
+        "current_project_id": "pi-fx",
+        "projects": {
+            "pi-fx": {
+                "id": "pi-fx",
+                "name": "pi-fx",
+                "primary_path": str(custom_ws),
+                "source_folders": [
+                    {"name": "pi", "path": str(custom_ws), "is_primary": True}
+                ],
+                "access": "project",
+                "approval": "per_action",
+            }
+        },
+        "thread_metadata": {"t-1": {"title": "My Thread", "project": "pi-fx"}},
+        "settings": {},
+    }
+    state_file.write_text(json.dumps(state_data), encoding="utf-8")
+
+    mgr = SessionManager()
+    mgr._state_dir = tmp_path
+    mgr._state_file = state_file
+    mgr._load_state()
+
+    assert "pi-fx" in mgr._projects_registry
+    assert "pi" not in mgr._projects_registry
+    assert mgr._current_project_id == "pi-fx"

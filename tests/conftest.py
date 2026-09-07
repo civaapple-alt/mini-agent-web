@@ -182,6 +182,7 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     orig_builtin_tools = dict(getattr(session_manager, "_thread_builtin_tools", {}))
 
     # Point to isolated test state
+    monkeypatch.setenv("MINI_AGENT_WEB_STATE_DIR", str(test_state_dir))
     session_manager._state_dir = test_state_dir
     session_manager._state_file = test_state_dir / "state.json"
     session_manager._projects_registry = {}

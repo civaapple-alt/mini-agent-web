@@ -239,6 +239,12 @@ export default function App() {
 
     if (data.type === 'error') {
       showToast(`⚠️ ${data.message || '操作异常'}`, 'error', 4000);
+      if (data.terminal && data.scope === 'turn') {
+        setIsGenerating(false);
+        setActiveTurnId(null);
+        setPendingApproval(null);
+        loadThreads();
+      }
       return;
     }
 

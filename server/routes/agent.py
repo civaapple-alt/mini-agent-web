@@ -173,7 +173,14 @@ async def stream_turn(
         except Exception as err:
             logger.exception("SSE stream error")
             err_payload = json.dumps(
-                {"type": "error", "message": str(err)}, ensure_ascii=False
+                {
+                    "type": "error",
+                    "scope": "turn",
+                    "terminal": True,
+                    "threadId": thread_id or "default",
+                    "message": str(err),
+                },
+                ensure_ascii=False,
             )
             yield f"data: {err_payload}\n\n"
 
@@ -409,6 +416,7 @@ async def _stream_turn_to_ws(
     target_thread = thread_id or "default"
     current_task = asyncio.current_task()
     effort = session_manager.get_settings().get("reasoning_effort", "high")
+    active_turn_id: str | None = None
     try:
         client = await session_manager.get_client_for_thread(target_thread)
         async for item in client.stream_turn(
@@ -423,14 +431,16 @@ async def _stream_turn_to_ws(
                     item.get("submission"), "turn_id", None
                 )
                 if turn_id:
+                    active_turn_id = str(turn_id)
                     session_manager.set_active_turn(
-                        target_thread, str(turn_id), current_task
+                        target_thread, active_turn_id, current_task
                     )
             elif item.get("type") == "event":
                 turn_id = item.get("turnId")
                 if turn_id:
+                    active_turn_id = str(turn_id)
                     session_manager.set_active_turn(
-                        target_thread, str(turn_id), current_task
+                        target_thread, active_turn_id, current_task
                     )
 
             safe_item = to_json_serializable(item)
@@ -442,6 +452,7 @@ async def _stream_turn_to_ws(
                 {
                     "type": "event",
                     "threadId": target_thread,
+                    "turnId": active_turn_id,
                     "event": {
                         "type": "turn_finished",
                         "stop_reason": "interrupted",
@@ -452,6 +463,15 @@ async def _stream_turn_to_ws(
             pass
     except Exception as err:
         logger.exception("WebSocket stream error")
-        await websocket.send_json({"type": "error", "message": str(err)})
+        await websocket.send_json(
+            {
+                "type": "error",
+                "scope": "turn",
+                "terminal": True,
+                "threadId": target_thread,
+                "turnId": active_turn_id,
+                "message": str(err),
+            }
+        )
     finally:
         session_manager.clear_active_turn(target_thread)

@@ -72,6 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Duplicate Web Studio Approval Controls**: Removed the second actionable approval strip from `ToolCard`; each pending approval now has one canonical action area in the fixed Composer Approval Dock.
+- **Approval/Steering Terminal State**: Kept approval responses readable while steering is pending, flushed queued App Server responses when stdin closes during initialization, and marked gateway stream failures as terminal so Web Studio cannot remain stuck in `运行中` after a failed turn.
 
 - **Project Duplication & Thread Affinity Preservation on Restart**:
   - Prevented redundant project creation in `SessionManager._load_state()` when the active workspace path is already bound to a registered project with a distinct custom ID or display name.

@@ -22,7 +22,7 @@ from mini_agent.errors import AppServerError
 from mini_agent.types import TurnSubmissionResult
 
 from server.app import create_app
-from server.routes.agent import _process_attachments
+from server.routes.agent import _process_attachments, _stream_turn_to_ws
 from server.session_manager import session_manager
 
 
@@ -149,6 +149,37 @@ async def test_agent_stream_sse(agent_test_app):
         assert "data: {" in body
         assert "turn-sse-1" in body
         assert "token_delta" in body
+
+
+@pytest.mark.asyncio
+async def test_websocket_stream_error_is_terminal(agent_test_app):
+    """A stream failure must clear Studio's generating state."""
+
+    async def failing_stream_turn(*_args, **_kwargs):
+        yield {
+            "type": "_turn_submission",
+            "data": {"turn_id": "turn-stream-error"},
+        }
+        raise RuntimeError("model request failed")
+
+    mock_client = AsyncMock()
+    mock_client.stream_turn = failing_stream_turn
+    websocket = AsyncMock()
+
+    with patch.object(
+        session_manager, "get_client_for_thread", new=AsyncMock(return_value=mock_client)
+    ):
+        await _stream_turn_to_ws(websocket, "hello", "start", "thread-error")
+
+    terminal_error = websocket.send_json.await_args.args[0]
+    assert terminal_error == {
+        "type": "error",
+        "scope": "turn",
+        "terminal": True,
+        "threadId": "thread-error",
+        "turnId": "turn-stream-error",
+        "message": "model request failed",
+    }
 
 
 @pytest.mark.asyncio

@@ -317,3 +317,52 @@ def test_session_manager_avoids_duplicate_project_for_custom_id_path(tmp_path):
     assert "pi-fx" in mgr._projects_registry
     assert "pi" not in mgr._projects_registry
     assert mgr._current_project_id == "pi-fx"
+    assert (tmp_path / "projects.json").is_file()
+    assert (tmp_path / "settings.json").is_file()
+    assert (tmp_path / "projects" / "pi-fx" / "threads.json").is_file()
+    assert (tmp_path / "state.json.migrated").is_file()
+
+
+def test_decoupled_persistence_isolation(tmp_path):
+    """Ensure updates to settings, projects, and threads only write their respective files."""
+    mgr = SessionManager()
+    mgr._state_dir = tmp_path
+    mgr._save_state()
+
+    settings_file = tmp_path / "settings.json"
+    projects_file = tmp_path / "projects.json"
+    threads_file = tmp_path / "projects" / mgr._current_project_id / "threads.json"
+
+    assert settings_file.is_file()
+    assert projects_file.is_file()
+    assert threads_file.is_file()
+
+    # 1. Update settings -> only settings.json changes
+    p_mtime_before = projects_file.stat().st_mtime_ns
+    t_mtime_before = threads_file.stat().st_mtime_ns
+    mgr.update_settings({"theme": "cyberpunk"})
+
+    assert mgr._settings["theme"] == "cyberpunk"
+    assert json.loads(settings_file.read_text(encoding="utf-8"))["theme"] == "cyberpunk"
+    assert projects_file.stat().st_mtime_ns == p_mtime_before
+    assert threads_file.stat().st_mtime_ns == t_mtime_before
+
+    # 2. Update thread -> only that project's threads.json changes
+    s_mtime_before = settings_file.stat().st_mtime_ns
+    p_mtime_before = projects_file.stat().st_mtime_ns
+    mgr.set_thread_meta("default", {"title": "New Title"})
+
+    assert mgr.get_thread_meta("default")["title"] == "New Title"
+    loaded_threads = json.loads(threads_file.read_text(encoding="utf-8"))
+    assert loaded_threads["default"]["title"] == "New Title"
+    assert settings_file.stat().st_mtime_ns == s_mtime_before
+    assert projects_file.stat().st_mtime_ns == p_mtime_before
+
+    # 3. Update project execution -> only projects.json changes
+    s_mtime_before = settings_file.stat().st_mtime_ns
+    t_mtime_before = threads_file.stat().st_mtime_ns
+    mgr.set_project_execution("full_machine", "current_project")
+
+    assert mgr.project_execution() == ("full_machine", "current_project")
+    assert settings_file.stat().st_mtime_ns == s_mtime_before
+    assert threads_file.stat().st_mtime_ns == t_mtime_before

@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,20 @@ from server.config import settings
 from server.session_catalog import session_catalog
 
 logger = logging.getLogger("mini_agent.server")
+
+
+def _atomic_write_json(path: Path, data: Any) -> None:
+    """Write JSON data to path atomically using a temporary file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(f"{path.suffix}.tmp")
+    try:
+        tmp_path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        tmp_path.replace(path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def to_json_serializable(obj: Any) -> Any:
@@ -65,12 +80,11 @@ class SessionManager:
         # Web owns only this derived project/UI manifest. Session history,
         # checkpoints, and approval grants belong to the App Server SessionStore.
         state_dir_env = os.environ.get("MINI_AGENT_WEB_STATE_DIR")
-        self._state_dir = (
+        self._set_state_paths(
             Path(state_dir_env)
             if state_dir_env
             else (Path.home() / ".mini-agent" / "web")
         )
-        self._state_file = self._state_dir / "state.json"
 
         # Structured project registry: project_id -> project dict
         self._current_project_path: Path = Path.cwd().resolve()
@@ -98,13 +112,40 @@ class SessionManager:
         # Load persisted state or initialize clean default with only the active workspace
         self._load_state()
 
+    def _set_state_paths(self, base_dir: Path) -> None:
+        """Configure directory layout for state persistence."""
+        self.__state_dir = base_dir
+        self._settings_file = base_dir / "settings.json"
+        self._projects_file = base_dir / "projects.json"
+        self._projects_dir = base_dir / "projects"
+        self._legacy_state_file = base_dir / "state.json"
+
+    @property
+    def _state_dir(self) -> Path:
+        return self.__state_dir
+
+    @_state_dir.setter
+    def _state_dir(self, val: Path) -> None:
+        self._set_state_paths(val)
+
+    @property
+    def _state_file(self) -> Path:
+        return self._legacy_state_file
+
+    @_state_file.setter
+    def _state_file(self, val: Path) -> None:
+        self._legacy_state_file = val
+        self._set_state_paths(val.parent)
+        self._legacy_state_file = val
+
     def _load_state(self) -> None:
-        """Load projects and session metadata from persistent JSON file."""
-        if self._state_file.is_file():
+        """Load projects, settings, and session metadata, migrating legacy state.json if present."""
+        legacy_loaded = False
+        # 1. Check if legacy state.json exists and new projects.json does not yet
+        if not self._projects_file.is_file() and self._legacy_state_file.is_file():
             try:
-                data = json.loads(self._state_file.read_text(encoding="utf-8"))
+                data = json.loads(self._legacy_state_file.read_text(encoding="utf-8"))
                 loaded_projects = data.get("projects", {})
-                # Filter out stale temporary test projects that no longer exist on disk
                 clean_projects: dict[str, dict[str, Any]] = {}
                 for pid, p in loaded_projects.items():
                     p_path = p.get("primary_path", "")
@@ -133,14 +174,80 @@ class SessionManager:
                             "primary_path", str(self._current_project_path)
                         )
                     )
+                legacy_loaded = True
+                logger.info(
+                    "Detected legacy state file %s; migrating to decoupled layout",
+                    self._legacy_state_file,
+                )
             except Exception as err:  # noqa: BLE001
                 logger.warning(
                     "Failed to parse %s, initializing clean state: %s",
-                    self._state_file,
+                    self._legacy_state_file,
                     err,
                 )
 
-        # Always ensure the active workspace directory is registered in projects
+        # 2. Decoupled layout: load settings, projects, and per-project threads
+        elif self._projects_file.is_file():
+            # Load settings
+            if self._settings_file.is_file():
+                try:
+                    s_data = json.loads(self._settings_file.read_text(encoding="utf-8"))
+                    if isinstance(s_data, dict):
+                        allowed_settings = set(self._settings)
+                        self._settings.update(
+                            {k: v for k, v in s_data.items() if k in allowed_settings}
+                        )
+                except Exception as err:  # noqa: BLE001
+                    logger.warning(
+                        "Failed to parse settings from %s: %s", self._settings_file, err
+                    )
+
+            # Load projects
+            try:
+                p_data = json.loads(self._projects_file.read_text(encoding="utf-8"))
+                loaded_projects = p_data.get("projects", {})
+                clean_projects = {}
+                for pid, p in loaded_projects.items():
+                    p_path = p.get("primary_path", "")
+                    if (
+                        "pytest" in p_path.lower() or "temp" in p_path.lower()
+                    ) and not Path(p_path).exists():
+                        continue
+                    clean_projects[pid] = p
+                self._projects_registry = clean_projects
+                persisted_cur_id = p_data.get("current_project_id")
+                if persisted_cur_id and persisted_cur_id in self._projects_registry:
+                    self._current_project_id = persisted_cur_id
+                    self._current_project_path = Path(
+                        self._projects_registry[persisted_cur_id].get(
+                            "primary_path", str(self._current_project_path)
+                        )
+                    )
+            except Exception as err:  # noqa: BLE001
+                logger.warning(
+                    "Failed to parse projects from %s: %s", self._projects_file, err
+                )
+
+            # Load threads partitioned across projects/<pid>/threads.json
+            self._thread_metadata = {}
+            if self._projects_dir.is_dir():
+                for pdir in self._projects_dir.iterdir():
+                    t_file = pdir / "threads.json"
+                    if pdir.is_dir() and t_file.is_file():
+                        try:
+                            t_data = json.loads(t_file.read_text(encoding="utf-8"))
+                            if isinstance(t_data, dict):
+                                for tid, t_meta in t_data.items():
+                                    if isinstance(t_meta, dict):
+                                        if not t_meta.get("project"):
+                                            t_meta["project"] = pdir.name
+                                        self._thread_metadata[tid] = t_meta
+                        except Exception as err:  # noqa: BLE001
+                            logger.warning(
+                                "Failed to load threads from %s: %s", t_file, err
+                            )
+
+        # 3. Always ensure the active workspace directory is registered in projects
         cur_name = self._current_project_path.name
         cur_resolved = self._current_project_path.resolve()
         already_registered = any(
@@ -188,24 +295,95 @@ class SessionManager:
                     "pinned": True,
                 }
             }
-        self._save_state()
 
-    def _save_state(self) -> None:
-        """Persist current projects, settings, and session metadata to disk."""
+        # 4. Save state / finish migration
+        if legacy_loaded:
+            self._save_state()
+            try:
+                migrated_backup = self._legacy_state_file.with_name(
+                    "state.json.migrated"
+                )
+                if not migrated_backup.exists():
+                    self._legacy_state_file.rename(migrated_backup)
+                else:
+                    self._legacy_state_file.unlink(missing_ok=True)
+                logger.info(
+                    "Migrated legacy state to decoupled files and archived %s",
+                    migrated_backup,
+                )
+            except Exception as err:  # noqa: BLE001
+                logger.warning("Failed to archive legacy state file: %s", err)
+        else:
+            self._save_projects()
+            self._save_settings()
+            if self._current_project_id:
+                self._save_project_threads(self._current_project_id)
+
+    def _save_settings(self) -> None:
+        """Persist system and UI settings to settings.json atomically."""
         try:
-            self._state_dir.mkdir(parents=True, exist_ok=True)
+            _atomic_write_json(self._settings_file, self._settings)
+        except Exception as err:  # noqa: BLE001
+            logger.warning(
+                "Failed to persist settings to %s: %s", self._settings_file, err
+            )
+
+    def _save_projects(self) -> None:
+        """Persist registered projects and current_project_id to projects.json atomically."""
+        try:
             payload = {
                 "current_project_id": self._current_project_id,
                 "projects": self._projects_registry,
-                "thread_metadata": self._thread_metadata,
-                "settings": self._settings,
             }
-            self._state_file.write_text(
-                json.dumps(payload, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
+            _atomic_write_json(self._projects_file, payload)
         except Exception as err:  # noqa: BLE001
-            logger.warning("Failed to persist state to %s: %s", self._state_file, err)
+            logger.warning(
+                "Failed to persist projects to %s: %s", self._projects_file, err
+            )
+
+    def _save_project_threads(self, project_id: str) -> None:
+        """Persist thread metadata for a specific project to projects/<project_id>/threads.json."""
+        if not project_id:
+            return
+        try:
+            proj_meta = {
+                tid: meta
+                for tid, meta in self._thread_metadata.items()
+                if meta.get("project") == project_id
+            }
+            target_file = self._projects_dir / project_id / "threads.json"
+            _atomic_write_json(target_file, proj_meta)
+        except Exception as err:  # noqa: BLE001
+            logger.warning(
+                "Failed to persist threads for project %s to %s: %s",
+                project_id,
+                self._projects_dir / project_id / "threads.json",
+                err,
+            )
+
+    def _save_thread_for_id(self, thread_id: str) -> None:
+        """Save thread metadata for the project associated with thread_id."""
+        meta = self._thread_metadata.get(thread_id, {})
+        project_id = meta.get("project") or self._current_project_id
+        if project_id:
+            self._save_project_threads(project_id)
+
+    def _save_all_threads(self) -> None:
+        """Persist thread metadata for all projects."""
+        all_pids = set(self._projects_registry.keys()) | {
+            meta.get("project")
+            for meta in self._thread_metadata.values()
+            if meta.get("project")
+        }
+        for pid in all_pids:
+            if pid:
+                self._save_project_threads(pid)
+
+    def _save_state(self) -> None:
+        """Persist all state slices to their respective files."""
+        self._save_settings()
+        self._save_projects()
+        self._save_all_threads()
 
     def get_projects(self) -> dict[str, Any]:
         """Get all projects with active threads summary."""
@@ -284,7 +462,7 @@ class SessionManager:
         self._projects_registry[proj_id] = proj_info
         self._current_project_id = proj_id
         self._current_project_path = target_dir
-        self._save_state()
+        self._save_projects()
         return proj_info
 
     def update_project(
@@ -327,7 +505,7 @@ class SessionManager:
             if self._current_project_id == project_id:
                 self._current_project_path = Path(primary)
 
-        self._save_state()
+        self._save_projects()
         return proj
 
     def delete_project(self, project_id: str) -> bool:
@@ -338,7 +516,15 @@ class SessionManager:
                 self._current_project_id = next(iter(self._projects_registry.keys()))
                 next_proj = self._projects_registry[self._current_project_id]
                 self._current_project_path = Path(next_proj["primary_path"])
-            self._save_state()
+            self._save_projects()
+            proj_dir = self._projects_dir / project_id
+            if proj_dir.is_dir():
+                shutil.rmtree(proj_dir, ignore_errors=True)
+            self._thread_metadata = {
+                tid: meta
+                for tid, meta in self._thread_metadata.items()
+                if meta.get("project") != project_id
+            }
             return True
         return False
 
@@ -347,7 +533,7 @@ class SessionManager:
         if not proj:
             raise KeyError(f"Project '{project_id}' not found")
         proj["pinned"] = not proj.get("pinned", False)
-        self._save_state()
+        self._save_projects()
         return proj
 
     def switch_project(self, project_id_or_path: str) -> dict[str, Any]:
@@ -356,7 +542,7 @@ class SessionManager:
             self._current_project_id = project_id_or_path
             proj = self._projects_registry[project_id_or_path]
             self._current_project_path = Path(proj["primary_path"])
-            self._save_state()
+            self._save_projects()
             return proj
 
         # 2. Match by path
@@ -366,7 +552,7 @@ class SessionManager:
             ):
                 self._current_project_id = pid
                 self._current_project_path = Path(p["primary_path"])
-                self._save_state()
+                self._save_projects()
                 return p
 
         # 3. Arbitrary new directory path
@@ -388,7 +574,7 @@ class SessionManager:
         }
         self._projects_registry[proj_id] = proj_info
         self._current_project_id = proj_id
-        self._save_state()
+        self._save_projects()
         return proj_info
 
     @property
@@ -664,7 +850,7 @@ class SessionManager:
                 "updated_at": datetime.now(timezone.utc).isoformat(),
                 "pinned": False,
             }
-            self._save_state()
+            self._save_thread_for_id(thread_id)
         return self._thread_metadata[thread_id]
 
     def set_thread_meta(
@@ -672,10 +858,17 @@ class SessionManager:
     ) -> dict[str, Any]:
         """Update metadata for a thread."""
         meta = self.get_thread_meta(thread_id)
+        old_project = meta.get("project")
         meta.update(updates)
         meta["updated_at"] = datetime.now(timezone.utc).isoformat()
         self._thread_metadata[thread_id] = meta
-        self._save_state()
+        new_project = meta.get("project")
+        if old_project and old_project != new_project:
+            self._save_project_threads(old_project)
+        if new_project:
+            self._save_project_threads(new_project)
+        else:
+            self._save_thread_for_id(thread_id)
         return meta
 
     def list_all_thread_meta(self) -> dict[str, dict[str, Any]]:
@@ -755,12 +948,12 @@ class SessionManager:
         project = self._projects_registry[self._current_project_id]
         project["access"] = access
         project["approval"] = approval
-        self._save_state()
+        self._save_projects()
 
     def update_settings(self, updates: dict[str, Any]) -> dict[str, Any]:
         """Update system settings."""
         self._settings.update(updates)
-        self._save_state()
+        self._save_settings()
         logger.info("Updated system settings: %s", updates)
         return dict(self._settings)
 

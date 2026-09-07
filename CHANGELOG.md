@@ -58,6 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Decoupled State Persistence Architecture**:
+  - Replaced the single monolithic `state.json` with fine-grained decoupled files: `settings.json` for global preferences, `projects.json` for project workspace registries, and `projects/<project_id>/threads.json` for per-project thread metadata.
+  - Introduced atomic writes via temporary files and `os.replace` to prevent corrupted writes or race conditions under concurrency.
+  - Implemented seamless automatic migration from legacy `state.json` on startup with non-destructive archival to `state.json.migrated`.
 - **Default Reasoning Effort Alignment**: Set the system-wide default `reasoning_effort` to `high` across `SessionManager` runtime defaults, WebSocket turn stream fallback routing, and Web Studio frontend initial state / settings reset, ensuring deep reasoning depth by default for complex coding agent workflows.
 
 ### Fixed

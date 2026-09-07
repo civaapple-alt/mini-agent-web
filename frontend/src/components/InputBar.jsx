@@ -35,7 +35,7 @@ const ACCESS_SCOPES = [
 
 const POLICIES = [
   { id: 'interactive', label: '交互批准 (Interactive)', desc: '高风险敏感操作需要显式确认' },
-  { id: 'automatic', label: '自动策略 (Automatic)', desc: '低风险操作自动放行，高风险仍需显式确认' },
+  { id: 'automatic', label: '自动低风险 (Automatic)', desc: '受限只读检查自动放行，高风险或越界操作仍需显式确认' },
 ];
 
 export default function InputBar({

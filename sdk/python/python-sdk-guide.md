@@ -111,7 +111,7 @@ async for envelope in client.stream_turn("Explain quantum computing"):
 ```
 
 ### 4.2 Security Approval Interception (`approval_handler`)
-Sensitive actions (shell execution, workspace file modification, web fetching) trigger an `approval/request` notification from the backend. You can intercept these programmatically:
+Sensitive actions (including shell execution, workspace file modification, and web fetching) trigger an `approval/request` notification from the backend. Under the `automatic` policy, the backend may directly admit a bounded read-only shell inspection when every referenced path stays inside the workspace or a configured read root; writes, dynamic paths, high-risk commands, and outside paths still trigger approval. You can intercept remaining approval requests programmatically:
 
 If `approval_handler` is omitted, the SDK denies approval requests by default.
 Applications that have a human or other trusted decision authority should return

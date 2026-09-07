@@ -59,7 +59,7 @@ asyncio.run(main())
 `policy`（`interactive` / `automatic`）组成。审批响应另行使用
 `grantScope`（`once` / `session` / `project`）请求授权生命周期。
 `full_machine` 只扩大路径范围，不等于 allow-all；Deny、Plan 锁、工具可用性和
-仍需确认的高风险动作继续生效。`automatic` 只允许明确的低风险动作自动通过。
+仍需确认的高风险动作继续生效。`automatic` 只允许明确的低风险动作自动通过；受限、只读且路径位于工作区或配置读取根内的 Shell 检查也可自动放行。
 
 ThreadItem 是 App Server Session history 的读取投影，不是 SDK 的第二个持久化存储。
 每个 JSON-RPC 请求默认有 30 秒 transport timeout；可通过

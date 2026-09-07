@@ -63,6 +63,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Bounded automatic shell inspection**: automatic policy now admits only
+  explicitly read-only shell commands whose referenced paths remain inside the
+  active workspace or configured read roots; writes, dynamic paths, high-risk
+  commands, and outside paths still require explicit approval.
+
 - **Decoupled State Persistence Architecture**:
   - Replaced the single monolithic `state.json` with fine-grained decoupled files: `settings.json` for global preferences, `projects.json` for project workspace registries, and `projects/<project_id>/threads.json` for per-project thread metadata.
   - Introduced atomic writes via temporary files and `os.replace` to prevent corrupted writes or race conditions under concurrency.

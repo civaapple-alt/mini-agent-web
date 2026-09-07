@@ -95,6 +95,7 @@ class SessionManager:
         self._active_turns: dict[str, str] = {}
         self._active_tasks: dict[str, asyncio.Task[Any]] = {}
         self._thread_builtin_tools: dict[str, list[str]] = {}
+        self._thread_continuation_modes: dict[str, str] = {}
 
         # Runtime system settings
         self._settings: dict[str, Any] = {
@@ -185,6 +186,9 @@ class SessionManager:
                                     if not t_meta.get("project"):
                                         t_meta["project"] = pdir.name
                                     self._thread_metadata[tid] = t_meta
+                                    mode = t_meta.get("continuation_mode")
+                                    if mode in ("manual", "continuous"):
+                                        self._thread_continuation_modes[tid] = mode
                     except Exception as err:  # noqa: BLE001
                         logger.warning(
                             "Failed to load threads from %s: %s", t_file, err
@@ -411,7 +415,11 @@ class SessionManager:
             proj["pinned"] = bool(updates["pinned"])
         if "access" in updates and updates["access"] in ("project", "full_machine"):
             proj["access"] = updates["access"]
-        if "policy" in updates and updates["policy"] in ("interactive", "automatic"):
+        if "policy" in updates and updates["policy"] in (
+            "interactive",
+            "automatic",
+            "trusted",
+        ):
             proj["policy"] = updates["policy"]
         if "source_folders" in updates and isinstance(updates["source_folders"], list):
             proj["source_folders"] = updates["source_folders"]
@@ -609,6 +617,22 @@ class SessionManager:
             policy = str(project.get("policy", "interactive"))
             await client.set_world_execution(access=access, policy=policy)
             await client.start_thread(thread_id)
+            continuation_mode = self._thread_continuation_modes.get(
+                thread_id,
+                self._thread_metadata.get(thread_id, {}).get(
+                    "continuation_mode", "manual"
+                ),
+            )
+            if continuation_mode == "continuous":
+                canonical = self.read_project_thread(thread_id, project.get("id", ""))
+                plan_active = bool(
+                    canonical and canonical.get("session", {}).get("plan_active")
+                )
+                await client.update_thread_settings(
+                    mode="plan" if plan_active else "default",
+                    continuation_mode=continuation_mode,
+                    thread_id=thread_id,
+                )
             logger.info(
                 "MiniAgentClient initialized for thread %s: %s v%s",
                 thread_id,
@@ -819,7 +843,9 @@ class SessionManager:
         """Return a bounded cross-project SessionStore view for the sidebar."""
         sessions_by_key: dict[tuple[str, str], dict[str, Any]] = {}
         for project_id in self._projects_registry:
-            project_sessions = self.list_project_sessions(project_id, limit=limit)["data"]
+            project_sessions = self.list_project_sessions(project_id, limit=limit)[
+                "data"
+            ]
             for session in project_sessions:
                 key = (
                     str(session.get("workspace_id") or project_id),
@@ -888,12 +914,23 @@ class SessionManager:
     def set_project_execution(self, access: str, policy: str) -> None:
         if access not in ("project", "full_machine"):
             raise ValueError("invalid access scope")
-        if policy not in ("interactive", "automatic"):
+        if policy not in ("interactive", "automatic", "trusted"):
             raise ValueError("invalid execution policy")
         project = self._projects_registry[self._current_project_id]
         project["access"] = access
         project["policy"] = policy
         self._save_projects()
+
+    def set_thread_continuation(self, thread_id: str, mode: str) -> None:
+        """Persist the explicit loop choice with Thread metadata."""
+        if mode not in ("manual", "continuous"):
+            raise ValueError("invalid continuation mode")
+        self._thread_continuation_modes[thread_id] = mode
+        metadata = self._thread_metadata.get(thread_id)
+        if metadata is not None:
+            metadata["continuation_mode"] = mode
+            metadata["updated_at"] = datetime.now(timezone.utc).isoformat()
+            self._save_thread_for_id(thread_id)
 
     def update_settings(self, updates: dict[str, Any]) -> dict[str, Any]:
         """Update system settings."""

@@ -44,6 +44,8 @@ ItemStatus = Literal["inProgress", "completed", "failed"]
 ItemSortDirection = Literal["asc", "desc"]
 
 CollaborationModeKind = Literal["default", "plan"]
+ContinuationMode = Literal["manual", "continuous"]
+ApprovalPolicy = Literal["interactive", "automatic", "trusted"]
 
 
 @dataclass
@@ -395,6 +397,7 @@ class WorkflowState:
     builtin_tools: list[str] = field(
         default_factory=lambda: list(DEFAULT_BUILTIN_TOOLS)
     )
+    continuation_mode: ContinuationMode = "manual"
     goal: ThreadGoal | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -416,6 +419,8 @@ class WorkflowState:
         return cls(
             collaboration_mode=CollaborationMode.from_dict(mode_data),
             builtin_tools=builtin_tools,
+            continuation_mode=val.get("continuationMode")
+            or val.get("continuation_mode", "manual"),
             goal=goal,
             raw=data,
         )
@@ -427,6 +432,7 @@ class ThreadSettingsResult:
 
     collaboration_mode: CollaborationMode
     builtin_tools: list[str] = field(default_factory=list)
+    continuation_mode: ContinuationMode = "manual"
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -441,6 +447,8 @@ class ThreadSettingsResult:
                 if "builtinTools" in val
                 else val.get("builtin_tools", [])
             ),
+            continuation_mode=val.get("continuationMode")
+            or val.get("continuation_mode", "manual"),
             raw=data,
         )
 

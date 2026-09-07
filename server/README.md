@@ -27,7 +27,7 @@ uv run mini-agent-server-dev
 | `/api/threads` | Thread 列表、创建、读取、分叉、摘要和关闭 |
 | `/api/threads/{thread_id}/attach` | attach 历史/暂停 Session，或报告外部运行锁 |
 | `/api/threads/{thread_id}/items` | 有界 ThreadItem 历史投影 |
-| `/api/threads/{thread_id}/settings` | Thread collaboration mode 和 Builtin tools |
+| `/api/threads/{thread_id}/settings` | Thread collaboration mode、Builtin tools 和显式推进方式 |
 | `/api/threads/{thread_id}/goal` | Thread Goal 的读取、设置和清除 |
 | `/api/agent/*` | Turn、Steer、Interrupt 和审批 HTTP 操作 |
 | `/api/world/*` | World、MCP、Git 和本地工作区探测 |
@@ -42,8 +42,10 @@ Thread、Turn、Goal 和 ThreadItem 的运行时语义来自 App Server；网关
 `interactive` / `automatic` 控制审批策略；`once` / `session` / `project`
 只在审批响应中表达本次 action grant 的生命周期。
 `full_machine` 只表示整机路径范围，不是 allow-all；Deny、Plan 锁、工具可用性和
-仍需人工确认的高风险动作继续由 App Server/Host 执行。Auto Copilot 是
-`Goal + full_machine + automatic` 仍受 Deny、Plan 锁和高风险显式确认约束。
+仍需人工确认的高风险动作继续由 App Server/Host 执行。`trusted` 只放行经过
+完整校验的普通工作区补丁更新；Shell、MCP、删除/移动和外部高风险动作仍需确认。
+Auto Copilot 是 Web Studio 中显式选择的 `trusted + continuous` 运行预设，不由访问范围
+或审批策略隐式推导；活动 Goal 会临时接管自己的里程碑循环。
 
 Project 的主目录和关联目录会在启动 SDK 时分别绑定为主工作区、额外可写根目录或
 只读参考根目录。切换或编辑 Project 会重启并重绑 Host；Web 的 UI 状态只保存

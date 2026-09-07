@@ -31,8 +31,10 @@ from mini_agent.events import (
     parse_event,
 )
 from mini_agent.types import (
+    ApprovalPolicy,
     CollaborationMode,
     CollaborationModeKind,
+    ContinuationMode,
     ItemLifecycleNotification,
     ItemSortDirection,
     ItemStatus,
@@ -70,6 +72,7 @@ __version__ = "0.7.0"
 __all__ = [
     "AgentEvent",
     "AppServerError",
+    "ApprovalPolicy",
     "AssistantReasoningDeltaEvent",
     "AssistantTextDeltaEvent",
     "AsyncMiniAgentClient",
@@ -77,6 +80,7 @@ __all__ = [
     "CollaborationModeKind",
     "ContextCompactionFinishedEvent",
     "ContextCompactionStartedEvent",
+    "ContinuationMode",
     "EventModel",
     "GenericEvent",
     "ItemLifecycleNotification",

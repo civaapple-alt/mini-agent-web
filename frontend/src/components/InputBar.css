@@ -250,6 +250,19 @@ body.theme-cyberpunk .queue-dock-title {
   border-color: var(--border-focus);
 }
 
+.composer-popup-note {
+  padding: 7px 10px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.composer-popup-item-preset {
+  margin-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+}
+
 .queue-item-index {
   flex: 0 0 auto;
   width: 18px;

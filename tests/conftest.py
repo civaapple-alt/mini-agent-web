@@ -104,11 +104,14 @@ def create_mock_client(project_name: str = "test-project") -> AsyncMock:
                 "web_fetch",
             ],
             goal=None,
+            continuation_mode="manual",
             raw={},
         )
     )
 
-    def mock_update_thread_settings(mode, builtin_tools=None, thread_id=None):
+    def mock_update_thread_settings(
+        mode, builtin_tools=None, thread_id=None, continuation_mode=None
+    ):
         tools = (
             builtin_tools
             if builtin_tools is not None
@@ -124,6 +127,7 @@ def create_mock_client(project_name: str = "test-project") -> AsyncMock:
                 "read_image",
                 "web_fetch",
             ],
+            continuation_mode=continuation_mode or "manual",
         )
 
     mock.update_thread_settings = AsyncMock(side_effect=mock_update_thread_settings)

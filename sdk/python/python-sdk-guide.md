@@ -111,7 +111,7 @@ async for envelope in client.stream_turn("Explain quantum computing"):
 ```
 
 ### 4.2 Security Approval Interception (`approval_handler`)
-Sensitive actions (including shell execution, workspace file modification, and web fetching) trigger an `approval/request` notification from the backend. Under the `automatic` policy, the backend may directly admit a bounded read-only shell inspection when every referenced path stays inside the workspace or a configured read root; writes, dynamic paths, high-risk commands, and outside paths still trigger approval. You can intercept remaining approval requests programmatically:
+Sensitive actions (including shell execution, workspace file modification, and web fetching) trigger an `approval/request` notification from the backend. Under the `automatic` policy, the backend may directly admit a bounded read-only shell inspection when every referenced path stays inside the workspace or a configured read root; writes, dynamic paths, high-risk commands, and outside paths still trigger approval. Under the explicit `trusted` policy, a fully validated non-destructive `apply_patch` update may also run directly; deletes, moves, shell mutations, MCP, and other high-risk actions still trigger approval. You can intercept remaining approval requests programmatically:
 
 If `approval_handler` is omitted, the SDK denies approval requests by default.
 Applications that have a human or other trusted decision authority should return
@@ -221,6 +221,12 @@ world_state = await client.get_world_state()
 
 # Access and approval policy are independent Project-owned controls.
 await client.set_world_execution(access="full_machine", policy="interactive")
+
+# Thread loop behavior is a separate explicit setting. Goal Runtime owns its
+# own milestone loop while a Goal is active.
+await client.update_thread_settings(
+    "default", continuation_mode="continuous", thread_id="thread-1"
+)
 
 # Enter read-mostly exploration mode. Plan may use bounded scratch exploration
 # and retain plan.md, but formal Project mutations remain locked.

@@ -69,6 +69,7 @@ export default function App() {
   const [goalState, setGoalState] = useState(null);
   const [accessScope, setAccessScope] = useState('project');
   const [policy, setPolicy] = useState('interactive');
+  const [continuationMode, setContinuationMode] = useState('manual');
   const [userSettings, setUserSettings] = useState({
     access: 'project',
     policy: 'interactive',
@@ -181,6 +182,7 @@ export default function App() {
       const wfState = await api.getWorkflowState(threadId);
       setPlanActive(wfState.collaboration_mode?.mode === 'plan');
       setGoalState(wfState.goal || null);
+      setContinuationMode(wfState.continuation_mode || 'manual');
     } catch (err) {
       console.error('Failed to load workflow state:', err);
     }
@@ -380,6 +382,7 @@ export default function App() {
         setMessages((prev) => aggregateItemLifecycle(prev, data));
       } else if (data.method === 'thread/settings/updated') {
         setPlanActive(notification.collaborationMode?.mode === 'plan');
+        setContinuationMode(notification.continuationMode || 'manual');
       } else if (data.method === 'thread/goal/updated') {
         setGoalState(notification.goal || null);
         setMessages((prev) => appendGoalMessageToMessages(prev, notification.goal));
@@ -803,6 +806,7 @@ export default function App() {
       const res = await api.setCollaborationMode(nextState ? 'plan' : 'default', currentThread);
       const active = res.collaboration_mode?.mode === 'plan';
       setPlanActive(active);
+      setContinuationMode(res.continuation_mode || continuationMode);
       showToast(`Plan Mode 已${active ? '开启 (只读规划)' : '关闭'}`, 'info');
     } catch (err) {
       showToast(`切换 Plan Mode 失败: ${err.message}`, 'error');
@@ -887,6 +891,44 @@ export default function App() {
     }
   };
 
+  const handleUpdateContinuation = async (nextMode) => {
+    try {
+      const res = await api.updateThreadSettings(
+        planActive ? 'plan' : 'default',
+        null,
+        currentThread,
+        nextMode,
+      );
+      setContinuationMode(res.continuation_mode || nextMode);
+      showToast(
+        nextMode === 'continuous'
+          ? '已开启连续执行；普通 Chat 不再受 8 步上限限制'
+          : '已切回有界单轮执行（默认 8 步）',
+        'info',
+      );
+    } catch (err) {
+      showToast(`更新推进方式失败: ${err.message}`, 'error');
+    }
+  };
+
+  const handleEnableAutoCopilot = async () => {
+    try {
+      await api.setWorldExecution(accessScope, 'trusted');
+      const res = await api.updateThreadSettings(
+        planActive ? 'plan' : 'default',
+        null,
+        currentThread,
+        'continuous',
+      );
+      setPolicy('trusted');
+      setUserSettings((prev) => ({ ...prev, policy: 'trusted' }));
+      setContinuationMode(res.continuation_mode || 'continuous');
+      showToast('Auto Copilot 已显式开启：连续执行 + 信任执行，高风险仍需确认', 'success');
+    } catch (err) {
+      showToast(`开启 Auto Copilot 失败: ${err.message}`, 'error');
+    }
+  };
+
   return (
     <div className="app-container">
       <Header
@@ -956,9 +998,13 @@ export default function App() {
             isGenerating={isGenerating}
             accessScope={accessScope}
             policy={policy}
+            continuationMode={continuationMode}
+            goalState={goalState}
             pendingApproval={pendingApproval}
             onRespondApproval={handleRespondApproval}
             onChangeExecution={handleUpdateExecution}
+            onChangeContinuation={handleUpdateContinuation}
+            onEnableAutoCopilot={handleEnableAutoCopilot}
             onStartGoal={handleStartGoal}
             onSendMessage={handleSendMessage}
             onQueueMessage={handleQueueMessage}

@@ -165,19 +165,21 @@ export const api = {
     return res.json();
   },
 
-  async updateThreadSettings(mode, builtinTools = null, threadId = 'default') {
+  async updateThreadSettings(mode, builtinTools = null, threadId = 'default', continuationMode = null) {
     const targetThread = threadId || 'default';
+    const payload = { mode, builtin_tools: builtinTools };
+    if (continuationMode) payload.continuation_mode = continuationMode;
     const res = await fetch(`${API_BASE}/api/threads/${encodeURIComponent(targetThread)}/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode, builtin_tools: builtinTools }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error('Failed to update thread settings');
     return res.json();
   },
 
-  async setCollaborationMode(mode, threadId = null) {
-    return this.updateThreadSettings(mode, null, threadId);
+  async setCollaborationMode(mode, threadId = null, continuationMode = null) {
+    return this.updateThreadSettings(mode, null, threadId, continuationMode);
   },
 
   async setGoal(objective, tokenBudget = null, status = null, threadId = 'default') {

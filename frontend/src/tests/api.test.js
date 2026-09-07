@@ -59,6 +59,10 @@ test('api client methods construct expected fetch endpoints and payloads', async
     policy: 'automatic',
   });
 
+  await api.setWorldExecution('project', 'trusted');
+  const trustedExecutionCall = calls[calls.length - 1];
+  assert.equal(JSON.parse(trustedExecutionCall.options.body).policy, 'trusted');
+
   // 2b. Thread settings and Goal Runtime APIs
   await api.setCollaborationMode('plan');
   const settingsCall = calls[calls.length - 1];
@@ -73,6 +77,10 @@ test('api client methods construct expected fetch endpoints and payloads', async
     'shell',
   ]);
   assert.equal(JSON.parse(toolSettingsCall.options.body).thread_id, undefined);
+
+  await api.updateThreadSettings('default', null, 't-123', 'continuous');
+  const continuationCall = calls[calls.length - 1];
+  assert.equal(JSON.parse(continuationCall.options.body).continuation_mode, 'continuous');
 
   await api.setGoal('Ship the next release', 4096);
   const goalCall = calls[calls.length - 1];

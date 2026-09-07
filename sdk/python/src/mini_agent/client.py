@@ -919,11 +919,17 @@ class MiniAgentClient:
                 else CollaborationMode()
             ),
             builtin_tools=builtin_tools,
+            continuation_mode=(
+                settings.continuation_mode if settings is not None else "manual"
+            ),
             goal=goal.goal,
             raw={
                 "value": {
                     "collaborationMode": {"mode": mode},
                     "builtinTools": builtin_tools,
+                    "continuationMode": (
+                        settings.continuation_mode if settings else "manual"
+                    ),
                     "goal": goal.goal.raw if goal.goal else None,
                 }
             },
@@ -934,6 +940,7 @@ class MiniAgentClient:
         mode: CollaborationModeKind,
         builtin_tools: list[str] | None = None,
         thread_id: str | None = None,
+        continuation_mode: str | None = None,
     ) -> ThreadSettingsResult:
         """Update Thread collaboration mode and optional Builtin selection."""
         params: dict[str, Any] = {
@@ -942,6 +949,10 @@ class MiniAgentClient:
         }
         if builtin_tools is not None:
             params["builtinTools"] = builtin_tools
+        if continuation_mode is not None:
+            if continuation_mode not in ("manual", "continuous"):
+                raise ValueError("continuation_mode must be manual or continuous")
+            params["continuationMode"] = continuation_mode
         res = await self._send_request(
             "thread/settings/update",
             params,
@@ -1044,8 +1055,8 @@ class MiniAgentClient:
         """Set independent access and approval policy."""
         if access not in ("project", "full_machine"):
             raise ValueError("access must be project or full_machine")
-        if policy not in ("interactive", "automatic"):
-            raise ValueError("policy must be interactive or automatic")
+        if policy not in ("interactive", "automatic", "trusted"):
+            raise ValueError("policy must be interactive, automatic, or trusted")
         self._access_scope = access
         self._policy = policy
         res = await self._send_request(

@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Decoupled Approval Policy & Multi-Scope Action Grants**:
-  - Added `automatic` (Auto Copilot) global approval mode across SDK, Server (`/world/execution`), TUI (`/approval automatic`), and Web Studio settings dropdown, automatically allowing safe tool invocations without repetitive modal interruptions.
+  - Added the explicit `trusted` approval policy across SDK, Server (`/world/execution`), and Web Studio. It directly admits only fully validated non-destructive workspace patches; high-risk, destructive, Shell, and MCP actions still require approval.
+  - Kept `automatic` as bounded low-risk admission. Auto Copilot is now an explicit Web Studio preset that combines `trusted` with the separate `continuous` Thread continuation mode; it is not inferred from access scope or approval policy.
   - Implemented session-level (`current_session`) and project-level (`current_project`) dynamic approval grant caches in `SessionManager`, resolving the issue where previously granted actions re-intercepted within the same session.
   - Upgraded the Composer Approval Dock to offer fine-grained choices: Allow Once, Remember for Session, and Remember for Project. It is the single actionable approval surface; tool cards only project the pending status.
 
@@ -33,8 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Project execution control plane**: aligned SDK, Gateway, Studio, and TUI on
   independent Project access (`project` / `full_machine`) and approval lifetime
   (`per_action` / `current_session` / `current_project`). `full_machine` is
-  machine-wide path access, not global allow-all; Auto Copilot is the explicit
-  `Goal + full_machine + current_project` composition.
+  machine-wide path access, not global allow-all; Auto Copilot is an explicit
+  run preset, not a hidden access/policy composition.
 - **Canonical Project workspace binding**: passes the active primary directory,
   editable associated roots, and reference-only roots into the App Server runtime;
   Web state no longer persists duplicate thread checkpoints or approval grants.

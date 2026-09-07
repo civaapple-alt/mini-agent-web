@@ -35,8 +35,9 @@ class SetExecutionRequest(BaseModel):
     access: Literal["project", "full_machine"] = Field(
         default="project", description="Project-scoped or machine-wide access"
     )
-    policy: Literal["interactive", "automatic"] = Field(
-        default="interactive", description="Interactive approval or bounded automation"
+    policy: Literal["interactive", "automatic", "trusted"] = Field(
+        default="interactive",
+        description="Interactive approval, bounded automation, or trusted workspace execution",
     )
 
 
@@ -47,6 +48,10 @@ class UpdateThreadSettingsRequest(BaseModel):
     builtin_tools: list[str] | None = Field(
         default=None,
         description="Optional bounded Builtin tool selection for this Thread",
+    )
+    continuation_mode: Literal["manual", "continuous"] | None = Field(
+        default=None,
+        description="Bounded one-turn execution or explicit continuous execution",
     )
 
 
@@ -85,7 +90,7 @@ class UpdateProjectRequest(BaseModel):
     access: Literal["project", "full_machine"] | None = Field(
         default=None, description="Project access scope"
     )
-    policy: Literal["interactive", "automatic"] | None = Field(
+    policy: Literal["interactive", "automatic", "trusted"] | None = Field(
         default=None, description="Project execution policy"
     )
 
@@ -353,11 +358,18 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
             effective_builtin_tools = session_manager._thread_builtin_tools.get(
                 target_thread, DEFAULT_BUILTIN_TOOLS
             )
+            continuation_mode = session_manager._thread_continuation_modes.get(
+                target_thread,
+                session_manager._thread_metadata.get(target_thread, {}).get(
+                    "continuation_mode", "manual"
+                ),
+            )
             return {
                 "collaboration_mode": {
                     "mode": "plan" if session.get("plan_active") else "default"
                 },
                 "builtin_tools": effective_builtin_tools,
+                "continuation_mode": continuation_mode,
                 "available_builtin_tools": ALL_BUILTIN_TOOLS,
                 "goal": goal_dict,
                 "source": "session_store",
@@ -398,6 +410,7 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
         return {
             "collaboration_mode": {"mode": wf.collaboration_mode.mode},
             "builtin_tools": effective_builtin_tools,
+            "continuation_mode": wf.continuation_mode,
             "available_builtin_tools": ALL_BUILTIN_TOOLS,
             "goal": goal_dict,
         }
@@ -416,11 +429,14 @@ async def update_thread_settings(
             mode=req.mode,
             builtin_tools=req.builtin_tools,
             thread_id=thread_id,
+            continuation_mode=req.continuation_mode,
         )
         session_manager._thread_builtin_tools[thread_id] = res.builtin_tools
+        session_manager.set_thread_continuation(thread_id, res.continuation_mode)
         return {
             "collaboration_mode": {"mode": res.collaboration_mode.mode},
             "builtin_tools": res.builtin_tools,
+            "continuation_mode": res.continuation_mode,
             "available_builtin_tools": ALL_BUILTIN_TOOLS,
         }
     except AppServerError as err:

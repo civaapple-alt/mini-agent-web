@@ -205,6 +205,7 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
             "turn_id": "turn-1",
             "status": "step_limit",
             "steps": 8,
+            "error": "model request failed: transport error",
         },
         {
             "seq": 6,
@@ -248,12 +249,16 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     assert listed["data"][0]["locked_by"] is None
     assert listed["data"][0]["last_turn_status"] == "step_limit"
     assert listed["data"][0]["last_stop_reason"] == "step_limit"
+    assert listed["data"][0]["last_turn_error"] == "model request failed: transport error"
+    assert listed["data"][0]["last_turn_id"] == "turn-1"
     assert listed["data"][0]["last_turn_steps"] == 8
     assert listed["data"][0]["last_turn_complete"] is False
     history = catalog.read_thread(workspace, "project-1", "t-1")
     assert history["messages"][0]["text"] == "inspect project"
     assert history["items"][0]["item"]["type"] == "userMessage"
     assert history["last_turn_status"] == "step_limit"
+    assert history["last_turn_error"] == "model request failed: transport error"
+    assert history["last_turn_id"] == "turn-1"
 
 
 def test_session_catalog_keeps_user_paused_state_after_lock_release(

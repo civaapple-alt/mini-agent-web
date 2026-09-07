@@ -61,6 +61,8 @@
 
 网关现在会把流式 Turn 异常作为终态事件发送，Studio 会清理生成中、活动 Turn 和待审批状态。如果使用旧版本在纠偏期间中断过 Turn，导致历史中残留未结算的工具调用，请重启绑定该项目的 App Server 后重新发送；Core 会在恢复或下一轮开始前修复这类历史。若 Session 仍被其他进程持有，先等待该进程结束，再重新 attach。
 
+`run_failed` 和 `run_finished` 是运行级诊断事件，`turn_finished` 才是本轮持久化后的权威终态。模型请求、传输或上下文错误会从已结算的 Session 回读并显示在状态条中；因此“本轮执行失败”不再等同于步数上限。若需要判断是谁发起了中断，查看浏览器控制台的 `[Studio][turn-control]` 记录，以及网关日志中的 `source` 字段（例如 `composer-stop`、`clear-chat` 或 `queue-steer`）。
+
 ---
 
 ## 4. 大模型调用凭证丢失或鉴权失败 (401 Unauthorized)

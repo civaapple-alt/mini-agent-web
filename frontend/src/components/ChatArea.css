@@ -105,6 +105,11 @@
   color: #b45309;
 }
 
+.turn-error-detail {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
 .message-row {
   display: flex;
   gap: 12px;

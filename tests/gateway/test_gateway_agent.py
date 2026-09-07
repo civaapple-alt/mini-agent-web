@@ -306,6 +306,7 @@ def test_gateway_websocket_steer_interrupt_actions(agent_test_app):
                 "turnId": "turn-ws-1",
                 "text": "redirect to test",
                 "threadId": "default",
+                "source": "test-steer",
             }
         )
         ack = ws.receive_json()
@@ -318,11 +319,14 @@ def test_gateway_websocket_steer_interrupt_actions(agent_test_app):
                 "action": "interrupt",
                 "turnId": "turn-ws-1",
                 "threadId": "default",
+                "source": "test-stop",
             }
         )
         ack_int = ws.receive_json()
         assert ack_int.get("type") == "interrupt_ack"
         assert ack_int.get("turnId") == "turn-ws-1"
+        assert ack_int.get("threadId") == "default"
+        assert ack_int.get("source") == "test-stop"
 
         # 3. Steer with no active turn returns error
         ws.send_json({"action": "steer", "text": "nowhere", "threadId": "default"})

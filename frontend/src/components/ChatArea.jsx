@@ -110,14 +110,23 @@ export default function ChatArea({
           <strong>
             {lastTurnResult.status === 'step_limit'
               ? '本轮达到运行步数上限'
+              : lastTurnResult.status === 'failed'
+                ? '本轮执行失败'
               : lastTurnResult.status === 'cancelled' || lastTurnResult.status === 'interrupted'
                 ? '本轮已中断'
+                : lastTurnResult.status === 'unknown'
+                  ? '本轮状态未知'
                 : '本轮未完整结束'}
           </strong>
           <span>
             {lastTurnResult.steps
               ? `已执行 ${lastTurnResult.steps} 步。`
               : '已保留当前检查点。'}
+            {lastTurnResult.error && (
+              <span className="turn-error-detail" title={lastTurnResult.error}>
+                {' '}原因：{lastTurnResult.error}
+              </span>
+            )}
             {' '}当前回答可能不完整，可以继续发送指令。
           </span>
         </div>

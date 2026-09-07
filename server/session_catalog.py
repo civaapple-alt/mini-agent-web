@@ -20,6 +20,7 @@ from urllib.parse import quote
 MAX_SESSIONS = 128
 MAX_SESSION_BYTES = 8 * 1024 * 1024
 MAX_RECORD_BYTES = 64 * 1024
+MAX_ERROR_CHARS = 2048
 THREAD_INDEX_FILE_NAME = "thread_index.json"
 
 
@@ -69,6 +70,14 @@ def _bounded_int(value: Any) -> int:
     if isinstance(value, (int, float)):
         return max(0, int(value))
     return 0
+
+
+def _bounded_text(value: Any, limit: int = MAX_ERROR_CHARS) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    if len(value) <= limit:
+        return value
+    return f"{value[:limit]}…"
 
 
 def _process_alive(pid: int) -> bool:
@@ -277,6 +286,8 @@ class SessionCatalog:
             "status": "running" if entry["runtime_status"] == "running" else "idle",
             "last_turn_status": entry.get("last_turn_status"),
             "last_stop_reason": entry.get("last_stop_reason"),
+            "last_turn_error": entry.get("last_turn_error"),
+            "last_turn_id": entry.get("last_turn_id"),
             "last_turn_steps": entry.get("last_turn_steps", 0),
             "last_turn_complete": entry.get("last_turn_complete", False),
             "next_turn_number": entry["turn_count"] + 1,
@@ -312,6 +323,7 @@ class SessionCatalog:
         latest_turn_id = None
         latest_turn_status: str | None = None
         latest_stop_reason: str | None = None
+        latest_turn_error: str | None = None
         latest_turn_steps = 0
         latest_turn_settled = False
         latest_turn_timestamp = 0
@@ -325,6 +337,7 @@ class SessionCatalog:
                 latest_turn_id = record.get("turn_id")
                 latest_turn_status = None
                 latest_stop_reason = None
+                latest_turn_error = None
                 latest_turn_steps = 0
                 latest_turn_settled = False
             elif kind == "turn_settled":
@@ -333,6 +346,7 @@ class SessionCatalog:
                     latest_stop_reason = str(
                         record.get("stop_reason") or latest_turn_status
                     )
+                    latest_turn_error = _bounded_text(record.get("error"))
                     latest_turn_steps = _bounded_int(record.get("steps"))
                     latest_turn_settled = True
                     latest_turn_timestamp = _bounded_int(record.get("timestamp_ms"))
@@ -368,10 +382,12 @@ class SessionCatalog:
         if latest_turn_id and not latest_turn_settled:
             last_turn_status = "in_progress"
             last_stop_reason = None
+            last_turn_error = None
             last_turn_complete = False
         else:
             last_turn_status = latest_turn_status or summary.get("last_status")
             last_stop_reason = latest_stop_reason or summary.get("last_stop_reason")
+            last_turn_error = latest_turn_error
             last_turn_complete = last_turn_status == "completed"
         workspace_id = hashlib.sha256(str(path.parent).encode("utf-8")).hexdigest()[:16]
         entry: dict[str, Any] = {
@@ -402,6 +418,8 @@ class SessionCatalog:
             "turn_count": _bounded_int(summary.get("turn_count")) or turn_count,
             "last_turn_status": last_turn_status,
             "last_stop_reason": last_stop_reason,
+            "last_turn_error": last_turn_error,
+            "last_turn_id": latest_turn_id,
             "last_turn_steps": latest_turn_steps
             if latest_turn_settled
             else _bounded_int(summary.get("last_steps")),

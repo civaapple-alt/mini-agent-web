@@ -309,6 +309,13 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     thread_id
                 )
                 text = data.get("text", "")
+                source = data.get("source") or "unknown"
+                logger.info(
+                    "Steer requested for thread %s, turn %s source=%s",
+                    thread_id,
+                    turn_id,
+                    source,
+                )
                 if turn_id:
                     # Steering can wait for the App Server to accept the
                     # action. Keep it off the receive loop so an approval
@@ -329,8 +336,12 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 turn_id = data.get("turnId") or session_manager.get_active_turn(
                     thread_id
                 )
+                source = data.get("source") or "unknown"
                 logger.info(
-                    "Interrupt requested for thread %s, turn %s", thread_id, turn_id
+                    "Interrupt requested for thread %s, turn %s source=%s",
+                    thread_id,
+                    turn_id,
+                    source,
                 )
 
                 # 1. Cancel background stream task
@@ -345,7 +356,14 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     )
 
                 # Send immediate interrupt ack to client (stream CancelledError will emit turn_finished)
-                await websocket.send_json({"type": "interrupt_ack", "turnId": turn_id})
+                await websocket.send_json(
+                    {
+                        "type": "interrupt_ack",
+                        "threadId": thread_id,
+                        "turnId": turn_id,
+                        "source": source,
+                    }
+                )
 
             elif action == "approval_response":
                 req_id = data.get("requestId", "")

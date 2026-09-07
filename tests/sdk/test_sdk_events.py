@@ -17,6 +17,7 @@ from mini_agent import (
     ThreadItem,
     ToolFinishedEvent,
     TurnFinishedEvent,
+    TurnReadResult,
     TurnSubmissionResult,
     parse_event,
 )
@@ -227,6 +228,54 @@ async def test_stream_turn_preserves_step_limit_as_non_completed():
     assert finished["event"]["status"] == "step_limit"
     with pytest.raises(StopAsyncIteration):
         await anext(stream)
+
+
+@pytest.mark.asyncio
+async def test_stream_turn_waits_for_settlement_after_run_failed():
+    client = MiniAgentClient()
+
+    async def fake_start_turn(prompt, mode="start", thread_id=None):
+        return TurnSubmissionResult(status="started", turn_id="turn-failed")
+
+    async def fake_read_turn(turn_id):
+        return TurnReadResult(
+            turn_id=turn_id,
+            status="failed",
+            stop_reason="failed",
+            error="model request failed: transport error",
+        )
+
+    client.start_turn = fake_start_turn
+    client.read_turn = fake_read_turn
+    stream = client.stream_turn("inspect", thread_id="thread-1")
+    await anext(stream)
+
+    await client._event_queues[0].put(
+        {
+            "threadId": "thread-1",
+            "turnId": "turn-failed",
+            "event": {
+                "type": "run_failed",
+                "reason": {"type": "model"},
+            },
+        }
+    )
+    await client._event_queues[0].put(
+        {
+            "threadId": "thread-1",
+            "turnId": "turn-failed",
+            "event": {"type": "turn_finished", "status": "failed"},
+        }
+    )
+
+    failed = await anext(stream)
+    finished = await anext(stream)
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+
+    assert failed["event"]["status"] == "failed"
+    assert failed["event"]["error"] == "model request failed: transport error"
+    assert finished["event"] == {"type": "turn_finished", "status": "failed"}
 
 
 def test_thread_item_lifecycle_and_list_projection_parse_camel_case_wire_shape():

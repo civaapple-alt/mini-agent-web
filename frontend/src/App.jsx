@@ -30,6 +30,18 @@ function normalizeInputPayload(inputPayload) {
   return { prompt: '', images: [], referencedFiles: [] };
 }
 
+function formatRunFailure(reason) {
+  if (!reason) return '运行时失败';
+  if (typeof reason === 'string') return reason;
+  if (reason.type === 'model') return '模型请求失败';
+  if (reason.type === 'compaction') return '上下文压缩失败';
+  if (reason.type === 'limit_exceeded') {
+    const detail = reason.detail || {};
+    return detail.kind ? `达到运行限制（${detail.kind}）` : '达到上下文或输入限制';
+  }
+  return reason.type ? `运行时失败（${reason.type}）` : '运行时失败';
+}
+
 export default function App() {
   const [threads, setThreads] = useState([]);
   const [currentThread, setCurrentThread] = useState('default');
@@ -192,6 +204,8 @@ export default function App() {
           status: persistedTurn,
           stopReason: cp.last_stop_reason || cp.session?.last_stop_reason || null,
           steps: cp.last_turn_steps || cp.session?.last_turn_steps || 0,
+          turnId: cp.last_turn_id || cp.session?.last_turn_id || null,
+          error: cp.last_turn_error || cp.session?.last_turn_error || null,
         });
       } else {
         setLastTurnResult(null);
@@ -227,6 +241,20 @@ export default function App() {
     }
   };
 
+  function loadTurnFailureDetails(threadId, turnId) {
+    return api.readThread(threadId).then((checkpoint) => {
+      const lastTurnId = checkpoint.last_turn_id || checkpoint.session?.last_turn_id;
+      const error = checkpoint.last_turn_error || checkpoint.session?.last_turn_error;
+      if (!error || currentThreadRef.current !== threadId) return;
+      if (turnId && lastTurnId && lastTurnId !== turnId) return;
+      setLastTurnResult((previous) => (previous
+        ? { ...previous, turnId: previous.turnId || lastTurnId || turnId, error }
+        : previous));
+    }).catch((err) => {
+      console.debug('Failed to load turn failure details:', err);
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // WebSocket Message / Event Dispatcher
   // ---------------------------------------------------------------------------
@@ -238,7 +266,7 @@ export default function App() {
     if (!shouldAcceptEventForThread(data, currentThreadRef.current)) {
       if (data.type === 'event') {
         const evtType = data.event?.type;
-        if (evtType === 'turn_finished' || evtType === 'run_failed') {
+        if (evtType === 'turn_finished' || evtType === 'run_finished' || evtType === 'run_failed') {
           loadThreads();
         }
       }
@@ -259,8 +287,12 @@ export default function App() {
     }
 
     if (data.type === 'interrupt_ack') {
-      setIsGenerating(false);
-      setActiveTurnId(null);
+      console.info('[Studio][turn-control]', {
+        action: 'interrupt-ack',
+        source: data.source || 'gateway',
+        threadId: data.threadId || currentThreadRef.current,
+        turnId: data.turnId || null,
+      });
       return;
     }
 
@@ -270,8 +302,22 @@ export default function App() {
     }
 
     if (data.type === 'error') {
+      console.warn('[Studio][turn-control]', {
+        action: 'gateway-error',
+        source: data.source || data.scope || 'gateway',
+        threadId: data.threadId || currentThreadRef.current,
+        turnId: data.turnId || activeTurnId || null,
+        message: data.message || '操作异常',
+      });
       showToast(`⚠️ ${data.message || '操作异常'}`, 'error', 4000);
       if (data.terminal && data.scope === 'turn') {
+        setLastTurnResult({
+          status: data.status || 'failed',
+          stopReason: data.stopReason || data.stop_reason || 'failed',
+          steps: data.steps || 0,
+          turnId: data.turnId || activeTurnId || null,
+          error: data.message || '网关/运行时错误',
+        });
         queueDispatchingRef.current = false;
         interruptPendingRef.current = false;
         setIsGenerating(false);
@@ -328,23 +374,40 @@ export default function App() {
       const evt = data.event || {};
       if (evt.type === 'turn_started') {
         setIsGenerating(true);
-      } else if (
-        evt.type === 'turn_finished' ||
-        evt.type === 'run_finished' ||
-        evt.type === 'run_failed'
-      ) {
+      } else if (evt.type === 'run_failed') {
+        // RunFailed is diagnostic only. The durable turn_finished event below
+        // is the lifecycle boundary and owns generating/queue settlement.
+        setLastTurnResult((previous) => ({
+          status: 'failed',
+          stopReason: evt.stop_reason || evt.status || previous?.stopReason || 'failed',
+          steps: evt.steps ?? previous?.steps ?? 0,
+          turnId: data.turnId || previous?.turnId || null,
+          error: evt.error || previous?.error || formatRunFailure(evt.reason),
+        }));
+      } else if (evt.type === 'run_finished') {
+        // Preserve this run-level diagnostic until turn_finished supplies the
+        // authoritative TurnStatus and any persisted error detail.
+        const diagnosticStatus = evt.stop_reason || evt.status || 'unknown';
+        setLastTurnResult((previous) => ({
+          status: diagnosticStatus,
+          stopReason: diagnosticStatus,
+          steps: evt.steps ?? previous?.steps ?? 0,
+          turnId: data.turnId || previous?.turnId || null,
+          error: evt.error || previous?.error || null,
+        }));
+      } else if (evt.type === 'turn_finished') {
         const turnStatus = evt.status || evt.stop_reason || 'unknown';
         if (turnStatus === 'steered') {
-          if (evt.type === 'turn_finished') {
-            showToast('✓ 纠偏已生效，正在应用新指令继续生成...', 'info', 2500);
-          }
+          showToast('✓ 纠偏已生效，正在应用新指令继续生成...', 'info', 2500);
         } else {
           if (turnStatus !== 'completed') {
-            setLastTurnResult({
+            setLastTurnResult((previous) => ({
               status: turnStatus,
-              stopReason: evt.stop_reason || evt.status || null,
-              steps: evt.steps || 0,
-            });
+              stopReason: evt.stop_reason || evt.status || previous?.stopReason || null,
+              steps: evt.steps ?? previous?.steps ?? 0,
+              turnId: data.turnId || previous?.turnId || null,
+              error: evt.error || previous?.error || null,
+            }));
           } else {
             setLastTurnResult(null);
           }
@@ -352,6 +415,9 @@ export default function App() {
           setActiveTurnId(null);
           interruptPendingRef.current = false;
           loadThreads();
+          if (turnStatus === 'failed') {
+            loadTurnFailureDetails(currentThreadRef.current, data.turnId);
+          }
         }
       }
       setMessages((prev) => aggregateStreamEvent(prev, data));
@@ -437,7 +503,7 @@ export default function App() {
 
   const handleSteerQueuedMessage = (item) => {
     setPendingMessages((prev) => prev.filter((queued) => queued.id !== item.id));
-    handleSteerMessage(item);
+    handleSteerMessage(item, 'queue-steer');
   };
 
   useEffect(() => {
@@ -455,7 +521,7 @@ export default function App() {
 
   const handleClearChat = () => {
     if (isGenerating) {
-      handleInterrupt();
+      handleInterrupt('clear-chat');
     }
     setMessages([]);
     showToast('已清空当前会话界面消息', 'info', 1800);
@@ -493,7 +559,7 @@ export default function App() {
     }
   };
 
-  const handleSteerMessage = (text) => {
+  const handleSteerMessage = (text, source = 'direct-steer') => {
     const { prompt: promptText, images, referencedFiles } = normalizeInputPayload(text);
     if (!promptText.trim() && images.length === 0) return;
 
@@ -517,26 +583,46 @@ export default function App() {
 
     // 2. Transmit steer action over WebSocket
     if (wsRef.current) {
-      wsRef.current.send({
+      const payload = {
         action: 'steer',
         turnId: activeTurnId,
         text: promptText,
         threadId: currentThread,
+        source,
+      };
+      const sent = wsRef.current.send(payload);
+      console.info('[Studio][turn-control]', {
+        action: 'steer',
+        source,
+        threadId: currentThread,
+        turnId: activeTurnId,
+        sent,
+        hasAttachments: images.length > 0,
       });
       showToast('已发送实时纠偏指令 (Steer)', 'info', 2000);
     }
   };
 
-  const handleInterrupt = () => {
+  const handleInterrupt = (source = 'composer-stop') => {
+    const turnId = activeTurnId;
     interruptPendingRef.current = true;
     setIsGenerating(false);
+    let sent = false;
     if (wsRef.current) {
-      wsRef.current.send({
+      sent = wsRef.current.send({
         action: 'interrupt',
-        turnId: activeTurnId,
+        turnId,
         threadId: currentThread,
+        source,
       });
     }
+    console.info('[Studio][turn-control]', {
+      action: 'interrupt',
+      source,
+      threadId: currentThread,
+      turnId,
+      sent,
+    });
     setActiveTurnId(null);
     showToast('已发送停止生成请求', 'info', 1800);
     setMessages((prev) => {

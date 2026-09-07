@@ -847,6 +847,27 @@ class MiniAgentClient:
                 event_dict = envelope.get("event", {})
                 sequence = envelope.get("sequence", 0)
                 item_dicts = envelope.get("items", [])
+                event_type = event_dict.get("type")
+                if event_type == "run_failed" and active_turn_id:
+                    # RunFailed is a diagnostic emitted before the App Server
+                    # persists the authoritative turn settlement. Wait for
+                    # that settlement so consumers can see the real provider
+                    # or context-limit error and still receive turn_finished.
+                    try:
+                        settled = await self.wait_for_turn(active_turn_id)
+                        event_dict = {
+                            **event_dict,
+                            "status": settled.status,
+                            "stop_reason": settled.stop_reason or settled.status,
+                            "steps": settled.steps,
+                            "error": settled.error,
+                        }
+                    except Exception as err:  # noqa: BLE001
+                        logger.warning(
+                            "Failed to enrich run_failed for turn %s: %s",
+                            active_turn_id,
+                            err,
+                        )
                 typed_items = [ThreadItem.from_dict(item) for item in item_dicts]
 
                 yield {
@@ -860,7 +881,6 @@ class MiniAgentClient:
                     "typed_event": parse_event(event_dict),
                 }
 
-                event_type = event_dict.get("type")
                 # turn_finished carries the durable TurnStatus, while
                 # run_finished carries the Core StopReason. Normalize both so
                 # callers do not mistake a step-limited turn for completion.
@@ -872,7 +892,8 @@ class MiniAgentClient:
                         continue
                     break
                 elif event_type == "run_failed":
-                    break
+                    # The following turn_finished is the lifecycle boundary.
+                    continue
         finally:
             self._event_queues.remove(queue)
 

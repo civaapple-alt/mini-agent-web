@@ -117,6 +117,8 @@ async def list_threads(
                         "resumable": catalog_entry["resumable"],
                         "last_turn_status": catalog_entry.get("last_turn_status"),
                         "last_stop_reason": catalog_entry.get("last_stop_reason"),
+                        "last_turn_error": catalog_entry.get("last_turn_error"),
+                        "last_turn_id": catalog_entry.get("last_turn_id"),
                         "last_turn_steps": catalog_entry.get("last_turn_steps", 0),
                         "last_turn_complete": catalog_entry.get(
                             "last_turn_complete", False

@@ -76,6 +76,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Authoritative turn outcome and failure diagnostics**: SDK streaming now
+  waits for the durable `turn_finished` after `run_failed`; Web Studio
+  distinguishes run diagnostics from terminal settlement and displays bounded
+  provider/context errors instead of a generic incomplete message. Interrupt
+  and steering requests now carry and log their UI source.
 - **Duplicate Web Studio Approval Controls**: Removed the second actionable approval strip from `ToolCard`; each pending approval now has one canonical action area in the fixed Composer Approval Dock.
 - **Approval/Steering Terminal State**: Kept approval responses readable while steering is pending, flushed queued App Server responses when stdin closes during initialization, and marked gateway stream failures as terminal so Web Studio cannot remain stuck in `运行中` after a failed turn.
 

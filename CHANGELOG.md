@@ -64,6 +64,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Canonical Thread continuation projection**: moved `manual` / `continuous`
+  persistence to the App Server SessionStore `thread_settings.json` sidecar;
+  SessionCatalog reads the bounded projection and Gateway no longer stores a
+  duplicate continuation cache or writes Thread settings metadata.
+
 - **Bounded automatic shell inspection**: automatic policy now admits only
   explicitly read-only shell commands whose referenced paths remain inside the
   active workspace or configured read roots; writes, dynamic paths, high-risk
@@ -77,9 +82,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Goal-owned continuation restoration**: defer the persisted Web `continuous`
-  preference while an active Goal owns the loop, restore it after Goal settlement,
-  and avoid overwriting the preference when an unrelated Thread setting changes.
+- **Goal-owned continuation restoration**: defer the canonical SessionStore
+  `continuous` preference while an active Goal owns the loop, restore it after
+  Goal settlement, and avoid overwriting it when an unrelated Thread setting
+  changes.
 
 - **Authoritative turn outcome and failure diagnostics**: SDK streaming now
   waits for the durable `turn_finished` after `run_failed`; Web Studio

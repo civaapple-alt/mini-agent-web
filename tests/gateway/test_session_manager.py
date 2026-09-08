@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from server.session_catalog import SessionCatalog, _session_base
+from server.session_catalog import SessionCatalog
 from server.session_manager import SessionManager
 
 
@@ -142,17 +142,17 @@ async def test_continuation_preference_waits_for_goal_runtime_to_settle(
     mock_session_manager, monkeypatch
 ):
     """An active Goal owns execution; the Web preference resumes afterward."""
-    mock_session_manager._thread_continuation_modes["goal-thread"] = "continuous"
     canonical = {
         "session": {
             "goal": {"status": "active"},
             "plan_active": False,
+            "continuation_mode": "continuous",
         }
     }
     monkeypatch.setattr(
         mock_session_manager,
-        "read_project_thread",
-        lambda thread_id, project_id=None: canonical,
+        "read_any_project_thread",
+        lambda thread_id: canonical,
     )
     client = AsyncMock()
 
@@ -181,11 +181,15 @@ async def test_goal_settlement_notification_restores_continuous_preference(
     mock_session_manager, monkeypatch
 ):
     """A settled Goal releases the runtime and restores the Web preference."""
-    mock_session_manager._thread_continuation_modes["goal-thread"] = "continuous"
     monkeypatch.setattr(
         mock_session_manager,
-        "read_project_thread",
-        lambda thread_id, project_id=None: {"session": {"plan_active": False}},
+        "read_any_project_thread",
+        lambda thread_id: {
+            "session": {
+                "plan_active": False,
+                "continuation_mode": "continuous",
+            }
+        },
     )
     client = AsyncMock()
     mock_session_manager._clients["goal-thread"] = client
@@ -237,11 +241,11 @@ def test_session_manager_thread_metadata_management(mock_session_manager):
 
 def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monkeypatch):
     """Project history is projected from SessionStore summary/checkpoint files."""
-    home = tmp_path / "home"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    monkeypatch.setenv("USERPROFILE", str(home))
-    session_dir = _session_base(workspace) / "s-1"
+    session_base = tmp_path / "sessions"
+    monkeypatch.setattr("server.session_catalog._session_base", lambda _workspace: session_base)
+    session_dir = session_base / "s-1"
     session_dir.mkdir(parents=True)
     records = [
         {
@@ -301,7 +305,17 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
         ),
         encoding="utf-8",
     )
-    (_session_base(workspace) / "thread_index.json").write_text(
+    (session_dir / "thread_settings.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "thread_id": "t-1",
+                "continuation_mode": "continuous",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (session_base / "thread_index.json").write_text(
         json.dumps(
             {"version": 1, "threads": {"t-1": {"session_id": "s-1"}}}
         ),
@@ -322,6 +336,7 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     assert listed["data"][0]["last_turn_id"] == "turn-1"
     assert listed["data"][0]["last_turn_steps"] == 8
     assert listed["data"][0]["last_turn_complete"] is False
+    assert listed["data"][0]["continuation_mode"] == "continuous"
     history = catalog.read_thread(workspace, "project-1", "t-1")
     assert history["messages"][0]["text"] == "inspect project"
     assert history["items"][0]["item"]["type"] == "userMessage"

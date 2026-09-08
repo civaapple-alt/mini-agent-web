@@ -221,11 +221,10 @@ async def test_thread_settings_without_continuation_keeps_persisted_preference(
         return_value=SimpleNamespace(
             collaboration_mode=SimpleNamespace(mode="default"),
             builtin_tools=["read_file"],
-            continuation_mode="manual",
+            continuation_mode="continuous",
         )
     )
     session_manager._clients["t-settings"] = mock_client
-    session_manager._thread_continuation_modes["t-settings"] = "continuous"
 
     transport = ASGITransport(app=gateway_test_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -235,7 +234,13 @@ async def test_thread_settings_without_continuation_keeps_persisted_preference(
         )
 
     assert response.status_code == 200
-    assert session_manager._thread_continuation_modes["t-settings"] == "continuous"
+    assert response.json()["continuation_mode"] == "continuous"
+    mock_client.update_thread_settings.assert_awaited_once_with(
+        mode="default",
+        builtin_tools=["read_file"],
+        thread_id="t-settings",
+        continuation_mode=None,
+    )
 
 
 @pytest.mark.asyncio

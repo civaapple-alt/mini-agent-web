@@ -95,7 +95,6 @@ class SessionManager:
         self._active_turns: dict[str, str] = {}
         self._active_tasks: dict[str, asyncio.Task[Any]] = {}
         self._thread_builtin_tools: dict[str, list[str]] = {}
-        self._thread_continuation_modes: dict[str, str] = {}
 
         # Runtime system settings
         self._settings: dict[str, Any] = {
@@ -185,10 +184,10 @@ class SessionManager:
                                 if isinstance(t_meta, dict):
                                     if not t_meta.get("project"):
                                         t_meta["project"] = pdir.name
+                                    # Continuation is canonical SessionStore state;
+                                    # discard the retired Web-side shadow field.
+                                    t_meta.pop("continuation_mode", None)
                                     self._thread_metadata[tid] = t_meta
-                                    mode = t_meta.get("continuation_mode")
-                                    if mode in ("manual", "continuous"):
-                                        self._thread_continuation_modes[tid] = mode
                     except Exception as err:  # noqa: BLE001
                         logger.warning(
                             "Failed to load threads from %s: %s", t_file, err
@@ -908,34 +907,21 @@ class SessionManager:
         project["policy"] = policy
         self._save_projects()
 
-    def set_thread_continuation(self, thread_id: str, mode: str) -> None:
-        """Persist the explicit loop choice with Thread metadata."""
-        if mode not in ("manual", "continuous"):
-            raise ValueError("invalid continuation mode")
-        self._thread_continuation_modes[thread_id] = mode
-        metadata = self._thread_metadata.get(thread_id)
-        if metadata is not None:
-            metadata["continuation_mode"] = mode
-            metadata["updated_at"] = datetime.now(timezone.utc).isoformat()
-            self._save_thread_for_id(thread_id)
-
-    def _continuation_mode_for_thread(self, thread_id: str) -> str:
-        return self._thread_continuation_modes.get(
-            thread_id,
-            self._thread_metadata.get(thread_id, {}).get("continuation_mode", "manual"),
-        )
-
     async def _apply_persisted_thread_continuation(
         self,
         thread_id: str,
         client: Any,
         project_id: str | None = None,
     ) -> bool:
-        """Apply the Web preference only when Goal Runtime is not active."""
-        if self._continuation_mode_for_thread(thread_id) != "continuous":
-            return False
-        canonical = self.read_project_thread(thread_id, project_id)
+        """Apply canonical SessionStore preference after client startup."""
+        canonical = (
+            self.read_project_thread(thread_id, project_id)
+            if project_id
+            else self.read_any_project_thread(thread_id)
+        )
         session = canonical.get("session", {}) if canonical else {}
+        if session.get("continuation_mode") != "continuous":
+            return False
         goal = session.get("goal")
         if isinstance(goal, dict) and goal.get("status") in ("active", "running"):
             logger.info(

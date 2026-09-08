@@ -358,12 +358,7 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
             effective_builtin_tools = session_manager._thread_builtin_tools.get(
                 target_thread, DEFAULT_BUILTIN_TOOLS
             )
-            continuation_mode = session_manager._thread_continuation_modes.get(
-                target_thread,
-                session_manager._thread_metadata.get(target_thread, {}).get(
-                    "continuation_mode", "manual"
-                ),
-            )
+            continuation_mode = session.get("continuation_mode", "manual")
             return {
                 "collaboration_mode": {
                     "mode": "plan" if session.get("plan_active") else "default"
@@ -432,8 +427,6 @@ async def update_thread_settings(
             continuation_mode=req.continuation_mode,
         )
         session_manager._thread_builtin_tools[thread_id] = res.builtin_tools
-        if req.continuation_mode is not None:
-            session_manager.set_thread_continuation(thread_id, res.continuation_mode)
         return {
             "collaboration_mode": {"mode": res.collaboration_mode.mode},
             "builtin_tools": res.builtin_tools,

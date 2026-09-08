@@ -22,6 +22,7 @@ MAX_SESSION_BYTES = 8 * 1024 * 1024
 MAX_RECORD_BYTES = 64 * 1024
 MAX_ERROR_CHARS = 2048
 THREAD_INDEX_FILE_NAME = "thread_index.json"
+THREAD_SETTINGS_FILE_NAME = "thread_settings.json"
 
 
 def _workspace_key(workspace: Path) -> str:
@@ -358,7 +359,16 @@ class SessionCatalog:
         summary = _read_json(path / "summary.json")
         goal = _read_json(path / "goal" / "state.json")
         plan = _read_json(path / "plan_mode.json")
+        thread_settings = _read_json(path / THREAD_SETTINGS_FILE_NAME)
         cleanup = _read_json(path / "plan" / "cleanup.json")
+        continuation_mode = (
+            thread_settings.get("continuation_mode")
+            if thread_settings.get("version") == 1
+            and thread_settings.get("thread_id") == thread_id
+            else None
+        )
+        if continuation_mode not in ("manual", "continuous"):
+            continuation_mode = "manual"
         goal_status = _goal_status(goal.get("status"))
         has_lock, pid = _lock_info(path / "session.lock")
         lock_active = bool(has_lock and pid and _process_alive(pid))
@@ -410,6 +420,7 @@ class SessionCatalog:
             "goal_status": goal_status,
             "goal": _goal_projection(goal, thread_id, goal_status),
             "plan_active": bool(plan.get("active", False)),
+            "continuation_mode": continuation_mode,
             "cleanup_pending": cleanup.get("status") == "cleanup_pending",
             "active_turn_id": goal.get("active_turn_id") or latest_turn_id
             if runtime_status == "running"

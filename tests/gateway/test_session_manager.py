@@ -4,6 +4,7 @@ Unit and integration tests for SessionManager state, approvals, and projects.
 
 import asyncio
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -501,6 +502,49 @@ async def test_concurrent_thread_attach_creates_one_client(
 
     assert first_client is second_client
     assert len(created_clients) == 1
+
+
+@pytest.mark.asyncio
+async def test_fork_and_concurrent_attach_share_the_forked_binding(
+    mock_session_manager, monkeypatch
+):
+    """Attach waits for fork binding instead of creating a competing child client."""
+    fork_started = asyncio.Event()
+    release_fork = asyncio.Event()
+    source_client = AsyncMock()
+
+    async def fork_thread(**kwargs):
+        fork_started.set()
+        await release_fork.wait()
+        return SimpleNamespace(thread_id=kwargs["new_thread_id"])
+
+    source_client.fork_thread = fork_thread
+    mock_session_manager._clients["source-thread"] = source_client
+    mock_session_manager._client_projects["source-thread"] = "default"
+    mock_session_manager._thread_metadata["source-thread"] = {
+        "title": "Source",
+        "project": "default",
+    }
+    create_client = AsyncMock(side_effect=AssertionError("attach raced the fork"))
+    monkeypatch.setattr(mock_session_manager, "_create_client", create_client)
+
+    fork_task = asyncio.create_task(
+        mock_session_manager.fork_thread("source-thread", "forked-thread")
+    )
+    await fork_started.wait()
+    attach_task = asyncio.create_task(
+        mock_session_manager.attach_thread("forked-thread")
+    )
+    await asyncio.sleep(0)
+    assert not attach_task.done()
+
+    release_fork.set()
+    forked, attached = await asyncio.gather(fork_task, attach_task)
+
+    assert forked["project"] == "default"
+    assert attached["attached"] is True
+    assert mock_session_manager._clients["forked-thread"] is source_client
+    create_client.assert_not_awaited()
 
 
 def test_session_manager_avoids_duplicate_project_for_custom_id_path(tmp_path):

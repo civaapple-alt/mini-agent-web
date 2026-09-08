@@ -186,43 +186,9 @@ async def start_thread(req: StartThreadRequest) -> dict[str, Any]:
 async def fork_thread(req: ForkThreadRequest) -> dict[str, Any]:
     """Fork an existing thread history into a new branched thread."""
     try:
-        client = await session_manager.get_client_for_thread(
-            req.source_thread_id, req.project
+        return await session_manager.fork_thread(
+            req.source_thread_id, req.new_thread_id, req.title, req.project
         )
-        source_project = session_manager._client_projects.get(req.source_thread_id)
-        if not source_project:
-            source_project = session_manager._project_for_thread(
-                req.source_thread_id, req.project
-            ).get("id")
-        existing_project = session_manager._client_projects.get(req.new_thread_id)
-        if existing_project and existing_project != source_project:
-            raise RuntimeError(
-                f"Thread '{req.new_thread_id}' is already bound to Project "
-                f"'{existing_project}'"
-            )
-        res = await client.fork_thread(
-            source_thread_id=req.source_thread_id,
-            new_thread_id=req.new_thread_id,
-        )
-        src_meta = session_manager.get_thread_meta(req.source_thread_id)
-        fork_title = (
-            req.title or f"{src_meta.get('title', req.source_thread_id)} (Fork)"
-        )
-        session_manager.set_thread_meta(
-            res.thread_id,
-            {
-                "title": fork_title,
-                "summary": f"Forked from {req.source_thread_id}",
-                "project": source_project,
-            },
-        )
-        session_manager.bind_thread_client(res.thread_id, client, source_project)
-        return {
-            "thread_id": res.thread_id,
-            "status": "forked",
-            "title": fork_title,
-            "project": source_project,
-        }
     except RuntimeError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err
     except AppServerError as err:

@@ -640,43 +640,45 @@ class SessionManager:
             await client.stop()
             raise
 
+    async def _get_client_for_thread_locked(
+        self, thread_id: str, project_id: str | None = None
+    ) -> MiniAgentClient:
+        """Get or create a Thread client while the manager lock is held."""
+        target = thread_id or "default"
+        project = self._project_for_thread(target, project_id) if project_id else None
+        existing = self._clients.get(target)
+        if existing is not None:
+            bound_project = self._client_projects.get(target)
+            if project_id and bound_project and bound_project != project.get("id"):
+                raise RuntimeError(
+                    f"Thread '{target}' is already bound to Project '{bound_project}'"
+                )
+            return existing
+        project = project or self._project_for_thread(target)
+        canonical = self._canonical_thread(target, project_id)
+        if canonical and canonical["session"]["session_status"] == "locked":
+            raise RuntimeError(f"Session '{target}' is already running in another process")
+        session = canonical.get("session") if canonical else None
+        client = await self._create_client(
+            target,
+            project,
+            "resume" if session else "new",
+            session.get("session_id") if session else None,
+        )
+        self._clients[target] = client
+        self._client_projects[target] = str(project.get("id") or self._current_project_id)
+        if target == "default":
+            self._client = client
+        return client
+
     async def get_client_for_thread(
         self, thread_id: str | None = None, project_id: str | None = None
     ) -> MiniAgentClient:
         """Get or create the App Server process bound to one canonical session."""
-        target = thread_id or "default"
         async with self._lock:
-            project = (
-                self._project_for_thread(target, project_id) if project_id else None
+            return await self._get_client_for_thread_locked(
+                thread_id or "default", project_id
             )
-            existing = self._clients.get(target)
-            if existing is not None:
-                bound_project = self._client_projects.get(target)
-                if project_id and bound_project and bound_project != project.get("id"):
-                    raise RuntimeError(
-                        f"Thread '{target}' is already bound to Project '{bound_project}'"
-                    )
-                return existing
-            project = project or self._project_for_thread(target)
-            canonical = self._canonical_thread(target, project_id)
-            if canonical and canonical["session"]["session_status"] == "locked":
-                raise RuntimeError(
-                    f"Session '{target}' is already running in another process"
-                )
-            session = canonical.get("session") if canonical else None
-            client = await self._create_client(
-                target,
-                project,
-                "resume" if session else "new",
-                session.get("session_id") if session else None,
-            )
-            self._clients[target] = client
-            self._client_projects[target] = str(
-                project.get("id") or self._current_project_id
-            )
-            if target == "default":
-                self._client = client
-            return client
 
     def live_thread_ids(self) -> list[str]:
         return list(self._clients)
@@ -701,6 +703,51 @@ class SessionManager:
             )
         self._clients[thread_id] = client
         self._client_projects[thread_id] = resolved_project_id
+
+    async def fork_thread(
+        self,
+        source_thread_id: str,
+        new_thread_id: str,
+        title: str | None = None,
+        project_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Fork and bind a child without exposing an attach race window."""
+        async with self._lock:
+            client = await self._get_client_for_thread_locked(
+                source_thread_id, project_id
+            )
+            source_project = self._client_projects.get(source_thread_id)
+            if not source_project:
+                source_project = self._project_for_thread(source_thread_id, project_id).get(
+                    "id"
+                )
+            existing_project = self._client_projects.get(new_thread_id)
+            if existing_project and existing_project != source_project:
+                raise RuntimeError(
+                    f"Thread '{new_thread_id}' is already bound to Project "
+                    f"'{existing_project}'"
+                )
+            result = await client.fork_thread(
+                source_thread_id=source_thread_id,
+                new_thread_id=new_thread_id,
+            )
+            source_meta = self.get_thread_meta(source_thread_id)
+            fork_title = title or f"{source_meta.get('title', source_thread_id)} (Fork)"
+            self.set_thread_meta(
+                result.thread_id,
+                {
+                    "title": fork_title,
+                    "summary": f"Forked from {source_thread_id}",
+                    "project": source_project,
+                },
+            )
+            self.bind_thread_client(result.thread_id, client, source_project)
+            return {
+                "thread_id": result.thread_id,
+                "status": "forked",
+                "title": fork_title,
+                "project": source_project,
+            }
 
     async def start_thread(
         self, thread_id: str = "default", project_id: str | None = None

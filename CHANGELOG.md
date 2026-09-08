@@ -82,6 +82,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Goal state monotonically, stop history reads from overwriting control-plane
   state, and rebuild the per-Thread cursor from a canonical workflow read after
   a WebSocket reconnect.
+- **Runtime generation recovery signal**: Gateway restarts now broadcast a bounded
+  `gateway/runtime/restarted` generation notification; Web Studio invalidates its
+  per-Thread revision cursor and reloads canonical workflow state even when the
+  browser WebSocket remains connected.
 
 - **Project-safe Thread fork**: fork requests may identify the source Project,
   and the Gateway now carries the source binding onto the branched Thread;

@@ -50,7 +50,10 @@ revision 的 `thread/goal/updated|cleared`；Goal/settings REST action result �
 返回它。SDK 和 Web Studio 对每个 Thread 单调消费该 revision，Gateway 不保存
 另一份 settings 或 Goal authority。历史 Session 尚未携带 revision 时返回空值；
 WebSocket 重连后由 Studio 重新读取 workflow projection，以处理 App Server
-重启造成的 in-memory revision 序列重置。
+重启造成的 in-memory revision 序列重置。Gateway 自己重绑 App Server 后还会
+广播有界的 `gateway/runtime/restarted` generation；Studio 收到后清空旧 cursor
+并执行同样的 canonical workflow read，即使浏览器 WebSocket 没有断开也不会继续
+使用旧运行时的 revision。
 
 访问和批准是当前 Project 的执行设置：`project` / `full_machine` 控制路径范围，
 `interactive` / `automatic` 控制审批策略；`once` / `session` / `project`

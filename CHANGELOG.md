@@ -70,6 +70,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Thread from another Project. A same-ID live binding conflict on attach or start
   returns `409` instead of silently reusing the wrong workspace.
 
+- **Monotonic control-plane revision projection**: exposed App Server
+  `stateRevision` through the Python SDK and Gateway workflow/settings responses;
+  SDK notification caches and Web Studio settings projections now reject stale
+  revisions per Thread while accepting repeated revisions. This keeps the
+  canonical App Server state authoritative across the SDK → Gateway → Studio
+  path without introducing a second state store.
+
 - **Canonical Thread continuation projection**: moved `manual` / `continuous`
   persistence to the App Server SessionStore `thread_settings.json` sidecar;
   SessionCatalog reads the bounded projection and Gateway no longer stores a

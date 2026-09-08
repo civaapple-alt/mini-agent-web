@@ -222,6 +222,7 @@ async def test_thread_settings_without_continuation_keeps_persisted_preference(
             collaboration_mode=SimpleNamespace(mode="default"),
             builtin_tools=["read_file"],
             continuation_mode="continuous",
+            state_revision=7,
         )
     )
     session_manager._clients["t-settings"] = mock_client
@@ -235,6 +236,7 @@ async def test_thread_settings_without_continuation_keeps_persisted_preference(
 
     assert response.status_code == 200
     assert response.json()["continuation_mode"] == "continuous"
+    assert response.json()["state_revision"] == 7
     mock_client.update_thread_settings.assert_awaited_once_with(
         mode="default",
         builtin_tools=["read_file"],

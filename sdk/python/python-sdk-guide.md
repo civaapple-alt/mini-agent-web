@@ -203,6 +203,12 @@ Runtime notifications such as `thread/settings/updated`,
 `notification_handler` may be supplied when the application needs to
 broadcast these events outside an active turn stream.
 
+`thread/settings/updated` carries the App Server `stateRevision`. The typed
+`ThreadSettingsResult` and `WorkflowState` expose it as `state_revision`; the
+SDK's cached Thread settings projection only advances when the incoming
+revision is equal to or newer than the cached value, so a delayed notification
+cannot roll a client back to stale Plan or continuation state.
+
 `get_workflow_state()` is only a convenience read-only aggregate in the SDK;
 it composes the cached Thread settings projection with `thread/goal/get` and
 does not send a legacy `workflow/state` RPC.

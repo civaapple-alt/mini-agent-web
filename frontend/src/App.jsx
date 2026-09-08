@@ -19,6 +19,7 @@ import {
   createGoalMessage,
   extractGoalObjective,
 } from './utils/goalMessages';
+import { readStateRevision, shouldApplyStateRevision } from './utils/revisionState';
 import './App.css';
 
 function normalizeInputPayload(inputPayload) {
@@ -88,6 +89,7 @@ export default function App() {
   const [isConnected, setIsConnected] = useState(false);
 
   const wsRef = useRef(null);
+  const workflowRevisionsRef = useRef(new Map());
   const queueDispatchingRef = useRef(false);
   const interruptPendingRef = useRef(false);
   const currentThreadRef = useRef(currentThread);
@@ -180,12 +182,26 @@ export default function App() {
   const loadWorkflows = async (threadId = currentThreadRef.current) => {
     try {
       const wfState = await api.getWorkflowState(threadId);
-      setPlanActive(wfState.collaboration_mode?.mode === 'plan');
+      if (!applyWorkflowState(threadId, wfState)) return;
       setGoalState(wfState.goal || null);
-      setContinuationMode(wfState.continuation_mode || 'manual');
     } catch (err) {
       console.error('Failed to load workflow state:', err);
     }
+  };
+
+  const applyWorkflowState = (threadId, workflowState) => {
+    const nextRevision = readStateRevision(workflowState);
+    const currentRevision = workflowRevisionsRef.current.get(threadId);
+    if (!shouldApplyStateRevision(currentRevision, nextRevision)) return false;
+    if (nextRevision !== null) {
+      workflowRevisionsRef.current.set(threadId, nextRevision);
+    }
+    if (currentThreadRef.current !== threadId) return false;
+    const mode = workflowState.collaboration_mode || workflowState.collaborationMode;
+    setPlanActive(mode?.mode === 'plan');
+    const nextContinuation = workflowState.continuation_mode || workflowState.continuationMode;
+    if (nextContinuation) setContinuationMode(nextContinuation);
+    return true;
   };
 
   const loadThreadHistory = async (threadId) => {
@@ -381,8 +397,10 @@ export default function App() {
       if (data.method === 'item/started' || data.method === 'item/completed') {
         setMessages((prev) => aggregateItemLifecycle(prev, data));
       } else if (data.method === 'thread/settings/updated') {
-        setPlanActive(notification.collaborationMode?.mode === 'plan');
-        setContinuationMode(notification.continuationMode || 'manual');
+        applyWorkflowState(
+          notification.threadId || notification.thread_id || currentThreadRef.current,
+          notification,
+        );
       } else if (data.method === 'thread/goal/updated') {
         setGoalState(notification.goal || null);
         setMessages((prev) => appendGoalMessageToMessages(prev, notification.goal));
@@ -804,9 +822,8 @@ export default function App() {
     const nextState = !planActive;
     try {
       const res = await api.setCollaborationMode(nextState ? 'plan' : 'default', currentThread);
-      const active = res.collaboration_mode?.mode === 'plan';
-      setPlanActive(active);
-      setContinuationMode(res.continuation_mode || continuationMode);
+      applyWorkflowState(currentThread, res);
+      const active = (res.collaboration_mode || res.collaborationMode)?.mode === 'plan';
       showToast(`Plan Mode 已${active ? '开启 (只读规划)' : '关闭'}`, 'info');
     } catch (err) {
       showToast(`切换 Plan Mode 失败: ${err.message}`, 'error');
@@ -899,7 +916,7 @@ export default function App() {
         currentThread,
         nextMode,
       );
-      setContinuationMode(res.continuation_mode || nextMode);
+      applyWorkflowState(currentThread, res);
       showToast(
         nextMode === 'continuous'
           ? '已开启连续执行；普通 Chat 不再受 8 步上限限制'
@@ -922,7 +939,7 @@ export default function App() {
       );
       setPolicy('trusted');
       setUserSettings((prev) => ({ ...prev, policy: 'trusted' }));
-      setContinuationMode(res.continuation_mode || 'continuous');
+      applyWorkflowState(currentThread, res);
       showToast('Auto Copilot 已显式开启：连续执行 + 信任执行，高风险仍需确认', 'success');
     } catch (err) {
       showToast(`开启 Auto Copilot 失败: ${err.message}`, 'error');

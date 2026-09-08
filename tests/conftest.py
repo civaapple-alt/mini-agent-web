@@ -105,6 +105,7 @@ def create_mock_client(project_name: str = "test-project") -> AsyncMock:
             ],
             goal=None,
             continuation_mode="manual",
+            state_revision=0,
             raw={},
         )
     )
@@ -128,6 +129,7 @@ def create_mock_client(project_name: str = "test-project") -> AsyncMock:
                 "web_fetch",
             ],
             continuation_mode=continuation_mode or "manual",
+            state_revision=0,
         )
 
     mock.update_thread_settings = AsyncMock(side_effect=mock_update_thread_settings)

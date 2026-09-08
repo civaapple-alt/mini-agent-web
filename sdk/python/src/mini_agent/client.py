@@ -473,6 +473,14 @@ class MiniAgentClient:
                         "method": method,
                         "data": params,
                     }
+                    if method == "thread/settings/updated":
+                        settings = ThreadSettingsResult.from_dict(params)
+                        thread_id = str(
+                            params.get("threadId")
+                            or params.get("thread_id")
+                            or self._active_thread_id
+                        )
+                        self._cache_thread_settings(thread_id, settings)
                     if method in ("item/started", "item/completed"):
                         notification["typed_item_notification"] = (
                             ItemLifecycleNotification.from_dict(method, params)
@@ -901,6 +909,21 @@ class MiniAgentClient:
     # Thread Settings, Goals, and Read-Only Workflow Projection
     # -------------------------------------------------------------------------
 
+    def _cache_thread_settings(
+        self, thread_id: str, settings: ThreadSettingsResult
+    ) -> None:
+        """Keep the local projection monotonic with the App Server revision."""
+        current = self._thread_settings.get(thread_id)
+        if current is not None:
+            if settings.state_revision is None:
+                return
+            if (
+                current.state_revision is not None
+                and settings.state_revision < current.state_revision
+            ):
+                return
+        self._thread_settings[thread_id] = settings
+
     async def get_workflow_state(self, thread_id: str | None = None) -> WorkflowState:
         """Get the read-only collaboration mode and active Thread Goal."""
         thread_id = thread_id or self._active_thread_id
@@ -922,6 +945,7 @@ class MiniAgentClient:
             continuation_mode=(
                 settings.continuation_mode if settings is not None else "manual"
             ),
+            state_revision=(settings.state_revision if settings is not None else None),
             goal=goal.goal,
             raw={
                 "value": {
@@ -929,6 +953,9 @@ class MiniAgentClient:
                     "builtinTools": builtin_tools,
                     "continuationMode": (
                         settings.continuation_mode if settings else "manual"
+                    ),
+                    "stateRevision": (
+                        settings.state_revision if settings is not None else None
                     ),
                     "goal": goal.goal.raw if goal.goal else None,
                 }
@@ -958,7 +985,7 @@ class MiniAgentClient:
             params,
         )
         result = ThreadSettingsResult.from_dict(res)
-        self._thread_settings[params["threadId"]] = result
+        self._cache_thread_settings(params["threadId"], result)
         return result
 
     async def set_collaboration_mode(

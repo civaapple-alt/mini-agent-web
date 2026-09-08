@@ -399,6 +399,7 @@ class WorkflowState:
     )
     continuation_mode: ContinuationMode = "manual"
     goal: ThreadGoal | None = None
+    state_revision: int | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -422,6 +423,13 @@ class WorkflowState:
             continuation_mode=val.get("continuationMode")
             or val.get("continuation_mode", "manual"),
             goal=goal,
+            state_revision=(
+                data.get("stateRevision")
+                if isinstance(data, dict) and "stateRevision" in data
+                else data.get("state_revision")
+                if isinstance(data, dict) and "state_revision" in data
+                else None
+            ),
             raw=data,
         )
 
@@ -433,6 +441,7 @@ class ThreadSettingsResult:
     collaboration_mode: CollaborationMode
     builtin_tools: list[str] = field(default_factory=list)
     continuation_mode: ContinuationMode = "manual"
+    state_revision: int | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -449,6 +458,13 @@ class ThreadSettingsResult:
             ),
             continuation_mode=val.get("continuationMode")
             or val.get("continuation_mode", "manual"),
+            state_revision=(
+                data.get("stateRevision")
+                if isinstance(data, dict) and "stateRevision" in data
+                else data.get("state_revision")
+                if isinstance(data, dict) and "state_revision" in data
+                else None
+            ),
             raw=data,
         )
 

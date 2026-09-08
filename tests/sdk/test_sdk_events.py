@@ -188,6 +188,42 @@ async def test_stream_turn_filters_events_by_thread_and_turn():
 
 
 @pytest.mark.asyncio
+async def test_sdk_settings_projection_rejects_stale_revision_notifications():
+    class FakeStdout:
+        def __init__(self, lines):
+            self._lines = iter(lines)
+
+        async def readline(self):
+            return next(self._lines, b"")
+
+    class FakeProcess:
+        stdout = FakeStdout(
+            [
+                (
+                    b'{"jsonrpc":"2.0","method":"thread/settings/updated",'
+                    b'"params":{"threadId":"thread-1","collaborationMode":'
+                    b'{"mode":"plan"},"builtinTools":["shell"],'
+                    b'"continuationMode":"continuous","stateRevision":5}}\n'
+                ),
+                (
+                    b'{"jsonrpc":"2.0","method":"thread/settings/updated",'
+                    b'"params":{"threadId":"thread-1","collaborationMode":'
+                    b'{"mode":"default"},"builtinTools":[],'
+                    b'"continuationMode":"manual","stateRevision":4}}\n'
+                ),
+            ]
+        )
+
+    client = MiniAgentClient()
+    client._proc = FakeProcess()
+    await client._read_loop()
+
+    settings = client._thread_settings["thread-1"]
+    assert settings.state_revision == 5
+    assert settings.continuation_mode == "continuous"
+
+
+@pytest.mark.asyncio
 async def test_stream_turn_returns_when_submission_has_no_turn_id():
     client = MiniAgentClient()
 

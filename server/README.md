@@ -27,7 +27,7 @@ uv run mini-agent-server-dev
 | `/api/threads` | Thread 列表、创建、读取、分叉、摘要和关闭 |
 | `/api/threads/{thread_id}/attach` | 按可选 Project ID/name attach 历史/暂停 Session，或报告外部运行锁 |
 | `/api/threads/{thread_id}/items` | 有界 ThreadItem 历史投影 |
-| `/api/threads/{thread_id}/settings` | Thread collaboration mode、Builtin tools 和显式推进方式 |
+| `/api/threads/{thread_id}/settings` | Thread collaboration mode、Builtin tools、显式推进方式和 App Server `state_revision` |
 | `/api/threads/{thread_id}/goal` | Thread Goal 的读取、设置和清除 |
 | `/api/agent/*` | Turn、Steer、Interrupt 和审批 HTTP 操作 |
 | `/api/world/*` | World、MCP、Git 和本地工作区探测 |
@@ -37,6 +37,12 @@ uv run mini-agent-server-dev
 
 Thread、Turn、Goal 和 ThreadItem 的运行时语义来自 App Server；网关不创建
 第二套运行时状态机。
+
+Thread settings 的 `state_revision` 只是 canonical App Server revision 的有界
+投影。Gateway 通过 WebSocket 原样转发 `thread/settings/updated`，SDK 和 Web
+Studio 对每个 Thread 单调消费该 revision；Gateway 不保存另一份 settings
+authority。历史 Session 尚未携带 revision 时返回空值，客户端仍以 canonical
+Session projection 读取设置。
 
 访问和批准是当前 Project 的执行设置：`project` / `full_machine` 控制路径范围，
 `interactive` / `automatic` 控制审批策略；`once` / `session` / `project`

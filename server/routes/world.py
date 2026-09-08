@@ -367,6 +367,7 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
                 "continuation_mode": continuation_mode,
                 "available_builtin_tools": ALL_BUILTIN_TOOLS,
                 "goal": goal_dict,
+                "state_revision": session.get("state_revision"),
                 "source": "session_store",
                 "session_status": session.get("session_status"),
                 "runtime_status": session.get("runtime_status"),
@@ -406,6 +407,7 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
             "collaboration_mode": {"mode": wf.collaboration_mode.mode},
             "builtin_tools": effective_builtin_tools,
             "continuation_mode": wf.continuation_mode,
+            "state_revision": wf.state_revision,
             "available_builtin_tools": ALL_BUILTIN_TOOLS,
             "goal": goal_dict,
         }
@@ -431,6 +433,7 @@ async def update_thread_settings(
             "collaboration_mode": {"mode": res.collaboration_mode.mode},
             "builtin_tools": res.builtin_tools,
             "continuation_mode": res.continuation_mode,
+            "state_revision": res.state_revision,
             "available_builtin_tools": ALL_BUILTIN_TOOLS,
         }
     except AppServerError as err:

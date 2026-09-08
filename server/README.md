@@ -27,6 +27,8 @@ uv run mini-agent-server-dev
 | `/api/threads` | Thread 列表、创建、读取、按 source Project 分叉、摘要和关闭 |
 | `/api/threads/{thread_id}/attach` | 按可选 Project ID/name attach 历史/暂停 Session，或报告外部运行锁 |
 | `/api/threads/{thread_id}/items` | 有界 ThreadItem 历史投影 |
+| `/api/threads/{thread_id}/events` | App Server `turn/event` 的有界 cursor 重放；发生 gap 时回退到 canonical history |
+| `/api/threads/{thread_id}/runtime/status` | 非阻塞 runtime phase、Turn/operation/checkpoint 和错误快照 |
 | `/api/threads/{thread_id}/settings` | Thread collaboration mode、Builtin tools、显式推进方式和 App Server `state_revision` |
 | `/api/threads/{thread_id}/goal` | Thread Goal 的读取、设置和清除 |
 | `/api/agent/*` | Turn、Steer、Interrupt 和审批 HTTP 操作 |
@@ -54,6 +56,12 @@ WebSocket 重连后由 Studio 重新读取 workflow projection，以处理 App S
 广播有界的 `gateway/runtime/restarted` generation；Studio 收到后清空旧 cursor
 并执行同样的 canonical workflow read，即使浏览器 WebSocket 没有断开也不会继续
 使用旧运行时的 revision。
+
+SDK 的 `notification_handler` 负责把每个 App Server `turn/event` 和 runtime
+notification 广播给所有 WebSocket 客户端；单个请求的 WebSocket 只发送自己的
+`_turn_submission`，避免发起端收到重复事件。Studio 在 WebSocket 重连时使用
+`/events?after_sequence=...` 补齐短暂断线期间的 Core 事件；如果返回
+`has_gap=true`，则先重新读取 Thread/Item canonical projection。
 
 访问和批准是当前 Project 的执行设置：`project` / `full_machine` 控制路径范围，
 `interactive` / `automatic` 控制审批策略；`once` / `session` / `project`

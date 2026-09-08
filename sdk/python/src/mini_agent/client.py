@@ -29,6 +29,7 @@ from mini_agent.types import (
     ItemSortDirection,
     McpRetryResult,
     McpStatusResult,
+    RuntimeStatus,
     SessionInfo,
     ThreadCheckpoint,
     ThreadForkResult,
@@ -41,6 +42,7 @@ from mini_agent.types import (
     ThreadListResult,
     ThreadResumeResult,
     ThreadSettingsResult,
+    TurnEventsResult,
     TurnReadResult,
     TurnSubmissionResult,
     WorkflowState,
@@ -459,6 +461,11 @@ class MiniAgentClient:
                 if method == "turn/event":
                     for q in self._event_queues:
                         await q.put(params)
+                    if self.notification_handler is not None:
+                        try:
+                            await self.notification_handler({"type": "event", **params})
+                        except Exception:
+                            logger.exception("Runtime notification handler failed")
 
                 elif method == "approval/request":
                     await self._publish_approval(params, "requested")
@@ -613,6 +620,29 @@ class MiniAgentClient:
             {"threadId": thread_id or self._active_thread_id},
         )
         return ThreadCheckpoint.from_dict(res)
+
+    async def get_runtime_status(self, thread_id: str | None = None) -> RuntimeStatus:
+        """Read the live App Server runtime status without waiting on the worker."""
+        res = await self._send_request(
+            "runtime/status",
+            {"threadId": thread_id or self._active_thread_id},
+        )
+        return RuntimeStatus.from_dict(res)
+
+    async def replay_events(
+        self,
+        thread_id: str | None = None,
+        after_sequence: int | None = None,
+        limit: int | None = None,
+    ) -> TurnEventsResult:
+        """Replay a bounded event page after a per-Thread sequence cursor."""
+        params: dict[str, Any] = {"threadId": thread_id or self._active_thread_id}
+        if after_sequence is not None:
+            params["afterSequence"] = after_sequence
+        if limit is not None:
+            params["limit"] = limit
+        res = await self._send_request("turn/events", params)
+        return TurnEventsResult.from_dict(res)
 
     async def list_thread_items(
         self,

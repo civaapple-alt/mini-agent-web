@@ -658,7 +658,9 @@ class SessionManager:
         project = project or self._project_for_thread(target)
         canonical = self._canonical_thread(target, project_id)
         if canonical and canonical["session"]["session_status"] == "locked":
-            raise RuntimeError(f"Session '{target}' is already running in another process")
+            raise RuntimeError(
+                f"Session '{target}' is already running in another process"
+            )
         session = canonical.get("session") if canonical else None
         client = await self._create_client(
             target,
@@ -667,7 +669,9 @@ class SessionManager:
             session.get("session_id") if session else None,
         )
         self._clients[target] = client
-        self._client_projects[target] = str(project.get("id") or self._current_project_id)
+        self._client_projects[target] = str(
+            project.get("id") or self._current_project_id
+        )
         if target == "default":
             self._client = client
         return client
@@ -719,9 +723,9 @@ class SessionManager:
             )
             source_project = self._client_projects.get(source_thread_id)
             if not source_project:
-                source_project = self._project_for_thread(source_thread_id, project_id).get(
-                    "id"
-                )
+                source_project = self._project_for_thread(
+                    source_thread_id, project_id
+                ).get("id")
             existing_project = self._client_projects.get(new_thread_id)
             if existing_project and existing_project != source_project:
                 raise RuntimeError(
@@ -1120,8 +1124,10 @@ class SessionManager:
             self._pending_approval_details.pop(req_id, None)
 
     async def _handle_runtime_notification(self, notification: dict[str, Any]) -> None:
-        """Relay App Server Goal/settings notifications to connected Studio clients."""
+        """Relay every App Server runtime notification to Studio clients."""
         await self.broadcast_ws(notification)
+        if notification.get("type") == "event":
+            return
         if notification.get("method") != "thread/goal/updated":
             return
         data = notification.get("data", {})

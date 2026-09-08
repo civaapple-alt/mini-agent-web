@@ -165,9 +165,6 @@ async def stream_turn(
                 thread_id=thread_id,
             ):
                 safe_item = to_json_serializable(item)
-                # Also broadcast to active WebSockets for synced UI displays
-                await session_manager.broadcast_ws(safe_item)
-
                 payload = json.dumps(safe_item, ensure_ascii=False)
                 yield f"data: {payload}\n\n"
         except Exception as err:
@@ -462,11 +459,16 @@ async def _stream_turn_to_ws(
                     )
 
             safe_item = to_json_serializable(item)
-            await websocket.send_json(safe_item)
+            # App Server notifications are centrally broadcast by the SDK
+            # notification handler. Only the submission response is local to
+            # this request; sending the stream again here would duplicate
+            # every event for the initiating WebSocket.
+            if safe_item.get("type") == "_turn_submission":
+                await websocket.send_json(safe_item)
     except asyncio.CancelledError:
         logger.info("WebSocket stream turn cancelled for thread: %s", target_thread)
         try:
-            await websocket.send_json(
+            await session_manager.broadcast_ws(
                 {
                     "type": "event",
                     "threadId": target_thread,

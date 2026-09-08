@@ -201,7 +201,33 @@ Runtime notifications such as `thread/settings/updated`,
 `thread/goal/updated`, and `thread/goal/cleared` are yielded as
 `{"type": "notification", "method": ..., "data": ...}` envelopes. A
 `notification_handler` may be supplied when the application needs to
-broadcast these events outside an active turn stream.
+broadcast these events outside an active turn stream. The handler also receives
+ordered App Server `turn/event` envelopes, so a Gateway can fan them out to all
+connected WebSocket clients without sending the initiating stream twice.
+
+Use the live runtime snapshot and the bounded event cursor for reconnects:
+
+```python
+status = await client.get_runtime_status(thread_id="thread-1")
+print(status.phase, status.turn_id, status.operation_id, status.error)
+
+page = await client.replay_events(
+    thread_id="thread-1", after_sequence=last_sequence, limit=128
+)
+if page.has_gap:
+    # Reconcile with read_thread/list_thread_items before accepting new events.
+    checkpoint = await client.read_thread("thread-1")
+for envelope in page.data:
+    handle_event(envelope)
+```
+
+Workflow lifecycle notifications include `checkpoint/committed`,
+`goal/verification_started|completed|failed`,
+`goal/continuation_queued|started`, `plan/updated`, and
+`plan/cleanup_started|completed|failed`. Their payloads carry bounded
+Thread/Turn/checkpoint identity, `stateRevision`, and an optional error so the
+consumer can distinguish a verifier wait, continuation queue, and cleanup
+failure without inspecting `goal/*.md` files.
 
 `thread/settings/updated` carries the App Server `stateRevision`. The typed
 `ThreadSettingsResult` and `WorkflowState` expose it as `state_revision`; the

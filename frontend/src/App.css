@@ -89,6 +89,40 @@
   background: rgba(16, 163, 127, 0.1);
 }
 
+.runtime-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 14px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  background: var(--bg-card-hover);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.runtime-status-label {
+  color: #6366f1;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.runtime-status-operation,
+.runtime-status-meta,
+.runtime-status-event {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.75;
+}
+
+.runtime-status-error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #b91c1c;
+}
+
 .goal-topbar-verification.failed {
   color: #b42318;
   background: rgba(180, 35, 24, 0.1);

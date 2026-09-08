@@ -387,3 +387,36 @@ def test_gateway_websocket_reads_approval_while_steer_is_pending(agent_test_app)
         "steer_ack",
     }
     assert mock_client.steer_turn.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_ws_stream_does_not_duplicate_app_server_events():
+    websocket = AsyncMock()
+    client = AsyncMock()
+
+    async def stream_turn(**_kwargs):
+        yield {"type": "_turn_submission", "data": {"turn_id": "turn-1"}}
+        yield {
+            "type": "event",
+            "threadId": "default",
+            "turnId": "turn-1",
+            "sequence": 1,
+            "event": {"type": "run_started"},
+        }
+
+    client.stream_turn = stream_turn
+    broadcast = AsyncMock()
+    with (
+        patch.object(
+            session_manager,
+            "get_client_for_thread",
+            new=AsyncMock(return_value=client),
+        ),
+        patch.object(session_manager, "broadcast_ws", new=broadcast),
+    ):
+        await _stream_turn_to_ws(websocket, "hello", "start", "default")
+
+    websocket.send_json.assert_awaited_once_with(
+        {"type": "_turn_submission", "data": {"turn_id": "turn-1"}}
+    )
+    broadcast.assert_not_awaited()

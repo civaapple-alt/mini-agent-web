@@ -188,6 +188,40 @@ async def test_stream_turn_filters_events_by_thread_and_turn():
 
 
 @pytest.mark.asyncio
+async def test_read_loop_relays_turn_events_to_notification_handler_in_order():
+    received = []
+
+    async def handler(notification):
+        received.append(notification)
+
+    class FakeStdout:
+        def __init__(self):
+            self._lines = iter(
+                [
+                    b'{"jsonrpc":"2.0","method":"turn/event","params":'
+                    b'{"threadId":"thread-1","sequence":7,"event":{"type":"run_started"}}}\n'
+                ]
+            )
+
+        async def readline(self):
+            return next(self._lines, b"")
+
+    client = MiniAgentClient(notification_handler=handler)
+    client._proc = type("FakeProcess", (), {"stdout": FakeStdout()})()
+
+    await client._read_loop()
+
+    assert received == [
+        {
+            "type": "event",
+            "threadId": "thread-1",
+            "sequence": 7,
+            "event": {"type": "run_started"},
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_sdk_settings_projection_rejects_stale_revision_notifications():
     class FakeStdout:
         def __init__(self, lines):

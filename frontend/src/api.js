@@ -73,6 +73,27 @@ export const api = {
     return res.json();
   },
 
+  async getRuntimeStatus(threadId = 'default') {
+    const targetThread = threadId || 'default';
+    const res = await fetch(
+      `${API_BASE}/api/threads/${encodeURIComponent(targetThread)}/runtime/status`,
+    );
+    if (!res.ok) throw new Error(`Failed to get runtime status for ${targetThread}`);
+    return res.json();
+  },
+
+  async replayThreadEvents(threadId = 'default', afterSequence = null, limit = 128) {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (afterSequence !== null && afterSequence !== undefined) {
+      params.set('after_sequence', String(afterSequence));
+    }
+    const res = await fetch(
+      `${API_BASE}/api/threads/${encodeURIComponent(threadId || 'default')}/events?${params}`,
+    );
+    if (!res.ok) throw new Error(`Failed to replay events for ${threadId}`);
+    return res.json();
+  },
+
   async renameThread(threadId, title) {
     const res = await fetch(`${API_BASE}/api/threads/${encodeURIComponent(threadId)}/rename`, {
       method: 'PATCH',

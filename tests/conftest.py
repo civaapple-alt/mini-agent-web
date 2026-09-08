@@ -109,6 +109,26 @@ def create_mock_client(project_name: str = "test-project") -> AsyncMock:
             raw={},
         )
     )
+    mock.get_runtime_status = AsyncMock(
+        side_effect=lambda thread_id="default": SimpleNamespace(
+            phase="idle",
+            thread_id=thread_id,
+            turn_id=None,
+            operation_id=None,
+            checkpoint_seq=None,
+            state_revision=0,
+            timestamp_ms=1,
+            error=None,
+        )
+    )
+    mock.replay_events = AsyncMock(
+        return_value=SimpleNamespace(
+            data=[],
+            next_cursor=None,
+            oldest_sequence=None,
+            has_gap=False,
+        )
+    )
 
     def mock_update_thread_settings(
         mode, builtin_tools=None, thread_id=None, continuation_mode=None

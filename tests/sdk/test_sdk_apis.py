@@ -3,7 +3,7 @@ Automated pytest suite for Mini Agent Python SDK advanced APIs.
 """
 
 import pytest
-from mini_agent import MiniAgentClient, ThreadCheckpoint
+from mini_agent import MiniAgentClient, RuntimeStatus, ThreadCheckpoint, TurnEventsResult
 from mini_agent.errors import ServerProcessError
 
 from tests.conftest import has_app_server
@@ -136,6 +136,58 @@ async def test_thread_goal_api_mapping_without_starting_goal_runtime():
         ),
         ("thread/goal/get", {"threadId": "default"}),
         ("thread/goal/clear", {"threadId": "default"}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sdk_runtime_observation_api_mapping():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        if method == "runtime/status":
+            return {
+                "phase": "goal_verification",
+                "threadId": "thread-1",
+                "turnId": "turn-2",
+                "operationId": "goal-verification:g-1:9",
+                "checkpointSeq": 9,
+                "stateRevision": 12,
+                "timestampMs": 1234,
+            }
+        if method == "turn/events":
+            return {
+                "data": [
+                    {
+                        "threadId": "thread-1",
+                        "sequence": 8,
+                        "event": {"type": "run_started"},
+                    }
+                ],
+                "nextCursor": 8,
+                "oldestSequence": 1,
+                "hasGap": False,
+            }
+        raise AssertionError(f"unexpected method: {method}")
+
+    client._send_request = fake_send
+
+    status = await client.get_runtime_status("thread-1")
+    events = await client.replay_events("thread-1", after_sequence=7, limit=16)
+
+    assert isinstance(status, RuntimeStatus)
+    assert status.phase == "goal_verification"
+    assert status.operation_id == "goal-verification:g-1:9"
+    assert isinstance(events, TurnEventsResult)
+    assert events.next_cursor == 8
+    assert events.data[0]["sequence"] == 8
+    assert calls == [
+        ("runtime/status", {"threadId": "thread-1"}),
+        (
+            "turn/events",
+            {"threadId": "thread-1", "afterSequence": 7, "limit": 16},
+        ),
     ]
 
 

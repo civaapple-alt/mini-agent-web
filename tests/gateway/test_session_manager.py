@@ -210,6 +210,22 @@ async def test_goal_settlement_notification_restores_continuous_preference(
     )
 
 
+@pytest.mark.asyncio
+async def test_runtime_notifications_are_broadcast_to_all_websocket_clients(
+    mock_session_manager,
+):
+    mock_session_manager.broadcast_ws = AsyncMock()
+    notification = {
+        "type": "notification",
+        "method": "goal/verification_started",
+        "data": {"threadId": "goal-thread", "operationId": "verify:1"},
+    }
+
+    await mock_session_manager._handle_runtime_notification(notification)
+
+    mock_session_manager.broadcast_ws.assert_awaited_once_with(notification)
+
+
 def test_approval_snapshot_exposes_policy_without_web_grants(mock_session_manager):
     mock_session_manager.set_project_execution("full_machine", "automatic")
 

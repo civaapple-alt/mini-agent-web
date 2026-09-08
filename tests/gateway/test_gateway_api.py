@@ -2,6 +2,7 @@
 Automated tests for FastAPI Web Gateway endpoints.
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -253,6 +254,53 @@ async def test_workflow_state_and_goal_artifacts_use_canonical_session(
         assert "Status: running" in content.json()["content"]
 
 
+@pytest.mark.asyncio
+async def test_runtime_observation_routes_expose_snapshot_and_replay(
+    test_app, monkeypatch
+):
+    client_mock = AsyncMock()
+    client_mock.get_runtime_status.return_value = SimpleNamespace(
+        phase="goal_verification",
+        thread_id="t-observe",
+        turn_id="turn-2",
+        operation_id="goal-verification:g-1:9",
+        checkpoint_seq=9,
+        state_revision=12,
+        timestamp_ms=1234,
+        error=None,
+    )
+    client_mock.replay_events.return_value = SimpleNamespace(
+        data=[{"threadId": "t-observe", "sequence": 5, "event": {"type": "run_started"}}],
+        next_cursor=5,
+        oldest_sequence=1,
+        has_gap=False,
+    )
+    monkeypatch.setattr(
+        session_manager,
+        "get_client_for_thread",
+        AsyncMock(return_value=client_mock),
+    )
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        status = await client.get("/api/threads/t-observe/runtime/status")
+        replay = await client.get(
+            "/api/threads/t-observe/events",
+            params={"after_sequence": 4, "limit": 2},
+        )
+
+    assert status.status_code == 200
+    assert status.json()["phase"] == "goal_verification"
+    assert status.json()["operation_id"] == "goal-verification:g-1:9"
+    assert replay.status_code == 200
+    assert replay.json()["next_cursor"] == 5
+    assert replay.json()["data"][0]["sequence"] == 5
+    client_mock.get_runtime_status.assert_awaited_once_with("t-observe")
+    client_mock.replay_events.assert_awaited_once_with(
+        thread_id="t-observe", after_sequence=4, limit=2
+    )
+
+
 def test_gateway_websocket(test_app):
     from starlette.testclient import TestClient
 
@@ -277,18 +325,21 @@ def test_gateway_websocket_turn_mode_sanitation(test_app):
             "threadId": thread_id,
             "data": {"turn_id": "turn-test-123"},
         }
-        yield {
+        event = {
             "type": "event",
             "threadId": thread_id,
             "turnId": "turn-test-123",
             "event": {"type": "turn_started"},
         }
-        yield {
+        await session_manager._handle_runtime_notification(event)
+        event = {
             "type": "event",
             "threadId": thread_id,
             "turnId": "turn-test-123",
             "event": {"type": "turn_finished", "stop_reason": "completed"},
         }
+        await session_manager._handle_runtime_notification(event)
+        yield event
 
     mock_client = AsyncMock()
     mock_client.stream_turn = mock_stream_turn

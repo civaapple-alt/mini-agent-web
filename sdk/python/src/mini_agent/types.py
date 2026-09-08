@@ -42,6 +42,20 @@ ThreadGoalStatus = Literal[
 
 ItemStatus = Literal["inProgress", "completed", "failed"]
 ItemSortDirection = Literal["asc", "desc"]
+RuntimePhase = Literal[
+    "idle",
+    "starting_turn",
+    "model",
+    "tool",
+    "waiting_approval",
+    "compaction",
+    "persisting",
+    "goal_verification",
+    "goal_continuation_queued",
+    "resuming",
+    "completed",
+    "failed",
+]
 
 CollaborationModeKind = Literal["default", "plan"]
 ContinuationMode = Literal["manual", "continuous"]
@@ -264,6 +278,72 @@ class TurnReadResult:
             messages=val.get("messages", []),
             items=[ThreadItem.from_dict(item) for item in val.get("items", [])],
             error=val.get("error"),
+            raw=data,
+        )
+
+
+@dataclass
+class RuntimeStatus:
+    """Live bounded App Server runtime snapshot."""
+
+    phase: RuntimePhase
+    thread_id: str
+    turn_id: str | None = None
+    operation_id: str | None = None
+    checkpoint_seq: int | None = None
+    state_revision: int = 0
+    timestamp_ms: int = 0
+    error: str | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RuntimeStatus:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        return cls(
+            phase=val.get("phase", "idle"),
+            thread_id=val.get("threadId") or val.get("thread_id", "default"),
+            turn_id=val.get("turnId") or val.get("turn_id"),
+            operation_id=val.get("operationId") or val.get("operation_id"),
+            checkpoint_seq=(
+                val.get("checkpointSeq")
+                if "checkpointSeq" in val
+                else val.get("checkpoint_seq")
+            ),
+            state_revision=val.get("stateRevision")
+            if "stateRevision" in val
+            else val.get("state_revision", 0),
+            timestamp_ms=val.get("timestampMs")
+            if "timestampMs" in val
+            else val.get("timestamp_ms", 0),
+            error=val.get("error"),
+            raw=data,
+        )
+
+
+@dataclass
+class TurnEventsResult:
+    """Bounded replay page of ordered ``turn/event`` notifications."""
+
+    data: list[dict[str, Any]] = field(default_factory=list)
+    next_cursor: int | None = None
+    oldest_sequence: int | None = None
+    has_gap: bool = False
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TurnEventsResult:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        if not isinstance(val, dict):
+            return cls(raw=data)
+        return cls(
+            data=[item for item in val.get("data", []) if isinstance(item, dict)],
+            next_cursor=val.get("nextCursor")
+            if "nextCursor" in val
+            else val.get("next_cursor"),
+            oldest_sequence=val.get("oldestSequence")
+            if "oldestSequence" in val
+            else val.get("oldest_sequence"),
+            has_gap=bool(val.get("hasGap", val.get("has_gap", False))),
             raw=data,
         )
 

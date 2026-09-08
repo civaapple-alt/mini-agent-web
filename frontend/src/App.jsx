@@ -73,6 +73,21 @@ function normalizeGoal(goal) {
   };
 }
 
+const RUNTIME_PHASE_LABELS = {
+  idle: '空闲',
+  starting_turn: '启动 Turn',
+  model: '模型调用',
+  tool: '工具执行',
+  waiting_approval: '等待审批',
+  compaction: '上下文压缩',
+  persisting: '保存状态',
+  goal_verification: 'Goal Verify',
+  goal_continuation_queued: 'Goal 排队',
+  resuming: '恢复运行',
+  completed: '已完成',
+  failed: '失败',
+};
+
 export default function App() {
   const [threads, setThreads] = useState([]);
   const [currentThread, setCurrentThread] = useState('default');
@@ -93,6 +108,8 @@ export default function App() {
   // Workflow & Environment
   const [planActive, setPlanActive] = useState(false);
   const [goalState, setGoalState] = useState(null);
+  const [runtimeStatus, setRuntimeStatus] = useState(null);
+  const [lastWorkflowEvent, setLastWorkflowEvent] = useState(null);
   const [accessScope, setAccessScope] = useState('project');
   const [policy, setPolicy] = useState('interactive');
   const [continuationMode, setContinuationMode] = useState('manual');
@@ -115,6 +132,8 @@ export default function App() {
 
   const wsRef = useRef(null);
   const workflowRevisionsRef = useRef(new Map());
+  const eventCursorsRef = useRef(new Map());
+  const hasConnectedRef = useRef(false);
   const runtimeGenerationRef = useRef(0);
   const queueDispatchingRef = useRef(false);
   const interruptPendingRef = useRef(false);
@@ -153,6 +172,7 @@ export default function App() {
     loadSettings();
     loadThreads();
     loadWorkflows('default');
+    loadRuntimeStatus('default');
     loadThreadHistory('default');
 
     // Establish WebSocket Connection
@@ -166,6 +186,11 @@ export default function App() {
         workflowRevisionsRef.current.clear();
         runtimeGenerationRef.current = 0;
         loadWorkflows(currentThreadRef.current);
+        loadRuntimeStatus(currentThreadRef.current);
+        if (hasConnectedRef.current) {
+          replayMissedEvents(currentThreadRef.current);
+        }
+        hasConnectedRef.current = true;
         showToast('✓ 已连接到 Agent Gateway 服务端', 'success', 2000);
       },
       () => {
@@ -221,6 +246,33 @@ export default function App() {
       setGoalState(normalizedState.goal);
     } catch (err) {
       console.error('Failed to load workflow state:', err);
+    }
+  };
+
+  const loadRuntimeStatus = async (threadId = currentThreadRef.current) => {
+    try {
+      const status = await api.getRuntimeStatus(threadId);
+      if (currentThreadRef.current === threadId) setRuntimeStatus(status);
+    } catch (err) {
+      console.debug('Failed to load runtime status:', err);
+    }
+  };
+
+  const replayMissedEvents = async (threadId = currentThreadRef.current) => {
+    const afterSequence = eventCursorsRef.current.get(threadId);
+    try {
+      const page = await api.replayThreadEvents(threadId, afterSequence ?? 0, 128);
+      if (page.has_gap) {
+        // The bounded App Server cache no longer contains the complete gap;
+        // canonical history is the safe reconciliation boundary.
+        await loadThreadHistory(threadId);
+      }
+      for (const event of page.data || []) {
+        handleServerEvent({ type: 'event', ...event });
+      }
+    } catch (err) {
+      console.debug('Failed to replay runtime events:', err);
+      await loadThreadHistory(threadId);
     }
   };
 
@@ -362,6 +414,13 @@ export default function App() {
   const handleServerEvent = (data) => {
     if (!data) return;
 
+    if (data.type === 'event' && data.threadId && data.sequence) {
+      const current = eventCursorsRef.current.get(data.threadId) || 0;
+      if (data.sequence > current) {
+        eventCursorsRef.current.set(data.threadId, data.sequence);
+      }
+    }
+
     // A2: Isolate stream events by active thread to prevent cross-thread pollution
     if (!shouldAcceptEventForThread(data, currentThreadRef.current)) {
       if (data.type === 'event') {
@@ -463,6 +522,15 @@ export default function App() {
         workflowRevisionsRef.current.clear();
         loadWorkflows(currentThreadRef.current);
         showToast('运行时已重启，正在同步控制面状态', 'info', 2500);
+      } else if (data.method === 'runtime/status/updated') {
+        if (notification.threadId === currentThreadRef.current) {
+          setRuntimeStatus(notification);
+        }
+      } else if (data.method?.startsWith('checkpoint/') || data.method?.startsWith('goal/') || data.method?.startsWith('plan/')) {
+        setLastWorkflowEvent({ method: data.method, ...notification });
+        if (notification.threadId === currentThreadRef.current) {
+          loadWorkflows(currentThreadRef.current);
+        }
       } else if (data.method === 'item/started' || data.method === 'item/completed') {
         setMessages((prev) => aggregateItemLifecycle(prev, data));
       } else if (data.method === 'thread/settings/updated') {
@@ -798,6 +866,8 @@ export default function App() {
     setPendingMessages([]);
     setComposerDraft(null);
     setLastTurnResult(null);
+    setRuntimeStatus(null);
+    setLastWorkflowEvent(null);
     setCurrentThread(threadId);
     if (selected) {
       setCurrentThreadMeta({
@@ -807,6 +877,7 @@ export default function App() {
     }
     loadThreadHistory(threadId);
     loadWorkflows(threadId);
+    loadRuntimeStatus(threadId);
     api.attachThread(threadId, selected?.project).then((result) => {
       if (!result.attached && result.session_status === 'locked') {
         showToast('该 Session 正在另一个进程运行，当前为只读查看；结束后可重新 attach', 'info', 3500);
@@ -1074,6 +1145,29 @@ export default function App() {
                 <button type="button" onClick={handleUpdateGoal}>更新</button>
                 <button type="button" className="danger" onClick={handleClearGoal}>删除</button>
               </div>
+            </div>
+          )}
+          {runtimeStatus && runtimeStatus.phase !== 'idle' && (
+            <div className={`runtime-status-bar ${runtimeStatus.phase}`} role="status">
+              <span className="runtime-status-label">RUNTIME</span>
+              <span>{RUNTIME_PHASE_LABELS[runtimeStatus.phase] || runtimeStatus.phase}</span>
+              {runtimeStatus.turnId && (
+                <span className="runtime-status-meta">turn {runtimeStatus.turnId}</span>
+              )}
+              {runtimeStatus.checkpointSeq !== null && runtimeStatus.checkpointSeq !== undefined && (
+                <span className="runtime-status-meta">checkpoint #{runtimeStatus.checkpointSeq}</span>
+              )}
+              {runtimeStatus.operationId && (
+                <span className="runtime-status-operation" title={runtimeStatus.operationId}>
+                  {runtimeStatus.operationId}
+                </span>
+              )}
+              {lastWorkflowEvent?.method && (
+                <span className="runtime-status-event">{lastWorkflowEvent.method}</span>
+              )}
+              {runtimeStatus.error && (
+                <span className="runtime-status-error" title={runtimeStatus.error}>⚠ {runtimeStatus.error}</span>
+              )}
             </div>
           )}
           <ErrorBoundary title="对话区域渲染异常 (Chat Area Render Error)">

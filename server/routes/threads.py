@@ -186,6 +186,59 @@ async def start_thread(req: StartThreadRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
+@router.get("/{thread_id}/events", summary="Replay Thread events")
+async def replay_thread_events(
+    thread_id: str,
+    after_sequence: int | None = Query(default=None, ge=0),
+    limit: int = Query(default=128, ge=1, le=128),
+) -> dict[str, Any]:
+    """Replay a bounded App Server event page after a sequence cursor."""
+    try:
+        client = await session_manager.get_client_for_thread(thread_id)
+        result = await client.replay_events(
+            thread_id=thread_id,
+            after_sequence=after_sequence,
+            limit=limit,
+        )
+        return {
+            "thread_id": thread_id,
+            "data": result.data,
+            "next_cursor": result.next_cursor,
+            "oldest_sequence": result.oldest_sequence,
+            "has_gap": result.has_gap,
+        }
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.get("/{thread_id}/runtime/status", summary="Read runtime status")
+async def get_runtime_status(thread_id: str) -> dict[str, Any]:
+    """Read the non-blocking live App Server runtime snapshot."""
+    try:
+        client = await session_manager.get_client_for_thread(thread_id)
+        status = await client.get_runtime_status(thread_id)
+        return {
+            "phase": status.phase,
+            "thread_id": status.thread_id,
+            "turn_id": status.turn_id,
+            "operation_id": status.operation_id,
+            "checkpoint_seq": status.checkpoint_seq,
+            "state_revision": status.state_revision,
+            "timestamp_ms": status.timestamp_ms,
+            "error": status.error,
+        }
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
 @router.post("/fork", summary="Fork a thread")
 async def fork_thread(req: ForkThreadRequest) -> dict[str, Any]:
     """Fork an existing thread history into a new branched thread."""

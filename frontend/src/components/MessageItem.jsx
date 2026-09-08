@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Copy, Check, Sparkles, RotateCcw, Layers, Navigation, Target } from 'lucide-react';
+import { Copy, Check, Sparkles, RotateCcw, Navigation, Target } from 'lucide-react';
 import ThinkingBlock from './ThinkingBlock';
 import ToolCard from './ToolCard';
+import ContextCompactionGroup from './ContextCompactionGroup';
 import ErrorBoundary from './ErrorBoundary';
+import { groupCompactionBlocks } from '../utils/messageState';
 
 export default function MessageItem({
   message,
@@ -148,6 +150,7 @@ export default function MessageItem({
   const fullResponseText = blocks.length > 0
     ? blocks.filter((b) => b.type === 'text').map((b) => b.content).join('\n\n')
     : text;
+  const renderedBlocks = groupCompactionBlocks(blocks);
 
   return (
     <div className="message-row assistant">
@@ -157,8 +160,8 @@ export default function MessageItem({
 
       <div className="assistant-container">
         {/* Render sequential blocks if present */}
-        {blocks.length > 0 ? (
-          blocks.map((block, idx) => {
+        {renderedBlocks.length > 0 ? (
+          renderedBlocks.map((block, idx) => {
             if (block.type === 'thinking') {
               return (
                 <ThinkingBlock
@@ -183,34 +186,16 @@ export default function MessageItem({
                 </ErrorBoundary>
               );
             }
-            if (block.type === 'compaction') {
+            if (block.type === 'compactionGroup') {
               return (
-                <div
-                  key={block.id || `compaction_${idx}`}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    margin: '8px 0',
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    background: 'rgba(245, 158, 11, 0.08)',
-                    border: '1px solid rgba(245, 158, 11, 0.25)',
-                    color: 'var(--text-secondary, #9CA3AF)',
-                    fontSize: '12px',
-                    fontFamily: 'monospace',
-                  }}
-                >
-                  <Layers size={13} style={{ color: '#F59E0B' }} />
-                  <span>上下文压缩结算 (Context Compaction Settled)</span>
-                </div>
+                <ContextCompactionGroup key={block.id || `compaction_${idx}`} items={block.items} />
               );
             }
             if (block.type === 'text') {
               return (
                 <div
                   key={`text_${idx}`}
-                  className={`markdown-content ${isStreamingThis && idx === blocks.length - 1 ? 'cursor-blink' : ''}`}
+                  className={`markdown-content ${isStreamingThis && idx === renderedBlocks.length - 1 ? 'cursor-blink' : ''}`}
                 >
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {block.content || ''}

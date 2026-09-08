@@ -5,6 +5,7 @@ import {
   aggregateStreamEvent,
   aggregateThreadItems,
   filterEmptyMessages,
+  groupCompactionBlocks,
   shouldAcceptEventForThread,
 } from '../utils/messageState.js';
 
@@ -219,6 +220,79 @@ test('ThreadItem contextCompaction projections create compaction notice block', 
   assert.equal(messages[0].blocks[0].type, 'compaction');
   assert.equal(messages[0].blocks[0].id, 'compaction-1');
   assert.equal(messages[0].blocks[0].status, 'completed');
+});
+
+test('adjacent compactions are grouped while preserving Turn details', () => {
+  const grouped = groupCompactionBlocks([
+    { type: 'thinking', content: 'Inspect' },
+    { type: 'compaction', id: 'compact-1', status: 'completed', turnId: 'turn-1' },
+    { type: 'compaction', id: 'compact-2', status: 'completed', turnId: 'turn-1' },
+    { type: 'tool', id: 'call-1', status: 'completed' },
+    { type: 'compaction', id: 'compact-3', status: 'completed', turnId: 'turn-2' },
+  ]);
+
+  assert.equal(grouped[1].type, 'compactionGroup');
+  assert.equal(grouped[1].items.length, 2);
+  assert.equal(grouped[1].items[1].turnId, 'turn-1');
+  assert.equal(grouped[3].type, 'compactionGroup');
+  assert.equal(grouped[3].items[0].id, 'compact-3');
+});
+
+test('compaction lifecycle completion updates one block and keeps its Turn id', () => {
+  let messages = aggregateStreamEvent([], {
+    type: 'event',
+    turnId: 'turn-compact-life',
+    event: { type: 'turn_started' },
+  });
+  messages = aggregateItemLifecycle(messages, {
+    type: 'notification',
+    method: 'item/started',
+    data: {
+      turnId: 'turn-compact-life',
+      item: {
+        type: 'contextCompaction',
+        id: 'compact-life',
+        status: 'inProgress',
+      },
+    },
+  });
+  messages = aggregateItemLifecycle(messages, {
+    type: 'notification',
+    method: 'item/completed',
+    data: {
+      turnId: 'turn-compact-life',
+      item: {
+        type: 'contextCompaction',
+        id: 'compact-life',
+        status: 'completed',
+      },
+    },
+  });
+
+  assert.equal(messages[0].blocks.length, 1);
+  assert.equal(messages[0].blocks[0].status, 'completed');
+  assert.equal(messages[0].blocks[0].turnId, 'turn-compact-life');
+});
+
+test('legacy compaction events with different checkpoints remain distinct', () => {
+  let messages = aggregateStreamEvent([], {
+    type: 'event',
+    turnId: 'turn-legacy-compact',
+    event: { type: 'turn_started' },
+  });
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-legacy-compact',
+    event: { type: 'context_compaction_finished', checkpoint_seq: 4 },
+  });
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-legacy-compact',
+    event: { type: 'context_compaction_finished', checkpoint_seq: 5 },
+  });
+
+  assert.equal(messages[0].blocks.length, 2);
+  assert.equal(messages[0].blocks[1].id, 'compaction_5');
 });
 
 test('ThreadItem reasoning projections synchronize thinking block', () => {

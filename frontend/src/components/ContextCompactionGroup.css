@@ -1,0 +1,59 @@
+.context-compaction-group {
+  margin: 8px 0;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.08);
+  color: var(--text-secondary, #9ca3af);
+  font-size: 12px;
+  font-family: monospace;
+}
+
+.context-compaction-summary {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-compaction-summary:hover {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.context-compaction-icon {
+  flex-shrink: 0;
+  color: #f59e0b;
+}
+
+.context-compaction-summary > span {
+  flex: 1;
+}
+
+.context-compaction-details {
+  display: grid;
+  gap: 4px;
+  padding: 0 12px 8px 33px;
+  color: var(--text-muted, #6b7280);
+  font-size: 11px;
+}
+
+.context-compaction-detail {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.context-compaction-detail code {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

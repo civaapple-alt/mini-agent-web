@@ -363,7 +363,7 @@ class SessionManager:
                     **p,
                     "threads_count": len(p_threads),
                     "active_threads_count": sum(
-                        item["runtime_status"] == "running" for item in sessions
+                        item.get("turn_active", False) for item in sessions
                     ),
                     "sessions_count": len(sessions),
                 }

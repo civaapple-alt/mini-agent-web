@@ -134,6 +134,8 @@ async def list_threads(
                         "session_id": catalog_entry["session_id"],
                         "session_status": catalog_entry["session_status"],
                         "runtime_status": catalog_entry["runtime_status"],
+                        "turn_active": catalog_entry.get("turn_active", False),
+                        "process_online": catalog_entry.get("process_online", False),
                         "goal_status": catalog_entry["goal_status"],
                         "cleanup_pending": catalog_entry["cleanup_pending"],
                         "resumable": catalog_entry["resumable"],

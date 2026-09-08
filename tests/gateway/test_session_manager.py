@@ -345,6 +345,8 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     listed = catalog.list_sessions(workspace, "project-1")
     assert listed["data"][0]["thread_id"] == "t-1"
     assert listed["data"][0]["session_status"] == "historical"
+    assert listed["data"][0]["turn_active"] is False
+    assert listed["data"][0]["process_online"] is False
     assert listed["data"][0]["resumable"] is True
     assert listed["data"][0]["locked_by"] is None
     assert listed["data"][0]["last_turn_status"] == "step_limit"
@@ -532,6 +534,32 @@ def test_checkpoint_projection_keeps_reasoning_and_tool_call_identity():
     ]
 
 
+def test_session_catalog_only_projects_turn_bound_context_as_compaction():
+    from server.session_catalog import _item_projection
+
+    assert _item_projection(
+        {
+            "item_id": "world-1",
+            "item_kind": "context",
+            "turn_id": None,
+            "message": {"role": "context", "text": "world state"},
+        }
+    ) is None
+
+    assert _item_projection(
+        {
+            "item_id": "compaction-1",
+            "item_kind": "context_compaction",
+            "turn_id": "turn-1",
+            "message": {"role": "context", "text": "compacted context"},
+        }
+    ) == {
+        "type": "contextCompaction",
+        "id": "compaction-1",
+        "status": "completed",
+    }
+
+
 def test_session_catalog_keeps_user_paused_state_after_lock_release(
     tmp_path, monkeypatch
 ):
@@ -574,6 +602,8 @@ def test_session_catalog_keeps_user_paused_state_after_lock_release(
 
     assert entry["runtime_status"] == "paused"
     assert entry["session_status"] == "paused"
+    assert entry["turn_active"] is False
+    assert entry["process_online"] is False
     assert entry["resumable"] is True
     assert entry["goal_status"] == "paused"
 

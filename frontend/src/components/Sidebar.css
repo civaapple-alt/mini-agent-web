@@ -518,6 +518,37 @@ body.theme-cyberpunk .nested-thread-item.selected {
   color: #b45309;
 }
 
+.thread-status-badge.failed,
+.thread-status-badge.step-limit {
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.thread-status-badge.cleanup {
+  border-color: #c4b5fd;
+  color: #6d28d9;
+}
+
+.thread-process-badge {
+  flex-shrink: 0;
+  margin-left: 4px;
+  padding: 1px 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  font-size: 9px;
+  line-height: 14px;
+}
+
+.thread-process-badge.active {
+  border-color: #86efac;
+  color: #15803d;
+}
+
+.thread-process-badge.standby {
+  border-color: #cbd5e1;
+  color: #64748b;
+}
+
 .thread-tail-indicators {
   display: flex;
   align-items: center;

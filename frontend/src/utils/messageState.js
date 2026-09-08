@@ -127,23 +127,61 @@ function mergeProjectedCompactionItems(messages, items, targetIndex = messages.l
 
   for (const item of items) {
     const compactionId = item.id || 'compaction';
-    const exists = blocks.some(
+    const existingIndex = blocks.findIndex(
       (b) =>
         b.type === 'compaction' &&
         (b.id === compactionId || (!item.id && b.id.startsWith('compaction')))
     );
-    if (!exists) {
-      blocks.push({
-        type: 'compaction',
-        id: compactionId,
-        status: item.status || 'completed',
-      });
+    const nextBlock = {
+      type: 'compaction',
+      id: compactionId,
+      status: item.status || 'completed',
+      turnId: item.turnId || item.turn_id || null,
+    };
+    if (existingIndex === -1) {
+      blocks.push(nextBlock);
+    } else {
+      blocks[existingIndex] = {
+        ...blocks[existingIndex],
+        ...nextBlock,
+        turnId: nextBlock.turnId || blocks[existingIndex].turnId || null,
+      };
     }
   }
 
   last.blocks = blocks;
   copy[targetIndex] = last;
   return copy;
+}
+
+/**
+ * Collapse adjacent compaction lifecycle blocks without losing their details.
+ * Non-adjacent compactions remain separate because another model/tool item is
+ * meaningful ordering information in the transcript.
+ */
+export function groupCompactionBlocks(blocks = []) {
+  const grouped = [];
+  for (const block of blocks) {
+    if (block?.type !== 'compaction') {
+      grouped.push(block);
+      continue;
+    }
+
+    const previous = grouped[grouped.length - 1];
+    if (previous?.type === 'compactionGroup') {
+      grouped[grouped.length - 1] = {
+        ...previous,
+        items: [...previous.items, block],
+      };
+    } else {
+      grouped.push({
+        type: 'compactionGroup',
+        id: block.id || `compaction-group-${grouped.length}`,
+        items: [block],
+      });
+    }
+  }
+  return grouped;
 }
 
 function mergeProjectedReasoningItems(messages, items, targetIndex = messages.length - 1) {
@@ -253,7 +291,11 @@ export function aggregateItemLifecycle(messages, data) {
       : projected;
   }
   if (item.type === 'contextCompaction' || item.type === 'context_compaction') {
-    const projected = mergeProjectedCompactionItems(next, [item], targetIndex);
+    const projected = mergeProjectedCompactionItems(
+      next,
+      [{ ...item, turnId }],
+      targetIndex,
+    );
     return data.method === 'item/started'
       ? settleThinkingBlocks(projected, targetIndex)
       : projected;
@@ -300,7 +342,11 @@ export function aggregateThreadItems(messages, entries) {
         findToolTargetIndex(next, item, targetIndex),
       );
     } else if (item.type === 'contextCompaction' || item.type === 'context_compaction') {
-      next = mergeProjectedCompactionItems(next, [item], targetIndex);
+      next = mergeProjectedCompactionItems(
+        next,
+        [{ ...item, turnId }],
+        targetIndex,
+      );
     } else if (item.type === 'reasoning') {
       const alreadyHydrated = next.some((message) =>
         (message.blocks || []).some(
@@ -420,7 +466,11 @@ export function aggregateStreamEvent(messages, data) {
         item.type === 'contextCompaction' || item.type === 'context_compaction'
     );
     if (projectedCompactions.length > 0) {
-      messages = mergeProjectedCompactionItems(messages, projectedCompactions, targetIndex);
+      messages = mergeProjectedCompactionItems(
+        messages,
+        projectedCompactions.map((item) => ({ ...item, turnId: data.turnId })),
+        targetIndex,
+      );
     }
 
     const projectedReasonings = (data.items || []).filter(
@@ -434,13 +484,17 @@ export function aggregateStreamEvent(messages, data) {
     const last = { ...copy[targetIndex] };
     const blocks = [...(last.blocks || [])];
 
-    if (type === 'context_compaction_finished') {
-      const exists = blocks.some((b) => b.type === 'compaction');
+    if (type === 'context_compaction_finished' && projectedCompactions.length === 0) {
+      const fallbackId = `compaction_${evt.checkpoint_seq || Date.now()}`;
+      const exists = blocks.some(
+        (b) => b.type === 'compaction' && b.id === fallbackId,
+      );
       if (!exists) {
         blocks.push({
           type: 'compaction',
-          id: `compaction_${evt.checkpoint_seq || Date.now()}`,
+          id: fallbackId,
           status: 'completed',
+          turnId: data.turnId || null,
         });
         last.blocks = blocks;
         copy[targetIndex] = last;

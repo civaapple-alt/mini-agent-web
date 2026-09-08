@@ -74,6 +74,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Sidebar runtime semantics:** distinguish an active unsettled Turn from an
+  online SessionStore process; Web Studio shows “运行中” only for the former
+  and labels an idle locked process as “待命”.
+
+- **Compaction history presentation:** preserve the compaction `turn_id` through
+  the Gateway projection and fold adjacent compactions into an expandable
+  “上下文压缩 ×N” card with per-item Turn and ID details.
+
 - **Project-scoped Thread attach**: when `/api/threads/{thread_id}/attach` receives
   an explicit Project ID or name, canonical Session lookup and resumed client
   binding now use that Project instead of falling back to an arbitrary matching

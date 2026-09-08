@@ -19,6 +19,7 @@ import {
   SquarePen,
 } from 'lucide-react';
 import { api } from '../api';
+import { getThreadStatusPresentation } from '../utils/threadStatus';
 import './Sidebar.css';
 
 export default function Sidebar({
@@ -324,6 +325,14 @@ export default function Sidebar({
         last_stop_reason: t.last_stop_reason || null,
         last_turn_complete: Boolean(t.last_turn_complete),
         session_id: t.session_id || null,
+        turn_active: Boolean(
+          t.turn_active ?? t.last_turn_status === 'in_progress',
+        ),
+        process_online: Boolean(
+          t.process_online ?? (
+            t.session_status === 'locked' || t.runtime_status === 'running'
+          ),
+        ),
       };
     });
   }, [threads, currentProjectName]);
@@ -632,6 +641,7 @@ export default function Sidebar({
                 {isExpanded && (
                   <div className="project-nested-threads">
                     {visibleThreads.map((thread) => {
+                      const status = getThreadStatusPresentation(thread);
                       const isSelected =
                         thread.thread_id === currentThread &&
                         (!currentThreadProject || thread.project === currentThreadProject);
@@ -639,7 +649,7 @@ export default function Sidebar({
                       return (
                         <div
                           key={threadKey}
-                          className={`nested-thread-item ${isSelected ? 'selected' : ''} ${thread.runtime_status === 'running' ? 'is-running' : ''}`}
+                          className={`nested-thread-item ${isSelected ? 'selected' : ''} ${status.turnActive ? 'is-running' : ''}`}
                           onClick={() => onSelectThread(thread.thread_id, thread.project)}
                           title={thread.title}
                         >
@@ -647,26 +657,25 @@ export default function Sidebar({
                             {thread.title}
                           </span>
 
-                          {(thread.runtime_status || thread.goal_status) && (
+                          {status.lifecycleLabel && (
                             <span
-                              className={`thread-status-badge ${thread.runtime_status || thread.goal_status}`}
+                              className={`thread-status-badge ${status.lifecycleClass}`}
                               title={thread.resumable ? '可恢复的历史会话' : undefined}
                             >
-                              {thread.runtime_status === 'running'
-                                ? '运行中'
-                                : thread.runtime_status === 'paused'
-                                  ? '已暂停'
-                                : thread.goal_status === 'paused'
-                                  ? '已暂停'
-                                : thread.last_turn_status === 'step_limit'
-                                  ? '回答未完成'
-                                : thread.last_turn_status === 'failed'
-                                  ? '运行失败'
-                                  : thread.cleanup_pending
-                                  ? '清理待处理'
-                                  : thread.resumable
-                                    ? '可恢复'
-                                    : '历史'}
+                              {status.lifecycleLabel}
+                            </span>
+                          )}
+
+                          {status.processLabel && (
+                            <span
+                              className={`thread-process-badge ${status.turnActive ? 'active' : 'standby'}`}
+                              title={
+                                status.turnActive
+                                  ? 'Session 进程在线，当前 Turn 正在运行'
+                                  : 'Session 进程在线，当前没有活跃 Turn'
+                              }
+                            >
+                              {status.processLabel}
                             </span>
                           )}
 

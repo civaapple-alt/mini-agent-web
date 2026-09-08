@@ -236,6 +236,14 @@ def _item_projection(record: dict[str, Any]) -> dict[str, Any] | None:
             "output": _bounded_text(output, 16 * 1024),
         }
     if role == "context":
+        # Context updates used to be stored without a Turn (for example the
+        # initial world-state snapshot). They are not compactions and must not
+        # become visible compression cards. A context record associated with a
+        # Turn is the durable compaction projection.
+        if record.get("item_kind") != "context_compaction" and not record.get(
+            "turn_id"
+        ):
+            return None
         return {"type": "contextCompaction", "id": item_id, "status": "completed"}
     return None
 
@@ -428,7 +436,9 @@ class SessionCatalog:
             return None
         return {
             "thread_id": entry["thread_id"],
-            "status": "running" if entry["runtime_status"] == "running" else "idle",
+            "status": "running" if entry.get("turn_active") else "idle",
+            "turn_active": entry.get("turn_active", False),
+            "process_online": entry.get("process_online", False),
             "last_turn_status": entry.get("last_turn_status"),
             "last_stop_reason": entry.get("last_stop_reason"),
             "last_turn_error": entry.get("last_turn_error"),
@@ -559,6 +569,11 @@ class SessionCatalog:
             "created_at": _timestamp(summary.get("created_at_ms")),
             "updated_at": _timestamp(updated_ms),
             "runtime_status": runtime_status,
+            # Keep Turn activity separate from the SessionStore process lock.
+            # A live/idle App Server process is online, but only an unsettled
+            # Turn should be shown as running in the Studio sidebar.
+            "turn_active": last_turn_status == "in_progress",
+            "process_online": lock_active,
             "session_status": (
                 "locked"
                 if lock_active
@@ -572,7 +587,7 @@ class SessionCatalog:
             "continuation_mode": continuation_mode,
             "cleanup_pending": cleanup.get("status") == "cleanup_pending",
             "active_turn_id": goal.get("active_turn_id") or latest_turn_id
-            if runtime_status == "running"
+            if last_turn_status == "in_progress"
             else None,
             "checkpoint_seq": latest_checkpoint.get("seq") if latest_checkpoint else 0,
             "turn_count": _bounded_int(summary.get("turn_count")) or turn_count,

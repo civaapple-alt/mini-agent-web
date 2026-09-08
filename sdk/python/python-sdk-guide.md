@@ -209,6 +209,14 @@ SDK's cached Thread settings projection only advances when the incoming
 revision is equal to or newer than the cached value, so a delayed notification
 cannot roll a client back to stale Plan or continuation state.
 
+Goal action results and the `thread/goal/updated` / `thread/goal/cleared`
+notifications carry the same `stateRevision`; `ThreadGoalSetResult`,
+`ThreadGoalGetResult`, and `ThreadGoalClearResult` expose it as
+`state_revision`. Consumers that maintain a Goal projection should use the
+same per-Thread monotonic rule for these envelopes. A reconnect should first
+read `get_workflow_state()` and rebuild the cursor because an App Server
+restart may reset its in-memory revision sequence.
+
 `get_workflow_state()` is only a convenience read-only aggregate in the SDK;
 it composes the cached Thread settings projection with `thread/goal/get` and
 does not send a legacy `workflow/state` RPC.

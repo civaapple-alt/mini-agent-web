@@ -76,6 +76,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   revisions per Thread while accepting repeated revisions. This keeps the
   canonical App Server state authoritative across the SDK → Gateway → Studio
   path without introducing a second state store.
+- **Goal and recovery revision projection**: Goal set/get/clear results and
+  `thread/goal/updated|cleared` notifications now carry the same App Server
+  `stateRevision` used by Thread settings. Web Studio and its SidePanel apply
+  Goal state monotonically, stop history reads from overwriting control-plane
+  state, and rebuild the per-Thread cursor from a canonical workflow read after
+  a WebSocket reconnect.
 
 - **Project-safe Thread fork**: fork requests may identify the source Project,
   and the Gateway now carries the source binding onto the branched Thread;

@@ -43,10 +43,12 @@ Thread、Turn、Goal 和 ThreadItem 的运行时语义来自 App Server；网关
 workspace 绑定竞争。
 
 Thread settings 的 `state_revision` 只是 canonical App Server revision 的有界
-投影。Gateway 通过 WebSocket 原样转发 `thread/settings/updated`，SDK 和 Web
-Studio 对每个 Thread 单调消费该 revision；Gateway 不保存另一份 settings
-authority。历史 Session 尚未携带 revision 时返回空值，客户端仍以 canonical
-Session projection 读取设置。
+投影。Gateway 通过 WebSocket 原样转发 `thread/settings/updated` 以及带同一
+revision 的 `thread/goal/updated|cleared`；Goal/settings REST action result 也
+返回它。SDK 和 Web Studio 对每个 Thread 单调消费该 revision，Gateway 不保存
+另一份 settings 或 Goal authority。历史 Session 尚未携带 revision 时返回空值；
+WebSocket 重连后由 Studio 重新读取 workflow projection，以处理 App Server
+重启造成的 in-memory revision 序列重置。
 
 访问和批准是当前 Project 的执行设置：`project` / `full_machine` 控制路径范围，
 `interactive` / `automatic` 控制审批策略；`once` / `session` / `project`

@@ -122,6 +122,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Shell history projection:** render canonical SessionStore tool settlement
+  output and status fields, and consume the bounded persisted command projection
+  so completed Shell cards no longer appear empty after a session switch.
+
 - **Goal-owned continuation restoration**: defer the canonical SessionStore
   `continuous` preference while an active Goal owns the loop, restore it after
   Goal settlement, and avoid overwriting it when an unrelated Thread setting

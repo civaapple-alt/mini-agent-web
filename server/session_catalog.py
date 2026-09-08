@@ -210,17 +210,30 @@ def _item_projection(record: dict[str, Any]) -> dict[str, Any] | None:
         }
     if role == "tool":
         outcome = message.get("outcome")
+        output = (
+            outcome.get("content")
+            if isinstance(outcome, dict)
+            else message.get("content")
+        )
+        outcome_name = str(outcome or "").lower()
+        failed = bool(message.get("is_error")) or (
+            isinstance(outcome, dict) and bool(outcome.get("error"))
+        ) or outcome_name in {"failed", "error", "cancelled"}
         return {
             "type": "toolCall",
             "id": item_id,
             "name": str(message.get("name") or "tool"),
-            "arguments": message.get("arguments") or {},
-            "status": "failed"
-            if isinstance(outcome, dict) and outcome.get("error")
-            else "completed",
-            "output": _bounded_text(outcome.get("content"), 16 * 1024)
-            if isinstance(outcome, dict)
-            else None,
+            # Newer SessionStore records keep the bounded projection on the
+            # item record; older records may have put it on the message.
+            "arguments": record.get("arguments")
+            or message.get("arguments")
+            or message.get("args")
+            or {},
+            "status": "failed" if failed else "completed",
+            # Tool settlement content is stored directly on Message::Tool in
+            # the canonical session JSONL. Keep compatibility with the
+            # earlier dict-shaped outcome projection as well.
+            "output": _bounded_text(output, 16 * 1024),
         }
     if role == "context":
         return {"type": "contextCompaction", "id": item_id, "status": "completed"}

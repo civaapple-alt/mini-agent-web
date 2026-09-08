@@ -362,6 +362,54 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     assert history["last_turn_id"] == "turn-1"
 
 
+def test_session_catalog_projects_tool_settlement_content_and_arguments():
+    """SessionStore tool records keep output on the tool message itself."""
+    from server.session_catalog import _item_projection
+
+    projected = _item_projection(
+        {
+            "item_id": "call-1",
+            "arguments": {"command": "Get-ChildItem"},
+            "message": {
+                "role": "tool",
+                "name": "shell",
+                "content": "exit: 0\nstdout:\nfile.txt\nstderr:\n",
+                "is_error": False,
+                "outcome": "completed",
+            },
+        }
+    )
+
+    assert projected == {
+        "type": "toolCall",
+        "id": "call-1",
+        "name": "shell",
+        "arguments": {"command": "Get-ChildItem"},
+        "status": "completed",
+        "output": "exit: 0\nstdout:\nfile.txt\nstderr:\n",
+    }
+
+
+def test_session_catalog_projects_failed_tool_settlement():
+    from server.session_catalog import _item_projection
+
+    projected = _item_projection(
+        {
+            "item_id": "call-2",
+            "message": {
+                "role": "tool",
+                "name": "shell",
+                "content": "permission denied",
+                "is_error": True,
+                "outcome": "failed",
+            },
+        }
+    )
+
+    assert projected["status"] == "failed"
+    assert projected["output"] == "permission denied"
+
+
 def test_session_catalog_skips_oversized_checkpoint_but_keeps_goal_state(
     tmp_path, monkeypatch
 ):

@@ -123,9 +123,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Plan/Shell workflow controls:** keep source-file mutations read-only in Plan
-  Mode while routing Shell commands through the selected approval policy; slash
-  command selection now fills `/plan` into the composer before execution, and
-  restored sessions expose their Session-owned `plan/plan.md` artifact.
+  Mode while routing Shell commands through the selected approval policy; the
+  slash selection fills `/plan` into the composer before execution, restored
+  sessions expose their Session-owned `plan/plan.md` artifact, and the menu now
+  only exposes `/plan`, `/goal`, and `/clear`; `/clear` explicitly clears the
+  current view without deleting Session history.
 
 - **Shell history projection:** render canonical SessionStore tool settlement
   output and status fields, and consume the bounded persisted command projection

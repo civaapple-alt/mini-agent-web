@@ -5,11 +5,7 @@
 export const SLASH_COMMANDS = [
   { cmd: '/plan', desc: '开启/切换 Plan 规划探索模式' },
   { cmd: '/goal', desc: '填入目标后启动跨回合 Goal' },
-  { cmd: '/clear', desc: '清空当前界面交互与消息历史' },
-  { cmd: '/status', desc: '打开右侧诊断抽屉与环境看板' },
-  { cmd: '/copy', desc: '复制模型最新的 Markdown 回复' },
-  { cmd: '/cp', desc: '快捷复制模型最新回复别名' },
-  { cmd: '/steer', desc: '向运行中的任务注入实时纠偏指令' },
+  { cmd: '/clear', desc: '仅清空当前界面显示，不删除会话历史' },
 ];
 
 /**
@@ -22,7 +18,7 @@ export function getSlashCommandDraft(command) {
   if (cleanCommand === '/plan') {
     return cleanCommand;
   }
-  if (cleanCommand === '/goal' || cleanCommand === '/steer') {
+  if (cleanCommand === '/goal') {
     return `${cleanCommand} `;
   }
   return null;
@@ -33,13 +29,9 @@ export function getSlashCommandDraft(command) {
  * @returns {boolean} True if the command was recognized and handled.
  */
 export function parseAndExecuteSlashCommand(cmdStr, {
-  isGenerating = false,
   onTogglePlanMode,
   onStartGoal,
   onClearChat,
-  onOpenStatus,
-  onCopyLastResponse,
-  onSteerMessage,
   onToast,
 }) {
   const cleanCmd = (cmdStr || '').trim();
@@ -64,33 +56,6 @@ export function parseAndExecuteSlashCommand(cmdStr, {
 
   if (lowerCmd === '/clear') {
     if (onClearChat) onClearChat();
-    return true;
-  }
-
-  if (lowerCmd === '/status') {
-    if (onOpenStatus) onOpenStatus();
-    return true;
-  }
-
-  if (lowerCmd === '/copy' || lowerCmd === '/cp') {
-    if (onCopyLastResponse) onCopyLastResponse();
-    return true;
-  }
-
-  if (lowerCmd.startsWith('/steer')) {
-    const steerText = cleanCmd.slice(6).trim();
-    if (!isGenerating) {
-      if (onToast) {
-        onToast('⚠️ 无法纠偏：当前没有正在执行的任务。请在 Agent 运行时使用 /steer 注入实时纠偏指令。', 'warning');
-      }
-      return true;
-    }
-    if (!steerText) {
-      return false; // Leave prompt as '/steer '
-    }
-    if (onSteerMessage) {
-      onSteerMessage(steerText);
-    }
     return true;
   }
 

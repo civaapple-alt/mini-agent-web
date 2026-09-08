@@ -6,7 +6,6 @@ import {
   Compass,
   Target,
   Sparkles,
-  Command,
   ShieldAlert,
   Shield,
   Check,
@@ -23,10 +22,7 @@ import './InputBar.css';
 const SLASH_COMMANDS = [
   { cmd: '/plan', desc: '开启/切换 Plan 规划探索模式', icon: <Compass size={13} className="text-amber" /> },
   { cmd: '/goal', desc: '填入目标后启动跨回合 Goal', icon: <Target size={13} className="text-green" /> },
-  { cmd: '/clear', desc: '清空当前聊天记录', icon: <Sparkles size={13} className="text-sky" /> },
-  { cmd: '/status', desc: '打开工作区探测与环境状态面板', icon: <Command size={13} className="text-emerald" /> },
-  { cmd: '/copy', desc: '复制模型最新回复/文档 Markdown 到剪贴板', icon: <Sparkles size={13} className="text-purple" /> },
-  { cmd: '/steer', desc: '向运行中的 Agent 发送实时纠偏指令', icon: <Navigation size={13} className="text-purple" /> },
+  { cmd: '/clear', desc: '仅清空当前界面显示，不删除会话历史', icon: <Sparkles size={13} className="text-sky" /> },
 ];
 
 const ACCESS_SCOPES = [
@@ -59,7 +55,6 @@ export default function InputBar({
   onStartGoal,
   onSendMessage,
   onQueueMessage,
-  onSteerMessage,
   pendingMessages = [],
   onSteerQueuedMessage,
   onEditQueuedMessage,
@@ -69,8 +64,6 @@ export default function InputBar({
   onComposerDraftApplied,
   onInterrupt,
   onClearChat,
-  onOpenStatus,
-  onCopyLastResponse,
   onTogglePlanMode,
   onToast,
 }) {
@@ -209,19 +202,11 @@ export default function InputBar({
 
   const executeSlashCommand = (cmdStr) => {
     const cleanCmd = (cmdStr || '').trim();
-    if (cleanCmd.toLowerCase() === '/steer' && isGenerating) {
-      setPrompt('/steer ');
-      return true;
-    }
 
     const handled = parseAndExecuteSlashCommand(cleanCmd, {
-      isGenerating,
       onTogglePlanMode,
       onStartGoal,
       onClearChat,
-      onOpenStatus,
-      onCopyLastResponse,
-      onSteerMessage,
       onToast,
     });
 

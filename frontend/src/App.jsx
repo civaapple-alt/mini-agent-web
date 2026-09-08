@@ -851,39 +851,7 @@ export default function App() {
       handleInterrupt('clear-chat');
     }
     setMessages([]);
-    showToast('已清空当前会话界面消息', 'info', 1800);
-  };
-
-  const handleOpenStatus = () => {
-    setSidePanelTab('world');
-    setSidePanelOpen(true);
-  };
-
-  const handleCopyLastResponse = async () => {
-    const assistantMessages = messages.filter((m) => m.role === 'assistant');
-    if (assistantMessages.length === 0) {
-      showToast('当前会话暂无模型回复可复制', 'warning');
-      return;
-    }
-    const lastMsg = assistantMessages[assistantMessages.length - 1];
-    let fullText = lastMsg.text || '';
-    if (!fullText && lastMsg.blocks) {
-      fullText = lastMsg.blocks
-        .filter((b) => b.type === 'text')
-        .map((b) => b.content)
-        .join('\n\n');
-    }
-    if (!fullText) {
-      showToast('当前模型回复暂无文本内容', 'warning');
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(fullText);
-      showToast(`✓ 已复制模型最新回复 (${fullText.length} 字符, Markdown) 到系统剪贴板！`, 'success');
-    } catch (err) {
-      console.warn('Clipboard write failed:', err);
-      showToast('复制到剪贴板失败，请手动选择复制', 'error');
-    }
+    showToast('已清空当前界面显示；会话历史未删除，重新进入会恢复', 'info', 2600);
   };
 
   const handleSteerMessage = (text, source = 'direct-steer') => {
@@ -1370,7 +1338,6 @@ export default function App() {
             onStartGoal={handleStartGoal}
             onSendMessage={handleSendMessage}
             onQueueMessage={handleQueueMessage}
-            onSteerMessage={handleSteerMessage}
             pendingMessages={pendingMessages}
             onSteerQueuedMessage={handleSteerQueuedMessage}
             onEditQueuedMessage={handleEditQueuedMessage}
@@ -1380,8 +1347,6 @@ export default function App() {
             onComposerDraftApplied={() => setComposerDraft(null)}
             onInterrupt={handleInterrupt}
             onClearChat={handleClearChat}
-            onOpenStatus={handleOpenStatus}
-            onCopyLastResponse={handleCopyLastResponse}
             onTogglePlanMode={handleTogglePlan}
             onToast={showToast}
           />

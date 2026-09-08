@@ -25,7 +25,7 @@ uv run mini-agent-server-dev
 | --- | --- |
 | `/ws/agent` | Turn 流、审批、Steer、Interrupt 和 runtime notifications |
 | `/api/threads` | Thread 列表、创建、读取、分叉、摘要和关闭 |
-| `/api/threads/{thread_id}/attach` | attach 历史/暂停 Session，或报告外部运行锁 |
+| `/api/threads/{thread_id}/attach` | 按可选 Project ID/name attach 历史/暂停 Session，或报告外部运行锁 |
 | `/api/threads/{thread_id}/items` | 有界 ThreadItem 历史投影 |
 | `/api/threads/{thread_id}/settings` | Thread collaboration mode、Builtin tools 和显式推进方式 |
 | `/api/threads/{thread_id}/goal` | Thread Goal 的读取、设置和清除 |

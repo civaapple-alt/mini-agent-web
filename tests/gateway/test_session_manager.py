@@ -391,6 +391,49 @@ def test_session_catalog_keeps_user_paused_state_after_lock_release(
     assert entry["goal_status"] == "paused"
 
 
+@pytest.mark.asyncio
+async def test_attach_thread_honors_explicit_project_canonical_session(
+    mock_session_manager, tmp_path, monkeypatch
+):
+    """An explicit Project must select that project's canonical SessionStore record."""
+    project_root = tmp_path / "other-project"
+    project_root.mkdir()
+    project = {
+        "id": "other-project",
+        "name": "Other Project",
+        "primary_path": str(project_root),
+    }
+    mock_session_manager._projects_registry[project["id"]] = project
+    canonical = {
+        "session": {
+            "project_id": project["id"],
+            "session_id": "session-other",
+            "session_status": "historical",
+            "runtime_status": "historical",
+        }
+    }
+    monkeypatch.setattr(
+        mock_session_manager,
+        "read_project_thread",
+        lambda thread_id, project_id=None: (
+            canonical
+            if (thread_id, project_id) == ("shared-thread", project["id"])
+            else None
+        ),
+    )
+    client = AsyncMock()
+    create_client = AsyncMock(return_value=client)
+    monkeypatch.setattr(mock_session_manager, "_create_client", create_client)
+
+    result = await mock_session_manager.attach_thread("shared-thread", project["id"])
+
+    assert result["attached"] is True
+    assert result["project"] == project["id"]
+    create_client.assert_awaited_once_with(
+        "shared-thread", project, "resume", "session-other"
+    )
+
+
 def test_session_manager_avoids_duplicate_project_for_custom_id_path(tmp_path):
     """Ensure _load_state does not duplicate a project when its name differs from directory basename."""
     custom_ws = tmp_path / "pi"

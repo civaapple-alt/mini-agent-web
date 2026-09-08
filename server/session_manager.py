@@ -585,6 +585,15 @@ class SessionManager:
                 return self._projects_registry[canonical_project]
         return self._projects_registry[self._current_project_id]
 
+    def _canonical_thread(
+        self, thread_id: str, project_id: str | None = None
+    ) -> dict[str, Any] | None:
+        """Read one canonical Thread, honoring an explicit Project binding."""
+        if project_id:
+            project = self._project_for_thread(thread_id, project_id)
+            return self.read_project_thread(thread_id, project.get("id"))
+        return self.read_any_project_thread(thread_id)
+
     async def _create_client(
         self,
         thread_id: str,
@@ -638,12 +647,12 @@ class SessionManager:
         existing = self._clients.get(target)
         if existing is not None:
             return existing
-        canonical = self.read_any_project_thread(target)
+        project = self._project_for_thread(target, project_id)
+        canonical = self._canonical_thread(target, project_id)
         if canonical and canonical["session"]["session_status"] == "locked":
             raise RuntimeError(
                 f"Session '{target}' is already running in another process"
             )
-        project = self._project_for_thread(target, project_id)
         session = canonical.get("session") if canonical else None
         client = await self._create_client(
             target,
@@ -676,7 +685,7 @@ class SessionManager:
     ) -> dict[str, Any]:
         """Attach Studio to a resumable Session without stealing a live lock."""
         target = thread_id or "default"
-        canonical = self.read_any_project_thread(target)
+        canonical = self._canonical_thread(target, project_id)
         if canonical and canonical["session"]["session_status"] == "locked":
             session = canonical["session"]
             return {
@@ -690,7 +699,7 @@ class SessionManager:
             }
 
         await self.get_client_for_thread(target, project_id)
-        refreshed = self.read_any_project_thread(target)
+        refreshed = self._canonical_thread(target, project_id)
         session = refreshed.get("session", {}) if refreshed else {}
         return {
             "thread_id": target,

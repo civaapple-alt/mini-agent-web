@@ -240,6 +240,38 @@ def _item_projection(record: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _item_projections(record: dict[str, Any]) -> list[dict[str, Any]]:
+    """Project one persisted item, preserving assistant reasoning separately."""
+    message = record.get("message")
+    if not isinstance(message, dict):
+        return []
+    if message.get("role") != "assistant":
+        projected = _item_projection(record)
+        return [projected] if projected is not None else []
+
+    item_id = str(record.get("item_id") or "")
+    projections: list[dict[str, Any]] = []
+    reasoning = _bounded_text(message.get("reasoning"), 16 * 1024)
+    if reasoning:
+        projections.append(
+            {
+                "type": "reasoning",
+                "id": f"{item_id}:reasoning",
+                "text": reasoning,
+            }
+        )
+    text = _bounded_text(message.get("text"), 16 * 1024)
+    if text:
+        projections.append(
+            {
+                "type": "agentMessage",
+                "id": f"{item_id}:agent",
+                "text": text,
+            }
+        )
+    return projections
+
+
 def _checkpoint_projection(record: dict[str, Any]) -> dict[str, Any]:
     """Keep a bounded history preview when a checkpoint exceeds the record limit."""
     messages = record.get("messages")
@@ -251,15 +283,31 @@ def _checkpoint_projection(record: dict[str, Any]) -> dict[str, Any]:
             role = message.get("role")
             if role not in ("user", "assistant", "system", "tool", "context"):
                 continue
-            bounded_messages.append(
-                {
-                    "role": role,
-                    "text": _bounded_text(
-                        message.get("text"), MAX_CHECKPOINT_MESSAGE_CHARS
+            projected = {
+                "role": role,
+                "text": _bounded_text(
+                    message.get("text"), MAX_CHECKPOINT_MESSAGE_CHARS
+                )
+                or "",
+            }
+            if role == "assistant":
+                projected["reasoning"] = (
+                    _bounded_text(
+                        message.get("reasoning"), MAX_CHECKPOINT_MESSAGE_CHARS
                     )
-                    or "",
-                }
-            )
+                    or ""
+                )
+                tool_calls = message.get("tool_calls")
+                if isinstance(tool_calls, list):
+                    projected["tool_calls"] = [
+                        {
+                            "id": str(call.get("id") or ""),
+                            "name": str(call.get("name") or "tool"),
+                        }
+                        for call in tool_calls[:24]
+                        if isinstance(call, dict) and call.get("id")
+                    ]
+            bounded_messages.append(projected)
     return {
         "kind": "checkpoint",
         "thread_id": record.get("thread_id"),
@@ -548,8 +596,7 @@ class SessionCatalog:
                 {"turnId": record.get("turn_id"), "item": projected}
                 for record in records
                 if record.get("kind") == "item"
-                for projected in [_item_projection(record)]
-                if projected is not None
+                for projected in _item_projections(record)
             ][-256:]
         return entry
 

@@ -410,6 +410,34 @@ def test_session_catalog_projects_failed_tool_settlement():
     assert projected["output"] == "permission denied"
 
 
+def test_session_catalog_projects_assistant_reasoning_and_text_items():
+    from server.session_catalog import _item_projections
+
+    projected = _item_projections(
+        {
+            "item_id": "assistant-1",
+            "message": {
+                "role": "assistant",
+                "reasoning": "Inspect the relevant modules first.",
+                "text": "I found the relevant workflow path.",
+            },
+        }
+    )
+
+    assert projected == [
+        {
+            "type": "reasoning",
+            "id": "assistant-1:reasoning",
+            "text": "Inspect the relevant modules first.",
+        },
+        {
+            "type": "agentMessage",
+            "id": "assistant-1:agent",
+            "text": "I found the relevant workflow path.",
+        },
+    ]
+
+
 def test_session_catalog_skips_oversized_checkpoint_but_keeps_goal_state(
     tmp_path, monkeypatch
 ):
@@ -472,6 +500,36 @@ def test_session_catalog_skips_oversized_checkpoint_but_keeps_goal_state(
     assert history["session"]["goal"]["last_error"] == "verifier timed out"
     assert len(history["messages"][0]["text"]) <= 16 * 1024 + 1
     assert SessionCatalog().find_session_path(workspace, "t-large") == session_dir
+
+
+def test_checkpoint_projection_keeps_reasoning_and_tool_call_identity():
+    from server.session_catalog import _checkpoint_projection
+
+    projected = _checkpoint_projection(
+        {
+            "kind": "checkpoint",
+            "thread_id": "t-checkpoint",
+            "messages": [
+                {
+                    "role": "assistant",
+                    "reasoning": "Inspect before changing.",
+                    "text": "I will inspect the workflow first.",
+                    "tool_calls": [
+                        {"id": "call-1", "name": "read_file", "arguments": {}},
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert projected["messages"] == [
+        {
+            "role": "assistant",
+            "reasoning": "Inspect before changing.",
+            "text": "I will inspect the workflow first.",
+            "tool_calls": [{"id": "call-1", "name": "read_file"}],
+        }
+    ]
 
 
 def test_session_catalog_keeps_user_paused_state_after_lock_release(

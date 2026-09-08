@@ -324,6 +324,56 @@ test('thread item history hydrates existing assistant turns and preserves item i
   assert.equal(messages[1].blocks[1].id, 'call-history');
 });
 
+test('thread item history keeps intermediate reasoning and maps tools to each response', () => {
+  const messages = aggregateThreadItems(
+    [
+      { id: 'user-1', role: 'user', text: 'Inspect', blocks: [{ type: 'text', content: 'Inspect' }] },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        text: '',
+        thinking: 'First thought',
+        toolCallIds: ['call-1'],
+        blocks: [{ type: 'thinking', content: 'First thought' }],
+      },
+      {
+        id: 'assistant-2',
+        role: 'assistant',
+        text: 'Intermediate result',
+        thinking: 'Second thought',
+        toolCallIds: ['call-2'],
+        blocks: [
+          { type: 'thinking', content: 'Second thought' },
+          { type: 'text', content: 'Intermediate result' },
+        ],
+      },
+    ],
+    [
+      {
+        turnId: 'turn-history',
+        item: {
+          type: 'toolCall', id: 'call-1', name: 'read_file', status: 'completed', output: 'one',
+        },
+      },
+      {
+        turnId: 'turn-history',
+        item: { type: 'reasoning', id: 'assistant-3:reasoning', text: 'Third thought' },
+      },
+      {
+        turnId: 'turn-history',
+        item: {
+          type: 'toolCall', id: 'call-2', name: 'apply_patch', status: 'completed', output: 'two',
+        },
+      },
+    ],
+  );
+
+  assert.equal(messages[1].blocks[1].id, 'call-1');
+  assert.equal(messages[2].blocks[2].id, 'call-2');
+  assert.equal(messages[1].blocks.some((block) => block.content === 'Third thought'), true);
+  assert.equal(messages[2].blocks.some((block) => block.content === 'Second thought'), true);
+});
+
 test('history filtering removes empty assistant placeholders but keeps visible blocks', () => {
   const messages = filterEmptyMessages([
     { role: 'user', text: 'Inspect' },

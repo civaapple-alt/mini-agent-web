@@ -491,17 +491,27 @@ export default function App() {
         // rows (or duplicates internal runtime text) during history replay.
         if (m.role !== 'user' && m.role !== 'assistant') return result;
         if (text.startsWith('<world_state') || text.includes('</world_state>')) return result;
+        const messageId = m.id || `hist_${threadId}_${idx}`;
+        const reasoning = m.reasoning || m.thinking || '';
+        const toolCalls = Array.isArray(m.tool_calls)
+          ? m.tool_calls
+          : Array.isArray(m.toolCalls)
+            ? m.toolCalls
+            : [];
         result.push({
-          id: m.id || `hist_${threadId}_${idx}`,
+          id: messageId,
           role: m.role,
           text: m.text || '',
-          thinking: '',
+          thinking: reasoning,
           tools: [],
+          toolCallIds: toolCalls.map((call) => call?.id || call?.call_id).filter(Boolean),
           blocks: [
-            {
-              type: 'text',
-              content: m.text || '',
-            },
+            ...(reasoning
+              ? [{ type: 'thinking', id: `${messageId}:reasoning`, content: reasoning }]
+              : []),
+            ...(m.text
+              ? [{ type: 'text', id: `${messageId}:text`, content: m.text }]
+              : []),
           ],
         });
         return result;

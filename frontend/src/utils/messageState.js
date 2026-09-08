@@ -86,6 +86,22 @@ function mergeProjectedToolItems(messages, items, targetIndex = messages.length 
   return copy;
 }
 
+function findToolTargetIndex(messages, item, fallbackIndex) {
+  const callId = item.id || item.call_id;
+  if (!callId) return fallbackIndex;
+  const persistedIndex = messages.findIndex(
+    (message) => message.role === 'assistant' && message.toolCallIds?.includes(callId),
+  );
+  if (persistedIndex !== -1) return persistedIndex;
+  const existingIndex = messages.findIndex(
+    (message) => message.role === 'assistant'
+      && (message.blocks || []).some(
+        (block) => block.type === 'tool' && block.call_id === callId,
+      ),
+  );
+  return existingIndex === -1 ? fallbackIndex : existingIndex;
+}
+
 function mergeProjectedCompactionItems(messages, items, targetIndex = messages.length - 1) {
   if (messages.length === 0 || items.length === 0) return messages;
   const copy = [...messages];
@@ -121,23 +137,28 @@ function mergeProjectedReasoningItems(messages, items, targetIndex = messages.le
 
   for (const item of items) {
     if (!item.text) continue;
-    const existingIndex = blocks.findIndex((b) => b.type === 'thinking');
+    const existingIndex = blocks.findIndex(
+      (b) => b.type === 'thinking' && (!item.id || b.id === item.id),
+    );
     if (existingIndex === -1) {
-      blocks.unshift({
+      blocks.push({
         type: 'thinking',
+        id: item.id,
         content: item.text,
         isStreaming: false,
       });
-      last.thinking = item.text;
     } else if ((blocks[existingIndex].content || '').length < item.text.length) {
       blocks[existingIndex] = {
         ...blocks[existingIndex],
         content: item.text,
       };
-      last.thinking = item.text;
     }
   }
 
+  last.thinking = blocks
+    .filter((block) => block.type === 'thinking')
+    .map((block) => block.content)
+    .join('\n\n');
   last.blocks = blocks;
   copy[targetIndex] = last;
   return copy;
@@ -250,17 +271,34 @@ export function aggregateThreadItems(messages, entries) {
     if (!item.type || item.type === 'userMessage') continue;
     const targetIndex = targetByTurn.get(turnId) ?? next.length - 1;
     if (item.type === 'toolCall' || item.type === 'tool_call') {
-      next = mergeProjectedToolItems(next, [item], targetIndex);
+      next = mergeProjectedToolItems(
+        next,
+        [item],
+        findToolTargetIndex(next, item, targetIndex),
+      );
     } else if (item.type === 'contextCompaction' || item.type === 'context_compaction') {
       next = mergeProjectedCompactionItems(next, [item], targetIndex);
     } else if (item.type === 'reasoning') {
-      next = mergeProjectedReasoningItems(next, [item], targetIndex);
+      const alreadyHydrated = next.some((message) =>
+        (message.blocks || []).some(
+          (block) => block.type === 'thinking' && block.content === item.text,
+        ),
+      );
+      if (!alreadyHydrated) next = mergeProjectedReasoningItems(next, [item], targetIndex);
     } else if (item.type === 'agentMessage' && item.text) {
+      const alreadyHydrated = next.some((message) =>
+        (message.blocks || []).some(
+          (block) => block.type === 'text' && block.content === item.text,
+        ),
+      );
+      if (alreadyHydrated) continue;
       const copy = [...next];
       const last = { ...copy[targetIndex] };
       const blocks = [...(last.blocks || [])];
-      const textBlock = blocks.findIndex((block) => block.type === 'text');
-      if (textBlock === -1) blocks.push({ type: 'text', content: item.text });
+      const textBlock = blocks.findIndex(
+        (block) => block.type === 'text' && (!item.id || block.id === item.id),
+      );
+      if (textBlock === -1) blocks.push({ type: 'text', id: item.id, content: item.text });
       else blocks[textBlock] = { ...blocks[textBlock], content: item.text };
       last.text = item.text;
       last.blocks = blocks;

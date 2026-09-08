@@ -122,6 +122,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Restored conversation replay:** preserve persisted assistant reasoning and
+  intermediate model responses, and associate restored tool cards with the
+  assistant response that requested each call.
+
 - **Plan/Shell workflow controls:** keep source-file mutations read-only in Plan
   Mode while routing Shell commands through the selected approval policy; the
   slash selection fills `/plan` into the composer before execution, restored

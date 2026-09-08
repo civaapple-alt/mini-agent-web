@@ -67,7 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Project-scoped Thread attach**: when `/api/threads/{thread_id}/attach` receives
   an explicit Project ID or name, canonical Session lookup and resumed client
   binding now use that Project instead of falling back to an arbitrary matching
-  Thread from another Project.
+  Thread from another Project. A same-ID live binding conflict on attach or start
+  returns `409` instead of silently reusing the wrong workspace.
 
 - **Canonical Thread continuation projection**: moved `manual` / `continuous`
   persistence to the App Server SessionStore `thread_settings.json` sidecar;

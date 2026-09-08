@@ -50,7 +50,8 @@ Auto Copilot 是 Web Studio 中显式选择的 `trusted + continuous` 运行预�
 Project 的主目录和关联目录会在启动 SDK 时分别绑定为主工作区、额外可写根目录或
 只读参考根目录。切换或编辑 Project 会重启并重绑 Host；Web 的 UI 状态只保存
 Project 清单和界面偏好，Session history、Goal、checkpoint 和批准授权由
-App Server 的 canonical Session/Runtime 所有。
+App Server 的 canonical Session/Runtime 所有。若同一 Thread ID 已绑定到另一个
+live Project，显式 attach 或 start 会返回 `409`，不会静默把请求路由到错误 workspace。
 
 ## 文件分工
 

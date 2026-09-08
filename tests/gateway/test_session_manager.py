@@ -434,6 +434,25 @@ async def test_attach_thread_honors_explicit_project_canonical_session(
     )
 
 
+@pytest.mark.asyncio
+async def test_attach_thread_rejects_project_switch_for_live_binding(
+    mock_session_manager, tmp_path
+):
+    """A live Thread binding cannot be silently reused for another Project."""
+    project_root = tmp_path / "other-project"
+    project_root.mkdir()
+    mock_session_manager._projects_registry["other-project"] = {
+        "id": "other-project",
+        "name": "Other Project",
+        "primary_path": str(project_root),
+    }
+    mock_session_manager._clients["shared-thread"] = AsyncMock()
+    mock_session_manager._client_projects["shared-thread"] = "default"
+
+    with pytest.raises(RuntimeError, match="already bound to Project 'default'"):
+        await mock_session_manager.attach_thread("shared-thread", "other-project")
+
+
 def test_session_manager_avoids_duplicate_project_for_custom_id_path(tmp_path):
     """Ensure _load_state does not duplicate a project when its name differs from directory basename."""
     custom_ws = tmp_path / "pi"

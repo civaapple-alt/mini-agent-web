@@ -284,6 +284,37 @@ async def test_thread_attach_locked_and_resumable(gateway_test_app, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_thread_attach_conflict_returns_409_for_live_project_binding(
+    gateway_test_app, tmp_path
+):
+    """The public attach route must expose a project-binding conflict as 409."""
+    project_root = tmp_path / "other-project"
+    project_root.mkdir()
+    session_manager._projects_registry["other-project"] = {
+        "id": "other-project",
+        "name": "Other Project",
+        "primary_path": str(project_root),
+    }
+    session_manager._clients["shared-thread"] = AsyncMock()
+    session_manager._client_projects["shared-thread"] = "goals_test_proj"
+
+    transport = ASGITransport(app=gateway_test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/threads/shared-thread/attach",
+            json={"project": "other-project"},
+        )
+        start_response = await client.post(
+            "/api/threads",
+            json={"thread_id": "shared-thread", "project": "other-project"},
+        )
+
+    assert response.status_code == 409
+    assert "already bound" in response.json()["detail"]
+    assert start_response.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_thread_close_endpoint(gateway_test_app):
     """Test POST /api/threads/{thread_id}/close releases active thread resources."""
     mock_client = AsyncMock()

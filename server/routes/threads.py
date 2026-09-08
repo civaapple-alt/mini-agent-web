@@ -132,6 +132,8 @@ async def list_threads(
             "raw_thread_ids": all_thread_ids,
             "next_cursor": res.next_cursor,
         }
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
@@ -171,6 +173,8 @@ async def start_thread(req: StartThreadRequest) -> dict[str, Any]:
             "project": meta.get("project"),
             "summary": meta.get("summary"),
         }
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 

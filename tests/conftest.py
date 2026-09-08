@@ -179,6 +179,7 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     orig_threads = dict(session_manager._thread_metadata)
     orig_client = session_manager._client
     orig_clients = dict(session_manager._clients)
+    orig_client_projects = dict(getattr(session_manager, "_client_projects", {}))
     orig_cur_id = session_manager._current_project_id
     orig_cur_path = session_manager._current_project_path
     orig_settings = dict(session_manager._settings)
@@ -190,6 +191,7 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     session_manager._projects_registry = {}
     session_manager._thread_metadata = {}
     session_manager._thread_builtin_tools = {}
+    session_manager._client_projects = {}
     session_manager._load_state()
 
     if not has_app_server():
@@ -232,6 +234,7 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     session_manager._thread_metadata = orig_threads
     session_manager._client = orig_client
     session_manager._clients = orig_clients
+    session_manager._client_projects = orig_client_projects
     session_manager._thread_builtin_tools = orig_builtin_tools
     session_manager._current_project_id = orig_cur_id
     session_manager._current_project_path = orig_cur_path

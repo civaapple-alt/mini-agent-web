@@ -70,6 +70,7 @@ class SessionManager:
     def __init__(self) -> None:
         self._client: MiniAgentClient | None = None
         self._clients: dict[str, MiniAgentClient] = {}
+        self._client_projects: dict[str, str] = {}
         self._active_connections: list[WebSocket] = []
         self._pending_approvals: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._pending_approval_details: dict[str, dict[str, Any]] = {}
@@ -644,10 +645,16 @@ class SessionManager:
     ) -> MiniAgentClient:
         """Get or create the App Server process bound to one canonical session."""
         target = thread_id or "default"
+        project = self._project_for_thread(target, project_id) if project_id else None
         existing = self._clients.get(target)
         if existing is not None:
+            bound_project = self._client_projects.get(target)
+            if project_id and bound_project and bound_project != project.get("id"):
+                raise RuntimeError(
+                    f"Thread '{target}' is already bound to Project '{bound_project}'"
+                )
             return existing
-        project = self._project_for_thread(target, project_id)
+        project = project or self._project_for_thread(target)
         canonical = self._canonical_thread(target, project_id)
         if canonical and canonical["session"]["session_status"] == "locked":
             raise RuntimeError(
@@ -661,6 +668,7 @@ class SessionManager:
             session.get("session_id") if session else None,
         )
         self._clients[target] = client
+        self._client_projects[target] = str(project.get("id") or self._current_project_id)
         if target == "default":
             self._client = client
         return client
@@ -671,6 +679,9 @@ class SessionManager:
     def bind_thread_client(self, thread_id: str, client: MiniAgentClient) -> None:
         """Associate an App Server's forked in-memory thread with its client."""
         self._clients[thread_id] = client
+        self._client_projects[thread_id] = str(
+            self._project_for_thread(thread_id).get("id") or self._current_project_id
+        )
 
     async def start_thread(
         self, thread_id: str = "default", project_id: str | None = None
@@ -726,6 +737,7 @@ class SessionManager:
                 session.get("session_id") if reusable_session else None,
             )
             self._clients["default"] = self._client
+            self._client_projects["default"] = self._current_project_id
             self._initialized = True
 
     async def restart_for_current_project(self) -> None:
@@ -733,6 +745,7 @@ class SessionManager:
         async with self._lock:
             clients = list(self._clients.values())
             self._clients.clear()
+            self._client_projects.clear()
             self._client = None
             self._initialized = False
             for task in self._active_tasks.values():
@@ -768,6 +781,7 @@ class SessionManager:
             # 3. Terminate all per-session App Server processes
             clients = list(self._clients.values())
             self._clients.clear()
+            self._client_projects.clear()
             self._client = None
             for client in set(clients):
                 try:

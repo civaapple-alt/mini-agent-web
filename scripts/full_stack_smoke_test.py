@@ -325,6 +325,21 @@ def resolve_app_server_bin() -> Path:
 # -----------------------------------------------------------------------------
 
 
+def isolated_app_server_env(
+    env: dict[str, str], app_server_bin: Path, thread_id: str = "default"
+) -> dict[str, str]:
+    """Build a smoke-test App Server environment with session-owned artifacts."""
+    runtime_env = dict(os.environ)
+    runtime_env.update(env)
+    runtime_env["MINI_AGENT_APP_SERVER_PATH"] = str(app_server_bin)
+    # Plan/Goal artifacts are session-owned.  Without an explicit session the
+    # App Server's legacy disabled-session path uses cwd, which would pollute
+    # the repository with plan/ and goal/ files during this test.
+    runtime_env["MINI_AGENT_SESSION_MODE"] = "new"
+    runtime_env["MINI_AGENT_THREAD_ID"] = thread_id
+    return runtime_env
+
+
 async def phase_1_preflight(env: dict[str, str], app_server_bin: Path) -> None:
     """Phase 1: Environment & Capability Diagnostics."""
     log_phase(1, "Environment & Capability Diagnostics")
@@ -342,9 +357,7 @@ async def phase_1_preflight(env: dict[str, str], app_server_bin: Path) -> None:
 
     log_ok(f"Using App Server: {app_server_bin}")
 
-    runtime_env = dict(os.environ)
-    runtime_env.update(env)
-    runtime_env["MINI_AGENT_APP_SERVER_PATH"] = str(app_server_bin)
+    runtime_env = isolated_app_server_env(env, app_server_bin)
 
     async with MiniAgentClient(env=runtime_env, log_dir="logs") as client:
         init_res = await asyncio.wait_for(client.initialize(), timeout=10.0)
@@ -388,9 +401,7 @@ async def phase_2_basic_turn_streaming(
     """Phase 2: Live Core Turn & Token Streaming (DeepSeek Real LLM)."""
     log_phase(2, "Live Model Turn & Reasoning Streaming")
 
-    runtime_env = dict(os.environ)
-    runtime_env.update(env)
-    runtime_env["MINI_AGENT_APP_SERVER_PATH"] = str(app_server_bin)
+    runtime_env = isolated_app_server_env(env, app_server_bin, "smoke-turn-thread")
 
     async with MiniAgentClient(env=runtime_env, log_dir="logs") as client:
         await client.initialize()
@@ -456,9 +467,7 @@ async def phase_3_autonomous_tool_calling(
     fixture_path.write_text(f"SECRET_DATA: {secret_token}\n", encoding="utf-8")
 
     try:
-        runtime_env = dict(os.environ)
-        runtime_env.update(env)
-        runtime_env["MINI_AGENT_APP_SERVER_PATH"] = str(app_server_bin)
+        runtime_env = isolated_app_server_env(env, app_server_bin, "smoke-tool-thread")
 
         async with MiniAgentClient(
             cwd=str(REPO_ROOT), env=runtime_env, log_dir="logs"
@@ -533,9 +542,7 @@ async def phase_4_approval_security_flow(
             "reason": "Smoke test decision",
         }
 
-    runtime_env = dict(os.environ)
-    runtime_env.update(env)
-    runtime_env["MINI_AGENT_APP_SERVER_PATH"] = str(app_server_bin)
+    runtime_env = isolated_app_server_env(env, app_server_bin, "smoke-approval-thread")
 
     async with MiniAgentClient(
         cwd=str(REPO_ROOT),
@@ -598,9 +605,7 @@ async def phase_5_plan_mode_lifecycle(
     """Phase 5: Plan Mode & Scratch Isolation."""
     log_phase(5, "Plan Mode & Scratch Space Isolation")
 
-    runtime_env = dict(os.environ)
-    runtime_env.update(env)
-    runtime_env["MINI_AGENT_APP_SERVER_PATH"] = str(app_server_bin)
+    runtime_env = isolated_app_server_env(env, app_server_bin)
 
     async with MiniAgentClient(
         cwd=str(REPO_ROOT), env=runtime_env, log_dir="logs"
@@ -646,9 +651,7 @@ async def phase_6_goal_runtime_verifier(
     """Phase 6: Autonomous Goal Runtime & Verifier."""
     log_phase(6, "Autonomous Goal Runtime & Independent Verifier")
 
-    runtime_env = dict(os.environ)
-    runtime_env.update(env)
-    runtime_env["MINI_AGENT_APP_SERVER_PATH"] = str(app_server_bin)
+    runtime_env = isolated_app_server_env(env, app_server_bin)
 
     async with MiniAgentClient(
         cwd=str(REPO_ROOT), env=runtime_env, log_dir="logs"

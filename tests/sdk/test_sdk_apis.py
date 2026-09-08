@@ -2,8 +2,15 @@
 Automated pytest suite for Mini Agent Python SDK advanced APIs.
 """
 
+from pathlib import Path
+
 import pytest
-from mini_agent import MiniAgentClient, RuntimeStatus, ThreadCheckpoint, TurnEventsResult
+from mini_agent import (
+    MiniAgentClient,
+    RuntimeStatus,
+    ThreadCheckpoint,
+    TurnEventsResult,
+)
 from mini_agent.errors import ServerProcessError
 
 from tests.conftest import has_app_server
@@ -14,8 +21,18 @@ from tests.conftest import has_app_server
     reason="Live SDK test requires mini-agent-app-server binary (set MINI_AGENT_APP_SERVER_PATH)",
 )
 @pytest.mark.asyncio
-async def test_advanced_thread_and_workflow_apis():
-    async with MiniAgentClient(log_dir="logs") as client:
+async def test_advanced_thread_and_workflow_apis(tmp_path: Path):
+    # Workflow files belong to the App Server SessionStore. Keep this live SDK
+    # test from exercising the disabled-session cwd fallback and polluting the
+    # repository under test.
+    async with MiniAgentClient(
+        cwd=str(tmp_path),
+        env={
+            "MINI_AGENT_SESSION_MODE": "new",
+            "MINI_AGENT_THREAD_ID": "default",
+        },
+        log_dir="logs",
+    ) as client:
         # 1. Initialize
         init_res = await client.initialize()
         assert init_res.get("protocolVersion") == 1
@@ -29,20 +46,7 @@ async def test_advanced_thread_and_workflow_apis():
         thread_list = await client.list_threads()
         assert "default" in thread_list.data
 
-        # Fork thread
-        fork_res = await client.fork_thread("default", "thread-forked")
-        assert fork_res.thread_id == "thread-forked"
-
-        # Read thread
-        cp = await client.read_thread("default")
-        assert isinstance(cp, ThreadCheckpoint)
-        assert cp.thread_id == "default"
-
-        # Close thread
-        closed = await client.close_thread("thread-forked")
-        assert closed is True
-
-        wf_state = await client.get_workflow_state()
+        wf_state = await client.get_workflow_state(thread_id="default")
         assert wf_state.collaboration_mode.mode in ("default", "plan")
         assert hasattr(wf_state, "builtin_tools")
         assert wf_state.builtin_tools == [
@@ -53,16 +57,29 @@ async def test_advanced_thread_and_workflow_apis():
         ]
 
         plan_res = await client.update_thread_settings(
-            "plan", builtin_tools=["read_file", "shell"]
+            "plan", builtin_tools=["read_file", "shell"], thread_id="default"
         )
         assert plan_res.collaboration_mode.mode == "plan"
         assert "read_file" in plan_res.builtin_tools
 
-        empty_res = await client.update_thread_settings("plan", builtin_tools=[])
+        empty_res = await client.update_thread_settings(
+            "plan", builtin_tools=[], thread_id="default"
+        )
         assert empty_res.builtin_tools == []
 
-        plan_off = await client.set_collaboration_mode("default")
+        plan_off = await client.set_collaboration_mode("default", thread_id="default")
         assert plan_off.collaboration_mode.mode == "default"
+
+        # Read and fork thread history after workflow operations. The App
+        # Server binds the workflow service to the initially opened Thread.
+        cp = await client.read_thread("default")
+        assert isinstance(cp, ThreadCheckpoint)
+        assert cp.thread_id == "default"
+
+        fork_res = await client.fork_thread("default", "thread-forked")
+        assert fork_res.thread_id == "thread-forked"
+        closed = await client.close_thread("thread-forked")
+        assert closed is True
 
         # 4. World Governance & MCP
         world = await client.get_world_state()
@@ -85,6 +102,10 @@ async def test_advanced_thread_and_workflow_apis():
         # 6. Session Info (None in ephemeral mode or SessionInfo when session database is active)
         session_info = await client.get_session_info()
         assert session_info is None or hasattr(session_info, "session_id")
+
+    assert not (tmp_path / "plan").exists()
+    assert not (tmp_path / "goal").exists()
+    assert not (tmp_path / "plan_mode.json").exists()
 
 
 @pytest.mark.asyncio

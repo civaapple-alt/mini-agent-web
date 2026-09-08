@@ -447,12 +447,31 @@ export default function SidePanel({
                       </p>
                     </div>
                   </div>
-                  <button
-                    className={`btn-toggle-switch ${planActive ? 'on' : 'off'}`}
-                    onClick={onTogglePlan}
-                  >
-                    <span>{planActive ? '已开启' : '已关闭'}</span>
-                  </button>
+                  <div className="plan-mode-controls">
+                    <span className={`plan-mode-badge ${planActive ? 'on' : 'off'}`}>
+                      {planActive ? '规划阶段' : '默认模式'}
+                    </span>
+                    <button
+                      type="button"
+                      className={`btn-toggle-switch ${planActive ? 'on' : 'off'}`}
+                      onClick={onTogglePlan}
+                      aria-pressed={planActive}
+                      title={planActive ? '关闭 Plan Mode，进入默认实施模式' : '开启 Plan Mode，进入只读规划阶段'}
+                    >
+                      <span>{planActive ? '关闭 Plan Mode' : '开启 Plan Mode'}</span>
+                    </button>
+                  </div>
+                </div>
+                <div className={`plan-mode-state ${planActive ? 'active' : 'inactive'}`} role="status">
+                  <span className="plan-mode-state-dot" aria-hidden="true" />
+                  <div>
+                    <strong>{planActive ? 'Plan Mode 已开启' : 'Plan Mode 已关闭'}</strong>
+                    <span>
+                      {planActive
+                        ? '本轮规划完成后可确认“开始实施”，系统会自动关闭 Plan Mode。'
+                        : '开启后先进行只读规划，确认实施时再切回默认模式。'}
+                    </span>
+                  </div>
                 </div>
               </div>
 

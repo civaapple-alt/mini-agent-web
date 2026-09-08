@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import InputBar from './components/InputBar';
 import SidePanel from './components/SidePanel';
+import PlanModeBanner from './components/PlanModeBanner';
 import SettingsModal from './components/SettingsModal';
 import Toast from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -130,6 +131,7 @@ export default function App() {
 
   // Workflow & Environment
   const [planActive, setPlanActive] = useState(false);
+  const [planReviewPending, setPlanReviewPending] = useState(false);
   const [goalState, setGoalState] = useState(null);
   const [runtimeStatus, setRuntimeStatus] = useState(null);
   const [lastWorkflowEvent, setLastWorkflowEvent] = useState(null);
@@ -392,7 +394,9 @@ export default function App() {
       (projectId && currentThreadProjectRef.current !== projectId)
     ) return false;
     const mode = workflowState.collaboration_mode || workflowState.collaborationMode;
-    setPlanActive(mode?.mode === 'plan');
+    const planEnabled = mode?.mode === 'plan';
+    setPlanActive(planEnabled);
+    if (!planEnabled) setPlanReviewPending(false);
     const nextContinuation = workflowState.continuation_mode || workflowState.continuationMode;
     if (nextContinuation) setContinuationMode(nextContinuation);
     return true;
@@ -710,6 +714,7 @@ export default function App() {
           setMessages((prev) => appendGoalMessageToMessages(prev, goalObjective));
         }
         setIsGenerating(true);
+        setPlanReviewPending(false);
       } else if (evt.type === 'run_failed') {
         // RunFailed is diagnostic only. The durable turn_finished event below
         // is the lifecycle boundary and owns generating/queue settlement.
@@ -746,6 +751,9 @@ export default function App() {
             }));
           } else {
             setLastTurnResult(null);
+          }
+          if (turnStatus === 'completed' && planActive) {
+            setPlanReviewPending(true);
           }
           setIsGenerating(false);
           setActiveTurnId(null);
@@ -784,6 +792,8 @@ export default function App() {
       referencedFiles,
       threadId: currentThread,
     };
+
+    setPlanReviewPending(false);
 
     const sent = wsRef.current.send(payload);
     if (!sent) {
@@ -986,6 +996,7 @@ export default function App() {
     setPendingMessages([]);
     setComposerDraft(null);
     setLastTurnResult(null);
+    setPlanReviewPending(false);
     setRuntimeStatus(null);
     setLastWorkflowEvent(null);
     currentThreadRef.current = threadId;
@@ -1031,6 +1042,7 @@ export default function App() {
       setComposerDraft(null);
       interruptPendingRef.current = false;
       setLastTurnResult(null);
+      setPlanReviewPending(false);
       showToast(`已创建新会话: ${finalTitle}`, 'success');
     } catch (err) {
       showToast(`创建新会话失败: ${err.message}`, 'error');
@@ -1062,6 +1074,7 @@ export default function App() {
       setComposerDraft(null);
       interruptPendingRef.current = false;
       setLastTurnResult(null);
+      setPlanReviewPending(false);
       loadThreadHistory(newId, nextProject);
       showToast(`已派生分支会话: ${newId}`, 'success');
     } catch (err) {
@@ -1078,6 +1091,7 @@ export default function App() {
         currentThreadProjectRef.current = null;
         setCurrentThread('default');
         setCurrentThreadProject(null);
+        setPlanReviewPending(false);
         loadThreadHistory('default');
       }
       showToast(`已关闭并归档会话: ${threadId}`, 'info');
@@ -1114,16 +1128,34 @@ export default function App() {
     }
   };
 
-  const handleTogglePlan = async () => {
-    const nextState = !planActive;
+  const handleSetPlanMode = async (active, reason = 'toggle') => {
     try {
-      const res = await api.setCollaborationMode(nextState ? 'plan' : 'default', currentThread);
+      const res = await api.setCollaborationMode(active ? 'plan' : 'default', currentThread);
       applyWorkflowState(currentThread, res);
-      const active = (res.collaboration_mode || res.collaborationMode)?.mode === 'plan';
-      showToast(`Plan Mode 已${active ? '开启 (只读规划)' : '关闭'}`, 'info');
+      const confirmedActive = (res.collaboration_mode || res.collaborationMode)?.mode === 'plan';
+      if (!confirmedActive) setPlanReviewPending(false);
+      showToast(
+        confirmedActive
+          ? 'Plan Mode 已开启（源码只读规划）'
+          : reason === 'implementation'
+            ? '已开始实施：Plan Mode 自动关闭'
+            : 'Plan Mode 已关闭',
+        'info',
+      );
     } catch (err) {
       showToast(`切换 Plan Mode 失败: ${err.message}`, 'error');
     }
+  };
+
+  const handleTogglePlan = async () => handleSetPlanMode(!planActive);
+
+  const handleContinuePlanning = () => {
+    setPlanReviewPending(false);
+    showToast('继续保持 Plan Mode，可补充或调整规划', 'info', 2200);
+  };
+
+  const handleStartImplementation = async () => {
+    await handleSetPlanMode(false, 'implementation');
   };
 
   const handleStartGoal = async (objective) => {
@@ -1270,10 +1302,18 @@ export default function App() {
         />
 
         <main className="app-content">
+          {planActive && (
+            <PlanModeBanner
+              reviewPending={planReviewPending && !isGenerating}
+              onOpenDetails={() => handleOpenSidePanel('plan_goal')}
+              onContinuePlanning={handleContinuePlanning}
+              onStartImplementation={handleStartImplementation}
+              onClosePlan={() => handleSetPlanMode(false)}
+            />
+          )}
           {goalState && (
             <div className="goal-topbar" role="status">
               <div className="goal-topbar-main">
-                {planActive && <span className="goal-topbar-mode">PLAN</span>}
                 <span className="goal-topbar-label">GOAL</span>
                 <span className={`goal-topbar-status ${goalState.status}`}>{goalState.status}</span>
                 {goalState.verification_status && goalState.verification_status !== 'idle' && (

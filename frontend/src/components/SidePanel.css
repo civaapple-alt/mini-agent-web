@@ -241,8 +241,34 @@
   margin-top: 2px;
 }
 
+.plan-mode-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+
+.plan-mode-badge {
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.plan-mode-badge.on {
+  color: #b45309;
+  background: rgba(217, 119, 6, 0.12);
+}
+
+.plan-mode-badge.off {
+  color: var(--text-muted);
+  background: var(--bg-card-hover);
+}
+
 .btn-toggle-switch {
-  padding: 4px 12px;
+  padding: 5px 10px;
   border-radius: 16px;
   font-size: 11px;
   font-weight: 600;
@@ -260,6 +286,54 @@
   background-color: var(--bg-card-hover);
   color: var(--text-muted);
   border: 1px solid var(--border-color);
+}
+
+.plan-mode-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-app);
+}
+
+.plan-mode-state.active {
+  border-color: rgba(217, 119, 6, 0.35);
+  background: rgba(217, 119, 6, 0.06);
+}
+
+.plan-mode-state-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 3px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.plan-mode-state.active .plan-mode-state-dot {
+  background: #d97706;
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.14);
+}
+
+.plan-mode-state div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.plan-mode-state strong {
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.plan-mode-state span:not(.plan-mode-state-dot) {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .goal-status-box {

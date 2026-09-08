@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Plan implementation confirmation**: after a completed Plan Mode turn, Web
+  Studio now asks whether to continue planning or start implementation; choosing
+  implementation automatically switches the Thread back to the default mode.
+
 - **Goal verifier observability and recovery**: expose verifier lifecycle updates
   in the Web Studio console and Goal detail, keep session-owned `goal/plan.md`
   and `goal/verifier_verdict.md` readable while a Goal is running, and retain

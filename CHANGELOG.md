@@ -126,6 +126,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reasoning lifecycle display**: settle the preceding reasoning card when a
+  dedicated tool or context-compaction item starts, so sequential model steps
+  in one Turn do not appear to be running simultaneously.
+
 - **Restored conversation replay:** preserve persisted assistant reasoning and
   intermediate model responses, and associate restored tool cards with the
   assistant response that requested each call.

@@ -299,6 +299,39 @@ test('dedicated ThreadItem lifecycle notifications reconcile without duplicate t
   assert.equal(messages[1].blocks.length, 0);
 });
 
+test('dedicated tool start settles the preceding reasoning block', () => {
+  let messages = aggregateStreamEvent([], {
+    type: 'event',
+    turnId: 'turn-reasoning-tool',
+    event: { type: 'turn_started' },
+  });
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-reasoning-tool',
+    event: { type: 'assistant_reasoning_delta', delta: 'Inspect the repository first.' },
+  });
+
+  messages = aggregateItemLifecycle(messages, {
+    type: 'notification',
+    method: 'item/started',
+    data: {
+      threadId: 'thread-main',
+      turnId: 'turn-reasoning-tool',
+      item: {
+        type: 'toolCall',
+        id: 'call-reasoning-tool',
+        name: 'shell',
+        arguments: { command: 'git status' },
+        status: 'inProgress',
+      },
+    },
+  });
+
+  assert.equal(messages[0].blocks[0].type, 'thinking');
+  assert.equal(messages[0].blocks[0].isStreaming, false);
+  assert.equal(messages[0].blocks[1].type, 'tool');
+});
+
 test('thread item history hydrates existing assistant turns and preserves item identity', () => {
   const messages = aggregateThreadItems(
     [

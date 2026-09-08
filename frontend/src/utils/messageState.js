@@ -86,6 +86,23 @@ function mergeProjectedToolItems(messages, items, targetIndex = messages.length 
   return copy;
 }
 
+function settleThinkingBlocks(messages, targetIndex) {
+  if (targetIndex < 0 || targetIndex >= messages.length) return messages;
+  const current = messages[targetIndex];
+  const blocks = current.blocks || [];
+  if (!blocks.some((block) => block.type === 'thinking' && block.isStreaming)) {
+    return messages;
+  }
+  const copy = [...messages];
+  copy[targetIndex] = {
+    ...current,
+    blocks: blocks.map((block) => (
+      block.type === 'thinking' ? { ...block, isStreaming: false } : block
+    )),
+  };
+  return copy;
+}
+
 function findToolTargetIndex(messages, item, fallbackIndex) {
   const callId = item.id || item.call_id;
   if (!callId) return fallbackIndex;
@@ -230,10 +247,16 @@ export function aggregateItemLifecycle(messages, data) {
   let next = ensureTurnAssistant(messages, turnId);
   const targetIndex = findTurnAssistantIndex(next, turnId);
   if (item.type === 'toolCall' || item.type === 'tool_call') {
-    return mergeProjectedToolItems(next, [item], targetIndex);
+    const projected = mergeProjectedToolItems(next, [item], targetIndex);
+    return data.method === 'item/started'
+      ? settleThinkingBlocks(projected, targetIndex)
+      : projected;
   }
   if (item.type === 'contextCompaction' || item.type === 'context_compaction') {
-    return mergeProjectedCompactionItems(next, [item], targetIndex);
+    const projected = mergeProjectedCompactionItems(next, [item], targetIndex);
+    return data.method === 'item/started'
+      ? settleThinkingBlocks(projected, targetIndex)
+      : projected;
   }
   return next;
 }

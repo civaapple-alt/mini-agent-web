@@ -82,6 +82,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conflicting live IDs fail with `409` instead of silently moving a fork into
   the current Project workspace.
 
+- **Serialized Thread client attach**: concurrent Gateway attach/start requests
+  for the same Thread now share one creation critical section, preventing two
+  App Server clients from racing to claim the same canonical Session lock.
+
 - **Canonical Thread continuation projection**: moved `manual` / `continuous`
   persistence to the App Server SessionStore `thread_settings.json` sidecar;
   SessionCatalog reads the bounded projection and Gateway no longer stores a

@@ -471,6 +471,38 @@ def test_bind_forked_thread_keeps_explicit_source_project(mock_session_manager, 
     assert mock_session_manager._client_projects["forked"] == "other-project"
 
 
+@pytest.mark.asyncio
+async def test_concurrent_thread_attach_creates_one_client(
+    mock_session_manager, monkeypatch
+):
+    """Concurrent attach requests share one serialized App Server client."""
+    first_create_started = asyncio.Event()
+    release_create = asyncio.Event()
+    created_clients = []
+
+    async def create_client(thread_id, project, session_mode, session_id=None):
+        created_clients.append(AsyncMock())
+        first_create_started.set()
+        await release_create.wait()
+        return created_clients[-1]
+
+    monkeypatch.setattr(mock_session_manager, "_create_client", create_client)
+    first = asyncio.create_task(
+        mock_session_manager.get_client_for_thread("concurrent-thread")
+    )
+    await first_create_started.wait()
+    second = asyncio.create_task(
+        mock_session_manager.get_client_for_thread("concurrent-thread")
+    )
+    await asyncio.sleep(0)
+    release_create.set()
+
+    first_client, second_client = await asyncio.gather(first, second)
+
+    assert first_client is second_client
+    assert len(created_clients) == 1
+
+
 def test_session_manager_avoids_duplicate_project_for_custom_id_path(tmp_path):
     """Ensure _load_state does not duplicate a project when its name differs from directory basename."""
     custom_ws = tmp_path / "pi"

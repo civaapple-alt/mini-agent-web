@@ -38,6 +38,10 @@ uv run mini-agent-server-dev
 Thread、Turn、Goal 和 ThreadItem 的运行时语义来自 App Server；网关不创建
 第二套运行时状态机。
 
+同一 Thread 的 Gateway attach/start 请求在客户端创建与 canonical Session 检查
+期间串行化；并发请求会复用同一个已建立的 App Server client，不会制造重复的
+workspace 绑定竞争。
+
 Thread settings 的 `state_revision` 只是 canonical App Server revision 的有界
 投影。Gateway 通过 WebSocket 原样转发 `thread/settings/updated`，SDK 和 Web
 Studio 对每个 Thread 单调消费该 revision；Gateway 不保存另一份 settings

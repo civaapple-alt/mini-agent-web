@@ -617,22 +617,9 @@ class SessionManager:
             policy = str(project.get("policy", "interactive"))
             await client.set_world_execution(access=access, policy=policy)
             await client.start_thread(thread_id)
-            continuation_mode = self._thread_continuation_modes.get(
-                thread_id,
-                self._thread_metadata.get(thread_id, {}).get(
-                    "continuation_mode", "manual"
-                ),
+            await self._apply_persisted_thread_continuation(
+                thread_id, client, project.get("id", "")
             )
-            if continuation_mode == "continuous":
-                canonical = self.read_project_thread(thread_id, project.get("id", ""))
-                plan_active = bool(
-                    canonical and canonical.get("session", {}).get("plan_active")
-                )
-                await client.update_thread_settings(
-                    mode="plan" if plan_active else "default",
-                    continuation_mode=continuation_mode,
-                    thread_id=thread_id,
-                )
             logger.info(
                 "MiniAgentClient initialized for thread %s: %s v%s",
                 thread_id,
@@ -932,6 +919,37 @@ class SessionManager:
             metadata["updated_at"] = datetime.now(timezone.utc).isoformat()
             self._save_thread_for_id(thread_id)
 
+    def _continuation_mode_for_thread(self, thread_id: str) -> str:
+        return self._thread_continuation_modes.get(
+            thread_id,
+            self._thread_metadata.get(thread_id, {}).get("continuation_mode", "manual"),
+        )
+
+    async def _apply_persisted_thread_continuation(
+        self,
+        thread_id: str,
+        client: Any,
+        project_id: str | None = None,
+    ) -> bool:
+        """Apply the Web preference only when Goal Runtime is not active."""
+        if self._continuation_mode_for_thread(thread_id) != "continuous":
+            return False
+        canonical = self.read_project_thread(thread_id, project_id)
+        session = canonical.get("session", {}) if canonical else {}
+        goal = session.get("goal")
+        if isinstance(goal, dict) and goal.get("status") in ("active", "running"):
+            logger.info(
+                "Deferring continuous continuation for active Goal thread %s",
+                thread_id,
+            )
+            return False
+        await client.update_thread_settings(
+            mode="plan" if session.get("plan_active") else "default",
+            continuation_mode="continuous",
+            thread_id=thread_id,
+        )
+        return True
+
     def update_settings(self, updates: dict[str, Any]) -> dict[str, Any]:
         """Update system settings."""
         self._settings.update(updates)
@@ -993,6 +1011,24 @@ class SessionManager:
     async def _handle_runtime_notification(self, notification: dict[str, Any]) -> None:
         """Relay App Server Goal/settings notifications to connected Studio clients."""
         await self.broadcast_ws(notification)
+        if notification.get("method") != "thread/goal/updated":
+            return
+        data = notification.get("data", {})
+        goal = data.get("goal") if isinstance(data, dict) else None
+        if not isinstance(goal, dict) or goal.get("status") in ("active", "running"):
+            return
+        thread_id = str(data.get("threadId") or "")
+        client = self._clients.get(thread_id)
+        if not thread_id or client is None:
+            return
+        try:
+            await self._apply_persisted_thread_continuation(thread_id, client)
+        except Exception as err:  # noqa: BLE001
+            logger.warning(
+                "Failed to restore continuation after Goal settlement for %s: %s",
+                thread_id,
+                err,
+            )
 
     def resolve_approval(
         self,

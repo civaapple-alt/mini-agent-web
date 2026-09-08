@@ -12,6 +12,7 @@ Session attach/close, and MCP/governance endpoints:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -208,6 +209,33 @@ async def test_goal_lifecycle_full_state_machine(gateway_test_app):
         resp_check = await client.get("/api/threads/t-goal/goal")
         assert resp_check.status_code == 200
         assert resp_check.json()["goal"] is None
+
+
+@pytest.mark.asyncio
+async def test_thread_settings_without_continuation_keeps_persisted_preference(
+    gateway_test_app,
+):
+    """Changing tools must not reset the user's explicit loop preference."""
+    mock_client = AsyncMock()
+    mock_client.update_thread_settings = AsyncMock(
+        return_value=SimpleNamespace(
+            collaboration_mode=SimpleNamespace(mode="default"),
+            builtin_tools=["read_file"],
+            continuation_mode="manual",
+        )
+    )
+    session_manager._clients["t-settings"] = mock_client
+    session_manager._thread_continuation_modes["t-settings"] = "continuous"
+
+    transport = ASGITransport(app=gateway_test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/threads/t-settings/settings",
+            json={"mode": "default", "builtin_tools": ["read_file"]},
+        )
+
+    assert response.status_code == 200
+    assert session_manager._thread_continuation_modes["t-settings"] == "continuous"
 
 
 @pytest.mark.asyncio

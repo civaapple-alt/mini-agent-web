@@ -432,7 +432,8 @@ async def update_thread_settings(
             continuation_mode=req.continuation_mode,
         )
         session_manager._thread_builtin_tools[thread_id] = res.builtin_tools
-        session_manager.set_thread_continuation(thread_id, res.continuation_mode)
+        if req.continuation_mode is not None:
+            session_manager.set_thread_continuation(thread_id, res.continuation_mode)
         return {
             "collaboration_mode": {"mode": res.collaboration_mode.mode},
             "builtin_tools": res.builtin_tools,

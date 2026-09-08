@@ -77,6 +77,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Goal-owned continuation restoration**: defer the persisted Web `continuous`
+  preference while an active Goal owns the loop, restore it after Goal settlement,
+  and avoid overwriting the preference when an unrelated Thread setting changes.
+
 - **Authoritative turn outcome and failure diagnostics**: SDK streaming now
   waits for the durable `turn_finished` after `run_failed`; Web Studio
   distinguishes run diagnostics from terminal settlement and displays bounded

@@ -4,6 +4,7 @@ Unit and integration tests for SessionManager state, approvals, and projects.
 
 import asyncio
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -134,6 +135,74 @@ def test_session_manager_settings_persistence(mock_session_manager, tmp_path):
     assert new_mgr.get_settings()["access"] == "full_machine"
     assert new_mgr._settings["reasoning_effort"] == "low"
     assert new_mgr._settings["auto_scroll"] is False
+
+
+@pytest.mark.asyncio
+async def test_continuation_preference_waits_for_goal_runtime_to_settle(
+    mock_session_manager, monkeypatch
+):
+    """An active Goal owns execution; the Web preference resumes afterward."""
+    mock_session_manager._thread_continuation_modes["goal-thread"] = "continuous"
+    canonical = {
+        "session": {
+            "goal": {"status": "active"},
+            "plan_active": False,
+        }
+    }
+    monkeypatch.setattr(
+        mock_session_manager,
+        "read_project_thread",
+        lambda thread_id, project_id=None: canonical,
+    )
+    client = AsyncMock()
+
+    assert (
+        await mock_session_manager._apply_persisted_thread_continuation(
+            "goal-thread", client
+        )
+        is False
+    )
+    client.update_thread_settings.assert_not_awaited()
+
+    canonical["session"]["goal"]["status"] = "completed"
+    assert (
+        await mock_session_manager._apply_persisted_thread_continuation(
+            "goal-thread", client
+        )
+        is True
+    )
+    client.update_thread_settings.assert_awaited_once_with(
+        mode="default", continuation_mode="continuous", thread_id="goal-thread"
+    )
+
+
+@pytest.mark.asyncio
+async def test_goal_settlement_notification_restores_continuous_preference(
+    mock_session_manager, monkeypatch
+):
+    """A settled Goal releases the runtime and restores the Web preference."""
+    mock_session_manager._thread_continuation_modes["goal-thread"] = "continuous"
+    monkeypatch.setattr(
+        mock_session_manager,
+        "read_project_thread",
+        lambda thread_id, project_id=None: {"session": {"plan_active": False}},
+    )
+    client = AsyncMock()
+    mock_session_manager._clients["goal-thread"] = client
+
+    await mock_session_manager._handle_runtime_notification(
+        {
+            "method": "thread/goal/updated",
+            "data": {
+                "threadId": "goal-thread",
+                "goal": {"status": "completed"},
+            },
+        }
+    )
+
+    client.update_thread_settings.assert_awaited_once_with(
+        mode="default", continuation_mode="continuous", thread_id="goal-thread"
+    )
 
 
 def test_approval_snapshot_exposes_policy_without_web_grants(mock_session_manager):

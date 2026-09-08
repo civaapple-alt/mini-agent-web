@@ -276,7 +276,14 @@ class SessionCatalog:
                     entry = self._read_session(path, project_id, include_history=False)
                     if entry:
                         entries.append(entry)
-        entries.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
+        entries.sort(
+            key=lambda item: (
+                item.get("updated_at") or "",
+                str(item.get("session_id") or ""),
+                str(item.get("thread_id") or ""),
+            ),
+            reverse=True,
+        )
         data = entries[start : start + limit]
         next_cursor = (
             str(start + len(data)) if start + len(data) < len(entries) else None

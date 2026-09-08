@@ -882,49 +882,72 @@ class SessionManager:
         self, thread_id: str = "default", project_id: str | None = None
     ) -> dict[str, Any]:
         """Attach Studio to a resumable Session without stealing a live lock."""
-        target = thread_id or "default"
-        project = self._project_for_thread(target, project_id)
-        resolved_project_id = str(project.get("id") or self._current_project_id)
-        if project_id:
-            # Selecting a project is also the routing context for subsequent
-            # project-agnostic REST/WebSocket actions for this Thread ID.
-            self._active_thread_projects[target] = resolved_project_id
-            canonical = self._canonical_thread(target, resolved_project_id)
-        else:
-            # Preserve the legacy unqualified lookup path. In particular, a
-            # caller may be asking about a locked Session that is not yet in
-            # the local client pool.
-            canonical = self._canonical_thread(target)
-            canonical_project = (
-                canonical.get("session", {}).get("project_id") if canonical else None
-            )
-            if canonical_project in self._projects_registry:
-                resolved_project_id = str(canonical_project)
-            self._active_thread_projects.setdefault(target, resolved_project_id)
-        if canonical and canonical["session"]["session_status"] == "locked":
-            session = canonical["session"]
+        async with self._lock:
+            target = thread_id or "default"
+            project = self._project_for_thread(target, project_id)
+            resolved_project_id = str(project.get("id") or self._current_project_id)
+            if project_id:
+                # Selecting a project is also the routing context for subsequent
+                # project-agnostic REST/WebSocket actions for this Thread ID.
+                self._active_thread_projects[target] = resolved_project_id
+                canonical = self._canonical_thread(target, resolved_project_id)
+            else:
+                # Preserve the legacy unqualified lookup path. In particular, a
+                # caller may be asking about a locked Session that is not yet in
+                # the local client pool.
+                canonical = self._canonical_thread(target)
+                canonical_project = (
+                    canonical.get("session", {}).get("project_id")
+                    if canonical
+                    else None
+                )
+                if canonical_project in self._projects_registry:
+                    resolved_project_id = str(canonical_project)
+                self._active_thread_projects.setdefault(target, resolved_project_id)
+
+            # The SessionStore lock also belongs to this gateway's local client.
+            # Check the project-qualified pool before treating the catalog entry
+            # as an external lock; otherwise selecting the already active Session
+            # incorrectly puts Studio into read-only mode.
+            existing = self._project_clients.get((resolved_project_id, target))
+            if existing is None:
+                legacy = self._clients.get(target)
+                legacy_project = self._client_projects.get(target)
+                if legacy is not None and legacy_project in (
+                    None,
+                    resolved_project_id,
+                ):
+                    existing = legacy
+            if (
+                existing is None
+                and canonical
+                and canonical["session"]["session_status"] == "locked"
+            ):
+                session = canonical["session"]
+                return {
+                    "thread_id": target,
+                    "attached": False,
+                    "project": session.get("project_id") or resolved_project_id,
+                    "session_id": session.get("session_id"),
+                    "session_status": session.get("session_status"),
+                    "runtime_status": session.get("runtime_status"),
+                    "locked_by": session.get("locked_by"),
+                }
+
+            # Keep the lock held through the lookup/create decision so a
+            # concurrent attach cannot create a competing App Server process.
+            await self._get_client_for_thread_locked(target, resolved_project_id)
+            refreshed = self._canonical_thread(target, resolved_project_id)
+            session = refreshed.get("session", {}) if refreshed else {}
             return {
                 "thread_id": target,
-                "attached": False,
+                "attached": True,
                 "project": session.get("project_id") or resolved_project_id,
                 "session_id": session.get("session_id"),
-                "session_status": session.get("session_status"),
-                "runtime_status": session.get("runtime_status"),
+                "session_status": session.get("session_status", "locked"),
+                "runtime_status": session.get("runtime_status", "running"),
                 "locked_by": session.get("locked_by"),
             }
-
-        await self.get_client_for_thread(target, resolved_project_id)
-        refreshed = self._canonical_thread(target, resolved_project_id)
-        session = refreshed.get("session", {}) if refreshed else {}
-        return {
-            "thread_id": target,
-            "attached": True,
-            "project": session.get("project_id") or resolved_project_id,
-            "session_id": session.get("session_id"),
-            "session_status": session.get("session_status", "locked"),
-            "runtime_status": session.get("runtime_status", "running"),
-            "locked_by": session.get("locked_by"),
-        }
 
     async def start(self) -> None:
         """Start and initialize the background MiniAgentClient."""
@@ -933,7 +956,18 @@ class SessionManager:
                 return
             canonical = self.read_project_thread("default")
             session = canonical.get("session") if canonical else None
-            reusable_session = session and session.get("session_status") != "locked"
+            if session and session.get("session_status") == "locked":
+                # A process restart must not create a fresh default Session just
+                # because the previous gateway process still owns the lock. Keep
+                # the catalog available in read-only mode and let an explicit
+                # attach retry once the external process exits.
+                self._active_thread_projects["default"] = self._current_project_id
+                self._initialized = True
+                logger.info(
+                    "Default Session is locked by another process; starting Gateway in read-only mode"
+                )
+                return
+            reusable_session = session
             self._client = await self._create_client(
                 "default",
                 self._projects_registry[self._current_project_id],
@@ -1135,7 +1169,15 @@ class SessionManager:
                 )
                 sessions_by_key.setdefault(key, session)
         sessions = list(sessions_by_key.values())
-        sessions.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
+        sessions.sort(
+            key=lambda item: (
+                item.get("updated_at") or "",
+                str(item.get("project_id") or ""),
+                str(item.get("session_id") or ""),
+                str(item.get("thread_id") or ""),
+            ),
+            reverse=True,
+        )
         return sessions[: max(1, min(limit, 128))]
 
     def read_project_thread(

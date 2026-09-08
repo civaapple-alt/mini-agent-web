@@ -32,6 +32,22 @@ async def test_gateway_health_and_index(test_app):
 
 
 @pytest.mark.asyncio
+async def test_gateway_lists_catalog_when_runtime_is_read_only(test_app):
+    """The sidebar remains usable when the canonical Session is externally locked."""
+    previous_client = session_manager._client
+    session_manager._client = None
+    try:
+        transport = ASGITransport(app=test_app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/threads")
+
+        assert response.status_code == 200
+        assert "threads" in response.json()
+    finally:
+        session_manager._client = previous_client
+
+
+@pytest.mark.asyncio
 async def test_gateway_threads_and_workflows(test_app):
     # Initialize background session manager for testing
     await session_manager.start()

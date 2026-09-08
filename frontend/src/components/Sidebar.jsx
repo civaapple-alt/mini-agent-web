@@ -280,15 +280,9 @@ export default function Sidebar({
     );
   };
 
-  const toggleProjectExpand = (projName, path) => {
+  const toggleProjectExpand = (projName) => {
     setExpandedProjects((prev) => {
       const nextState = !prev[projName];
-      if (nextState && path && path !== projectsData?.current_project?.primary_path) {
-        api.switchProject(path).then(() => {
-          loadProjects();
-          if (onRefreshThreads) onRefreshThreads();
-        });
-      }
       return { ...prev, [projName]: nextState };
     });
   };
@@ -535,7 +529,7 @@ export default function Sidebar({
                 {/* Project Folder Row with Hover Actions */}
                 <div
                   className={`project-folder-row ${isCurrentProj ? 'active-proj' : ''} ${activeProjectPopover === (proj.id || proj.name) ? 'has-open-popover' : ''}`}
-                  onClick={() => toggleProjectExpand(proj.name || proj.id, proj.primary_path || proj.path)}
+                  onClick={() => toggleProjectExpand(proj.name || proj.id)}
                   title={proj.primary_path || proj.path}
                 >
                   <Folder size={14} className="folder-icon" />

@@ -69,11 +69,19 @@ async def list_threads(
 ) -> dict[str, Any]:
     """List active and historical conversation threads with titles and summaries."""
     try:
-        res = await session_manager.client.list_threads(cursor=cursor, limit=limit)
+        # A Gateway may intentionally start read-only when another process owns
+        # the canonical default Session. The SessionStore catalog is still
+        # sufficient for the sidebar and must remain available in that mode.
+        client = session_manager._client
+        res = (
+            await client.list_threads(cursor=cursor, limit=limit)
+            if client is not None
+            else None
+        )
         # Thread IDs are scoped by Project. Keep the project in the catalog key
         # so ``pi/default`` and ``mini-agent-web/default`` remain selectable.
         live_bindings = set(session_manager.live_thread_bindings())
-        if isinstance(res.data, list):
+        if res is not None and isinstance(res.data, list):
             active_project = session_manager._current_project_id
             for raw_thread in res.data:
                 if isinstance(raw_thread, str):
@@ -149,7 +157,7 @@ async def list_threads(
                 for project_id, tid in sorted(all_bindings)
             ],
             "current_project": session_manager._current_project_id,
-            "next_cursor": res.next_cursor,
+            "next_cursor": res.next_cursor if res is not None else None,
         }
     except RuntimeError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err

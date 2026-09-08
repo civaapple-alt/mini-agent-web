@@ -92,10 +92,27 @@ function scopedThreadKey(threadId, projectId) {
   return `${projectId || ''}:${threadId}`;
 }
 
+const SELECTED_SESSION_STORAGE_KEY = 'mini-agent-studio.selected-session';
+
+function readPersistedSessionSelection() {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(SELECTED_SESSION_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 export default function App() {
   const [threads, setThreads] = useState([]);
-  const [currentThread, setCurrentThread] = useState('default');
-  const [currentThreadProject, setCurrentThreadProject] = useState(null);
+  const [currentThread, setCurrentThread] = useState(
+    () => readPersistedSessionSelection().threadId || 'default',
+  );
+  const [currentThreadProject, setCurrentThreadProject] = useState(
+    () => readPersistedSessionSelection().projectId || null,
+  );
   const [currentThreadMeta, setCurrentThreadMeta] = useState({
     title: '默认会话 (Default Session)',
     summary: '',
@@ -145,6 +162,7 @@ export default function App() {
   const currentThreadRef = useRef(currentThread);
   const currentThreadProjectRef = useRef(currentThreadProject);
   const goalStateRef = useRef(goalState);
+  const selectionPersistenceReadyRef = useRef(false);
   currentThreadRef.current = currentThread;
   currentThreadProjectRef.current = currentThreadProject;
 
@@ -165,6 +183,24 @@ export default function App() {
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
+    if (!selectionPersistenceReadyRef.current) {
+      selectionPersistenceReadyRef.current = true;
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        SELECTED_SESSION_STORAGE_KEY,
+        JSON.stringify({
+          threadId: currentThread,
+          projectId: currentThreadProject,
+        }),
+      );
+    } catch {
+      // Selection persistence is a convenience; private browsing may reject it.
+    }
+  }, [currentThread, currentThreadProject]);
+
+  useEffect(() => {
     const handleGlobalKeyDown = (e) => {
       if (e.key === 'Escape') {
         setSettingsModalOpen(false);
@@ -177,10 +213,7 @@ export default function App() {
 
   useEffect(() => {
     loadSettings();
-    loadThreads();
-    loadWorkflows('default');
-    loadRuntimeStatus('default');
-    loadThreadHistory('default');
+    initializeSession();
 
     // Establish WebSocket Connection
     const wsClient = createAgentWebSocket(
@@ -229,17 +262,19 @@ export default function App() {
   const loadThreads = async () => {
     try {
       const data = await api.listThreads();
+      let cur = null;
       if (data.threads && data.threads.length > 0) {
         setThreads(data.threads);
         const preferredProject =
           currentThreadProjectRef.current || data.current_project || null;
-        const cur = data.threads.find(
+        cur = data.threads.find(
           (t) =>
             t.thread_id === currentThreadRef.current &&
             (!preferredProject || t.project === preferredProject),
         ) || data.threads.find((t) => t.thread_id === currentThreadRef.current);
         if (cur) {
           if (!currentThreadProjectRef.current && cur.project) {
+            currentThreadProjectRef.current = cur.project;
             setCurrentThreadProject(cur.project);
           }
           setCurrentThreadMeta({
@@ -248,9 +283,42 @@ export default function App() {
           });
         }
       }
+      return cur;
     } catch (err) {
       console.error('Failed to load threads:', err);
+      return null;
     }
+  };
+
+  const initializeSession = async () => {
+    const selected = await loadThreads();
+    if (!selected) return;
+
+    const nextThread = selected.thread_id || 'default';
+    const nextProject =
+      selected.project || currentThreadProjectRef.current || null;
+    currentThreadRef.current = nextThread;
+    currentThreadProjectRef.current = nextProject;
+    setCurrentThread(nextThread);
+    setCurrentThreadProject(nextProject);
+    setCurrentThreadMeta({
+      title: selected.title || nextThread,
+      summary: selected.summary || '',
+    });
+
+    // Establish the project-qualified routing context before reading the
+    // project-agnostic history/workflow endpoints. A locked external Session
+    // remains readable and will be retried by an explicit later attach.
+    try {
+      await api.attachThread(nextThread, nextProject);
+    } catch (err) {
+      console.debug('Failed to attach persisted session during startup:', err);
+    }
+    await Promise.all([
+      loadThreadHistory(nextThread, nextProject),
+      loadWorkflows(nextThread, nextProject),
+      loadRuntimeStatus(nextThread, nextProject),
+    ]);
   };
 
   const loadWorkflows = async (
@@ -936,6 +1004,8 @@ export default function App() {
     setLastTurnResult(null);
     setRuntimeStatus(null);
     setLastWorkflowEvent(null);
+    currentThreadRef.current = threadId;
+    currentThreadProjectRef.current = nextProject;
     setCurrentThread(threadId);
     setCurrentThreadProject(nextProject);
     if (selected) {
@@ -964,10 +1034,13 @@ export default function App() {
     const finalTitle =
       customTitle && customTitle.trim() ? customTitle.trim() : `新会话 ${tid}`;
     try {
-      await api.startThread(tid, finalTitle, customProject);
+      const result = await api.startThread(tid, finalTitle, customProject);
+      const nextProject = result.project || customProject || null;
       await loadThreads();
+      currentThreadRef.current = tid;
+      currentThreadProjectRef.current = nextProject;
       setCurrentThread(tid);
-      setCurrentThreadProject(customProject || null);
+      setCurrentThreadProject(nextProject);
       setCurrentThreadMeta({ title: finalTitle, summary: '' });
       setMessages([]);
       setPendingMessages([]);
@@ -983,15 +1056,29 @@ export default function App() {
   const handleForkThread = async (sourceThreadId) => {
     const newId = `${sourceThreadId}_fork_${Date.now().toString(36).slice(2, 6)}`;
     try {
-      const source = threads.find((thread) => thread.thread_id === sourceThreadId);
-      await api.forkThread(sourceThreadId, newId, null, source?.project || null);
+      const source = threads.find(
+        (thread) =>
+          thread.thread_id === sourceThreadId &&
+          (!currentThreadProjectRef.current ||
+            thread.project === currentThreadProjectRef.current),
+      );
+      const result = await api.forkThread(
+        sourceThreadId,
+        newId,
+        null,
+        source?.project || currentThreadProjectRef.current || null,
+      );
+      const nextProject = result.project || source?.project || null;
       await loadThreads();
+      currentThreadRef.current = newId;
+      currentThreadProjectRef.current = nextProject;
       setCurrentThread(newId);
+      setCurrentThreadProject(nextProject);
       setPendingMessages([]);
       setComposerDraft(null);
       interruptPendingRef.current = false;
       setLastTurnResult(null);
-      loadThreadHistory(newId);
+      loadThreadHistory(newId, nextProject);
       showToast(`已派生分支会话: ${newId}`, 'success');
     } catch (err) {
       showToast(`派生分支失败: ${err.message}`, 'error');
@@ -1003,7 +1090,10 @@ export default function App() {
       await api.closeThread(threadId);
       await loadThreads();
       if (currentThread === threadId) {
+        currentThreadRef.current = 'default';
+        currentThreadProjectRef.current = null;
         setCurrentThread('default');
+        setCurrentThreadProject(null);
         loadThreadHistory('default');
       }
       showToast(`已关闭并归档会话: ${threadId}`, 'info');

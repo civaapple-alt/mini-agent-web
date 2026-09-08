@@ -516,6 +516,73 @@ async def test_attach_thread_honors_explicit_project_canonical_session(
 
 
 @pytest.mark.asyncio
+async def test_attach_thread_does_not_report_local_client_as_external_lock(
+    mock_session_manager, monkeypatch
+):
+    """The Gateway's own locked Session remains attachable and writable."""
+    client = AsyncMock()
+    mock_session_manager._client = client
+    mock_session_manager._clients["default"] = client
+    mock_session_manager._client_projects["default"] = "default"
+    mock_session_manager._project_clients[("default", "default")] = client
+    canonical = {
+        "session": {
+            "project_id": "default",
+            "session_id": "session-local",
+            "session_status": "locked",
+            "runtime_status": "running",
+            "locked_by": {"pid": 1234},
+        }
+    }
+    monkeypatch.setattr(
+        mock_session_manager,
+        "read_project_thread",
+        lambda thread_id, project_id=None: canonical
+        if (thread_id, project_id) == ("default", "default")
+        else None,
+    )
+    create_client = AsyncMock(side_effect=AssertionError("would create a duplicate"))
+    monkeypatch.setattr(mock_session_manager, "_create_client", create_client)
+
+    result = await mock_session_manager.attach_thread("default", "default")
+
+    assert result["attached"] is True
+    assert result["session_id"] == "session-local"
+    create_client.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_start_does_not_create_duplicate_when_default_session_is_locked(
+    mock_session_manager, monkeypatch
+):
+    """A Gateway restart keeps an externally running default Session read-only."""
+    canonical = {
+        "session": {
+            "project_id": "default",
+            "session_id": "session-external",
+            "session_status": "locked",
+            "runtime_status": "running",
+        }
+    }
+    monkeypatch.setattr(
+        mock_session_manager,
+        "read_project_thread",
+        lambda thread_id, project_id=None: canonical
+        if (thread_id, project_id) == ("default", None)
+        else None,
+    )
+    create_client = AsyncMock(side_effect=AssertionError("would create a duplicate"))
+    monkeypatch.setattr(mock_session_manager, "_create_client", create_client)
+
+    await mock_session_manager.start()
+
+    assert mock_session_manager._client is None
+    assert mock_session_manager._initialized is True
+    assert mock_session_manager._active_thread_projects["default"] == "default"
+    create_client.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_attach_thread_allows_same_thread_id_in_another_project(
     mock_session_manager, tmp_path
 ):

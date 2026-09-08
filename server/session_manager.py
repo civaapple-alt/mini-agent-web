@@ -76,6 +76,7 @@ class SessionManager:
         self._pending_approval_details: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
         self._initialized = False
+        self._runtime_generation = 0
 
         # Web owns only this derived project/UI manifest. Session history,
         # checkpoints, and approval grants belong to the App Server SessionStore.
@@ -826,6 +827,17 @@ class SessionManager:
         for client in set(clients):
             await client.stop()
         await self.start()
+        self._runtime_generation += 1
+        await self.broadcast_ws(
+            {
+                "type": "notification",
+                "method": "gateway/runtime/restarted",
+                "data": {
+                    "projectId": self._current_project_id,
+                    "runtimeGeneration": self._runtime_generation,
+                },
+            }
+        )
 
     async def stop(self) -> None:
         """Stop the background MiniAgentClient and close WebSocket connections."""

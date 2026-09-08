@@ -19,7 +19,12 @@ import {
   createGoalMessage,
   extractGoalObjective,
 } from './utils/goalMessages';
-import { readStateRevision, shouldApplyStateRevision } from './utils/revisionState';
+import {
+  readRuntimeGeneration,
+  readStateRevision,
+  shouldApplyRuntimeGeneration,
+  shouldApplyStateRevision,
+} from './utils/revisionState';
 import './App.css';
 
 function normalizeInputPayload(inputPayload) {
@@ -90,6 +95,7 @@ export default function App() {
 
   const wsRef = useRef(null);
   const workflowRevisionsRef = useRef(new Map());
+  const runtimeGenerationRef = useRef(0);
   const queueDispatchingRef = useRef(false);
   const interruptPendingRef = useRef(false);
   const currentThreadRef = useRef(currentThread);
@@ -137,6 +143,7 @@ export default function App() {
         // revision sequence starts over. Re-read the canonical projection to
         // rebuild the Web cursor before accepting new notifications.
         workflowRevisionsRef.current.clear();
+        runtimeGenerationRef.current = 0;
         loadWorkflows(currentThreadRef.current);
         showToast('✓ 已连接到 Agent Gateway 服务端', 'success', 2000);
       },
@@ -410,7 +417,16 @@ export default function App() {
 
     if (data.type === 'notification') {
       const notification = data.data || {};
-      if (data.method === 'item/started' || data.method === 'item/completed') {
+      if (data.method === 'gateway/runtime/restarted') {
+        const nextGeneration = readRuntimeGeneration(notification);
+        if (!shouldApplyRuntimeGeneration(runtimeGenerationRef.current, nextGeneration)) {
+          return;
+        }
+        runtimeGenerationRef.current = nextGeneration;
+        workflowRevisionsRef.current.clear();
+        loadWorkflows(currentThreadRef.current);
+        showToast('运行时已重启，正在同步控制面状态', 'info', 2500);
+      } else if (data.method === 'item/started' || data.method === 'item/completed') {
         setMessages((prev) => aggregateItemLifecycle(prev, data));
       } else if (data.method === 'thread/settings/updated') {
         applyWorkflowState(

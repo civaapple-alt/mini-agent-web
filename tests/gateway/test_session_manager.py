@@ -547,6 +547,34 @@ async def test_fork_and_concurrent_attach_share_the_forked_binding(
     create_client.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_restart_broadcasts_runtime_generation(
+    mock_session_manager, monkeypatch
+):
+    """A successful Gateway restart invalidates Web Studio's old revision cursor."""
+    old_client = AsyncMock()
+    new_client = AsyncMock()
+    mock_session_manager._client = old_client
+    mock_session_manager._clients["default"] = old_client
+    mock_session_manager._client_projects["default"] = "default"
+    create_client = AsyncMock(return_value=new_client)
+    broadcast = AsyncMock()
+    monkeypatch.setattr(mock_session_manager, "_create_client", create_client)
+    monkeypatch.setattr(mock_session_manager, "broadcast_ws", broadcast)
+
+    await mock_session_manager.restart_for_current_project()
+
+    old_client.stop.assert_awaited_once()
+    assert mock_session_manager._runtime_generation == 1
+    broadcast.assert_awaited_once_with(
+        {
+            "type": "notification",
+            "method": "gateway/runtime/restarted",
+            "data": {"projectId": "default", "runtimeGeneration": 1},
+        }
+    )
+
+
 def test_session_manager_avoids_duplicate_project_for_custom_id_path(tmp_path):
     """Ensure _load_state does not duplicate a project when its name differs from directory basename."""
     custom_ws = tmp_path / "pi"

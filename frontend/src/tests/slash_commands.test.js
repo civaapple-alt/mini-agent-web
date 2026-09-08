@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { getSlashCommandDraft, parseAndExecuteSlashCommand } from '../utils/slashCommands.js';
 
 test('slash command selection prepares input for commands with arguments', () => {
+  assert.equal(getSlashCommandDraft('/plan'), '/plan');
   assert.equal(getSlashCommandDraft('/goal'), '/goal ');
   assert.equal(getSlashCommandDraft('/steer'), '/steer ');
   assert.equal(getSlashCommandDraft('/status'), null);

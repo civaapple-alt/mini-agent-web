@@ -582,6 +582,7 @@ async def list_workflow_files(thread_id: str | None = None) -> dict[str, Any]:
         session_dir = session_manager.session_path_for_thread(thread_id)
         if session_dir:
             candidate_paths = [
+                ("plan/plan.md", session_dir / "plan" / "plan.md"),
                 ("goal/plan.md", session_dir / "goal" / "plan.md"),
                 (
                     "goal/verifier_verdict.md",
@@ -617,6 +618,7 @@ async def read_workflow_file_content(
     cwd = session_manager.project_path_for_thread(thread_id).resolve()
     root = cwd
     if thread_id and normalized_path in {
+        "plan/plan.md",
         "goal/plan.md",
         "goal/verifier_verdict.md",
         "goal/state.json",

@@ -13,12 +13,15 @@ export const SLASH_COMMANDS = [
 ];
 
 /**
- * Return the composer draft used when a command needs user-supplied text.
- * Selection from the popup must prepare the input; execution happens only
- * after the user submits the completed command.
+ * Return the composer draft used when a command is selected from the popup.
+ * Selection must prepare the input; execution happens only after the user
+ * submits the completed command.
  */
 export function getSlashCommandDraft(command) {
   const cleanCommand = (command || '').trim().toLowerCase();
+  if (cleanCommand === '/plan') {
+    return cleanCommand;
+  }
   if (cleanCommand === '/goal' || cleanCommand === '/steer') {
     return `${cleanCommand} `;
   }

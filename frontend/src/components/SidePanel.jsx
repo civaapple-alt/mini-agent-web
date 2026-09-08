@@ -443,7 +443,7 @@ export default function SidePanel({
                     <div>
                       <span className="workflow-title">规划模式 (Plan Mode)</span>
                       <p className="workflow-sub">
-                        以只读探索为主；允许创建受控临时脚本与输出，最终形成 plan.md，正式项目修改仍保持锁定
+                        源码与项目文件保持只读；Shell 按当前审批策略执行，plan.md 可持续更新
                       </p>
                     </div>
                   </div>

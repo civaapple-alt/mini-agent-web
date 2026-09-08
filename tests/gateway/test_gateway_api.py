@@ -210,7 +210,11 @@ async def test_workflow_state_and_goal_artifacts_use_canonical_session(
 ):
     """Goal state and verifier Markdown remain readable when live RPC is unavailable."""
     session_dir = tmp_path / "s-goal"
+    (session_dir / "plan").mkdir(parents=True)
     (session_dir / "goal").mkdir(parents=True)
+    (session_dir / "plan" / "plan.md").write_text(
+        "# Session Plan\n\n- [ ] Inspect the workspace\n", encoding="utf-8"
+    )
     (session_dir / "goal" / "plan.md").write_text(
         "# Goal Plan\n\n- [ ] Verify the fix\n", encoding="utf-8"
     )
@@ -255,9 +259,17 @@ async def test_workflow_state_and_goal_artifacts_use_canonical_session(
         )
         assert files.status_code == 200
         assert {item["path"] for item in files.json()["files"]} >= {
+            "plan/plan.md",
             "goal/plan.md",
             "goal/verifier_verdict.md",
         }
+
+        plan_content = await client.get(
+            "/api/workflows/file/content",
+            params={"path": "plan/plan.md", "thread_id": "t-goal-artifacts"},
+        )
+        assert plan_content.status_code == 200
+        assert "Inspect the workspace" in plan_content.json()["content"]
 
         content = await client.get(
             "/api/workflows/file/content",

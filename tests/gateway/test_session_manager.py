@@ -453,6 +453,24 @@ async def test_attach_thread_rejects_project_switch_for_live_binding(
         await mock_session_manager.attach_thread("shared-thread", "other-project")
 
 
+def test_bind_forked_thread_keeps_explicit_source_project(mock_session_manager, tmp_path):
+    """A forked in-memory Thread inherits its source Project binding."""
+    project_root = tmp_path / "other-project"
+    project_root.mkdir()
+    mock_session_manager._projects_registry["other-project"] = {
+        "id": "other-project",
+        "name": "Other Project",
+        "primary_path": str(project_root),
+        "source_folders": [{"path": str(project_root), "is_primary": True}],
+    }
+    client = AsyncMock()
+
+    mock_session_manager.bind_thread_client("forked", client, "other-project")
+
+    assert mock_session_manager._clients["forked"] is client
+    assert mock_session_manager._client_projects["forked"] == "other-project"
+
+
 def test_session_manager_avoids_duplicate_project_for_custom_id_path(tmp_path):
     """Ensure _load_state does not duplicate a project when its name differs from directory basename."""
     custom_ws = tmp_path / "pi"

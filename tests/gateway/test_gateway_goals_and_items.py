@@ -317,6 +317,49 @@ async def test_thread_attach_conflict_returns_409_for_live_project_binding(
 
 
 @pytest.mark.asyncio
+async def test_thread_fork_preserves_source_project_binding(gateway_test_app, tmp_path):
+    """Fork must not rebind a source Thread to the Gateway's current Project."""
+    project_root = tmp_path / "source-project"
+    project_root.mkdir()
+    session_manager._projects_registry["source-project"] = {
+        "id": "source-project",
+        "name": "Source Project",
+        "primary_path": str(project_root),
+        "source_folders": [{"path": str(project_root), "is_primary": True}],
+    }
+    mock_client = AsyncMock()
+    mock_client.fork_thread = AsyncMock(
+        return_value=SimpleNamespace(thread_id="forked-thread")
+    )
+    session_manager._clients["source-thread"] = mock_client
+    session_manager._client_projects["source-thread"] = "source-project"
+    session_manager._thread_metadata["source-thread"] = {
+        "title": "Source",
+        "project": "source-project",
+    }
+
+    transport = ASGITransport(app=gateway_test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/threads/fork",
+            json={
+                "source_thread_id": "source-thread",
+                "new_thread_id": "forked-thread",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["project"] == "source-project"
+    assert session_manager._client_projects["forked-thread"] == "source-project"
+    assert session_manager._thread_metadata["forked-thread"]["project"] == (
+        "source-project"
+    )
+    mock_client.fork_thread.assert_awaited_once_with(
+        source_thread_id="source-thread", new_thread_id="forked-thread"
+    )
+
+
+@pytest.mark.asyncio
 async def test_thread_close_endpoint(gateway_test_app):
     """Test POST /api/threads/{thread_id}/close releases active thread resources."""
     mock_client = AsyncMock()

@@ -676,12 +676,26 @@ class SessionManager:
     def live_thread_ids(self) -> list[str]:
         return list(self._clients)
 
-    def bind_thread_client(self, thread_id: str, client: MiniAgentClient) -> None:
-        """Associate an App Server's forked in-memory thread with its client."""
+    def bind_thread_client(
+        self,
+        thread_id: str,
+        client: MiniAgentClient,
+        project_id: str | None = None,
+    ) -> None:
+        """Bind a forked Thread without changing its source Project identity."""
+        project = self._project_for_thread(thread_id, project_id)
+        resolved_project_id = str(project.get("id") or self._current_project_id)
+        existing = self._clients.get(thread_id)
+        existing_project = self._client_projects.get(thread_id)
+        if existing is not None and (
+            existing is not client or existing_project != resolved_project_id
+        ):
+            raise RuntimeError(
+                f"Thread '{thread_id}' is already bound to Project "
+                f"'{existing_project or 'unknown'}'"
+            )
         self._clients[thread_id] = client
-        self._client_projects[thread_id] = str(
-            self._project_for_thread(thread_id).get("id") or self._current_project_id
-        )
+        self._client_projects[thread_id] = resolved_project_id
 
     async def start_thread(
         self, thread_id: str = "default", project_id: str | None = None

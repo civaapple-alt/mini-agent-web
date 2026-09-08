@@ -24,7 +24,7 @@ uv run mini-agent-server-dev
 | 路由 | 作用 |
 | --- | --- |
 | `/ws/agent` | Turn 流、审批、Steer、Interrupt 和 runtime notifications |
-| `/api/threads` | Thread 列表、创建、读取、分叉、摘要和关闭 |
+| `/api/threads` | Thread 列表、创建、读取、按 source Project 分叉、摘要和关闭 |
 | `/api/threads/{thread_id}/attach` | 按可选 Project ID/name attach 历史/暂停 Session，或报告外部运行锁 |
 | `/api/threads/{thread_id}/items` | 有界 ThreadItem 历史投影 |
 | `/api/threads/{thread_id}/settings` | Thread collaboration mode、Builtin tools、显式推进方式和 App Server `state_revision` |
@@ -58,6 +58,8 @@ Project 的主目录和关联目录会在启动 SDK 时分别绑定为主工作�
 Project 清单和界面偏好，Session history、Goal、checkpoint 和批准授权由
 App Server 的 canonical Session/Runtime 所有。若同一 Thread ID 已绑定到另一个
 live Project，显式 attach 或 start 会返回 `409`，不会静默把请求路由到错误 workspace。
+Fork 也沿用 source Thread 的 Project binding；如果目标 Thread ID 已属于另一个
+live Project，分叉请求同样 fail closed 为 `409`。
 
 ## 文件分工
 

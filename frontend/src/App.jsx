@@ -762,7 +762,8 @@ export default function App() {
   const handleForkThread = async (sourceThreadId) => {
     const newId = `${sourceThreadId}_fork_${Date.now().toString(36).slice(2, 6)}`;
     try {
-      await api.forkThread(sourceThreadId, newId);
+      const source = threads.find((thread) => thread.thread_id === sourceThreadId);
+      await api.forkThread(sourceThreadId, newId, null, source?.project || null);
       await loadThreads();
       setCurrentThread(newId);
       setPendingMessages([]);

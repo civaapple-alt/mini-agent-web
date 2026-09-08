@@ -77,6 +77,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   canonical App Server state authoritative across the SDK → Gateway → Studio
   path without introducing a second state store.
 
+- **Project-safe Thread fork**: fork requests may identify the source Project,
+  and the Gateway now carries the source binding onto the branched Thread;
+  conflicting live IDs fail with `409` instead of silently moving a fork into
+  the current Project workspace.
+
 - **Canonical Thread continuation projection**: moved `manual` / `continuous`
   persistence to the App Server SessionStore `thread_settings.json` sidecar;
   SessionCatalog reads the bounded projection and Gateway no longer stores a

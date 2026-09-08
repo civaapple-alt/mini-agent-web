@@ -47,6 +47,11 @@ test('api client methods construct expected fetch endpoints and payloads', async
   await api.listThreadItems('t-123', { limit: 64, sortDirection: 'desc' });
   assert.equal(calls[calls.length - 1].url, '/api/threads/t-123/items?limit=64&sort_direction=desc');
 
+  await api.forkThread('t-123', 't-fork', null, 'project-1');
+  const forkCall = calls[calls.length - 1];
+  assert.equal(forkCall.url, '/api/threads/fork');
+  assert.equal(JSON.parse(forkCall.options.body).project, 'project-1');
+
   // 2. Settings APIs
   const setRes = await api.updateSettings({ reasoning_effort: 'high' });
   assert.equal(setRes.settings.access, 'project');

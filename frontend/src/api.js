@@ -38,7 +38,7 @@ export const api = {
     return res.json();
   },
 
-  async forkThread(sourceThreadId, newThreadId, title = null) {
+  async forkThread(sourceThreadId, newThreadId, title = null, project = null) {
     const res = await fetch(`${API_BASE}/api/threads/fork`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -46,6 +46,7 @@ export const api = {
         source_thread_id: sourceThreadId,
         new_thread_id: newThreadId,
         title,
+        project,
       }),
     });
     if (!res.ok) throw new Error('Failed to fork thread');

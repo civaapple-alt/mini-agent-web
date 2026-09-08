@@ -4,6 +4,7 @@ import {
   aggregateItemLifecycle,
   aggregateStreamEvent,
   aggregateThreadItems,
+  filterEmptyMessages,
   shouldAcceptEventForThread,
 } from '../utils/messageState.js';
 
@@ -321,4 +322,21 @@ test('thread item history hydrates existing assistant turns and preserves item i
 
   assert.equal(messages.length, 2);
   assert.equal(messages[1].blocks[1].id, 'call-history');
+});
+
+test('history filtering removes empty assistant placeholders but keeps visible blocks', () => {
+  const messages = filterEmptyMessages([
+    { role: 'user', text: 'Inspect' },
+    { role: 'assistant', text: '', thinking: '', blocks: [] },
+    { role: 'assistant', text: '', thinking: '', blocks: [{ type: 'text', content: 'Done' }] },
+    { role: 'assistant', text: '', thinking: '', blocks: [{ type: 'tool', name: 'shell' }] },
+    { role: 'assistant', text: '', thinking: '', blocks: [{ type: 'text', content: '   ' }] },
+    { role: 'tool', text: 'internal output', blocks: [] },
+    { role: 'system', text: 'internal state', blocks: [] },
+  ]);
+
+  assert.equal(messages.length, 3);
+  assert.equal(messages[0].role, 'user');
+  assert.equal(messages[1].blocks[0].content, 'Done');
+  assert.equal(messages[2].blocks[0].type, 'tool');
 });

@@ -13,6 +13,7 @@ import {
   aggregateItemLifecycle,
   aggregateStreamEvent,
   aggregateThreadItems,
+  filterEmptyMessages,
 } from './utils/messageState';
 import {
   appendGoalMessage as appendGoalMessageToMessages,
@@ -485,7 +486,10 @@ export default function App() {
           }
           return result;
         }
-        if (m.role === 'system') return result;
+        // Tool/context records are represented by the bounded ThreadItem
+        // projection below. Rendering them as messages creates blank assistant
+        // rows (or duplicates internal runtime text) during history replay.
+        if (m.role !== 'user' && m.role !== 'assistant') return result;
         if (text.startsWith('<world_state') || text.includes('</world_state>')) return result;
         result.push({
           id: m.id || `hist_${threadId}_${idx}`,
@@ -505,7 +509,9 @@ export default function App() {
       if (historyGoalObjective && !goalMessageAdded) {
         formatted.push(createGoalMessage(historyGoalObjective, `goal_hist_${threadId}`));
       }
-      setMessages(aggregateThreadItems(formatted, itemPage.data || []));
+      setMessages(
+        filterEmptyMessages(aggregateThreadItems(formatted, itemPage.data || [])),
+      );
     } catch (err) {
       console.error(`Failed to load thread ${threadId}:`, err);
       showToast(`加载会话历史失败: ${err.message}`, 'error');

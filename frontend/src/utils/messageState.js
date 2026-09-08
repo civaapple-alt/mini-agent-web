@@ -272,6 +272,42 @@ export function aggregateThreadItems(messages, entries) {
 }
 
 /**
+ * Remove history placeholders that have no visible content after item
+ * hydration. Empty assistant messages are useful while a live turn is being
+ * assembled, but rendering them after a settled history only produces a bare
+ * avatar with no message body.
+ */
+export function filterEmptyMessages(messages) {
+  return (messages || []).filter((message) => {
+    if (message.messageKind === 'goal_verification') return true;
+    if (message.role !== 'user' && message.role !== 'assistant') return false;
+    if (message.role !== 'assistant') {
+      return Boolean(
+        message.text?.trim?.() ||
+          message.images?.length ||
+          message.referencedFiles?.length ||
+          message.isGoal ||
+          message.isSteer,
+      );
+    }
+
+    const hasBlock = (message.blocks || []).some((block) => {
+      if (!block) return false;
+      if (block.type === 'text' || block.type === 'thinking') {
+        return Boolean(block.content?.trim?.());
+      }
+      return block.type === 'tool' || block.type === 'compaction';
+    });
+    return Boolean(
+      message.text?.trim?.() ||
+        message.thinking?.trim?.() ||
+        message.tools?.length ||
+        hasBlock,
+    );
+  });
+}
+
+/**
  * Pure reducer function to update messages array based on engine stream events.
  */
 export function aggregateStreamEvent(messages, data) {

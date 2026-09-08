@@ -5,7 +5,11 @@
 /**
  * Validates whether an incoming event belongs to the active thread.
  */
-export function shouldAcceptEventForThread(eventData, currentThreadId) {
+export function shouldAcceptEventForThread(
+  eventData,
+  currentThreadId,
+  currentProjectId = null,
+) {
   if (!eventData) return false;
   const notificationData = eventData.data || {};
   const approvalData = eventData.approval || {};
@@ -16,7 +20,17 @@ export function shouldAcceptEventForThread(eventData, currentThreadId) {
     notificationData.thread_id ||
     approvalData.threadId ||
     approvalData.thread_id;
+  const eventProjectId =
+    eventData.projectId ||
+    eventData.project_id ||
+    notificationData.projectId ||
+    notificationData.project_id ||
+    approvalData.projectId ||
+    approvalData.project_id;
   if (eventThreadId && eventThreadId !== currentThreadId) {
+    return false;
+  }
+  if (eventProjectId && currentProjectId && eventProjectId !== currentProjectId) {
     return false;
   }
   return true;

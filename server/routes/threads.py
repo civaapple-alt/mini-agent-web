@@ -70,48 +70,59 @@ async def list_threads(
     """List active and historical conversation threads with titles and summaries."""
     try:
         res = await session_manager.client.list_threads(cursor=cursor, limit=limit)
-        live_thread_ids = session_manager.live_thread_ids()
-        if not live_thread_ids and isinstance(res.data, list):
-            live_thread_ids = list(res.data)
-
-        # Combine active App Server threads and historical metadata threads
-        seen = set(live_thread_ids)
-        all_thread_ids = list(live_thread_ids)
-        for tid in session_manager._thread_metadata:
-            if tid not in seen:
-                all_thread_ids.append(tid)
-                seen.add(tid)
+        # Thread IDs are scoped by Project. Keep the project in the catalog key
+        # so ``pi/default`` and ``mini-agent-web/default`` remain selectable.
+        live_bindings = set(session_manager.live_thread_bindings())
+        if isinstance(res.data, list):
+            active_project = session_manager._current_project_id
+            for raw_thread in res.data:
+                if isinstance(raw_thread, str):
+                    tid = raw_thread
+                elif isinstance(raw_thread, dict):
+                    tid = raw_thread.get("thread_id")
+                else:
+                    tid = getattr(raw_thread, "thread_id", None)
+                if tid:
+                    live_bindings.add(
+                        (
+                            session_manager._client_projects.get(tid, active_project),
+                            str(tid),
+                        )
+                    )
 
         # The Web gateway's thread metadata is UI metadata only. Add canonical
         # SessionStore sessions so historical, running, and paused sessions are
         # visible even when the current App Server process did not create them.
         catalog_entries = {
-            session["thread_id"]: session
+            (str(session["project_id"]), str(session["thread_id"])): session
             for session in session_manager.list_all_project_sessions()
         }
-        for tid in catalog_entries:
-            if tid not in seen:
-                all_thread_ids.append(tid)
-                seen.add(tid)
+        all_bindings = set(live_bindings) | set(catalog_entries)
+        for tid, meta in session_manager._thread_metadata.items():
+            project_id = str(
+                meta.get("project")
+                or session_manager._client_projects.get(tid)
+                or session_manager._current_project_id
+            )
+            all_bindings.add((project_id, tid))
 
         enriched_threads: list[dict[str, Any]] = []
-        cur_project_name = session_manager._current_project_path.name
-        for tid in all_thread_ids:
-            meta = session_manager.get_thread_meta(tid)
+        for project_id, tid in sorted(all_bindings):
+            meta = session_manager.get_thread_meta(tid, project_id)
             item = {
                 "thread_id": tid,
                 "title": meta.get("title") or f"会话 {tid}",
-                "project": meta.get("project") or cur_project_name,
+                "project": project_id,
                 "summary": meta.get("summary", ""),
                 "created_at": meta.get("created_at"),
                 "updated_at": meta.get("updated_at"),
                 "pinned": meta.get("pinned", False),
             }
-            catalog_entry = catalog_entries.get(tid)
+            catalog_entry = catalog_entries.get((project_id, tid))
             if catalog_entry:
                 item.update(
                     {
-                        "project": meta.get("project") or catalog_entry["project_id"],
+                        "project": project_id,
                         "session_id": catalog_entry["session_id"],
                         "session_status": catalog_entry["session_status"],
                         "runtime_status": catalog_entry["runtime_status"],
@@ -132,7 +143,12 @@ async def list_threads(
 
         return {
             "threads": enriched_threads,
-            "raw_thread_ids": all_thread_ids,
+            "raw_thread_ids": [tid for _project_id, tid in sorted(all_bindings)],
+            "raw_thread_bindings": [
+                {"project": project_id, "thread_id": tid}
+                for project_id, tid in sorted(all_bindings)
+            ],
+            "current_project": session_manager._current_project_id,
             "next_cursor": res.next_cursor,
         }
     except RuntimeError as err:

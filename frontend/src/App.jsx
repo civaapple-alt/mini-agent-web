@@ -88,9 +88,14 @@ const RUNTIME_PHASE_LABELS = {
   failed: '失败',
 };
 
+function scopedThreadKey(threadId, projectId) {
+  return `${projectId || ''}:${threadId}`;
+}
+
 export default function App() {
   const [threads, setThreads] = useState([]);
   const [currentThread, setCurrentThread] = useState('default');
+  const [currentThreadProject, setCurrentThreadProject] = useState(null);
   const [currentThreadMeta, setCurrentThreadMeta] = useState({
     title: '默认会话 (Default Session)',
     summary: '',
@@ -138,8 +143,10 @@ export default function App() {
   const queueDispatchingRef = useRef(false);
   const interruptPendingRef = useRef(false);
   const currentThreadRef = useRef(currentThread);
+  const currentThreadProjectRef = useRef(currentThreadProject);
   const goalStateRef = useRef(goalState);
   currentThreadRef.current = currentThread;
+  currentThreadProjectRef.current = currentThreadProject;
 
   const showToast = (message, type = 'info', duration = 3000) => {
     const id = 'toast_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
@@ -224,8 +231,17 @@ export default function App() {
       const data = await api.listThreads();
       if (data.threads && data.threads.length > 0) {
         setThreads(data.threads);
-        const cur = data.threads.find((t) => t.thread_id === currentThreadRef.current);
+        const preferredProject =
+          currentThreadProjectRef.current || data.current_project || null;
+        const cur = data.threads.find(
+          (t) =>
+            t.thread_id === currentThreadRef.current &&
+            (!preferredProject || t.project === preferredProject),
+        ) || data.threads.find((t) => t.thread_id === currentThreadRef.current);
         if (cur) {
+          if (!currentThreadProjectRef.current && cur.project) {
+            setCurrentThreadProject(cur.project);
+          }
           setCurrentThreadMeta({
             title: cur.title || cur.thread_id,
             summary: cur.summary || '',
@@ -237,11 +253,14 @@ export default function App() {
     }
   };
 
-  const loadWorkflows = async (threadId = currentThreadRef.current) => {
+  const loadWorkflows = async (
+    threadId = currentThreadRef.current,
+    projectId = currentThreadProjectRef.current,
+  ) => {
     try {
       const wfState = await api.getWorkflowState(threadId);
       const normalizedState = { ...wfState, goal: normalizeGoal(wfState.goal) };
-      if (!applyWorkflowState(threadId, normalizedState)) return;
+      if (!applyWorkflowState(threadId, normalizedState, projectId)) return;
       goalStateRef.current = normalizedState.goal;
       setGoalState(normalizedState.goal);
     } catch (err) {
@@ -249,17 +268,28 @@ export default function App() {
     }
   };
 
-  const loadRuntimeStatus = async (threadId = currentThreadRef.current) => {
+  const loadRuntimeStatus = async (
+    threadId = currentThreadRef.current,
+    projectId = currentThreadProjectRef.current,
+  ) => {
     try {
       const status = await api.getRuntimeStatus(threadId);
-      if (currentThreadRef.current === threadId) setRuntimeStatus(status);
+      if (
+        currentThreadRef.current === threadId &&
+        (!projectId || currentThreadProjectRef.current === projectId)
+      ) setRuntimeStatus(status);
     } catch (err) {
       console.debug('Failed to load runtime status:', err);
     }
   };
 
-  const replayMissedEvents = async (threadId = currentThreadRef.current) => {
-    const afterSequence = eventCursorsRef.current.get(threadId);
+  const replayMissedEvents = async (
+    threadId = currentThreadRef.current,
+    projectId = currentThreadProjectRef.current,
+  ) => {
+    const afterSequence = eventCursorsRef.current.get(
+      scopedThreadKey(threadId, projectId),
+    );
     try {
       const page = await api.replayThreadEvents(threadId, afterSequence ?? 0, 128);
       if (page.has_gap) {
@@ -276,14 +306,22 @@ export default function App() {
     }
   };
 
-  const applyWorkflowState = (threadId, workflowState) => {
+  const applyWorkflowState = (
+    threadId,
+    workflowState,
+    projectId = currentThreadProjectRef.current,
+  ) => {
     const nextRevision = readStateRevision(workflowState);
-    const currentRevision = workflowRevisionsRef.current.get(threadId);
+    const stateKey = scopedThreadKey(threadId, projectId);
+    const currentRevision = workflowRevisionsRef.current.get(stateKey);
     if (!shouldApplyStateRevision(currentRevision, nextRevision)) return false;
     if (nextRevision !== null) {
-      workflowRevisionsRef.current.set(threadId, nextRevision);
+      workflowRevisionsRef.current.set(stateKey, nextRevision);
     }
-    if (currentThreadRef.current !== threadId) return false;
+    if (
+      currentThreadRef.current !== threadId ||
+      (projectId && currentThreadProjectRef.current !== projectId)
+    ) return false;
     const mode = workflowState.collaboration_mode || workflowState.collaborationMode;
     setPlanActive(mode?.mode === 'plan');
     const nextContinuation = workflowState.continuation_mode || workflowState.continuationMode;
@@ -291,15 +329,24 @@ export default function App() {
     return true;
   };
 
-  const applyGoalState = (threadId, goal, payload = {}) => {
+  const applyGoalState = (
+    threadId,
+    goal,
+    payload = {},
+    projectId = currentThreadProjectRef.current,
+  ) => {
     const nextGoal = normalizeGoal(goal);
     const nextRevision = readStateRevision(payload);
-    const currentRevision = workflowRevisionsRef.current.get(threadId);
+    const stateKey = scopedThreadKey(threadId, projectId);
+    const currentRevision = workflowRevisionsRef.current.get(stateKey);
     if (!shouldApplyStateRevision(currentRevision, nextRevision)) return false;
     if (nextRevision !== null) {
-      workflowRevisionsRef.current.set(threadId, nextRevision);
+      workflowRevisionsRef.current.set(stateKey, nextRevision);
     }
-    if (currentThreadRef.current !== threadId) return false;
+    if (
+      currentThreadRef.current !== threadId ||
+      (projectId && currentThreadProjectRef.current !== projectId)
+    ) return false;
     const previousGoal = goalStateRef.current;
     goalStateRef.current = nextGoal;
     setGoalState(nextGoal);
@@ -320,13 +367,20 @@ export default function App() {
     return true;
   };
 
-  const loadThreadHistory = async (threadId) => {
+  const loadThreadHistory = async (
+    threadId,
+    projectId = currentThreadProjectRef.current,
+  ) => {
     setIsLoadingHistory(true);
     try {
       const [cp, itemPage] = await Promise.all([
         api.readThread(threadId),
         api.listThreadItems(threadId, { limit: 128 }),
       ]);
+      if (
+        currentThreadRef.current !== threadId ||
+        (projectId && currentThreadProjectRef.current !== projectId)
+      ) return;
       if (cp.metadata) {
         setCurrentThreadMeta({
           title: cp.metadata.title || threadId,
@@ -415,14 +469,20 @@ export default function App() {
     if (!data) return;
 
     if (data.type === 'event' && data.threadId && data.sequence) {
-      const current = eventCursorsRef.current.get(data.threadId) || 0;
+      const eventProject = data.projectId || data.data?.projectId || currentThreadProjectRef.current;
+      const eventKey = scopedThreadKey(data.threadId, eventProject);
+      const current = eventCursorsRef.current.get(eventKey) || 0;
       if (data.sequence > current) {
-        eventCursorsRef.current.set(data.threadId, data.sequence);
+        eventCursorsRef.current.set(eventKey, data.sequence);
       }
     }
 
     // A2: Isolate stream events by active thread to prevent cross-thread pollution
-    if (!shouldAcceptEventForThread(data, currentThreadRef.current)) {
+    if (!shouldAcceptEventForThread(
+      data,
+      currentThreadRef.current,
+      currentThreadProjectRef.current,
+    )) {
       if (data.type === 'event') {
         const evtType = data.event?.type;
         if (evtType === 'turn_finished' || evtType === 'run_finished' || evtType === 'run_failed') {
@@ -856,9 +916,17 @@ export default function App() {
     showToast(`已提交安全审批决定: ${decision === 'approve' ? '允许执行' : '拒绝'}`, 'info', 2000);
   };
 
-  const handleSelectThread = (threadId) => {
-    if (threadId === currentThread) return;
-    const selected = threads.find((thread) => thread.thread_id === threadId);
+  const handleSelectThread = async (threadId, projectId = null) => {
+    const selected = threads.find(
+      (thread) =>
+        thread.thread_id === threadId &&
+        (!projectId || thread.project === projectId),
+    );
+    const nextProject = projectId || selected?.project || null;
+    if (
+      threadId === currentThread &&
+      (!nextProject || !currentThreadProject || nextProject === currentThreadProject)
+    ) return;
     setIsGenerating(false);
     setActiveTurnId(null);
     interruptPendingRef.current = false;
@@ -869,22 +937,26 @@ export default function App() {
     setRuntimeStatus(null);
     setLastWorkflowEvent(null);
     setCurrentThread(threadId);
+    setCurrentThreadProject(nextProject);
     if (selected) {
       setCurrentThreadMeta({
         title: selected.title || threadId,
         summary: selected.summary || '',
       });
     }
-    loadThreadHistory(threadId);
-    loadWorkflows(threadId);
-    loadRuntimeStatus(threadId);
-    api.attachThread(threadId, selected?.project).then((result) => {
+    try {
+      // Attach first. All project-agnostic thread APIs use this active
+      // project context after the attach completes.
+      const result = await api.attachThread(threadId, nextProject);
       if (!result.attached && result.session_status === 'locked') {
         showToast('该 Session 正在另一个进程运行，当前为只读查看；结束后可重新 attach', 'info', 3500);
       }
-    }).catch((err) => {
+      loadThreadHistory(threadId, nextProject);
+      loadWorkflows(threadId, nextProject);
+      loadRuntimeStatus(threadId, nextProject);
+    } catch (err) {
       showToast(`切换 Session 失败: ${err.message}`, 'error');
-    });
+    }
   };
 
   const handleNewThread = async (customProject = null, customTitle = null) => {
@@ -895,6 +967,7 @@ export default function App() {
       await api.startThread(tid, finalTitle, customProject);
       await loadThreads();
       setCurrentThread(tid);
+      setCurrentThreadProject(customProject || null);
       setCurrentThreadMeta({ title: finalTitle, summary: '' });
       setMessages([]);
       setPendingMessages([]);
@@ -1110,6 +1183,7 @@ export default function App() {
         <Sidebar
           threads={threads}
           currentThread={currentThread}
+          currentThreadProject={currentThreadProject}
           isGenerating={isGenerating}
           onSelectThread={handleSelectThread}
           onNewThread={handleNewThread}

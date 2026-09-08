@@ -91,6 +91,22 @@ test('thread isolation rejects foreign thread events', () => {
   assert.equal(shouldAcceptEventForThread(validEvent, activeThread), true);
   assert.equal(shouldAcceptEventForThread(foreignEvent, activeThread), false);
   assert.equal(shouldAcceptEventForThread(genericEvent, activeThread), true);
+  assert.equal(
+    shouldAcceptEventForThread(
+      { ...validEvent, projectId: 'mini-agent-web' },
+      activeThread,
+      'mini-agent-web',
+    ),
+    true,
+  );
+  assert.equal(
+    shouldAcceptEventForThread(
+      { ...validEvent, projectId: 'pi' },
+      activeThread,
+      'mini-agent-web',
+    ),
+    false,
+  );
 });
 
 test('steer events start a new assistant segment instead of appending to the steer message', () => {

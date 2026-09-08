@@ -202,6 +202,22 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     orig_client = session_manager._client
     orig_clients = dict(session_manager._clients)
     orig_client_projects = dict(getattr(session_manager, "_client_projects", {}))
+    orig_project_clients = dict(getattr(session_manager, "_project_clients", {}))
+    orig_active_thread_projects = dict(
+        getattr(session_manager, "_active_thread_projects", {})
+    )
+    orig_thread_metadata_by_project = dict(
+        getattr(session_manager, "_thread_metadata_by_project", {})
+    )
+    orig_active_turns_by_project = dict(
+        getattr(session_manager, "_active_turns_by_project", {})
+    )
+    orig_active_tasks_by_project = dict(
+        getattr(session_manager, "_active_tasks_by_project", {})
+    )
+    orig_thread_builtin_tools_by_project = dict(
+        getattr(session_manager, "_thread_builtin_tools_by_project", {})
+    )
     orig_cur_id = session_manager._current_project_id
     orig_cur_path = session_manager._current_project_path
     orig_settings = dict(session_manager._settings)
@@ -214,6 +230,12 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     session_manager._thread_metadata = {}
     session_manager._thread_builtin_tools = {}
     session_manager._client_projects = {}
+    session_manager._project_clients = {}
+    session_manager._active_thread_projects = {}
+    session_manager._thread_metadata_by_project = {}
+    session_manager._active_turns_by_project = {}
+    session_manager._active_tasks_by_project = {}
+    session_manager._thread_builtin_tools_by_project = {}
     session_manager._load_state()
 
     if not has_app_server():
@@ -235,9 +257,11 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Otherwise Windows' Proactor subprocess transports can outlive the loop
     # and report unclosed pipes even though all assertions passed.
     original_clients = {id(client) for client in orig_clients.values()}
+    original_clients.update(id(client) for client in orig_project_clients.values())
     if orig_client is not None:
         original_clients.add(id(orig_client))
     current_clients = list(session_manager._clients.values())
+    current_clients.extend(session_manager._project_clients.values())
     if session_manager._client is not None:
         current_clients.append(session_manager._client)
     seen_clients: set[int] = set()
@@ -257,6 +281,12 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     session_manager._client = orig_client
     session_manager._clients = orig_clients
     session_manager._client_projects = orig_client_projects
+    session_manager._project_clients = orig_project_clients
+    session_manager._active_thread_projects = orig_active_thread_projects
+    session_manager._thread_metadata_by_project = orig_thread_metadata_by_project
+    session_manager._active_turns_by_project = orig_active_turns_by_project
+    session_manager._active_tasks_by_project = orig_active_tasks_by_project
+    session_manager._thread_builtin_tools_by_project = orig_thread_builtin_tools_by_project
     session_manager._thread_builtin_tools = orig_builtin_tools
     session_manager._current_project_id = orig_cur_id
     session_manager._current_project_path = orig_cur_path

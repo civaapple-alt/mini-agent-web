@@ -69,8 +69,13 @@ class SessionManager:
 
     def __init__(self) -> None:
         self._client: MiniAgentClient | None = None
+        # ``_clients`` remains the active-thread compatibility view used by
+        # existing routes/tests.  The real pool is project-qualified so two
+        # projects may both own a ``default`` Thread.
         self._clients: dict[str, MiniAgentClient] = {}
         self._client_projects: dict[str, str] = {}
+        self._project_clients: dict[tuple[str, str], MiniAgentClient] = {}
+        self._active_thread_projects: dict[str, str] = {}
         self._active_connections: list[WebSocket] = []
         self._pending_approvals: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._pending_approval_details: dict[str, dict[str, Any]] = {}
@@ -92,11 +97,15 @@ class SessionManager:
         self._current_project_id: str = self._current_project_path.name
         self._projects_registry: dict[str, dict[str, Any]] = {}
         self._thread_metadata: dict[str, dict[str, Any]] = {}
+        self._thread_metadata_by_project: dict[tuple[str, str], dict[str, Any]] = {}
 
         # Active turn & task tracking for responsive interrupts
         self._active_turns: dict[str, str] = {}
         self._active_tasks: dict[str, asyncio.Task[Any]] = {}
+        self._active_turns_by_project: dict[tuple[str, str], str] = {}
+        self._active_tasks_by_project: dict[tuple[str, str], asyncio.Task[Any]] = {}
         self._thread_builtin_tools: dict[str, list[str]] = {}
+        self._thread_builtin_tools_by_project: dict[tuple[str, str], list[str]] = {}
 
         # Runtime system settings
         self._settings: dict[str, Any] = {
@@ -175,6 +184,7 @@ class SessionManager:
 
         # 3. Load threads partitioned across projects/<pid>/threads.json
         self._thread_metadata = {}
+        self._thread_metadata_by_project = {}
         if self._projects_dir.is_dir():
             for pdir in self._projects_dir.iterdir():
                 t_file = pdir / "threads.json"
@@ -184,11 +194,20 @@ class SessionManager:
                         if isinstance(t_data, dict):
                             for tid, t_meta in t_data.items():
                                 if isinstance(t_meta, dict):
-                                    if not t_meta.get("project"):
-                                        t_meta["project"] = pdir.name
+                                    t_meta = dict(t_meta)
+                                    project_id = str(t_meta.get("project") or pdir.name)
+                                    if (
+                                        project_id not in self._projects_registry
+                                        and pdir.name in self._projects_registry
+                                    ):
+                                        project_id = pdir.name
+                                    t_meta["project"] = project_id
                                     # Continuation is canonical SessionStore state;
                                     # discard the retired Web-side shadow field.
                                     t_meta.pop("continuation_mode", None)
+                                    self._thread_metadata_by_project[
+                                        (project_id, tid)
+                                    ] = t_meta
                                     self._thread_metadata[tid] = t_meta
                     except Exception as err:  # noqa: BLE001
                         logger.warning(
@@ -278,9 +297,14 @@ class SessionManager:
         try:
             proj_meta = {
                 tid: meta
-                for tid, meta in self._thread_metadata.items()
-                if meta.get("project") == project_id
+                for (pid, tid), meta in self._thread_metadata_by_project.items()
+                if pid == project_id
             }
+            # Preserve compatibility for tests/older callers that still write
+            # directly to the legacy unqualified metadata mapping.
+            for tid, meta in self._thread_metadata.items():
+                if meta.get("project") == project_id:
+                    proj_meta.setdefault(tid, meta)
             target_file = self._projects_dir / project_id / "threads.json"
             _atomic_write_json(target_file, proj_meta)
         except Exception as err:  # noqa: BLE001
@@ -321,10 +345,16 @@ class SessionManager:
         for p in self._projects_registry.values():
             proj_id = p["id"]
             p_threads = [
-                t
-                for t in self._thread_metadata.values()
-                if t.get("project") == proj_id or t.get("project") == p.get("name")
+                meta
+                for (pid, _thread_id), meta in self._thread_metadata_by_project.items()
+                if pid == proj_id
             ]
+            if not p_threads:
+                p_threads = [
+                    t
+                    for t in self._thread_metadata.values()
+                    if t.get("project") == proj_id or t.get("project") == p.get("name")
+                ]
             sessions = session_catalog.list_sessions(
                 Path(p["primary_path"]), proj_id, limit=128
             )["data"]
@@ -455,6 +485,21 @@ class SessionManager:
                 for tid, meta in self._thread_metadata.items()
                 if meta.get("project") != project_id
             }
+            self._thread_metadata_by_project = {
+                key: meta
+                for key, meta in self._thread_metadata_by_project.items()
+                if key[0] != project_id
+            }
+            self._project_clients = {
+                key: client
+                for key, client in self._project_clients.items()
+                if key[0] != project_id
+            }
+            self._active_thread_projects = {
+                tid: pid
+                for tid, pid in self._active_thread_projects.items()
+                if pid != project_id
+            }
             return True
         return False
 
@@ -572,8 +617,10 @@ class SessionManager:
     def _project_for_thread(
         self, thread_id: str, project_id: str | None = None
     ) -> dict[str, Any]:
-        candidate = project_id or self._thread_metadata.get(thread_id, {}).get(
-            "project"
+        candidate = (
+            project_id
+            or self._active_thread_projects.get(thread_id)
+            or self._thread_metadata.get(thread_id, {}).get("project")
         )
         if candidate in self._projects_registry:
             return self._projects_registry[candidate]
@@ -594,7 +641,63 @@ class SessionManager:
         if project_id:
             project = self._project_for_thread(thread_id, project_id)
             return self.read_project_thread(thread_id, project.get("id"))
+        active_project = self._active_thread_projects.get(thread_id)
+        if active_project:
+            return self.read_project_thread(thread_id, active_project)
         return self.read_any_project_thread(thread_id)
+
+    def _activate_thread_client(
+        self, thread_id: str, project_id: str, client: MiniAgentClient
+    ) -> None:
+        """Make one project-qualified client the active target for a Thread ID."""
+        self._project_clients[(project_id, thread_id)] = client
+        self._clients[thread_id] = client
+        self._client_projects[thread_id] = project_id
+        self._active_thread_projects[thread_id] = project_id
+        if thread_id == "default":
+            self._client = client
+
+    def _all_clients(self) -> list[MiniAgentClient]:
+        """Return all pooled clients once, including inactive project bindings."""
+        clients: list[MiniAgentClient] = []
+        seen: set[int] = set()
+        for client in [*self._clients.values(), *self._project_clients.values()]:
+            if id(client) in seen:
+                continue
+            seen.add(id(client))
+            clients.append(client)
+        return clients
+
+    def live_thread_bindings(self) -> list[tuple[str, str]]:
+        """Return active ``(project_id, thread_id)`` bindings for the UI catalog."""
+        bindings = set(self._project_clients)
+        bindings.update(
+            (project_id, thread_id)
+            for thread_id, project_id in self._client_projects.items()
+        )
+        return sorted(bindings)
+
+    def builtin_tools_for_thread(self, thread_id: str) -> list[str] | None:
+        """Read the active project's in-memory Builtin tool selection."""
+        project_id = self._active_thread_projects.get(thread_id)
+        if project_id:
+            selected = self._thread_builtin_tools_by_project.get(
+                (project_id, thread_id)
+            )
+            if selected is not None:
+                return selected
+        return self._thread_builtin_tools.get(thread_id)
+
+    def set_builtin_tools_for_thread(
+        self, thread_id: str, builtin_tools: list[str]
+    ) -> None:
+        """Store Builtin tool selection in the active project's namespace."""
+        project_id = self._active_thread_projects.get(thread_id)
+        if project_id:
+            self._thread_builtin_tools_by_project[(project_id, thread_id)] = list(
+                builtin_tools
+            )
+        self._thread_builtin_tools[thread_id] = list(builtin_tools)
 
     async def _create_client(
         self,
@@ -612,13 +715,23 @@ class SessionManager:
         )
         if session_id:
             env["MINI_AGENT_SESSION_ID"] = session_id
+        notification_project_id = str(project.get("id") or self._current_project_id)
+
+        async def handle_approval(req: dict[str, Any]) -> dict[str, Any]:
+            return await self._handle_approval_request(req, notification_project_id)
+
+        async def handle_notification(notification: dict[str, Any]) -> None:
+            await self._handle_runtime_notification(
+                notification, notification_project_id
+            )
+
         client = MiniAgentClient(
             cwd=str(Path(project["primary_path"]).resolve()),
             env=env,
             log_dir=settings.log_dir,
             log_level=settings.log_level,
-            approval_handler=self._handle_approval_request,
-            notification_handler=self._handle_runtime_notification,
+            approval_handler=handle_approval,
+            notification_handler=handle_notification,
         )
         await client.__aenter__()
         try:
@@ -646,17 +759,26 @@ class SessionManager:
     ) -> MiniAgentClient:
         """Get or create a Thread client while the manager lock is held."""
         target = thread_id or "default"
-        project = self._project_for_thread(target, project_id) if project_id else None
-        existing = self._clients.get(target)
+        project = self._project_for_thread(target, project_id)
+        resolved_project_id = str(project.get("id") or self._current_project_id)
+        binding_key = (resolved_project_id, target)
+        existing = self._project_clients.get(binding_key)
+        # Tests and older callers may have populated the compatibility view
+        # directly. Adopt that client when its binding matches the target.
+        if existing is None:
+            legacy = self._clients.get(target)
+            legacy_project = self._client_projects.get(target)
+            if legacy is not None and (
+                legacy_project in (None, resolved_project_id)
+                or (not project_id and legacy_project is None)
+            ):
+                existing = legacy
+                self._project_clients[binding_key] = legacy
         if existing is not None:
-            bound_project = self._client_projects.get(target)
-            if project_id and bound_project and bound_project != project.get("id"):
-                raise RuntimeError(
-                    f"Thread '{target}' is already bound to Project '{bound_project}'"
-                )
+            self._activate_thread_client(target, resolved_project_id, existing)
             return existing
-        project = project or self._project_for_thread(target)
-        canonical = self._canonical_thread(target, project_id)
+
+        canonical = self._canonical_thread(target, resolved_project_id)
         if canonical and canonical["session"]["session_status"] == "locked":
             raise RuntimeError(
                 f"Session '{target}' is already running in another process"
@@ -668,12 +790,7 @@ class SessionManager:
             "resume" if session else "new",
             session.get("session_id") if session else None,
         )
-        self._clients[target] = client
-        self._client_projects[target] = str(
-            project.get("id") or self._current_project_id
-        )
-        if target == "default":
-            self._client = client
+        self._activate_thread_client(target, resolved_project_id, client)
         return client
 
     async def get_client_for_thread(
@@ -697,17 +814,14 @@ class SessionManager:
         """Bind a forked Thread without changing its source Project identity."""
         project = self._project_for_thread(thread_id, project_id)
         resolved_project_id = str(project.get("id") or self._current_project_id)
-        existing = self._clients.get(thread_id)
-        existing_project = self._client_projects.get(thread_id)
-        if existing is not None and (
-            existing is not client or existing_project != resolved_project_id
-        ):
+        binding_key = (resolved_project_id, thread_id)
+        existing = self._project_clients.get(binding_key)
+        if existing is not None and (existing is not client):
             raise RuntimeError(
                 f"Thread '{thread_id}' is already bound to Project "
-                f"'{existing_project or 'unknown'}'"
+                f"'{resolved_project_id}'"
             )
-        self._clients[thread_id] = client
-        self._client_projects[thread_id] = resolved_project_id
+        self._activate_thread_client(thread_id, resolved_project_id, client)
 
     async def fork_thread(
         self,
@@ -723,10 +837,12 @@ class SessionManager:
             )
             source_project = self._client_projects.get(source_thread_id)
             if not source_project:
+                source_project = self._active_thread_projects.get(source_thread_id)
+            if not source_project:
                 source_project = self._project_for_thread(
                     source_thread_id, project_id
                 ).get("id")
-            existing_project = self._client_projects.get(new_thread_id)
+            existing_project = self._active_thread_projects.get(new_thread_id)
             if existing_project and existing_project != source_project:
                 raise RuntimeError(
                     f"Thread '{new_thread_id}' is already bound to Project "
@@ -767,26 +883,43 @@ class SessionManager:
     ) -> dict[str, Any]:
         """Attach Studio to a resumable Session without stealing a live lock."""
         target = thread_id or "default"
-        canonical = self._canonical_thread(target, project_id)
+        project = self._project_for_thread(target, project_id)
+        resolved_project_id = str(project.get("id") or self._current_project_id)
+        if project_id:
+            # Selecting a project is also the routing context for subsequent
+            # project-agnostic REST/WebSocket actions for this Thread ID.
+            self._active_thread_projects[target] = resolved_project_id
+            canonical = self._canonical_thread(target, resolved_project_id)
+        else:
+            # Preserve the legacy unqualified lookup path. In particular, a
+            # caller may be asking about a locked Session that is not yet in
+            # the local client pool.
+            canonical = self._canonical_thread(target)
+            canonical_project = (
+                canonical.get("session", {}).get("project_id") if canonical else None
+            )
+            if canonical_project in self._projects_registry:
+                resolved_project_id = str(canonical_project)
+            self._active_thread_projects.setdefault(target, resolved_project_id)
         if canonical and canonical["session"]["session_status"] == "locked":
             session = canonical["session"]
             return {
                 "thread_id": target,
                 "attached": False,
-                "project": session.get("project_id"),
+                "project": session.get("project_id") or resolved_project_id,
                 "session_id": session.get("session_id"),
                 "session_status": session.get("session_status"),
                 "runtime_status": session.get("runtime_status"),
                 "locked_by": session.get("locked_by"),
             }
 
-        await self.get_client_for_thread(target, project_id)
-        refreshed = self._canonical_thread(target, project_id)
+        await self.get_client_for_thread(target, resolved_project_id)
+        refreshed = self._canonical_thread(target, resolved_project_id)
         session = refreshed.get("session", {}) if refreshed else {}
         return {
             "thread_id": target,
             "attached": True,
-            "project": session.get("project_id") or project_id,
+            "project": session.get("project_id") or resolved_project_id,
             "session_id": session.get("session_id"),
             "session_status": session.get("session_status", "locked"),
             "runtime_status": session.get("runtime_status", "running"),
@@ -807,22 +940,30 @@ class SessionManager:
                 "resume" if reusable_session else "new",
                 session.get("session_id") if reusable_session else None,
             )
-            self._clients["default"] = self._client
-            self._client_projects["default"] = self._current_project_id
+            self._activate_thread_client(
+                "default", self._current_project_id, self._client
+            )
             self._initialized = True
 
     async def restart_for_current_project(self) -> None:
         """Rebind the Host process after the active Project/workspace changes."""
         async with self._lock:
-            clients = list(self._clients.values())
+            clients = self._all_clients()
             self._clients.clear()
             self._client_projects.clear()
+            self._project_clients.clear()
+            self._active_thread_projects.clear()
             self._client = None
             self._initialized = False
-            for task in self._active_tasks.values():
+            for task in [
+                *self._active_tasks.values(),
+                *self._active_tasks_by_project.values(),
+            ]:
                 task.cancel()
             self._active_tasks.clear()
             self._active_turns.clear()
+            self._active_tasks_by_project.clear()
+            self._active_turns_by_project.clear()
             for future in self._pending_approvals.values():
                 if not future.done():
                     future.cancel()
@@ -861,9 +1002,15 @@ class SessionManager:
             self._pending_approvals.clear()
 
             # 3. Terminate all per-session App Server processes
-            clients = list(self._clients.values())
+            clients = self._all_clients()
             self._clients.clear()
             self._client_projects.clear()
+            self._project_clients.clear()
+            self._active_thread_projects.clear()
+            self._active_tasks.clear()
+            self._active_turns.clear()
+            self._active_tasks_by_project.clear()
+            self._active_turns_by_project.clear()
             self._client = None
             for client in set(clients):
                 try:
@@ -877,28 +1024,72 @@ class SessionManager:
     # Thread Metadata Management
     # -------------------------------------------------------------------------
 
-    def get_thread_meta(self, thread_id: str) -> dict[str, Any]:
-        """Get metadata for a specific thread."""
-        if thread_id not in self._thread_metadata:
-            self._thread_metadata[thread_id] = {
-                "title": f"会话 {thread_id}",
-                "project": self._current_project_id,
-                "summary": "",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-                "pinned": False,
-            }
-            self._save_thread_for_id(thread_id)
-        return self._thread_metadata[thread_id]
+    def _metadata_project_id(
+        self, thread_id: str, project_id: str | None = None
+    ) -> str:
+        candidate = (
+            project_id
+            or self._active_thread_projects.get(thread_id)
+            or self._thread_metadata.get(thread_id, {}).get("project")
+            or self._current_project_id
+        )
+        if candidate in self._projects_registry:
+            return str(candidate)
+        for pid, project in self._projects_registry.items():
+            if project.get("name") == candidate:
+                return pid
+        return str(candidate)
+
+    def get_thread_meta(
+        self, thread_id: str, project_id: str | None = None
+    ) -> dict[str, Any]:
+        """Get metadata for a project-qualified thread."""
+        resolved_project_id = self._metadata_project_id(thread_id, project_id)
+        key = (resolved_project_id, thread_id)
+        meta = self._thread_metadata_by_project.get(key)
+        if meta is None:
+            legacy = self._thread_metadata.get(thread_id)
+            if (
+                legacy
+                and self._metadata_project_id(thread_id, str(legacy.get("project")))
+                == resolved_project_id
+            ):
+                meta = legacy
+            else:
+                meta = {
+                    "title": f"会话 {thread_id}",
+                    "project": resolved_project_id,
+                    "summary": "",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "pinned": False,
+                }
+            self._thread_metadata_by_project[key] = meta
+            if project_id is None:
+                self._thread_metadata[thread_id] = meta
+                self._save_thread_for_id(thread_id)
+        if project_id is None:
+            self._thread_metadata[thread_id] = meta
+        return meta
 
     def set_thread_meta(
-        self, thread_id: str, updates: dict[str, Any]
+        self, thread_id: str, updates: dict[str, Any], project_id: str | None = None
     ) -> dict[str, Any]:
         """Update metadata for a thread."""
-        meta = self.get_thread_meta(thread_id)
+        requested_project = project_id or updates.get("project")
+        resolved_project_id = self._metadata_project_id(thread_id, requested_project)
+        meta = self.get_thread_meta(thread_id, resolved_project_id)
         old_project = meta.get("project")
-        meta.update(updates)
+        normalized_updates = dict(updates)
+        if "project" in normalized_updates:
+            normalized_updates["project"] = self._metadata_project_id(
+                thread_id, str(normalized_updates["project"])
+            )
+        meta.update(normalized_updates)
         meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+        if old_project and old_project != meta.get("project"):
+            self._thread_metadata_by_project.pop((str(old_project), thread_id), None)
+        self._thread_metadata_by_project[(str(meta.get("project")), thread_id)] = meta
         self._thread_metadata[thread_id] = meta
         new_project = meta.get("project")
         if old_project and old_project != new_project:
@@ -925,7 +1116,7 @@ class SessionManager:
             Path(project["primary_path"]), target_id, limit=limit, cursor=cursor
         )
         for session in result["data"]:
-            meta = self._thread_metadata.get(session["thread_id"], {})
+            meta = self.get_thread_meta(session["thread_id"], target_id)
             session["title"] = meta.get("title") or session["title"]
             session["summary"] = meta.get("summary") or session["summary"]
         return result
@@ -961,7 +1152,9 @@ class SessionManager:
 
     def read_any_project_thread(self, thread_id: str) -> dict[str, Any] | None:
         """Find one canonical SessionStore thread without changing the active Project."""
-        metadata_project = self._thread_metadata.get(thread_id, {}).get("project")
+        metadata_project = self._active_thread_projects.get(
+            thread_id
+        ) or self._thread_metadata.get(thread_id, {}).get("project")
         ordered_ids: list[str] = []
         if metadata_project in self._projects_registry:
             ordered_ids.append(metadata_project)
@@ -984,7 +1177,9 @@ class SessionManager:
 
     def session_path_for_thread(self, thread_id: str) -> Path | None:
         """Resolve a Thread to its canonical Session directory for read-only artifacts."""
-        metadata_project = self._thread_metadata.get(thread_id, {}).get("project")
+        metadata_project = self._active_thread_projects.get(
+            thread_id
+        ) or self._thread_metadata.get(thread_id, {}).get("project")
         ordered_ids: list[str] = []
         if metadata_project in self._projects_registry:
             ordered_ids.append(metadata_project)
@@ -1005,6 +1200,16 @@ class SessionManager:
             if path:
                 return path
         return None
+
+    def project_path_for_thread(self, thread_id: str | None = None) -> Path:
+        """Resolve the active Thread's Project workspace for file inspection."""
+        if thread_id:
+            project_id = self._active_thread_projects.get(thread_id)
+            if project_id and project_id in self._projects_registry:
+                return Path(
+                    self._projects_registry[project_id]["primary_path"]
+                ).resolve()
+        return self._current_project_path.resolve()
 
     # -------------------------------------------------------------------------
     # Settings Management
@@ -1079,6 +1284,7 @@ class SessionManager:
     async def _handle_approval_request(
         self,
         req: dict[str, Any],
+        project_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Called asynchronously by MiniAgentClient when the App Server encounters
@@ -1105,6 +1311,9 @@ class SessionManager:
             "requestId": req_id,
             "data": req_data,
         }
+        if project_id:
+            payload["projectId"] = project_id
+            payload["data"] = {**req_data, "projectId": project_id}
         await self.broadcast_ws(payload)
 
         try:
@@ -1123,19 +1332,34 @@ class SessionManager:
             self._pending_approvals.pop(req_id, None)
             self._pending_approval_details.pop(req_id, None)
 
-    async def _handle_runtime_notification(self, notification: dict[str, Any]) -> None:
-        """Relay every App Server runtime notification to Studio clients."""
-        await self.broadcast_ws(notification)
-        if notification.get("type") == "event":
+    async def _handle_runtime_notification(
+        self, notification: dict[str, Any], project_id: str | None = None
+    ) -> None:
+        """Relay every App Server notification with its project context."""
+        payload = dict(notification)
+        if project_id:
+            payload.setdefault("projectId", project_id)
+            data = payload.get("data")
+            if isinstance(data, dict):
+                payload["data"] = {
+                    **data,
+                    "projectId": data.get("projectId", project_id),
+                }
+        await self.broadcast_ws(payload)
+        if payload.get("type") == "event":
             return
-        if notification.get("method") != "thread/goal/updated":
+        if payload.get("method") != "thread/goal/updated":
             return
-        data = notification.get("data", {})
+        data = payload.get("data", {})
         goal = data.get("goal") if isinstance(data, dict) else None
         if not isinstance(goal, dict) or goal.get("status") in ("active", "running"):
             return
         thread_id = str(data.get("threadId") or "")
-        client = self._clients.get(thread_id)
+        client = (
+            self._project_clients.get((project_id, thread_id))
+            if project_id
+            else self._clients.get(thread_id)
+        )
         if not thread_id or client is None:
             return
         try:
@@ -1251,28 +1475,69 @@ class SessionManager:
     # -------------------------------------------------------------------------
 
     def set_active_turn(
-        self, thread_id: str, turn_id: str, task: asyncio.Task[Any] | None = None
+        self,
+        thread_id: str,
+        turn_id: str,
+        task: asyncio.Task[Any] | None = None,
+        project_id: str | None = None,
     ) -> None:
         """Track active turn ID and optional streaming task for responsive interrupts."""
+        project_id = project_id or self._active_thread_projects.get(thread_id)
+        if project_id:
+            key = (project_id, thread_id)
+            self._active_turns_by_project[key] = turn_id
+            if task:
+                self._active_tasks_by_project[key] = task
+            if self._active_thread_projects.get(thread_id) != project_id:
+                return
         self._active_turns[thread_id] = turn_id
         if task:
             self._active_tasks[thread_id] = task
 
-    def clear_active_turn(self, thread_id: str) -> None:
+    def clear_active_turn(self, thread_id: str, project_id: str | None = None) -> None:
         """Clear active turn tracking upon turn settlement."""
+        project_id = project_id or self._active_thread_projects.get(thread_id)
+        if project_id:
+            key = (project_id, thread_id)
+            self._active_turns_by_project.pop(key, None)
+            self._active_tasks_by_project.pop(key, None)
+            if self._active_thread_projects.get(thread_id) != project_id:
+                return
         self._active_turns.pop(thread_id, None)
         self._active_tasks.pop(thread_id, None)
 
-    def get_active_turn(self, thread_id: str | None = None) -> str | None:
+    def get_active_turn(
+        self, thread_id: str | None = None, project_id: str | None = None
+    ) -> str | None:
         """Retrieve current active turn ID for thread."""
+        if thread_id:
+            project_id = project_id or self._active_thread_projects.get(thread_id)
+            if project_id:
+                turn_id = self._active_turns_by_project.get((project_id, thread_id))
+                if turn_id:
+                    return turn_id
+                return None
         if thread_id and thread_id in self._active_turns:
             return self._active_turns[thread_id]
         if self._active_turns:
             return next(iter(self._active_turns.values()))
         return None
 
-    def cancel_active_task(self, thread_id: str | None = None) -> None:
+    def cancel_active_task(
+        self, thread_id: str | None = None, project_id: str | None = None
+    ) -> None:
         """Cancel background stream tasks for thread or all threads."""
+        if thread_id:
+            project_id = project_id or self._active_thread_projects.get(thread_id)
+            if project_id:
+                key = (project_id, thread_id)
+                task = self._active_tasks_by_project.pop(key, None)
+                if task and not task.done():
+                    task.cancel()
+                if self._active_thread_projects.get(thread_id) != project_id:
+                    return
+                self._active_tasks.pop(thread_id, None)
+                return
         if thread_id and thread_id in self._active_tasks:
             task = self._active_tasks.pop(thread_id)
             if not task.done():
@@ -1281,7 +1546,11 @@ class SessionManager:
             for task in list(self._active_tasks.values()):
                 if not task.done():
                     task.cancel()
+            for task in list(self._active_tasks_by_project.values()):
+                if not task.done():
+                    task.cancel()
             self._active_tasks.clear()
+            self._active_tasks_by_project.clear()
 
 
 # Global singleton instance

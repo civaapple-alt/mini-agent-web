@@ -24,6 +24,7 @@ import './Sidebar.css';
 export default function Sidebar({
   threads,
   currentThread,
+  currentThreadProject,
   isGenerating,
   onSelectThread,
   onNewThread,
@@ -637,12 +638,15 @@ export default function Sidebar({
                 {isExpanded && (
                   <div className="project-nested-threads">
                     {visibleThreads.map((thread) => {
-                      const isSelected = thread.thread_id === currentThread;
+                      const isSelected =
+                        thread.thread_id === currentThread &&
+                        (!currentThreadProject || thread.project === currentThreadProject);
+                      const threadKey = `${thread.project || 'unknown'}:${thread.thread_id}`;
                       return (
                         <div
-                          key={thread.thread_id}
+                          key={threadKey}
                           className={`nested-thread-item ${isSelected ? 'selected' : ''} ${thread.runtime_status === 'running' ? 'is-running' : ''}`}
-                          onClick={() => onSelectThread(thread.thread_id)}
+                          onClick={() => onSelectThread(thread.thread_id, thread.project)}
                           title={thread.title}
                         >
                           <span className="nested-thread-title">
@@ -689,9 +693,9 @@ export default function Sidebar({
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setActiveMenuThread(
-                                  activeMenuThread === thread.thread_id
+                                  activeMenuThread === threadKey
                                     ? null
-                                    : thread.thread_id
+                                    : threadKey
                                 );
                               }}
                               title="会话选项"
@@ -701,7 +705,7 @@ export default function Sidebar({
                           </div>
 
                           {/* Popover Action Menu */}
-                          {activeMenuThread === thread.thread_id && (
+                          {activeMenuThread === threadKey && (
                             <div
                               className="thread-action-popover"
                               onClick={(e) => e.stopPropagation()}
@@ -783,9 +787,9 @@ export default function Sidebar({
             <div className="recent-items-list">
               {recentSortedThreads.slice(0, 8).map((t) => (
                 <div
-                  key={t.thread_id}
-                  className={`recent-thread-item ${t.thread_id === currentThread ? 'active' : ''}`}
-                  onClick={() => onSelectThread(t.thread_id)}
+                  key={`${t.project || 'unknown'}:${t.thread_id}`}
+                  className={`recent-thread-item ${t.thread_id === currentThread && (!currentThreadProject || t.project === currentThreadProject) ? 'active' : ''}`}
+                  onClick={() => onSelectThread(t.thread_id, t.project)}
                 >
                   <span className="recent-thread-title">{t.title}</span>
                 </div>

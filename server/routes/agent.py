@@ -64,6 +64,7 @@ def _process_attachments(
     prompt: str,
     images: list[str] | None = None,
     referenced_files: list[str] | None = None,
+    thread_id: str | None = None,
 ) -> str:
     """Save image attachments to workspace .mini-agent/attachments/ and enrich prompt context."""
     extra_context_parts = []
@@ -73,7 +74,9 @@ def _process_attachments(
         import time
 
         attach_dir = (
-            session_manager.current_project_path / ".mini-agent" / "attachments"
+            session_manager.project_path_for_thread(thread_id)
+            / ".mini-agent"
+            / "attachments"
         )
         attach_dir.mkdir(parents=True, exist_ok=True)
 
@@ -121,7 +124,9 @@ def _process_attachments(
 @router.post("/agent/turn", summary="Start and execute a turn synchronously")
 async def execute_turn(req: StartTurnRequest) -> dict[str, Any]:
     """Submit a prompt and wait for turn completion."""
-    enriched_prompt = _process_attachments(req.prompt, req.images, req.referenced_files)
+    enriched_prompt = _process_attachments(
+        req.prompt, req.images, req.referenced_files, req.thread_id
+    )
     try:
         client = await session_manager.get_client_for_thread(req.thread_id)
         sub = await client.start_turn(
@@ -293,7 +298,9 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 images = data.get("images")
                 referenced_files = data.get("referencedFiles")
 
-                enriched_prompt = _process_attachments(prompt, images, referenced_files)
+                enriched_prompt = _process_attachments(
+                    prompt, images, referenced_files, thread_id
+                )
 
                 # Background task to stream turn events back over WebSocket
                 spawn_background(
@@ -432,8 +439,10 @@ async def _stream_turn_to_ws(
     current_task = asyncio.current_task()
     effort = session_manager.get_settings().get("reasoning_effort", "high")
     active_turn_id: str | None = None
+    project_id: str | None = None
     try:
         client = await session_manager.get_client_for_thread(target_thread)
+        project_id = session_manager._client_projects.get(target_thread)
         async for item in client.stream_turn(
             prompt=prompt,
             mode=mode,
@@ -448,14 +457,20 @@ async def _stream_turn_to_ws(
                 if turn_id:
                     active_turn_id = str(turn_id)
                     session_manager.set_active_turn(
-                        target_thread, active_turn_id, current_task
+                        target_thread,
+                        active_turn_id,
+                        current_task,
+                        project_id,
                     )
             elif item.get("type") == "event":
                 turn_id = item.get("turnId")
                 if turn_id:
                     active_turn_id = str(turn_id)
                     session_manager.set_active_turn(
-                        target_thread, active_turn_id, current_task
+                        target_thread,
+                        active_turn_id,
+                        current_task,
+                        project_id,
                     )
 
             safe_item = to_json_serializable(item)
@@ -472,6 +487,7 @@ async def _stream_turn_to_ws(
                 {
                     "type": "event",
                     "threadId": target_thread,
+                    "projectId": project_id,
                     "turnId": active_turn_id,
                     "event": {
                         "type": "turn_finished",
@@ -483,15 +499,16 @@ async def _stream_turn_to_ws(
             pass
     except Exception as err:
         logger.exception("WebSocket stream error")
-        await websocket.send_json(
-            {
-                "type": "error",
-                "scope": "turn",
-                "terminal": True,
-                "threadId": target_thread,
-                "turnId": active_turn_id,
-                "message": str(err),
-            }
-        )
+        error_payload = {
+            "type": "error",
+            "scope": "turn",
+            "terminal": True,
+            "threadId": target_thread,
+            "turnId": active_turn_id,
+            "message": str(err),
+        }
+        if project_id:
+            error_payload["projectId"] = project_id
+        await websocket.send_json(error_payload)
     finally:
-        session_manager.clear_active_turn(target_thread)
+        session_manager.clear_active_turn(target_thread, project_id)

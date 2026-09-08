@@ -516,10 +516,10 @@ async def test_attach_thread_honors_explicit_project_canonical_session(
 
 
 @pytest.mark.asyncio
-async def test_attach_thread_rejects_project_switch_for_live_binding(
+async def test_attach_thread_allows_same_thread_id_in_another_project(
     mock_session_manager, tmp_path
 ):
-    """A live Thread binding cannot be silently reused for another Project."""
+    """Project-qualified Thread bindings may coexist in the client pool."""
     project_root = tmp_path / "other-project"
     project_root.mkdir()
     mock_session_manager._projects_registry["other-project"] = {
@@ -530,8 +530,49 @@ async def test_attach_thread_rejects_project_switch_for_live_binding(
     mock_session_manager._clients["shared-thread"] = AsyncMock()
     mock_session_manager._client_projects["shared-thread"] = "default"
 
-    with pytest.raises(RuntimeError, match="already bound to Project 'default'"):
-        await mock_session_manager.attach_thread("shared-thread", "other-project")
+    result = await mock_session_manager.attach_thread("shared-thread", "other-project")
+
+    assert result["attached"] is True
+    assert mock_session_manager._client_projects["shared-thread"] == "other-project"
+    assert mock_session_manager._active_thread_projects["shared-thread"] == "other-project"
+
+
+@pytest.mark.asyncio
+async def test_project_scoped_default_clients_can_switch_without_reuse(
+    mock_session_manager, monkeypatch, tmp_path
+):
+    """Switching between two Projects keeps each same-named Thread client alive."""
+    project_root = tmp_path / "other-project"
+    project_root.mkdir()
+    mock_session_manager._projects_registry["other-project"] = {
+        "id": "other-project",
+        "name": "Other Project",
+        "primary_path": str(project_root),
+    }
+    clients = {}
+
+    async def create_client(thread_id, project, session_mode, session_id=None):
+        client = AsyncMock()
+        clients[project["id"]] = client
+        return client
+
+    monkeypatch.setattr(mock_session_manager, "_create_client", create_client)
+    monkeypatch.setattr(mock_session_manager, "read_project_thread", lambda *_args: None)
+
+    default_client = await mock_session_manager.get_client_for_thread("default", "default")
+    other_client = await mock_session_manager.get_client_for_thread(
+        "default", "other-project"
+    )
+    switched_back = await mock_session_manager.get_client_for_thread("default", "default")
+
+    assert default_client is clients["default"]
+    assert other_client is clients["other-project"]
+    assert switched_back is default_client
+    assert default_client is not other_client
+    assert mock_session_manager.live_thread_bindings() == [
+        ("default", "default"),
+        ("other-project", "default"),
+    ]
 
 
 def test_bind_forked_thread_keeps_explicit_source_project(mock_session_manager, tmp_path):

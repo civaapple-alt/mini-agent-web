@@ -361,8 +361,13 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
                 }
             else:
                 goal_dict = None
-            effective_builtin_tools = session_manager._thread_builtin_tools.get(
-                target_thread, DEFAULT_BUILTIN_TOOLS
+            selected_builtin_tools = session_manager.builtin_tools_for_thread(
+                target_thread
+            )
+            effective_builtin_tools = (
+                selected_builtin_tools
+                if selected_builtin_tools is not None
+                else DEFAULT_BUILTIN_TOOLS
             )
             continuation_mode = session.get("continuation_mode", "manual")
             return {
@@ -407,10 +412,9 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
             "builtinTools" in workflow_payload or "builtin_tools" in workflow_payload
         )
         target_thread = thread_id or "default"
-        if target_thread in session_manager._thread_builtin_tools:
-            effective_builtin_tools = session_manager._thread_builtin_tools[
-                target_thread
-            ]
+        selected_builtin_tools = session_manager.builtin_tools_for_thread(target_thread)
+        if selected_builtin_tools is not None:
+            effective_builtin_tools = selected_builtin_tools
         else:
             effective_builtin_tools = (
                 wf.builtin_tools if has_builtin_selection else DEFAULT_BUILTIN_TOOLS
@@ -442,7 +446,7 @@ async def update_thread_settings(
             thread_id=thread_id,
             continuation_mode=req.continuation_mode,
         )
-        session_manager._thread_builtin_tools[thread_id] = res.builtin_tools
+        session_manager.set_builtin_tools_for_thread(thread_id, res.builtin_tools)
         return {
             "collaboration_mode": {"mode": res.collaboration_mode.mode},
             "builtin_tools": res.builtin_tools,
@@ -512,7 +516,10 @@ async def pause_goal(thread_id: str) -> dict[str, Any]:
             token_budget=None,
             thread_id=thread_id,
         )
-        return {"goal": _goal_dict(result.goal), "state_revision": result.state_revision}
+        return {
+            "goal": _goal_dict(result.goal),
+            "state_revision": result.state_revision,
+        }
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
@@ -531,7 +538,10 @@ async def resume_goal(thread_id: str) -> dict[str, Any]:
             token_budget=current.goal.token_budget,
             thread_id=thread_id,
         )
-        return {"goal": _goal_dict(result.goal), "state_revision": result.state_revision}
+        return {
+            "goal": _goal_dict(result.goal),
+            "state_revision": result.state_revision,
+        }
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
@@ -558,7 +568,7 @@ def _goal_dict(goal: Any) -> dict[str, Any]:
 @router.get("/workflows/files", summary="List workflow and plan files")
 async def list_workflow_files(thread_id: str | None = None) -> dict[str, Any]:
     """Scan workspace for plan/goal files like plan.md, goal/plan.md, etc."""
-    cwd = session_manager.current_project_path
+    cwd = session_manager.project_path_for_thread(thread_id)
     candidate_paths: list[tuple[str, Path]] = [
         ("plan.md", cwd / "plan.md"),
         ("goal/plan.md", cwd / "goal" / "plan.md"),
@@ -604,7 +614,7 @@ async def read_workflow_file_content(
 ) -> dict[str, Any]:
     """Read full text content of a workflow/plan file."""
     normalized_path = path.replace("\\", "/")
-    cwd = session_manager.current_project_path.resolve()
+    cwd = session_manager.project_path_for_thread(thread_id).resolve()
     root = cwd
     if thread_id and normalized_path in {
         "goal/plan.md",

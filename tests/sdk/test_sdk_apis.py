@@ -105,11 +105,11 @@ async def test_thread_goal_api_mapping_without_starting_goal_runtime():
     async def fake_send(method, params=None):
         calls.append((method, params))
         if method == "thread/goal/set":
-            return {"value": {"goal": goal}}
+            return {"value": {"goal": goal}, "stateRevision": 4}
         if method == "thread/goal/get":
-            return {"value": {"goal": goal}}
+            return {"value": {"goal": goal}, "stateRevision": 4}
         if method == "thread/goal/clear":
-            return {"value": {"cleared": True}}
+            return {"value": {"cleared": True}, "stateRevision": 5}
         raise AssertionError(f"unexpected method: {method}")
 
     client._send_request = fake_send
@@ -120,8 +120,11 @@ async def test_thread_goal_api_mapping_without_starting_goal_runtime():
 
     assert goal_res.goal.objective == goal["objective"]
     assert goal_res.goal.token_budget == 4096
+    assert goal_res.state_revision == 4
     assert current_goal.goal == goal_res.goal
+    assert current_goal.state_revision == 4
     assert cleared_goal.cleared is True
+    assert cleared_goal.state_revision == 5
     assert calls == [
         (
             "thread/goal/set",

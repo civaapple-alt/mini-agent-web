@@ -133,6 +133,11 @@ export default function App() {
       handleServerEvent,
       () => {
         setIsConnected(true);
+        // A reconnect may follow an App Server restart, whose in-memory
+        // revision sequence starts over. Re-read the canonical projection to
+        // rebuild the Web cursor before accepting new notifications.
+        workflowRevisionsRef.current.clear();
+        loadWorkflows(currentThreadRef.current);
         showToast('✓ 已连接到 Agent Gateway 服务端', 'success', 2000);
       },
       () => {
@@ -204,6 +209,21 @@ export default function App() {
     return true;
   };
 
+  const applyGoalState = (threadId, goal, payload = {}) => {
+    const nextRevision = readStateRevision(payload);
+    const currentRevision = workflowRevisionsRef.current.get(threadId);
+    if (!shouldApplyStateRevision(currentRevision, nextRevision)) return false;
+    if (nextRevision !== null) {
+      workflowRevisionsRef.current.set(threadId, nextRevision);
+    }
+    if (currentThreadRef.current !== threadId) return false;
+    setGoalState(goal || null);
+    if (goal) {
+      setMessages((prev) => appendGoalMessageToMessages(prev, goal));
+    }
+    return true;
+  };
+
   const loadThreadHistory = async (threadId) => {
     setIsLoadingHistory(true);
     try {
@@ -216,10 +236,6 @@ export default function App() {
           title: cp.metadata.title || threadId,
           summary: cp.metadata.summary || '',
         });
-      }
-      if (cp.session) {
-        setPlanActive(Boolean(cp.session.plan_active));
-        setGoalState(cp.session.goal || null);
       }
       const persistedTurn = cp.last_turn_status || cp.session?.last_turn_status;
       if (persistedTurn && persistedTurn !== 'completed') {
@@ -402,10 +418,17 @@ export default function App() {
           notification,
         );
       } else if (data.method === 'thread/goal/updated') {
-        setGoalState(notification.goal || null);
-        setMessages((prev) => appendGoalMessageToMessages(prev, notification.goal));
+        applyGoalState(
+          notification.threadId || notification.thread_id || currentThreadRef.current,
+          notification.goal,
+          notification,
+        );
       } else if (data.method === 'thread/goal/cleared') {
-        setGoalState(null);
+        applyGoalState(
+          notification.threadId || notification.thread_id || currentThreadRef.current,
+          null,
+          notification,
+        );
       }
       return;
     }
@@ -835,8 +858,7 @@ export default function App() {
     try {
       const result = await api.setGoal(objective, null, 'active', currentThread);
       const goal = result.goal || result;
-      setGoalState(goal);
-      setMessages((prev) => appendGoalMessageToMessages(prev, goal));
+      applyGoalState(currentThread, goal, result);
       showToast('Goal 已启动，并会在当前任务顶部持续显示', 'success');
     } catch (err) {
       showToast(`启动 Goal 失败: ${err.message}`, 'error');
@@ -846,7 +868,7 @@ export default function App() {
   const handlePauseGoal = async () => {
     try {
       const result = await api.pauseGoal(currentThread);
-      setGoalState(result.goal || null);
+      applyGoalState(currentThread, result.goal, result);
       if (isGenerating) handleInterrupt('goal-pause');
       showToast('Goal 已暂停，可随时恢复', 'info');
     } catch (err) {
@@ -857,7 +879,7 @@ export default function App() {
   const handleResumeGoal = async () => {
     try {
       const result = await api.resumeGoal(currentThread);
-      setGoalState(result.goal || null);
+      applyGoalState(currentThread, result.goal, result);
       showToast('Goal 已恢复，运行时将继续推进', 'success');
     } catch (err) {
       showToast(`恢复 Goal 失败: ${err.message}`, 'error');
@@ -871,8 +893,7 @@ export default function App() {
     try {
       const result = await api.updateGoal(objective.trim(), goalState.token_budget, currentThread);
       const goal = result.goal || null;
-      setGoalState(goal);
-      setMessages((prev) => appendGoalMessageToMessages(prev, goal));
+      applyGoalState(currentThread, goal, result);
       showToast('Goal 目标已更新', 'success');
     } catch (err) {
       showToast(`更新 Goal 失败: ${err.message}`, 'error');
@@ -881,8 +902,8 @@ export default function App() {
 
   const handleClearGoal = async () => {
     try {
-      await api.clearGoal(currentThread);
-      setGoalState(null);
+      const result = await api.clearGoal(currentThread);
+      applyGoalState(currentThread, null, result);
       showToast('Goal 已删除，Session 历史仍然保留', 'info');
     } catch (err) {
       showToast(`删除 Goal 失败: ${err.message}`, 'error');
@@ -1053,7 +1074,7 @@ export default function App() {
           planActive={planActive}
           goalState={goalState}
           threadId={currentThread}
-          onGoalChanged={setGoalState}
+          onGoalChanged={(goal, payload) => applyGoalState(currentThread, goal, payload)}
           onTogglePlan={handleTogglePlan}
           onToast={showToast}
         />

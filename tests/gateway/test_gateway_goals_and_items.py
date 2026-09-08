@@ -39,6 +39,7 @@ class MockGoalObject:
 class MockGoalResult:
     goal: MockGoalObject | None = None
     cleared: bool = False
+    state_revision: int = 7
 
 
 @dataclass
@@ -177,16 +178,19 @@ async def test_goal_lifecycle_full_state_machine(gateway_test_app):
         assert goal_data["objective"] == "重构网关测试体系"
         assert goal_data["status"] == "active"
         assert goal_data["token_budget"] == 50000
+        assert resp_set.json()["state_revision"] == 7
 
         # 2. Get active Goal
         resp_get = await client.get("/api/threads/t-goal/goal")
         assert resp_get.status_code == 200
         assert resp_get.json()["goal"]["objective"] == "重构网关测试体系"
+        assert resp_get.json()["state_revision"] == 7
 
         # 3. Pause Goal
         resp_pause = await client.post("/api/threads/t-goal/goal/pause")
         assert resp_pause.status_code == 200
         assert resp_pause.json()["goal"]["status"] == "paused"
+        assert resp_pause.json()["state_revision"] == 7
         assert set_goal_calls[1] == {
             "objective": None,
             "status": "paused",
@@ -199,11 +203,13 @@ async def test_goal_lifecycle_full_state_machine(gateway_test_app):
         resp_resume = await client.post("/api/threads/t-goal/goal/resume")
         assert resp_resume.status_code == 200
         assert resp_resume.json()["goal"]["status"] == "active"
+        assert resp_resume.json()["state_revision"] == 7
 
         # 5. Clear Goal
         resp_del = await client.delete("/api/threads/t-goal/goal")
         assert resp_del.status_code == 200
         assert resp_del.json()["cleared"] is True
+        assert resp_del.json()["state_revision"] == 7
 
         # Verify Goal is cleared
         resp_check = await client.get("/api/threads/t-goal/goal")

@@ -474,12 +474,23 @@ class ThreadGoalSetResult:
     """Result returned by ``thread/goal/set``."""
 
     goal: ThreadGoal
+    state_revision: int | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ThreadGoalSetResult:
         val = data.get("value", data) if isinstance(data, dict) else data
-        return cls(goal=ThreadGoal.from_dict(val.get("goal", {})), raw=data)
+        return cls(
+            goal=ThreadGoal.from_dict(val.get("goal", {})),
+            state_revision=(
+                data.get("stateRevision")
+                if isinstance(data, dict) and "stateRevision" in data
+                else data.get("state_revision")
+                if isinstance(data, dict) and "state_revision" in data
+                else None
+            ),
+            raw=data,
+        )
 
 
 @dataclass
@@ -487,6 +498,7 @@ class ThreadGoalGetResult:
     """Result returned by ``thread/goal/get``."""
 
     goal: ThreadGoal | None = None
+    state_revision: int | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -495,6 +507,13 @@ class ThreadGoalGetResult:
         goal_data = val.get("goal") if isinstance(val, dict) else None
         return cls(
             goal=ThreadGoal.from_dict(goal_data) if goal_data else None,
+            state_revision=(
+                data.get("stateRevision")
+                if isinstance(data, dict) and "stateRevision" in data
+                else data.get("state_revision")
+                if isinstance(data, dict) and "state_revision" in data
+                else None
+            ),
             raw=data,
         )
 
@@ -504,12 +523,23 @@ class ThreadGoalClearResult:
     """Result returned by ``thread/goal/clear``."""
 
     cleared: bool
+    state_revision: int | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ThreadGoalClearResult:
         val = data.get("value", data) if isinstance(data, dict) else data
-        return cls(cleared=bool(val.get("cleared", False)), raw=data)
+        return cls(
+            cleared=bool(val.get("cleared", False)),
+            state_revision=(
+                data.get("stateRevision")
+                if isinstance(data, dict) and "stateRevision" in data
+                else data.get("state_revision")
+                if isinstance(data, dict) and "state_revision" in data
+                else None
+            ),
+            raw=data,
+        )
 
 
 @dataclass

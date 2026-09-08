@@ -935,6 +935,15 @@ class MiniAgentClient:
             if settings is not None
             else list(DEFAULT_BUILTIN_TOOLS)
         )
+        revisions = [
+            revision
+            for revision in (
+                settings.state_revision if settings is not None else None,
+                goal.state_revision,
+            )
+            if revision is not None
+        ]
+        state_revision = max(revisions) if revisions else None
         return WorkflowState(
             collaboration_mode=(
                 settings.collaboration_mode
@@ -945,7 +954,7 @@ class MiniAgentClient:
             continuation_mode=(
                 settings.continuation_mode if settings is not None else "manual"
             ),
-            state_revision=(settings.state_revision if settings is not None else None),
+            state_revision=state_revision,
             goal=goal.goal,
             raw={
                 "value": {
@@ -954,9 +963,7 @@ class MiniAgentClient:
                     "continuationMode": (
                         settings.continuation_mode if settings else "manual"
                     ),
-                    "stateRevision": (
-                        settings.state_revision if settings is not None else None
-                    ),
+                    "stateRevision": state_revision,
                     "goal": goal.goal.raw if goal.goal else None,
                 }
             },

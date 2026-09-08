@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   RefreshCw,
@@ -15,6 +15,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import { api } from '../api';
+import { readStateRevision, shouldApplyStateRevision } from '../utils/revisionState';
 import './SidePanel.css';
 
 const BUILTIN_TOOL_INFO = {
@@ -60,6 +61,7 @@ export default function SidePanel({
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRetryingMcp, setIsRetryingMcp] = useState(false);
+  const workflowRevisionRef = useRef(null);
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
@@ -87,6 +89,10 @@ export default function SidePanel({
     if (isOpen && activeTab === 'plan_goal') {
       loadWorkflow();
     }
+  }, [threadId]);
+
+  useEffect(() => {
+    workflowRevisionRef.current = null;
   }, [threadId]);
 
   const loadAllData = async () => {
@@ -127,6 +133,9 @@ export default function SidePanel({
   const loadWorkflow = async () => {
     try {
       const data = await api.getWorkflowState(threadId);
+      const nextRevision = readStateRevision(data);
+      if (!shouldApplyStateRevision(workflowRevisionRef.current, nextRevision)) return;
+      if (nextRevision !== null) workflowRevisionRef.current = nextRevision;
       setWorkflowState(data);
       if (Array.isArray(data.builtin_tools)) {
         setSelectedBuiltinTools(data.builtin_tools);
@@ -225,7 +234,7 @@ export default function SidePanel({
     try {
       const result = await api.setGoal(goalObjectiveInput.trim(), null, 'active', threadId);
       setGoalObjectiveInput('');
-      if (onGoalChanged) onGoalChanged(result.goal || null);
+      if (onGoalChanged) onGoalChanged(result.goal || null, result);
       await loadWorkflow();
       if (onToast) {
         onToast('已设置 Thread Goal，运行时将自动推进', 'success');
@@ -239,9 +248,9 @@ export default function SidePanel({
 
   const handleClearGoal = async () => {
     try {
-      await api.clearGoal(threadId);
-      setWorkflowState((current) => ({ ...(current || {}), goal: null }));
-      if (onGoalChanged) onGoalChanged(null);
+      const result = await api.clearGoal(threadId);
+      if (onGoalChanged) onGoalChanged(null, result);
+      await loadWorkflow();
       if (onToast) onToast('已清除 Thread Goal', 'success');
     } catch (err) {
       if (onToast) onToast(`清除 Goal 失败: ${err.message}`, 'error');
@@ -251,8 +260,8 @@ export default function SidePanel({
   const handlePauseGoal = async () => {
     try {
       const result = await api.pauseGoal(threadId);
-      setWorkflowState((current) => ({ ...(current || {}), goal: result.goal }));
-      if (onGoalChanged) onGoalChanged(result.goal);
+      if (onGoalChanged) onGoalChanged(result.goal, result);
+      await loadWorkflow();
       if (onToast) onToast('Goal 已暂停，可随时恢复', 'info');
     } catch (err) {
       if (onToast) onToast(`暂停 Goal 失败: ${err.message}`, 'error');
@@ -262,8 +271,8 @@ export default function SidePanel({
   const handleResumeGoal = async () => {
     try {
       const result = await api.resumeGoal(threadId);
-      setWorkflowState((current) => ({ ...(current || {}), goal: result.goal }));
-      if (onGoalChanged) onGoalChanged(result.goal);
+      if (onGoalChanged) onGoalChanged(result.goal, result);
+      await loadWorkflow();
       if (onToast) onToast('Goal 已恢复，运行时将继续推进', 'success');
     } catch (err) {
       if (onToast) onToast(`恢复 Goal 失败: ${err.message}`, 'error');
@@ -277,8 +286,8 @@ export default function SidePanel({
     if (!objective || objective.trim() === goal.objective.trim()) return;
     try {
       const result = await api.updateGoal(objective.trim(), goal.token_budget, threadId);
-      setWorkflowState((current) => ({ ...(current || {}), goal: result.goal }));
-      if (onGoalChanged) onGoalChanged(result.goal);
+      if (onGoalChanged) onGoalChanged(result.goal, result);
+      await loadWorkflow();
       if (onToast) onToast('Goal 目标已更新', 'success');
     } catch (err) {
       if (onToast) onToast(`更新 Goal 失败: ${err.message}`, 'error');

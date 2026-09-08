@@ -451,7 +451,7 @@ async def set_goal(thread_id: str, req: SetGoalRequest) -> dict[str, Any]:
             token_budget=req.token_budget,
             thread_id=thread_id,
         )
-        return {"goal": _goal_dict(res.goal)}
+        return {"goal": _goal_dict(res.goal), "state_revision": res.state_revision}
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
@@ -462,7 +462,10 @@ async def get_goal(thread_id: str) -> dict[str, Any]:
     try:
         client = await session_manager.get_client_for_thread(thread_id)
         res = await client.get_goal(thread_id=thread_id)
-        return {"goal": _goal_dict(res.goal) if res.goal else None}
+        return {
+            "goal": _goal_dict(res.goal) if res.goal else None,
+            "state_revision": res.state_revision,
+        }
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
@@ -473,7 +476,7 @@ async def clear_goal(thread_id: str) -> dict[str, Any]:
     try:
         client = await session_manager.get_client_for_thread(thread_id)
         res = await client.clear_goal(thread_id=thread_id)
-        return {"cleared": res.cleared}
+        return {"cleared": res.cleared, "state_revision": res.state_revision}
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
@@ -495,7 +498,7 @@ async def pause_goal(thread_id: str) -> dict[str, Any]:
             token_budget=None,
             thread_id=thread_id,
         )
-        return {"goal": _goal_dict(result.goal)}
+        return {"goal": _goal_dict(result.goal), "state_revision": result.state_revision}
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
@@ -514,7 +517,7 @@ async def resume_goal(thread_id: str) -> dict[str, Any]:
             token_budget=current.goal.token_budget,
             thread_id=thread_id,
         )
-        return {"goal": _goal_dict(result.goal)}
+        return {"goal": _goal_dict(result.goal), "state_revision": result.state_revision}
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 

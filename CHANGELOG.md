@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Goal verifier observability and recovery**: expose verifier lifecycle updates
+  in the Web Studio console and Goal detail, keep session-owned `goal/plan.md`
+  and `goal/verifier_verdict.md` readable while a Goal is running, and retain
+  bounded workflow state when a SessionStore checkpoint exceeds the gateway
+  record limit.
+
 - **Decoupled Approval Policy & Multi-Scope Action Grants**:
   - Added the explicit `trusted` approval policy across SDK, Server (`/world/execution`), and Web Studio. It directly admits only fully validated non-destructive workspace patches; high-risk, destructive, Shell, and MCP actions still require approval.
   - Kept `automatic` as bounded low-risk admission. Auto Copilot is now an explicit Web Studio preset that combines `trusted` with the separate `continuous` Thread continuation mode; it is not inferred from access scope or approval policy.

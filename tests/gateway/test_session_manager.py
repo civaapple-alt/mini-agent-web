@@ -346,6 +346,70 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     assert history["last_turn_id"] == "turn-1"
 
 
+def test_session_catalog_skips_oversized_checkpoint_but_keeps_goal_state(
+    tmp_path, monkeypatch
+):
+    """A large checkpoint must not make workflow state fall back to a hung server."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    monkeypatch.setattr("server.session_catalog._session_base", lambda _workspace: session_base)
+    session_dir = session_base / "s-large"
+    (session_dir / "goal").mkdir(parents=True)
+    records = [
+        {"kind": "session_created", "session_id": "s-large", "timestamp_ms": 1},
+        {"kind": "thread_started", "thread_id": "t-large"},
+        {
+            "kind": "turn_started",
+            "thread_id": "t-large",
+            "turn_id": "turn-1",
+        },
+        {
+            "kind": "turn_settled",
+            "thread_id": "t-large",
+            "turn_id": "turn-1",
+            "status": "completed",
+            "timestamp_ms": 2,
+        },
+        {
+            "kind": "checkpoint",
+            "thread_id": "t-large",
+            "seq": 8,
+            "messages": [{"role": "assistant", "text": "x" * 70_000}],
+        },
+    ]
+    (session_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_dir / "goal" / "state.json").write_text(
+        json.dumps(
+            {
+                "thread_id": "t-large",
+                "objective": "recover workflow state",
+                "status": "failed",
+                "verification_status": "failed",
+                "last_error": "verifier timed out",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (session_base / "thread_index.json").write_text(
+        json.dumps({"version": 1, "threads": {"t-large": {"session_id": "s-large"}}}),
+        encoding="utf-8",
+    )
+
+    history = SessionCatalog().read_thread(workspace, "project-1", "t-large")
+
+    assert history is not None
+    assert history["session"]["history_truncated"] is True
+    assert history["session"]["resumable"] is True
+    assert history["session"]["goal"]["status"] == "blocked"
+    assert history["session"]["goal"]["verification_status"] == "failed"
+    assert history["session"]["goal"]["last_error"] == "verifier timed out"
+    assert len(history["messages"][0]["text"]) <= 16 * 1024 + 1
+    assert SessionCatalog().find_session_path(workspace, "t-large") == session_dir
+
+
 def test_session_catalog_keeps_user_paused_state_after_lock_release(
     tmp_path, monkeypatch
 ):

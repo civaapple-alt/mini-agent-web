@@ -231,14 +231,16 @@ export const api = {
     return res.json();
   },
 
-  async getWorkflowFiles() {
-    const res = await fetch(`${API_BASE}/api/workflows/files`);
+  async getWorkflowFiles(threadId = null) {
+    const query = threadId ? `?thread_id=${encodeURIComponent(threadId)}` : '';
+    const res = await fetch(`${API_BASE}/api/workflows/files${query}`);
     if (!res.ok) throw new Error('Failed to list workflow files');
     return res.json();
   },
 
-  async getWorkflowFileContent(path) {
-    const res = await fetch(`${API_BASE}/api/workflows/file/content?path=${encodeURIComponent(path)}`);
+  async getWorkflowFileContent(path, threadId = null) {
+    const threadQuery = threadId ? `&thread_id=${encodeURIComponent(threadId)}` : '';
+    const res = await fetch(`${API_BASE}/api/workflows/file/content?path=${encodeURIComponent(path)}${threadQuery}`);
     if (!res.ok) throw new Error(`Failed to read file content for ${path}`);
     return res.json();
   },

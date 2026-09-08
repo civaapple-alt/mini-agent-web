@@ -21,6 +21,8 @@ MAX_SESSIONS = 128
 MAX_SESSION_BYTES = 8 * 1024 * 1024
 MAX_RECORD_BYTES = 64 * 1024
 MAX_ERROR_CHARS = 2048
+MAX_CHECKPOINT_MESSAGES = 64
+MAX_CHECKPOINT_MESSAGE_CHARS = 16 * 1024
 THREAD_INDEX_FILE_NAME = "thread_index.json"
 THREAD_SETTINGS_FILE_NAME = "thread_settings.json"
 
@@ -164,6 +166,7 @@ def _goal_projection(
         "running": "active",
         "user_paused": "paused",
         "converged": "completed",
+        "failed": "blocked",
         "usage_limited": "usageLimited",
         "budget_limited": "budgetLimited",
     }.get(
@@ -178,6 +181,12 @@ def _goal_projection(
         "time_used_seconds": goal.get("time_used_seconds", 0),
         "created_at": goal.get("created_at_ms", 0),
         "updated_at": goal.get("updated_at_ms", 0),
+        "current_milestone": _bounded_int(goal.get("current_milestone")),
+        "total_milestones": _bounded_int(goal.get("total_milestones")),
+        "loop_count": _bounded_int(goal.get("loop_count")),
+        "last_verifier_score": goal.get("last_verifier_score"),
+        "last_error": _bounded_text(goal.get("last_error")),
+        "verification_status": str(goal.get("verification_status") or "idle"),
     }
 
 
@@ -191,13 +200,13 @@ def _item_projection(record: dict[str, Any]) -> dict[str, Any] | None:
         return {
             "type": "userMessage",
             "id": item_id,
-            "text": str(message.get("text") or ""),
+            "text": _bounded_text(message.get("text"), 16 * 1024) or "",
         }
     if role == "assistant":
         return {
             "type": "agentMessage",
             "id": item_id,
-            "text": str(message.get("text") or ""),
+            "text": _bounded_text(message.get("text"), 16 * 1024) or "",
         }
     if role == "tool":
         outcome = message.get("outcome")
@@ -209,13 +218,42 @@ def _item_projection(record: dict[str, Any]) -> dict[str, Any] | None:
             "status": "failed"
             if isinstance(outcome, dict) and outcome.get("error")
             else "completed",
-            "output": str(outcome.get("content") or "")
+            "output": _bounded_text(outcome.get("content"), 16 * 1024)
             if isinstance(outcome, dict)
             else None,
         }
     if role == "context":
         return {"type": "contextCompaction", "id": item_id, "status": "completed"}
     return None
+
+
+def _checkpoint_projection(record: dict[str, Any]) -> dict[str, Any]:
+    """Keep a bounded history preview when a checkpoint exceeds the record limit."""
+    messages = record.get("messages")
+    bounded_messages = []
+    if isinstance(messages, list):
+        for message in messages[-MAX_CHECKPOINT_MESSAGES:]:
+            if not isinstance(message, dict):
+                continue
+            role = message.get("role")
+            if role not in ("user", "assistant", "system", "tool", "context"):
+                continue
+            bounded_messages.append(
+                {
+                    "role": role,
+                    "text": _bounded_text(
+                        message.get("text"), MAX_CHECKPOINT_MESSAGE_CHARS
+                    )
+                    or "",
+                }
+            )
+    return {
+        "kind": "checkpoint",
+        "thread_id": record.get("thread_id"),
+        "seq": _bounded_int(record.get("seq")),
+        "timestamp_ms": _bounded_int(record.get("timestamp_ms")),
+        "messages": bounded_messages,
+    }
 
 
 class SessionCatalog:
@@ -276,6 +314,44 @@ class SessionCatalog:
                 return entry
         return None
 
+    def find_session_path(self, workspace: Path, thread_id: str) -> Path | None:
+        """Resolve a Thread to its Session directory without reading history."""
+        base = _session_base(workspace)
+        if not base.is_dir():
+            return None
+
+        indexed_session_id = _read_thread_index(base).get(thread_id)
+        if indexed_session_id:
+            indexed_path = base / indexed_session_id
+            if (
+                indexed_path.name == indexed_session_id
+                and indexed_path.is_dir()
+                and (indexed_path / "session.jsonl").is_file()
+            ):
+                return indexed_path
+
+        for path in base.iterdir():
+            if not path.is_dir() or not (path / "session.jsonl").is_file():
+                continue
+            try:
+                with (path / "session.jsonl").open("rb") as session_file:
+                    for line in session_file:
+                        if len(line) > MAX_RECORD_BYTES:
+                            continue
+                        try:
+                            record = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if (
+                            isinstance(record, dict)
+                            and record.get("kind") == "thread_started"
+                            and record.get("thread_id") == thread_id
+                        ):
+                            return path
+            except OSError:
+                continue
+        return None
+
     def read_thread(
         self, workspace: Path, project_id: str, thread_id: str
     ) -> dict[str, Any] | None:
@@ -305,14 +381,19 @@ class SessionCatalog:
             if session_path.stat().st_size > MAX_SESSION_BYTES:
                 return None
             records = []
+            skipped_oversized_records = False
             for line in session_path.read_bytes().splitlines():
                 if len(line) > MAX_RECORD_BYTES:
-                    return None
+                    skipped_oversized_records = True
                 try:
                     record = json.loads(line)
                 except json.JSONDecodeError:
                     continue
                 if isinstance(record, dict):
+                    if len(line) > MAX_RECORD_BYTES:
+                        if record.get("kind") != "checkpoint":
+                            continue
+                        record = _checkpoint_projection(record)
                     records.append(record)
         except OSError:
             return None
@@ -437,6 +518,7 @@ class SessionCatalog:
             "last_turn_complete": last_turn_complete,
             "locked_by": pid if lock_active else None,
             "resumable": bool(latest_checkpoint) and not lock_active,
+            "history_truncated": skipped_oversized_records,
         }
         if include_history:
             entry["messages"] = (

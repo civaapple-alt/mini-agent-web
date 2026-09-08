@@ -25,6 +25,15 @@ export default function MessageItem({
 
   const [previewImg, setPreviewImg] = useState(null);
 
+  if (message.messageKind === 'goal_verification') {
+    return (
+      <div className="goal-verification-message" role="status">
+        <Target size={13} />
+        <span>{text}</span>
+      </div>
+    );
+  }
+
   if (role === 'user') {
     const { images = [], referencedFiles = [] } = message;
     return (

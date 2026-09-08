@@ -314,6 +314,44 @@
   color: var(--text-muted);
 }
 
+.goal-verification-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.goal-verification-status.running {
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.3);
+}
+
+.goal-verification-status.completed {
+  color: #047857;
+  border-color: rgba(16, 163, 127, 0.3);
+}
+
+.goal-verification-status.failed {
+  color: #b42318;
+  border-color: rgba(180, 35, 24, 0.3);
+}
+
+.goal-error-detail {
+  padding: 6px 8px;
+  border-left: 3px solid #b42318;
+  background: rgba(180, 35, 24, 0.06);
+  color: #b42318;
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .goal-input-box {
   display: flex;
   gap: 8px;

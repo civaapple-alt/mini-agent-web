@@ -978,6 +978,30 @@ class SessionManager:
                 return result
         return None
 
+    def session_path_for_thread(self, thread_id: str) -> Path | None:
+        """Resolve a Thread to its canonical Session directory for read-only artifacts."""
+        metadata_project = self._thread_metadata.get(thread_id, {}).get("project")
+        ordered_ids: list[str] = []
+        if metadata_project in self._projects_registry:
+            ordered_ids.append(metadata_project)
+        ordered_ids.extend(
+            project_id
+            for project_id in self._projects_registry
+            if project_id not in ordered_ids
+        )
+        seen_workspaces: set[str] = set()
+        for project_id in ordered_ids:
+            project = self._projects_registry[project_id]
+            workspace = Path(project["primary_path"])
+            workspace_key = str(workspace.resolve()).casefold()
+            if workspace_key in seen_workspaces:
+                continue
+            seen_workspaces.add(workspace_key)
+            path = session_catalog.find_session_path(workspace, thread_id)
+            if path:
+                return path
+        return None
+
     # -------------------------------------------------------------------------
     # Settings Management
     # -------------------------------------------------------------------------

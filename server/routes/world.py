@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from mini_agent.errors import AppServerError
+from mini_agent.errors import AppServerError, ServerProcessError
 from pydantic import BaseModel, Field
 
 from server.session_manager import session_manager
@@ -352,6 +352,12 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
                     "time_used_seconds": goal.get("time_used_seconds", 0),
                     "created_at": goal.get("created_at", goal.get("created_at_ms", 0)),
                     "updated_at": goal.get("updated_at", goal.get("updated_at_ms", 0)),
+                    "current_milestone": goal.get("current_milestone", 0),
+                    "total_milestones": goal.get("total_milestones", 0),
+                    "loop_count": goal.get("loop_count", 0),
+                    "last_verifier_score": goal.get("last_verifier_score"),
+                    "last_error": goal.get("last_error"),
+                    "verification_status": goal.get("verification_status", "idle"),
                 }
             else:
                 goal_dict = None
@@ -387,6 +393,12 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
                 "time_used_seconds": g.time_used_seconds,
                 "created_at": g.created_at,
                 "updated_at": g.updated_at,
+                "current_milestone": getattr(g, "current_milestone", 0),
+                "total_milestones": getattr(g, "total_milestones", 0),
+                "loop_count": getattr(g, "loop_count", 0),
+                "last_verifier_score": getattr(g, "last_verifier_score", None),
+                "last_error": getattr(g, "last_error", None),
+                "verification_status": getattr(g, "verification_status", "idle"),
             }
         workflow_payload = (
             wf.raw.get("value", wf.raw) if isinstance(wf.raw, dict) else {}
@@ -411,6 +423,8 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
             "available_builtin_tools": ALL_BUILTIN_TOOLS,
             "goal": goal_dict,
         }
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
@@ -532,23 +546,45 @@ def _goal_dict(goal: Any) -> dict[str, Any]:
         "time_used_seconds": goal.time_used_seconds,
         "created_at": goal.created_at,
         "updated_at": goal.updated_at,
+        "current_milestone": getattr(goal, "current_milestone", 0),
+        "total_milestones": getattr(goal, "total_milestones", 0),
+        "loop_count": getattr(goal, "loop_count", 0),
+        "last_verifier_score": getattr(goal, "last_verifier_score", None),
+        "last_error": getattr(goal, "last_error", None),
+        "verification_status": getattr(goal, "verification_status", "idle"),
     }
 
 
 @router.get("/workflows/files", summary="List workflow and plan files")
-async def list_workflow_files() -> dict[str, Any]:
+async def list_workflow_files(thread_id: str | None = None) -> dict[str, Any]:
     """Scan workspace for plan/goal files like plan.md, goal/plan.md, etc."""
     cwd = session_manager.current_project_path
-    candidate_paths = [
-        "plan.md",
-        "goal/plan.md",
-        "goal/milestones.json",
-        "AGENTS.md",
-        "README.md",
+    candidate_paths: list[tuple[str, Path]] = [
+        ("plan.md", cwd / "plan.md"),
+        ("goal/plan.md", cwd / "goal" / "plan.md"),
+        ("goal/verifier_verdict.md", cwd / "goal" / "verifier_verdict.md"),
+        ("goal/state.json", cwd / "goal" / "state.json"),
+        ("goal/milestones.json", cwd / "goal" / "milestones.json"),
+        ("AGENTS.md", cwd / "AGENTS.md"),
+        ("README.md", cwd / "README.md"),
     ]
+    if thread_id:
+        session_dir = session_manager.session_path_for_thread(thread_id)
+        if session_dir:
+            candidate_paths = [
+                ("goal/plan.md", session_dir / "goal" / "plan.md"),
+                (
+                    "goal/verifier_verdict.md",
+                    session_dir / "goal" / "verifier_verdict.md",
+                ),
+                ("goal/state.json", session_dir / "goal" / "state.json"),
+            ] + candidate_paths
     discovered = []
-    for rel in candidate_paths:
-        p = cwd / rel
+    seen_paths: set[str] = set()
+    for rel, p in candidate_paths:
+        if rel in seen_paths:
+            continue
+        seen_paths.add(rel)
         if p.is_file():
             discovered.append(
                 {
@@ -564,18 +600,29 @@ async def list_workflow_files() -> dict[str, Any]:
 @router.get("/workflows/file/content", summary="Read workflow file content")
 async def read_workflow_file_content(
     path: str = Query(..., description="Relative file path"),
+    thread_id: str | None = Query(default=None),
 ) -> dict[str, Any]:
     """Read full text content of a workflow/plan file."""
+    normalized_path = path.replace("\\", "/")
     cwd = session_manager.current_project_path.resolve()
-    target = (cwd / path).resolve()
-    if not target.is_relative_to(cwd):
+    root = cwd
+    if thread_id and normalized_path in {
+        "goal/plan.md",
+        "goal/verifier_verdict.md",
+        "goal/state.json",
+    }:
+        session_dir = session_manager.session_path_for_thread(thread_id)
+        if session_dir:
+            root = session_dir.resolve()
+    target = (root / normalized_path).resolve()
+    if not target.is_relative_to(root):
         raise HTTPException(status_code=403, detail="File path is outside workspace")
     if not target.is_file():
         raise HTTPException(status_code=404, detail="File not found")
 
     try:
         content = target.read_text(encoding="utf-8", errors="replace")
-        return {"path": path, "content": content, "size": len(content)}
+        return {"path": normalized_path, "content": content, "size": len(content)}
     except Exception as err:
         raise HTTPException(
             status_code=500, detail=f"Failed to read file: {err}"

@@ -102,6 +102,12 @@ Turn 发送后，流式输出了部分思考链，随后一直停留在某个工
   `~/.mini-agent/sessions/...` 路径以及包含 `..` 的逃逸路径均属于内部或越界路径，不应读取。
 - 活动 Goal 点击“暂停”时，网关只提交 `status=paused` 的安全状态变更，然后当前 turn 在安全边界
   结算；如果仍看到 `thread already has an active turn`，请确认网关和 App Server 已使用本次修复后的版本。
+- Goal 进入 Verify 后，当前 Thread 顶部和信息流会显示 `Verify 进行中`、`Verify 已完成`
+  或 `Verify 失败`；规划与目标侧栏会同步显示里程碑、循环次数、错误原因，并提供
+  `goal/plan.md` 和 `goal/verifier_verdict.md` 的实时内容。
+- 如果 `/api/workflows/state?thread_id=...` 曾因 `thread/goal/get` 超时返回 500，刷新或重启
+  网关后会优先读取 SessionStore 的有界状态投影；超大的历史 checkpoint 会被标记为截断，
+  但 Goal 状态和验证 Markdown 仍可读取。若仍返回 503，请先确认对应 App Server 进程已退出或可恢复。
 
 ---
 

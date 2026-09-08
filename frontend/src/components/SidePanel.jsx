@@ -88,12 +88,21 @@ export default function SidePanel({
   useEffect(() => {
     if (isOpen && activeTab === 'plan_goal') {
       loadWorkflow();
+      loadWorkflowFiles();
     }
   }, [threadId]);
 
   useEffect(() => {
     workflowRevisionRef.current = null;
+    setSelectedFile(null);
+    setSelectedFileContent('');
   }, [threadId]);
+
+  useEffect(() => {
+    if (isOpen && activeTab === 'plan_goal') {
+      loadWorkflowFiles();
+    }
+  }, [isOpen, activeTab, threadId, goalState?.verification_status, goalState?.updated_at]);
 
   const loadAllData = async () => {
     setIsLoading(true);
@@ -178,10 +187,13 @@ export default function SidePanel({
 
   const loadWorkflowFiles = async () => {
     try {
-      const res = await api.getWorkflowFiles();
+      const res = await api.getWorkflowFiles(threadId);
       const files = res.files || [];
       setWorkflowFiles(files);
-      if (files.length > 0 && !selectedFile) {
+      if (
+        files.length > 0
+        && (!selectedFile || !files.some((file) => file.path === selectedFile))
+      ) {
         handleSelectFile(files[0].path);
       }
     } catch (err) {
@@ -192,7 +204,7 @@ export default function SidePanel({
   const handleSelectFile = async (path) => {
     setSelectedFile(path);
     try {
-      const res = await api.getWorkflowFileContent(path);
+      const res = await api.getWorkflowFileContent(path, threadId);
       setSelectedFileContent(res.content);
     } catch (err) {
       setSelectedFileContent(`// 读取文件失败: ${err.message}`);
@@ -294,10 +306,7 @@ export default function SidePanel({
     }
   };
 
-  const isGoalRunning = Boolean(
-    workflowState?.goal &&
-      ['active', 'paused', 'blocked'].includes(workflowState.goal.status)
-  );
+  const isGoalRunning = Boolean(workflowState?.goal);
 
   if (!isOpen) return null;
 
@@ -511,10 +520,22 @@ export default function SidePanel({
                       </span>
                     </div>
                     <div className="goal-objective">{workflowState.goal.objective}</div>
-                    <div className="milestone-text font-mono">
-                      Tokens: {workflowState.goal.tokens_used} / {workflowState.goal.token_budget ?? '∞'}
-                      {' · '}Time: {workflowState.goal.time_used_seconds}s
-                    </div>
+                     <div className="milestone-text font-mono">
+                       Milestone: {workflowState.goal.current_milestone || 0} / {workflowState.goal.total_milestones || 0}
+                       {' · '}Loops: {workflowState.goal.loop_count || 0}
+                       {' · '}
+                       Tokens: {workflowState.goal.tokens_used} / {workflowState.goal.token_budget ?? '∞'}
+                       {' · '}Time: {workflowState.goal.time_used_seconds}s
+                     </div>
+                     <div className={`goal-verification-status ${workflowState.goal.verification_status || 'idle'}`}>
+                       <strong>Verify</strong>
+                       <span>{workflowState.goal.verification_status || 'idle'}</span>
+                     </div>
+                     {workflowState.goal.last_error && (
+                       <div className="goal-error-detail" title={workflowState.goal.last_error}>
+                         {workflowState.goal.last_error}
+                       </div>
+                     )}
                     <div className="goal-actions">
                       {workflowState.goal.status === 'paused' ? (
                         <button className="btn-action-small" onClick={handleResumeGoal}>

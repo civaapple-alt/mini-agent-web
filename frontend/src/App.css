@@ -71,6 +71,29 @@
   background: rgba(16, 163, 127, 0.1);
 }
 
+.goal-topbar-verification {
+  border-radius: 10px;
+  padding: 2px 7px;
+  font-size: 10px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.goal-topbar-verification.running {
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.goal-topbar-verification.completed {
+  color: #047857;
+  background: rgba(16, 163, 127, 0.1);
+}
+
+.goal-topbar-verification.failed {
+  color: #b42318;
+  background: rgba(180, 35, 24, 0.1);
+}
+
 .goal-topbar-objective {
   overflow: hidden;
   text-overflow: ellipsis;

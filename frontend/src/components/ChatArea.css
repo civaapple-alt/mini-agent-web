@@ -110,6 +110,28 @@
   overflow-wrap: anywhere;
 }
 
+.goal-verification-message {
+  width: 100%;
+  max-width: 860px;
+  margin: -8px auto 0;
+  padding: 8px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.06);
+  color: #1d4ed8;
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.goal-verification-message svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
 .message-row {
   display: flex;
   gap: 12px;

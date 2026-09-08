@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from mini_agent.errors import AppServerError
+from mini_agent.errors import AppServerError, ServerProcessError
 from pydantic import BaseModel, Field
 
 from server.session_manager import session_manager, to_json_serializable
@@ -137,6 +137,8 @@ async def list_threads(
         }
     except RuntimeError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
@@ -178,6 +180,8 @@ async def start_thread(req: StartThreadRequest) -> dict[str, Any]:
         }
     except RuntimeError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
@@ -224,6 +228,8 @@ async def read_thread(thread_id: str) -> dict[str, Any]:
             "metadata": meta,
             "raw": cp.raw if cp else {},
         }
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 

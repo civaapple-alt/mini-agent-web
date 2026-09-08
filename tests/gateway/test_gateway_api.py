@@ -187,6 +187,72 @@ async def test_gateway_threads_and_workflows(test_app):
         await session_manager.stop()
 
 
+@pytest.mark.asyncio
+async def test_workflow_state_and_goal_artifacts_use_canonical_session(
+    test_app, tmp_path, monkeypatch
+):
+    """Goal state and verifier Markdown remain readable when live RPC is unavailable."""
+    session_dir = tmp_path / "s-goal"
+    (session_dir / "goal").mkdir(parents=True)
+    (session_dir / "goal" / "plan.md").write_text(
+        "# Goal Plan\n\n- [ ] Verify the fix\n", encoding="utf-8"
+    )
+    (session_dir / "goal" / "verifier_verdict.md").write_text(
+        "# Goal Verification\n\n- Status: running\n", encoding="utf-8"
+    )
+    (session_dir / "goal" / "state.json").write_text("{}", encoding="utf-8")
+    canonical = {
+        "session": {
+            "goal": {
+                "thread_id": "t-goal-artifacts",
+                "objective": "make verification observable",
+                "status": "active",
+                "verification_status": "running",
+                "current_milestone": 1,
+                "total_milestones": 3,
+                "loop_count": 0,
+            },
+            "plan_active": False,
+            "continuation_mode": "manual",
+            "state_revision": 12,
+            "session_status": "locked",
+            "runtime_status": "running",
+        }
+    }
+    monkeypatch.setattr(session_manager, "read_any_project_thread", lambda _thread_id: canonical)
+    monkeypatch.setattr(
+        session_manager, "session_path_for_thread", lambda _thread_id: session_dir
+    )
+    monkeypatch.setattr(session_manager, "_current_project_path", tmp_path)
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        state = await client.get(
+            "/api/workflows/state", params={"thread_id": "t-goal-artifacts"}
+        )
+        assert state.status_code == 200
+        assert state.json()["goal"]["verification_status"] == "running"
+
+        files = await client.get(
+            "/api/workflows/files", params={"thread_id": "t-goal-artifacts"}
+        )
+        assert files.status_code == 200
+        assert {item["path"] for item in files.json()["files"]} >= {
+            "goal/plan.md",
+            "goal/verifier_verdict.md",
+        }
+
+        content = await client.get(
+            "/api/workflows/file/content",
+            params={
+                "path": "goal/verifier_verdict.md",
+                "thread_id": "t-goal-artifacts",
+            },
+        )
+        assert content.status_code == 200
+        assert "Status: running" in content.json()["content"]
+
+
 def test_gateway_websocket(test_app):
     from starlette.testclient import TestClient
 

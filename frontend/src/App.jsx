@@ -17,6 +17,7 @@ import {
 import {
   appendGoalMessage as appendGoalMessageToMessages,
   createGoalMessage,
+  createGoalVerificationMessage,
   extractGoalObjective,
 } from './utils/goalMessages';
 import {
@@ -51,6 +52,25 @@ function formatRunFailure(reason) {
     return detail.kind ? `达到运行限制（${detail.kind}）` : '达到上下文或输入限制';
   }
   return reason.type ? `运行时失败（${reason.type}）` : '运行时失败';
+}
+
+function normalizeGoal(goal) {
+  if (!goal) return null;
+  return {
+    ...goal,
+    thread_id: goal.thread_id || goal.threadId,
+    token_budget: goal.token_budget ?? goal.tokenBudget ?? null,
+    tokens_used: goal.tokens_used ?? goal.tokensUsed ?? 0,
+    time_used_seconds: goal.time_used_seconds ?? goal.timeUsedSeconds ?? 0,
+    created_at: goal.created_at ?? goal.createdAt ?? 0,
+    updated_at: goal.updated_at ?? goal.updatedAt ?? 0,
+    current_milestone: goal.current_milestone ?? goal.currentMilestone ?? 0,
+    total_milestones: goal.total_milestones ?? goal.totalMilestones ?? 0,
+    loop_count: goal.loop_count ?? goal.loopCount ?? 0,
+    last_verifier_score: goal.last_verifier_score ?? goal.lastVerifierScore ?? null,
+    last_error: goal.last_error ?? goal.lastError ?? null,
+    verification_status: goal.verification_status || goal.verificationStatus || 'idle',
+  };
 }
 
 export default function App() {
@@ -99,6 +119,7 @@ export default function App() {
   const queueDispatchingRef = useRef(false);
   const interruptPendingRef = useRef(false);
   const currentThreadRef = useRef(currentThread);
+  const goalStateRef = useRef(goalState);
   currentThreadRef.current = currentThread;
 
   const showToast = (message, type = 'info', duration = 3000) => {
@@ -194,8 +215,10 @@ export default function App() {
   const loadWorkflows = async (threadId = currentThreadRef.current) => {
     try {
       const wfState = await api.getWorkflowState(threadId);
-      if (!applyWorkflowState(threadId, wfState)) return;
-      setGoalState(wfState.goal || null);
+      const normalizedState = { ...wfState, goal: normalizeGoal(wfState.goal) };
+      if (!applyWorkflowState(threadId, normalizedState)) return;
+      goalStateRef.current = normalizedState.goal;
+      setGoalState(normalizedState.goal);
     } catch (err) {
       console.error('Failed to load workflow state:', err);
     }
@@ -217,6 +240,7 @@ export default function App() {
   };
 
   const applyGoalState = (threadId, goal, payload = {}) => {
+    const nextGoal = normalizeGoal(goal);
     const nextRevision = readStateRevision(payload);
     const currentRevision = workflowRevisionsRef.current.get(threadId);
     if (!shouldApplyStateRevision(currentRevision, nextRevision)) return false;
@@ -224,9 +248,22 @@ export default function App() {
       workflowRevisionsRef.current.set(threadId, nextRevision);
     }
     if (currentThreadRef.current !== threadId) return false;
-    setGoalState(goal || null);
-    if (goal) {
-      setMessages((prev) => appendGoalMessageToMessages(prev, goal));
+    const previousGoal = goalStateRef.current;
+    goalStateRef.current = nextGoal;
+    setGoalState(nextGoal);
+    if (nextGoal) {
+      setMessages((prev) => appendGoalMessageToMessages(prev, nextGoal));
+      if (
+        nextGoal.verification_status !== previousGoal?.verification_status &&
+        ['running', 'completed', 'failed'].includes(nextGoal.verification_status)
+      ) {
+        const verificationMessage = createGoalVerificationMessage(nextGoal);
+        setMessages((prev) => (
+          prev.some((message) => message.id === verificationMessage.id)
+            ? prev
+            : [...prev, verificationMessage]
+        ));
+      }
     }
     return true;
   };
@@ -502,6 +539,7 @@ export default function App() {
           setActiveTurnId(null);
           interruptPendingRef.current = false;
           loadThreads();
+          loadWorkflows(currentThreadRef.current);
           if (turnStatus === 'failed') {
             loadTurnFailureDetails(currentThreadRef.current, data.turnId);
           }
@@ -1019,6 +1057,11 @@ export default function App() {
                 {planActive && <span className="goal-topbar-mode">PLAN</span>}
                 <span className="goal-topbar-label">GOAL</span>
                 <span className={`goal-topbar-status ${goalState.status}`}>{goalState.status}</span>
+                {goalState.verification_status && goalState.verification_status !== 'idle' && (
+                  <span className={`goal-topbar-verification ${goalState.verification_status}`}>
+                    VERIFY {goalState.verification_status}
+                  </span>
+                )}
                 <span className="goal-topbar-objective" title={goalState.objective}>{goalState.objective}</span>
               </div>
               <div className="goal-topbar-actions">

@@ -360,6 +360,12 @@ class ThreadGoal:
     time_used_seconds: int = 0
     created_at: int = 0
     updated_at: int = 0
+    current_milestone: int = 0
+    total_milestones: int = 0
+    loop_count: int = 0
+    last_verifier_score: int | None = None
+    last_error: str | None = None
+    verification_status: str = "idle"
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -377,6 +383,19 @@ class ThreadGoal:
             or val.get("time_used_seconds", 0),
             created_at=val.get("createdAt") or val.get("created_at", 0),
             updated_at=val.get("updatedAt") or val.get("updated_at", 0),
+            current_milestone=val.get("currentMilestone")
+            or val.get("current_milestone", 0),
+            total_milestones=val.get("totalMilestones")
+            or val.get("total_milestones", 0),
+            loop_count=val.get("loopCount") or val.get("loop_count", 0),
+            last_verifier_score=val.get("lastVerifierScore")
+            if "lastVerifierScore" in val
+            else val.get("last_verifier_score"),
+            last_error=val.get("lastError")
+            if "lastError" in val
+            else val.get("last_error"),
+            verification_status=val.get("verificationStatus")
+            or val.get("verification_status", "idle"),
             raw=data,
         )
 

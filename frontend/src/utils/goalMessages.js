@@ -39,3 +39,36 @@ export function appendGoalMessage(messages, goal) {
   }
   return [...messages, createGoalMessage(objective)];
 }
+
+const VERIFICATION_LABELS = {
+  running: 'Verify 进行中',
+  completed: 'Verify 已完成',
+  failed: 'Verify 失败',
+};
+
+export function createGoalVerificationMessage(goal, id = null) {
+  const status = goal?.verification_status || goal?.verificationStatus;
+  const label = VERIFICATION_LABELS[status] || 'Goal Verify';
+  const milestone = goal?.current_milestone || goal?.currentMilestone;
+  const total = goal?.total_milestones || goal?.totalMilestones;
+  const progress = milestone && total ? `第 ${milestone}/${total} 个里程碑` : '当前里程碑';
+  let text = `${label}：${progress}。`;
+  if (status === 'running') {
+    text += ' 正在读取已结算检查点并独立评估。验收依据：goal/plan.md；结果将写入：goal/verifier_verdict.md。';
+  } else if (status === 'completed') {
+    const score = goal?.last_verifier_score ?? goal?.lastVerifierScore;
+    text += ` 已生成验证结果${score === null || score === undefined ? '' : `，评分 ${score}`}。详情：goal/verifier_verdict.md。`;
+  } else if (status === 'failed') {
+    const error = goal?.last_error || goal?.lastError;
+    text += ` ${error || '请打开 Goal 详情检查验证结果。'}`;
+  }
+  return {
+    id: id || `goal_verify_${goal?.thread_id || goal?.threadId || 'default'}_${status}_${goal?.updated_at || goal?.updatedAt || Date.now()}`,
+    role: 'system',
+    text,
+    messageKind: 'goal_verification',
+    thinking: '',
+    tools: [],
+    blocks: [],
+  };
+}

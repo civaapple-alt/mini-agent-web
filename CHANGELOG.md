@@ -90,7 +90,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Serialized Thread client attach**: concurrent Gateway attach/start requests
   for the same Thread now share one creation critical section, preventing two
-  App Server clients from racing to claim the same canonical Session lock.
+  App Server clients from racing to claim the same canonical Session lock; fork
+  and concurrent attach now share that critical section so a child cannot be
+  observed before its canonical binding is installed.
 
 - **Canonical Thread continuation projection**: moved `manual` / `continuous`
   persistence to the App Server SessionStore `thread_settings.json` sidecar;

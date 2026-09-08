@@ -40,7 +40,9 @@ Thread、Turn、Goal 和 ThreadItem 的运行时语义来自 App Server；网关
 
 同一 Thread 的 Gateway attach/start 请求在客户端创建与 canonical Session 检查
 期间串行化；并发请求会复用同一个已建立的 App Server client，不会制造重复的
-workspace 绑定竞争。
+workspace 绑定竞争。Thread fork 也在同一 SessionManager 临界区内完成 source
+client 复用、分叉、child metadata 写入和 binding；并发 attach 会等待完整绑定后
+复用该 client。
 
 Thread settings 的 `state_revision` 只是 canonical App Server revision 的有界
 投影。Gateway 通过 WebSocket 原样转发 `thread/settings/updated` 以及带同一

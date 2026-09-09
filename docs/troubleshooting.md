@@ -139,3 +139,25 @@ Mini Agent 默认使用跨平台且现代的 **PowerShell 7 (`pwsh`)**。
   或恢复 Goal 后才会继续推进；
 - 如果仍然无法恢复，先刷新 Web Studio，再检查对应 Project 的 SessionStore 和
   App Server 日志，避免删除 Session 文件来绕过锁。
+
+## 8. 侧栏出现多个“运行中”或上下文压缩记录连续出现
+
+侧栏的“运行中”只由当前 Project 中是否存在尚未结算的活跃 Turn 决定；SessionStore
+进程锁是独立的“在线/待命”状态。空闲但在线的进程不会再被当成运行中的 Turn，崩溃后
+留下的未结算记录则显示为可恢复并保留诊断状态。多个项目即使使用同名 `default`
+Thread，也不会互相贡献运行状态；若仍异常，请检查请求和 WebSocket 是否携带了正确的
+`project_id`。
+
+连续的 Compaction 生命周期会按相邻顺序合并为“上下文压缩 ×N”。展开卡片可查看每条
+记录的 `turn_id` 与 `item_id`；这表示一次运行中的多次压缩被聚合展示，不是启动了多个
+Agent 或多个 Turn。
+
+## 9. 切换 Session 后仍看到旧历史或旧项目状态
+
+会话目录、历史、Workflow、Runtime 和 SidePanel 文件请求都绑定 `project_id`，并受
+request epoch/取消机制保护。切换、创建、Fork 或关闭 Session 时，Studio 会原子清空
+旧的消息和状态投影，再加载新 Session；失效请求的晚到响应会被丢弃。
+
+如果页面仍混入旧内容，请在浏览器 Network/WS 面板确认请求 URL、payload 和 WebSocket
+`ping` 都使用当前项目；随后刷新并查看 Gateway 是否记录了旧 epoch 响应被忽略。不要通过
+删除 Session 文件解决显示问题。

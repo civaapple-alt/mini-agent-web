@@ -31,12 +31,12 @@
 
 ### 2.2 工作区与会话列表
 - **会话历史检索**：会话搜索在前端进行亚毫秒级模糊过滤，历史会话加载采用异步渐进骨架屏（Skeleton Loading）；
-- **SessionStore 投影**：网关最多读取 128 个 Session；单个 `session.jsonl` 最大 8 MiB，单条记录最大 64 KiB；历史、运行中和已暂停 Session 均通过 canonical projection 展示；Thread 的 `manual` / `continuous` 偏好从带 Thread ID 的 `thread_settings.json` sidecar 读取，网关不再保存第二份 continuation 状态；
-- **Session 切换**：历史或已暂停 Session 可通过 `/api/threads/{thread_id}/attach` 恢复；被其他 App Server 持有锁的运行中 Session 只读展示，锁释放后再 attach；
+- **SessionStore 投影**：网关最多读取 128 个 Session；单个 `session.jsonl` 最大 8 MiB，单条记录最大 64 KiB；历史、运行中和已暂停 Session 均通过 canonical projection 展示；侧栏将 `turn_active` 与 `process_online` 分开投影，并保留 `last_turn_status` 诊断；完成 Plan Turn 后的 `plan_review_pending` 从 Session-owned `plan_mode.json` 恢复；Thread 的 `manual` / `continuous` 偏好从带 Thread ID 的 `thread_settings.json` sidecar 读取，网关不再保存第二份 continuation 状态；
+- **Session 切换**：历史或已暂停 Session 可通过 `/api/threads/{thread_id}/attach` 恢复；被其他 App Server 持有锁的运行中 Session 只读展示，锁释放后再 attach；切换、创建、Fork、关闭或项目切换会通过 request epoch/取消机制丢弃晚到响应；
 - **工作区项目管理**：支持多项目并行固定（Pin），系统目录选择器受限于宿主操作系统权限。
 
 ### 2.3 访问范围、批准与工作流
-- **访问范围**：`project` 限定在当前 Project 的主目录及关联目录；`full_machine` 只扩大路径范围到整机，不等于全部 Allow，Deny、Plan 锁和高风险动作确认仍有效；
+- **访问范围**：`project` 限定在当前 Project 的主目录及关联目录；`full_machine` 只扩大路径范围到整机，不等于全部 Allow，Deny、Plan 模式下的源文件变更锁和高风险动作确认仍有效；Shell 仍按所选审批策略执行，Plan 不额外施加只读限制；
 - **审批策略**：`interactive` 每个敏感动作交互确认；`automatic` 只自动放行受限低风险检查；`trusted` 额外放行经过完整校验的非破坏性工作区补丁更新，Shell、MCP、删除/移动和外部高风险动作仍需确认；
 - **推进方式**：普通 Chat 默认 `manual`，每轮最多 8 步；显式选择 `continuous` 后使用连续循环，但仍受取消、超时和上下文边界约束；该偏好由 App Server/SessionStore 持久化，Gateway 只在启动和 Goal settlement 时转发恢复请求；活动 Goal 使用独立的 Goal Runtime 里程碑预算，不继承或覆盖普通 Chat 设置；
 - **批准策略与授权**：Project 的 `policy` 为 `interactive` / `automatic` / `trusted`；审批响应的 `grantScope` 只有 `once` / `session` / `project`。Web 只展示和转发 pending request，action key、grant store、撤销与恢复由 Host/Capabilities 持有；`automatic` 只自动放行受限、只读且路径位于工作区或配置读取根内的 Shell 检查，`trusted` 额外放行完整校验的非破坏性工作区补丁，写操作、高风险命令、动态路径和越界访问仍需显式审批。

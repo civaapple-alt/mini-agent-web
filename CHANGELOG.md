@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Documentation synchronization**: document project-qualified routing, request
+  epoch cancellation, atomic Session projection resets, the separate Turn/process
+  status model, persisted Plan review confirmation, grouped Compaction details,
+  and Plan/Shell policy boundaries in the server, frontend, limits, and
+  troubleshooting guides.
+
 - **Session projection race guards**: add request cancellation and epoch checks
   to the Web Studio thread/project/settings surfaces, reset all Turn and
   workflow projections atomically for new, forked, closed, and switched

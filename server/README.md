@@ -63,11 +63,34 @@ notification 广播给所有 WebSocket 客户端；单个请求的 WebSocket 只
 `/events?after_sequence=...` 补齐短暂断线期间的 Core 事件；如果返回
 `has_gap=true`，则先重新读取 Thread/Item canonical projection。
 
+所有 Thread、Turn、Workflow、World 和 Session 请求都使用统一的
+`project_id` 路由上下文；REST 请求通过 query 参数传递，创建、attach、fork 和
+Goal 请求在需要时同时保留 payload 字段。WebSocket 建连时使用
+`?project_id=...`，每个 `turn`、`steer`、`interrupt`、审批响应和 `ping` 也会
+携带项目标识。Gateway 按 Project 过滤 runtime 广播，Studio 会拒绝不属于当前
+Thread/Project 的事件，避免同名 `default` Session 串线。
+
+Web Studio 对会话目录、历史、Workflow 和文件读取使用 request epoch 与取消信号。
+切换、创建、Fork 或关闭 Session 时，页面先原子清空旧的消息、Turn、Goal、Plan、
+Runtime 和审批投影，再加载新项目的 canonical 状态；已失效请求即使晚返回也不能
+回写当前页面。
+
+Session 目录中的 `turn_active` 与 `process_online` 是两个独立观察点：前者仅表示
+存在尚未结算且仍由存活进程持有的 Turn，后者表示进程锁在线。因崩溃留下的未结算
+记录可能是 `process_online=false`、`turn_active=false`，但仍保留
+`last_turn_status=in_progress` 供诊断，并在有 checkpoint 时标记为可恢复。空闲的
+在线进程因此显示为“在线/待命”，不会被误显示为“运行中”。
+
+`/api/workflows/state` 及线程目录还投影 `plan_review_pending`。已完成 Plan Turn
+后的“继续规划/开始实施”确认写入 Session-owned `plan_mode.json`，刷新或恢复会话
+时仍可继续处理；选择实施后才切回 default collaboration mode。
+
 访问和批准是当前 Project 的执行设置：`project` / `full_machine` 控制路径范围，
 `interactive` / `automatic` 控制审批策略；`once` / `session` / `project`
 只在审批响应中表达本次 action grant 的生命周期。
-`full_machine` 只表示整机路径范围，不是 allow-all；Deny、Plan 锁、工具可用性和
-仍需人工确认的高风险动作继续由 App Server/Host 执行。`trusted` 只放行经过
+`full_machine` 只表示整机路径范围，不是 allow-all；Deny、Plan 模式下的源文件变更锁、
+工具可用性和仍需人工确认的高风险动作继续由 App Server/Host 执行。Shell 仍按所选
+审批策略处理，Plan 不额外施加只读限制。`trusted` 只放行经过
 完整校验的普通工作区补丁更新；Shell、MCP、删除/移动和外部高风险动作仍需确认。
 Auto Copilot 是 Web Studio 中显式选择的 `trusted + continuous` 运行预设，不由访问范围
 或审批策略隐式推导；活动 Goal 会临时接管自己的里程碑循环。

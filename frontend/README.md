@@ -32,6 +32,11 @@ npm run build
 历史消息通过 ThreadItem 分页投影恢复，生命周期通知不会创建重复卡片；相邻的上下文压缩
 会合并为可展开的计数卡，并在详情中保留 Turn/Item 身份。
 
+Thread、Workflow、Runtime 和文件请求都绑定当前 `project_id` 与 Session 上下文。
+会话切换、创建、Fork、关闭或项目切换会递增 request epoch、取消旧请求，并先清空
+旧消息、Turn、Plan、Goal、Runtime 和审批投影；晚到响应会被丢弃。`/clear` 只清空
+当前页面显示，不删除 Session history。
+
 页面顶部的 Runtime 条显示 App Server 当前 phase、operation、checkpoint 和错误；
 Goal/Plan 生命周期通知会显示最近的 workflow milestone。WebSocket 重连后，页面
 用有界 `turn/event` cursor 重放短暂断线期间的事件，遇到 `has_gap` 则重新读取
@@ -42,7 +47,8 @@ Session。侧栏的“运行中”只表示当前 Turn 尚未结算；SessionSto
 “在线”或“待命”，避免把空闲进程误判为运行中。选择历史或已暂停 Session 会请求 attach；
 如果 Session 仍被另一个 App Server 进程锁定，Studio 保持只读历史，锁释放后即可再次 attach。活动 Goal
 固定显示在当前 Thread 顶部，状态和暂停、恢复、更新、删除操作仍以 App Server
-为准。
+为准。Plan Turn 完成后，待用户选择“继续规划”或“开始实施”；该待确认状态随
+Session 恢复，不依赖浏览器内存。
 
 ## 入口文件
 

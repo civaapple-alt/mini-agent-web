@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
 from server.session_manager import session_manager
@@ -33,13 +33,15 @@ class UpdateSettingsRequest(BaseModel):
 
 
 @router.get("", summary="Get current system settings")
-async def get_settings() -> dict[str, Any]:
+async def get_settings(project_id: str | None = Query(default=None)) -> dict[str, Any]:
     """Retrieve current runtime and UI settings."""
-    return session_manager.get_settings()
+    return session_manager.get_settings(project_id)
 
 
 @router.post("", summary="Update system settings")
-async def update_settings(req: UpdateSettingsRequest) -> dict[str, Any]:
+async def update_settings(
+    req: UpdateSettingsRequest, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
     """Update runtime settings."""
     payload = {k: v for k, v in req.model_dump().items() if v is not None}
     updated = session_manager.update_settings(payload)

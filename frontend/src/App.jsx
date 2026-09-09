@@ -8,12 +8,13 @@ import PlanModeBanner from './components/PlanModeBanner';
 import SettingsModal from './components/SettingsModal';
 import Toast from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
-import { api, createAgentWebSocket } from './api';
+import { api, createAgentWebSocket, setActiveProjectId } from './api';
 import {
   shouldAcceptEventForThread,
   aggregateItemLifecycle,
   aggregateStreamEvent,
   aggregateThreadItems,
+  assignHistoryTurnIds,
   filterEmptyMessages,
 } from './utils/messageState';
 import {
@@ -166,8 +167,11 @@ export default function App() {
   const currentThreadProjectRef = useRef(currentThreadProject);
   const goalStateRef = useRef(goalState);
   const selectionPersistenceReadyRef = useRef(false);
+  const sessionEpochRef = useRef(0);
+  const sessionRequestControllerRef = useRef(null);
   currentThreadRef.current = currentThread;
   currentThreadProjectRef.current = currentThreadProject;
+  setActiveProjectId(currentThreadProject);
 
   const showToast = (message, type = 'info', duration = 3000) => {
     const id = 'toast_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
@@ -180,6 +184,36 @@ export default function App() {
   const dismissToast = (id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
+
+  const beginSessionRequest = (threadId, projectId) => {
+    sessionRequestControllerRef.current?.abort();
+    const controller = new AbortController();
+    sessionRequestControllerRef.current = controller;
+    sessionEpochRef.current += 1;
+    setActiveProjectId(projectId);
+    return {
+      epoch: sessionEpochRef.current,
+      threadId,
+      projectId,
+      signal: controller.signal,
+    };
+  };
+
+  const currentSessionRequest = () => ({
+    epoch: sessionEpochRef.current,
+    threadId: currentThreadRef.current,
+    projectId: currentThreadProjectRef.current,
+    signal: sessionRequestControllerRef.current?.signal,
+  });
+
+  const isCurrentSessionRequest = (context) => (
+    context
+      && context.epoch === sessionEpochRef.current
+      && context.threadId === currentThreadRef.current
+      && (context.projectId || null) === (currentThreadProjectRef.current || null)
+  );
+
+  const isAbortError = (err) => err?.name === 'AbortError';
 
   // ---------------------------------------------------------------------------
   // Lifecycle & Initial Fetch
@@ -228,10 +262,11 @@ export default function App() {
         // rebuild the Web cursor before accepting new notifications.
         workflowRevisionsRef.current.clear();
         runtimeGenerationRef.current = 0;
-        loadWorkflows(currentThreadRef.current);
-        loadRuntimeStatus(currentThreadRef.current);
+        const context = currentSessionRequest();
+        loadWorkflows(context.threadId, context.projectId, context);
+        loadRuntimeStatus(context.threadId, context.projectId, context);
         if (hasConnectedRef.current) {
-          replayMissedEvents(currentThreadRef.current);
+          replayMissedEvents(context.threadId, context.projectId, context);
         }
         hasConnectedRef.current = true;
         showToast('✓ 已连接到 Agent Gateway 服务端', 'success', 2000);
@@ -239,11 +274,13 @@ export default function App() {
       () => {
         setIsConnected(false);
         showToast('⚠️ 与 Agent Gateway 连接断开，尝试重连中...', 'warning', 2500);
-      }
+      },
+      () => currentThreadProjectRef.current,
     );
     wsRef.current = wsClient;
 
     return () => {
+      sessionRequestControllerRef.current?.abort();
       wsClient.close();
     };
   }, []);
@@ -300,6 +337,7 @@ export default function App() {
     const nextThread = selected.thread_id || 'default';
     const nextProject =
       selected.project || currentThreadProjectRef.current || null;
+    const context = beginSessionRequest(nextThread, nextProject);
     currentThreadRef.current = nextThread;
     currentThreadProjectRef.current = nextProject;
     setCurrentThread(nextThread);
@@ -313,28 +351,37 @@ export default function App() {
     // project-agnostic history/workflow endpoints. A locked external Session
     // remains readable and will be retried by an explicit later attach.
     try {
-      await api.attachThread(nextThread, nextProject);
+      await api.attachThread(nextThread, nextProject, { signal: context.signal });
+      if (!isCurrentSessionRequest(context)) return;
     } catch (err) {
+      if (isAbortError(err) || !isCurrentSessionRequest(context)) return;
       console.debug('Failed to attach persisted session during startup:', err);
     }
     await Promise.all([
-      loadThreadHistory(nextThread, nextProject),
-      loadWorkflows(nextThread, nextProject),
-      loadRuntimeStatus(nextThread, nextProject),
+      loadThreadHistory(nextThread, nextProject, context),
+      loadWorkflows(nextThread, nextProject, context),
+      loadRuntimeStatus(nextThread, nextProject, context),
     ]);
   };
 
   const loadWorkflows = async (
     threadId = currentThreadRef.current,
     projectId = currentThreadProjectRef.current,
+    context = null,
   ) => {
+    const requestContext = context || currentSessionRequest();
     try {
-      const wfState = await api.getWorkflowState(threadId);
+      const wfState = await api.getWorkflowState(threadId, {
+        projectId,
+        signal: requestContext.signal,
+      });
+      if (!isCurrentSessionRequest(requestContext)) return;
       const normalizedState = { ...wfState, goal: normalizeGoal(wfState.goal) };
       if (!applyWorkflowState(threadId, normalizedState, projectId)) return;
       goalStateRef.current = normalizedState.goal;
       setGoalState(normalizedState.goal);
     } catch (err) {
+      if (isAbortError(err) || !isCurrentSessionRequest(requestContext)) return;
       console.error('Failed to load workflow state:', err);
     }
   };
@@ -342,14 +389,19 @@ export default function App() {
   const loadRuntimeStatus = async (
     threadId = currentThreadRef.current,
     projectId = currentThreadProjectRef.current,
+    context = null,
   ) => {
+    const requestContext = context || currentSessionRequest();
     try {
-      const status = await api.getRuntimeStatus(threadId);
+      const status = await api.getRuntimeStatus(threadId, {
+        projectId,
+        signal: requestContext.signal,
+      });
       if (
-        currentThreadRef.current === threadId &&
-        (!projectId || currentThreadProjectRef.current === projectId)
+        isCurrentSessionRequest(requestContext)
       ) setRuntimeStatus(status);
     } catch (err) {
+      if (isAbortError(err) || !isCurrentSessionRequest(requestContext)) return;
       console.debug('Failed to load runtime status:', err);
     }
   };
@@ -357,23 +409,30 @@ export default function App() {
   const replayMissedEvents = async (
     threadId = currentThreadRef.current,
     projectId = currentThreadProjectRef.current,
+    context = null,
   ) => {
+    const requestContext = context || currentSessionRequest();
     const afterSequence = eventCursorsRef.current.get(
       scopedThreadKey(threadId, projectId),
     );
     try {
-      const page = await api.replayThreadEvents(threadId, afterSequence ?? 0, 128);
+      const page = await api.replayThreadEvents(threadId, afterSequence ?? 0, 128, {
+        projectId,
+        signal: requestContext.signal,
+      });
+      if (!isCurrentSessionRequest(requestContext)) return;
       if (page.has_gap) {
         // The bounded App Server cache no longer contains the complete gap;
         // canonical history is the safe reconciliation boundary.
-        await loadThreadHistory(threadId);
+        await loadThreadHistory(threadId, projectId, requestContext);
       }
       for (const event of page.data || []) {
         handleServerEvent({ type: 'event', ...event });
       }
     } catch (err) {
       console.debug('Failed to replay runtime events:', err);
-      await loadThreadHistory(threadId);
+      if (isAbortError(err) || !isCurrentSessionRequest(requestContext)) return;
+      await loadThreadHistory(threadId, projectId, requestContext);
     }
   };
 
@@ -443,17 +502,20 @@ export default function App() {
   const loadThreadHistory = async (
     threadId,
     projectId = currentThreadProjectRef.current,
+    context = null,
   ) => {
+    const requestContext = context || currentSessionRequest();
     setIsLoadingHistory(true);
     try {
       const [cp, itemPage] = await Promise.all([
-        api.readThread(threadId),
-        api.listThreadItems(threadId, { limit: 128 }),
+        api.readThread(threadId, { projectId, signal: requestContext.signal }),
+        api.listThreadItems(threadId, {
+          limit: 128,
+          projectId,
+          signal: requestContext.signal,
+        }),
       ]);
-      if (
-        currentThreadRef.current !== threadId ||
-        (projectId && currentThreadProjectRef.current !== projectId)
-      ) return;
+      if (!isCurrentSessionRequest(requestContext)) return;
       if (cp.metadata) {
         setCurrentThreadMeta({
           title: cp.metadata.title || threadId,
@@ -472,7 +534,8 @@ export default function App() {
       } else {
         setLastTurnResult(null);
       }
-      const rawMessages = cp.messages || [];
+      const itemEntries = itemPage.data || [];
+      const rawMessages = assignHistoryTurnIds(cp.messages || [], itemEntries);
       const persistedGoalObjective = cp.session?.goal?.objective?.trim() || '';
       let historyGoalObjective = persistedGoalObjective;
       let goalMessageAdded = false;
@@ -505,6 +568,7 @@ export default function App() {
         result.push({
           id: messageId,
           role: m.role,
+          turnId: m.turnId || null,
           text: m.text || '',
           thinking: reasoning,
           tools: [],
@@ -524,27 +588,33 @@ export default function App() {
         formatted.push(createGoalMessage(historyGoalObjective, `goal_hist_${threadId}`));
       }
       setMessages(
-        filterEmptyMessages(aggregateThreadItems(formatted, itemPage.data || [])),
+        filterEmptyMessages(aggregateThreadItems(formatted, itemEntries)),
       );
     } catch (err) {
+      if (isAbortError(err) || !isCurrentSessionRequest(requestContext)) return;
       console.error(`Failed to load thread ${threadId}:`, err);
       showToast(`加载会话历史失败: ${err.message}`, 'error');
       setMessages([]);
     } finally {
-      setIsLoadingHistory(false);
+      if (isCurrentSessionRequest(requestContext)) setIsLoadingHistory(false);
     }
   };
 
-  function loadTurnFailureDetails(threadId, turnId) {
-    return api.readThread(threadId).then((checkpoint) => {
+  function loadTurnFailureDetails(threadId, turnId, projectId = currentThreadProjectRef.current) {
+    const requestContext = currentSessionRequest();
+    return api.readThread(threadId, {
+      projectId,
+      signal: requestContext.signal,
+    }).then((checkpoint) => {
       const lastTurnId = checkpoint.last_turn_id || checkpoint.session?.last_turn_id;
       const error = checkpoint.last_turn_error || checkpoint.session?.last_turn_error;
-      if (!error || currentThreadRef.current !== threadId) return;
+      if (!error || !isCurrentSessionRequest(requestContext)) return;
       if (turnId && lastTurnId && lastTurnId !== turnId) return;
       setLastTurnResult((previous) => (previous
         ? { ...previous, turnId: previous.turnId || lastTurnId || turnId, error }
         : previous));
     }).catch((err) => {
+      if (isAbortError(err) || !isCurrentSessionRequest(requestContext)) return;
       console.debug('Failed to load turn failure details:', err);
     });
   }
@@ -791,6 +861,7 @@ export default function App() {
       images,
       referencedFiles,
       threadId: currentThread,
+      project_id: currentThreadProject,
     };
 
     setPlanReviewPending(false);
@@ -903,6 +974,7 @@ export default function App() {
         turnId: activeTurnId,
         text: promptText,
         threadId: currentThread,
+        project_id: currentThreadProject,
         source,
       };
       const sent = wsRef.current.send(payload);
@@ -928,6 +1000,7 @@ export default function App() {
         action: 'interrupt',
         turnId,
         threadId: currentThread,
+        project_id: currentThreadProject,
         source,
       });
     }
@@ -970,9 +1043,16 @@ export default function App() {
         decision,
         reason,
         grantScope: decision === 'approve' ? selectedScope : null,
+        project_id: currentThreadProject,
       });
     } else {
-      await api.respondApproval(requestId, decision, decision === 'approve' ? selectedScope : null, reason);
+      await api.respondApproval(
+        requestId,
+        decision,
+        decision === 'approve' ? selectedScope : null,
+        reason,
+        { projectId: currentThreadProject },
+      );
     }
     setPendingApproval(null);
     showToast(`已提交安全审批决定: ${decision === 'approve' ? '允许执行' : '拒绝'}`, 'info', 2000);
@@ -986,9 +1066,14 @@ export default function App() {
     );
     const nextProject = projectId || selected?.project || null;
     if (
-      threadId === currentThread &&
-      (!nextProject || !currentThreadProject || nextProject === currentThreadProject)
+      threadId === currentThread
+      && (nextProject || null) === (currentThreadProject || null)
     ) return;
+    const context = beginSessionRequest(threadId, nextProject);
+
+    // Clear every projection before the new session can render. The epoch and
+    // AbortController below make late history/workflow/file responses unable
+    // to repopulate this freshly selected session.
     setIsGenerating(false);
     setActiveTurnId(null);
     interruptPendingRef.current = false;
@@ -997,10 +1082,17 @@ export default function App() {
     setComposerDraft(null);
     setLastTurnResult(null);
     setPlanReviewPending(false);
+    setPlanActive(false);
+    goalStateRef.current = null;
+    setGoalState(null);
     setRuntimeStatus(null);
     setLastWorkflowEvent(null);
+    setMessages([]);
+    setIsLoadingHistory(true);
+    workflowRevisionsRef.current.delete(scopedThreadKey(threadId, nextProject));
     currentThreadRef.current = threadId;
     currentThreadProjectRef.current = nextProject;
+    setActiveProjectId(nextProject);
     setCurrentThread(threadId);
     setCurrentThreadProject(nextProject);
     if (selected) {
@@ -1012,14 +1104,19 @@ export default function App() {
     try {
       // Attach first. All project-agnostic thread APIs use this active
       // project context after the attach completes.
-      const result = await api.attachThread(threadId, nextProject);
+      const result = await api.attachThread(threadId, nextProject, { signal: context.signal });
+      if (!isCurrentSessionRequest(context)) return;
       if (!result.attached && result.session_status === 'locked') {
         showToast('该 Session 正在另一个进程运行，当前为只读查看；结束后可重新 attach', 'info', 3500);
       }
-      loadThreadHistory(threadId, nextProject);
-      loadWorkflows(threadId, nextProject);
-      loadRuntimeStatus(threadId, nextProject);
+      await Promise.all([
+        loadThreadHistory(threadId, nextProject, context),
+        loadWorkflows(threadId, nextProject, context),
+        loadRuntimeStatus(threadId, nextProject, context),
+      ]);
     } catch (err) {
+      if (isAbortError(err) || !isCurrentSessionRequest(context)) return;
+      setIsLoadingHistory(false);
       showToast(`切换 Session 失败: ${err.message}`, 'error');
     }
   };
@@ -1029,11 +1126,15 @@ export default function App() {
     const finalTitle =
       customTitle && customTitle.trim() ? customTitle.trim() : `新会话 ${tid}`;
     try {
-      const result = await api.startThread(tid, finalTitle, customProject);
+      const result = await api.startThread(tid, finalTitle, customProject, {
+        projectId: customProject,
+      });
       const nextProject = result.project || customProject || null;
       await loadThreads();
+      beginSessionRequest(tid, nextProject);
       currentThreadRef.current = tid;
       currentThreadProjectRef.current = nextProject;
+      setActiveProjectId(nextProject);
       setCurrentThread(tid);
       setCurrentThreadProject(nextProject);
       setCurrentThreadMeta({ title: finalTitle, summary: '' });
@@ -1043,6 +1144,11 @@ export default function App() {
       interruptPendingRef.current = false;
       setLastTurnResult(null);
       setPlanReviewPending(false);
+      setPlanActive(false);
+      goalStateRef.current = null;
+      setGoalState(null);
+      setRuntimeStatus(null);
+      setLastWorkflowEvent(null);
       showToast(`已创建新会话: ${finalTitle}`, 'success');
     } catch (err) {
       showToast(`创建新会话失败: ${err.message}`, 'error');
@@ -1063,11 +1169,14 @@ export default function App() {
         newId,
         null,
         source?.project || currentThreadProjectRef.current || null,
+        { projectId: source?.project || currentThreadProjectRef.current || null },
       );
       const nextProject = result.project || source?.project || null;
       await loadThreads();
+      const context = beginSessionRequest(newId, nextProject);
       currentThreadRef.current = newId;
       currentThreadProjectRef.current = nextProject;
+      setActiveProjectId(nextProject);
       setCurrentThread(newId);
       setCurrentThreadProject(nextProject);
       setPendingMessages([]);
@@ -1075,7 +1184,16 @@ export default function App() {
       interruptPendingRef.current = false;
       setLastTurnResult(null);
       setPlanReviewPending(false);
-      loadThreadHistory(newId, nextProject);
+      setPlanActive(false);
+      goalStateRef.current = null;
+      setGoalState(null);
+      setRuntimeStatus(null);
+      setLastWorkflowEvent(null);
+      await loadThreadHistory(newId, nextProject, context);
+      await Promise.all([
+        loadWorkflows(newId, nextProject, context),
+        loadRuntimeStatus(newId, nextProject, context),
+      ]);
       showToast(`已派生分支会话: ${newId}`, 'success');
     } catch (err) {
       showToast(`派生分支失败: ${err.message}`, 'error');
@@ -1084,15 +1202,23 @@ export default function App() {
 
   const handleCloseThread = async (threadId) => {
     try {
-      await api.closeThread(threadId);
+      const closingProject = currentThreadProjectRef.current;
+      await api.closeThread(threadId, { projectId: closingProject });
       await loadThreads();
       if (currentThread === threadId) {
+        const context = beginSessionRequest('default', null);
         currentThreadRef.current = 'default';
         currentThreadProjectRef.current = null;
+        setActiveProjectId(null);
         setCurrentThread('default');
         setCurrentThreadProject(null);
+        setMessages([]);
+        setPlanActive(false);
+        goalStateRef.current = null;
+        setGoalState(null);
+        setRuntimeStatus(null);
         setPlanReviewPending(false);
-        loadThreadHistory('default');
+        await loadThreadHistory('default', null, context);
       }
       showToast(`已关闭并归档会话: ${threadId}`, 'info');
     } catch (err) {
@@ -1103,7 +1229,7 @@ export default function App() {
   const handleRenameThread = async (threadId, newTitle) => {
     try {
       const targetId = typeof threadId === 'string' ? threadId : currentThread;
-      await api.renameThread(targetId, newTitle);
+      await api.renameThread(targetId, newTitle, { projectId: currentThreadProjectRef.current });
       if (targetId === currentThread) {
         setCurrentThreadMeta((prev) => ({ ...prev, title: newTitle }));
       }
@@ -1117,7 +1243,7 @@ export default function App() {
   const handleUpdateSummary = async (threadId, newSummary) => {
     try {
       const targetId = typeof threadId === 'string' ? threadId : currentThread;
-      await api.updateThreadSummary(targetId, newSummary);
+      await api.updateThreadSummary(targetId, newSummary, { projectId: currentThreadProjectRef.current });
       if (targetId === currentThread) {
         setCurrentThreadMeta((prev) => ({ ...prev, summary: newSummary }));
       }
@@ -1130,8 +1256,13 @@ export default function App() {
 
   const handleSetPlanMode = async (active, reason = 'toggle') => {
     try {
-      const res = await api.setCollaborationMode(active ? 'plan' : 'default', currentThread);
-      applyWorkflowState(currentThread, res);
+      const res = await api.setCollaborationMode(
+        active ? 'plan' : 'default',
+        currentThread,
+        null,
+        { projectId: currentThreadProject },
+      );
+      applyWorkflowState(currentThread, res, currentThreadProject);
       const confirmedActive = (res.collaboration_mode || res.collaborationMode)?.mode === 'plan';
       if (!confirmedActive) setPlanReviewPending(false);
       showToast(
@@ -1160,9 +1291,15 @@ export default function App() {
 
   const handleStartGoal = async (objective) => {
     try {
-      const result = await api.setGoal(objective, null, 'active', currentThread);
+      const result = await api.setGoal(
+        objective,
+        null,
+        'active',
+        currentThread,
+        { projectId: currentThreadProject },
+      );
       const goal = result.goal || result;
-      applyGoalState(currentThread, goal, result);
+      applyGoalState(currentThread, goal, result, currentThreadProject);
       showToast('Goal 已启动，并会在当前任务顶部持续显示', 'success');
     } catch (err) {
       showToast(`启动 Goal 失败: ${err.message}`, 'error');
@@ -1171,8 +1308,8 @@ export default function App() {
 
   const handlePauseGoal = async () => {
     try {
-      const result = await api.pauseGoal(currentThread);
-      applyGoalState(currentThread, result.goal, result);
+      const result = await api.pauseGoal(currentThread, { projectId: currentThreadProject });
+      applyGoalState(currentThread, result.goal, result, currentThreadProject);
       if (isGenerating) handleInterrupt('goal-pause');
       showToast('Goal 已暂停，可随时恢复', 'info');
     } catch (err) {
@@ -1182,8 +1319,8 @@ export default function App() {
 
   const handleResumeGoal = async () => {
     try {
-      const result = await api.resumeGoal(currentThread);
-      applyGoalState(currentThread, result.goal, result);
+      const result = await api.resumeGoal(currentThread, { projectId: currentThreadProject });
+      applyGoalState(currentThread, result.goal, result, currentThreadProject);
       showToast('Goal 已恢复，运行时将继续推进', 'success');
     } catch (err) {
       showToast(`恢复 Goal 失败: ${err.message}`, 'error');
@@ -1195,9 +1332,14 @@ export default function App() {
     const objective = window.prompt('更新当前 Thread Goal', goalState.objective);
     if (!objective || objective.trim() === goalState.objective.trim()) return;
     try {
-      const result = await api.updateGoal(objective.trim(), goalState.token_budget, currentThread);
+      const result = await api.updateGoal(
+        objective.trim(),
+        goalState.token_budget,
+        currentThread,
+        { projectId: currentThreadProject },
+      );
       const goal = result.goal || null;
-      applyGoalState(currentThread, goal, result);
+      applyGoalState(currentThread, goal, result, currentThreadProject);
       showToast('Goal 目标已更新', 'success');
     } catch (err) {
       showToast(`更新 Goal 失败: ${err.message}`, 'error');
@@ -1206,8 +1348,8 @@ export default function App() {
 
   const handleClearGoal = async () => {
     try {
-      const result = await api.clearGoal(currentThread);
-      applyGoalState(currentThread, null, result);
+      const result = await api.clearGoal(currentThread, { projectId: currentThreadProject });
+      applyGoalState(currentThread, null, result, currentThreadProject);
       showToast('Goal 已删除，Session 历史仍然保留', 'info');
     } catch (err) {
       showToast(`删除 Goal 失败: ${err.message}`, 'error');
@@ -1221,7 +1363,7 @@ export default function App() {
 
   const handleUpdateExecution = async (nextAccess, nextPolicy) => {
     try {
-      await api.setWorldExecution(nextAccess, nextPolicy);
+      await api.setWorldExecution(nextAccess, nextPolicy, { projectId: currentThreadProject });
       setAccessScope(nextAccess);
       setPolicy(nextPolicy);
       setUserSettings((prev) => ({
@@ -1241,8 +1383,9 @@ export default function App() {
         null,
         currentThread,
         nextMode,
+        { projectId: currentThreadProject },
       );
-      applyWorkflowState(currentThread, res);
+      applyWorkflowState(currentThread, res, currentThreadProject);
       showToast(
         nextMode === 'continuous'
           ? '已开启连续执行；普通 Chat 不再受 8 步上限限制'
@@ -1256,16 +1399,17 @@ export default function App() {
 
   const handleEnableAutoCopilot = async () => {
     try {
-      await api.setWorldExecution(accessScope, 'trusted');
+      await api.setWorldExecution(accessScope, 'trusted', { projectId: currentThreadProject });
       const res = await api.updateThreadSettings(
         planActive ? 'plan' : 'default',
         null,
         currentThread,
         'continuous',
+        { projectId: currentThreadProject },
       );
       setPolicy('trusted');
       setUserSettings((prev) => ({ ...prev, policy: 'trusted' }));
-      applyWorkflowState(currentThread, res);
+      applyWorkflowState(currentThread, res, currentThreadProject);
       showToast('Auto Copilot 已显式开启：连续执行 + 信任执行，高风险仍需确认', 'success');
     } catch (err) {
       showToast(`开启 Auto Copilot 失败: ${err.message}`, 'error');
@@ -1380,6 +1524,7 @@ export default function App() {
             policy={policy}
             continuationMode={continuationMode}
             goalState={goalState}
+            projectId={currentThreadProject}
             pendingApproval={pendingApproval}
             onRespondApproval={handleRespondApproval}
             onChangeExecution={handleUpdateExecution}
@@ -1412,7 +1557,13 @@ export default function App() {
           planActive={planActive}
           goalState={goalState}
           threadId={currentThread}
-          onGoalChanged={(goal, payload) => applyGoalState(currentThread, goal, payload)}
+          projectId={currentThreadProject}
+          onGoalChanged={(goal, payload) => applyGoalState(
+            currentThread,
+            goal,
+            payload,
+            currentThreadProject,
+          )}
           onTogglePlan={handleTogglePlan}
           onToast={showToast}
         />
@@ -1422,6 +1573,7 @@ export default function App() {
       <SettingsModal
         isOpen={settingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
+        projectId={currentThreadProject}
         onToast={showToast}
         onSettingsSaved={(newSettings) => {
           if (newSettings.theme) {

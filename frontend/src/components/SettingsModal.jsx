@@ -12,7 +12,13 @@ import {
 import { api } from '../api';
 import './SettingsModal.css';
 
-export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToast }) {
+export default function SettingsModal({
+  isOpen,
+  onClose,
+  onSettingsSaved,
+  onToast,
+  projectId = null,
+}) {
   const [settings, setSettings] = useState({
     reasoning_effort: 'high',
     theme: 'light',
@@ -30,11 +36,11 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToas
       loadSettings();
       loadApprovalInfo();
     }
-  }, [isOpen]);
+  }, [isOpen, projectId]);
 
   const loadSettings = async () => {
     try {
-      const data = await api.getSettings();
+      const data = await api.getSettings({ projectId });
       setSettings((prev) => ({ ...prev, ...data }));
     } catch (err) {
       console.error('Failed to load settings:', err);
@@ -43,7 +49,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToas
 
   const loadApprovalInfo = async () => {
     try {
-      setApprovalInfo(await api.getWorldApproval());
+      setApprovalInfo(await api.getWorldApproval({ projectId }));
     } catch (err) {
       console.error('Failed to load project approval state:', err);
     }
@@ -53,7 +59,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToas
     if (!window.confirm('撤销当前项目已缓存的批准？这会重启当前 App Server。')) return;
     setIsRevokingApprovals(true);
     try {
-      await api.revokeWorldApprovals();
+      await api.revokeWorldApprovals({ projectId });
       await loadApprovalInfo();
       if (onToast) onToast('当前项目批准已撤销，App Server 已重启', 'success');
     } catch (err) {
@@ -66,7 +72,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsSaved, onToas
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const res = await api.updateSettings(settings);
+      const res = await api.updateSettings(settings, { projectId });
       setSavedSuccess(true);
       if (onSettingsSaved) onSettingsSaved(res.settings);
       setTimeout(() => setSavedSuccess(false), 2000);

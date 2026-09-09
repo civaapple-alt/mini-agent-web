@@ -677,25 +677,30 @@ class SessionManager:
         )
         return sorted(bindings)
 
-    def builtin_tools_for_thread(self, thread_id: str) -> list[str] | None:
+    def builtin_tools_for_thread(
+        self, thread_id: str, project_id: str | None = None
+    ) -> list[str] | None:
         """Read the active project's in-memory Builtin tool selection."""
-        project_id = self._active_thread_projects.get(thread_id)
-        if project_id:
+        resolved_project_id = project_id or self._active_thread_projects.get(thread_id)
+        if resolved_project_id:
             selected = self._thread_builtin_tools_by_project.get(
-                (project_id, thread_id)
+                (resolved_project_id, thread_id)
             )
             if selected is not None:
                 return selected
         return self._thread_builtin_tools.get(thread_id)
 
     def set_builtin_tools_for_thread(
-        self, thread_id: str, builtin_tools: list[str]
+        self,
+        thread_id: str,
+        builtin_tools: list[str],
+        project_id: str | None = None,
     ) -> None:
         """Store Builtin tool selection in the active project's namespace."""
-        project_id = self._active_thread_projects.get(thread_id)
-        if project_id:
-            self._thread_builtin_tools_by_project[(project_id, thread_id)] = list(
-                builtin_tools
+        resolved_project_id = project_id or self._active_thread_projects.get(thread_id)
+        if resolved_project_id:
+            self._thread_builtin_tools_by_project[(resolved_project_id, thread_id)] = (
+                list(builtin_tools)
             )
         self._thread_builtin_tools[thread_id] = list(builtin_tools)
 
@@ -801,6 +806,36 @@ class SessionManager:
             return await self._get_client_for_thread_locked(
                 thread_id or "default", project_id
             )
+
+    async def get_client_for_project(
+        self, project_id: str | None = None, thread_id: str | None = None
+    ) -> MiniAgentClient:
+        """Resolve a project-qualified client for non-thread-scoped APIs."""
+        target_project = project_id or self._current_project_id
+        if self._client is not None and (
+            not project_id or self._client_projects.get("default") == target_project
+        ):
+            return self._client
+        if target_project not in self._projects_registry:
+            target_project = next(
+                (
+                    project_key
+                    for project_key, project in self._projects_registry.items()
+                    if project.get("name") == target_project
+                ),
+                target_project,
+            )
+        if target_project not in self._projects_registry:
+            raise KeyError(f"Project '{target_project}' not found")
+        if thread_id:
+            return await self.get_client_for_thread(thread_id, target_project)
+        for (bound_project, bound_thread), client in self._project_clients.items():
+            if bound_project == target_project and bound_thread == "default":
+                return client
+        for (bound_project, _bound_thread), client in self._project_clients.items():
+            if bound_project == target_project:
+                return client
+        return await self.get_client_for_thread("default", target_project)
 
     def live_thread_ids(self) -> list[str]:
         return list(self._clients)
@@ -1192,8 +1227,13 @@ class SessionManager:
             Path(project["primary_path"]), target_id, thread_id
         )
 
-    def read_any_project_thread(self, thread_id: str) -> dict[str, Any] | None:
+    def read_any_project_thread(
+        self, thread_id: str, project_id: str | None = None
+    ) -> dict[str, Any] | None:
         """Find one canonical SessionStore thread without changing the active Project."""
+        if project_id:
+            project = self._project_for_thread(thread_id, project_id)
+            return self.read_project_thread(thread_id, project.get("id"))
         metadata_project = self._active_thread_projects.get(
             thread_id
         ) or self._thread_metadata.get(thread_id, {}).get("project")
@@ -1206,22 +1246,26 @@ class SessionManager:
             if project_id not in ordered_ids
         )
         seen_workspaces: set[str] = set()
-        for project_id in ordered_ids:
-            project = self._projects_registry[project_id]
+        for candidate_project_id in ordered_ids:
+            project = self._projects_registry[candidate_project_id]
             workspace_key = str(Path(project["primary_path"]).resolve()).casefold()
             if workspace_key in seen_workspaces:
                 continue
             seen_workspaces.add(workspace_key)
-            result = self.read_project_thread(thread_id, project_id)
+            result = self.read_project_thread(thread_id, candidate_project_id)
             if result:
                 return result
         return None
 
-    def session_path_for_thread(self, thread_id: str) -> Path | None:
+    def session_path_for_thread(
+        self, thread_id: str, project_id: str | None = None
+    ) -> Path | None:
         """Resolve a Thread to its canonical Session directory for read-only artifacts."""
-        metadata_project = self._active_thread_projects.get(
-            thread_id
-        ) or self._thread_metadata.get(thread_id, {}).get("project")
+        metadata_project = (
+            project_id
+            or self._active_thread_projects.get(thread_id)
+            or self._thread_metadata.get(thread_id, {}).get("project")
+        )
         ordered_ids: list[str] = []
         if metadata_project in self._projects_registry:
             ordered_ids.append(metadata_project)
@@ -1231,8 +1275,8 @@ class SessionManager:
             if project_id not in ordered_ids
         )
         seen_workspaces: set[str] = set()
-        for project_id in ordered_ids:
-            project = self._projects_registry[project_id]
+        for candidate_project_id in ordered_ids:
+            project = self._projects_registry[candidate_project_id]
             workspace = Path(project["primary_path"])
             workspace_key = str(workspace.resolve()).casefold()
             if workspace_key in seen_workspaces:
@@ -1243,8 +1287,13 @@ class SessionManager:
                 return path
         return None
 
-    def project_path_for_thread(self, thread_id: str | None = None) -> Path:
+    def project_path_for_thread(
+        self, thread_id: str | None = None, project_id: str | None = None
+    ) -> Path:
         """Resolve the active Thread's Project workspace for file inspection."""
+        if project_id:
+            project = self._project_for_thread(thread_id or "default", project_id)
+            return Path(project["primary_path"]).resolve()
         if thread_id:
             project_id = self._active_thread_projects.get(thread_id)
             if project_id and project_id in self._projects_registry:
@@ -1257,28 +1306,34 @@ class SessionManager:
     # Settings Management
     # -------------------------------------------------------------------------
 
-    def get_settings(self) -> dict[str, Any]:
+    def get_settings(self, project_id: str | None = None) -> dict[str, Any]:
         """Get current server & UI settings."""
-        project = self._projects_registry.get(self._current_project_id, {})
+        project = self._projects_registry.get(
+            project_id or self._current_project_id, {}
+        )
         return {
             **self._settings,
             "access": project.get("access", "project"),
             "policy": project.get("policy", "interactive"),
         }
 
-    def project_execution(self) -> tuple[str, str]:
-        project = self._projects_registry.get(self._current_project_id, {})
+    def project_execution(self, project_id: str | None = None) -> tuple[str, str]:
+        project = self._projects_registry.get(
+            project_id or self._current_project_id, {}
+        )
         return (
             str(project.get("access", "project")),
             str(project.get("policy", "interactive")),
         )
 
-    def set_project_execution(self, access: str, policy: str) -> None:
+    def set_project_execution(
+        self, access: str, policy: str, project_id: str | None = None
+    ) -> None:
         if access not in ("project", "full_machine"):
             raise ValueError("invalid access scope")
         if policy not in ("interactive", "automatic", "trusted"):
             raise ValueError("invalid execution policy")
-        project = self._projects_registry[self._current_project_id]
+        project = self._projects_registry[project_id or self._current_project_id]
         project["access"] = access
         project["policy"] = policy
         self._save_projects()
@@ -1345,6 +1400,7 @@ class SessionManager:
         self._pending_approval_details[req_id] = {
             "action_name": action_name,
             "data": req_data,
+            "projectId": project_id,
         }
 
         # Broadcast approval request to all connected UI clients
@@ -1419,12 +1475,16 @@ class SessionManager:
         decision: str,
         grant_scope: str | None,
         reason: str | None = None,
+        project_id: str | None = None,
     ) -> bool:
         """Resolve a pending approval; grant authority remains in Host/Capabilities."""
         details = self._pending_approval_details.get(request_id)
         if not details:
             return False
         data = details.get("data", {})
+        request_project = details.get("projectId") or data.get("projectId")
+        if project_id and request_project and project_id != request_project:
+            return False
         allowed_grant_scopes = data.get("allowedGrantScopes", [])
         if decision.lower() == "approve" and grant_scope not in allowed_grant_scopes:
             logger.warning("Rejected out-of-scope approval response: %s", request_id)
@@ -1446,14 +1506,27 @@ class SessionManager:
             return True
         return False
 
-    def list_pending_approvals(self) -> list[str]:
-        return list(self._pending_approvals.keys())
+    def list_pending_approvals(self, project_id: str | None = None) -> list[str]:
+        if not project_id:
+            return list(self._pending_approvals.keys())
+        return [
+            request_id
+            for request_id in self._pending_approvals
+            if self._pending_approval_details.get(request_id, {}).get("projectId")
+            in (None, project_id)
+        ]
 
-    def approval_snapshot(self) -> dict[str, Any]:
+    def approval_snapshot(self, project_id: str | None = None) -> dict[str, Any]:
         """Expose project policy and pending requests without exposing grants."""
-        access, policy = self.project_execution()
+        resolved_project_id = project_id or self._current_project_id
+        access, policy = self.project_execution(resolved_project_id)
         pending = []
         for request_id, details in self._pending_approval_details.items():
+            if project_id and details.get("projectId") not in (
+                None,
+                resolved_project_id,
+            ):
+                continue
             pending.append(
                 {
                     "request_id": request_id,
@@ -1462,7 +1535,7 @@ class SessionManager:
                 }
             )
         return {
-            "project_id": self._current_project_id,
+            "project_id": resolved_project_id,
             "access": access,
             "policy": policy,
             "pending_requests": pending,
@@ -1470,18 +1543,28 @@ class SessionManager:
             "revocable": True,
         }
 
-    async def revoke_current_project_approvals(self) -> dict[str, Any]:
+    async def revoke_current_project_approvals(
+        self, project_id: str | None = None
+    ) -> dict[str, Any]:
         """Restart the project-bound App Server; Host/Capabilities revoke grants."""
-        project_id = self._current_project_id
+        resolved_project_id = project_id or self._current_project_id
+        if resolved_project_id != self._current_project_id:
+            return {
+                "project_id": resolved_project_id,
+                "revoked": False,
+                "reason": "Only the active project runtime can be restarted from this endpoint",
+            }
         self.cancel_active_task()
         await self.restart_for_current_project()
-        return {"project_id": project_id, "revoked": True}
+        return {"project_id": resolved_project_id, "revoked": True}
 
     # -------------------------------------------------------------------------
     # WebSocket Connection Management
     # -------------------------------------------------------------------------
 
-    async def connect_ws(self, websocket: WebSocket) -> None:
+    async def connect_ws(
+        self, websocket: WebSocket, project_id: str | None = None
+    ) -> None:
         """Register a new WebSocket client."""
         await websocket.accept()
         self._active_connections.append(websocket)

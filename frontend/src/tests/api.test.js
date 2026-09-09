@@ -49,8 +49,9 @@ test('api client methods construct expected fetch endpoints and payloads', async
 
   await api.forkThread('t-123', 't-fork', null, 'project-1');
   const forkCall = calls[calls.length - 1];
-  assert.equal(forkCall.url, '/api/threads/fork');
+  assert.equal(forkCall.url, '/api/threads/fork?project_id=project-1');
   assert.equal(JSON.parse(forkCall.options.body).project, 'project-1');
+  assert.equal(JSON.parse(forkCall.options.body).project_id, 'project-1');
 
   // 2. Settings APIs
   const setRes = await api.updateSettings({ reasoning_effort: 'high' });
@@ -62,6 +63,7 @@ test('api client methods construct expected fetch endpoints and payloads', async
   assert.deepEqual(JSON.parse(executionCall.options.body), {
     access: 'full_machine',
     policy: 'automatic',
+    project_id: null,
   });
 
   await api.setWorldExecution('project', 'trusted');
@@ -121,9 +123,11 @@ test('createAgentWebSocket provides safe send and isOpen status', (t) => {
     static CLOSED = 3;
 
     constructor(url) {
+      MockWebSocket.lastUrl = url;
       this.url = url;
       this.readyState = MockWebSocket.OPEN;
       this.sentData = [];
+      MockWebSocket.lastInstance = this;
       setTimeout(() => {
         if (this.onopen) this.onopen();
       }, 0);
@@ -151,11 +155,16 @@ test('createAgentWebSocket provides safe send and isOpen status', (t) => {
     globalThis.window = originalLocation;
   });
 
-  const client = createAgentWebSocket();
+  const client = createAgentWebSocket(null, null, null, () => 'project-1');
+  assert.equal(MockWebSocket.lastUrl, 'ws://localhost:8000/ws/agent?project_id=project-1');
 
   assert.equal(client.isOpen(), true);
   const success = client.send({ action: 'ping' });
   assert.equal(success, true);
+  assert.deepEqual(JSON.parse(MockWebSocket.lastInstance.sentData[0]), {
+    action: 'ping',
+    project_id: 'project-1',
+  });
 
   client.close();
   assert.equal(client.isOpen(), false);

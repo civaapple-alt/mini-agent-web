@@ -32,17 +32,26 @@ class StartTurnRequest(BaseModel):
     referenced_files: list[str] | None = Field(
         default=None, description="Optional relative file paths referenced in prompt"
     )
+    project_id: str | None = Field(
+        default=None, description="Canonical project routing context"
+    )
 
 
 class SteerTurnRequest(BaseModel):
     turn_id: str = Field(..., description="Active turn ID to steer")
     text: str = Field(..., description="Corrective steering instruction")
     thread_id: str | None = Field(default=None, description="Target thread ID")
+    project_id: str | None = Field(
+        default=None, description="Canonical project routing context"
+    )
 
 
 class InterruptTurnRequest(BaseModel):
     turn_id: str = Field(..., description="Active turn ID to interrupt/cancel")
     thread_id: str | None = Field(default=None, description="Target thread ID")
+    project_id: str | None = Field(
+        default=None, description="Canonical project routing context"
+    )
 
 
 class ApprovalResponseRequest(BaseModel):
@@ -58,6 +67,9 @@ class ApprovalResponseRequest(BaseModel):
     reason: str | None = Field(
         default=None, description="Optional explanation or restriction"
     )
+    project_id: str | None = Field(
+        default=None, description="Canonical project routing context"
+    )
 
 
 def _process_attachments(
@@ -65,6 +77,7 @@ def _process_attachments(
     images: list[str] | None = None,
     referenced_files: list[str] | None = None,
     thread_id: str | None = None,
+    project_id: str | None = None,
 ) -> str:
     """Save image attachments to workspace .mini-agent/attachments/ and enrich prompt context."""
     extra_context_parts = []
@@ -74,7 +87,7 @@ def _process_attachments(
         import time
 
         attach_dir = (
-            session_manager.project_path_for_thread(thread_id)
+            session_manager.project_path_for_thread(thread_id, project_id)
             / ".mini-agent"
             / "attachments"
         )
@@ -125,10 +138,16 @@ def _process_attachments(
 async def execute_turn(req: StartTurnRequest) -> dict[str, Any]:
     """Submit a prompt and wait for turn completion."""
     enriched_prompt = _process_attachments(
-        req.prompt, req.images, req.referenced_files, req.thread_id
+        req.prompt,
+        req.images,
+        req.referenced_files,
+        req.thread_id,
+        req.project_id,
     )
     try:
-        client = await session_manager.get_client_for_thread(req.thread_id)
+        client = await session_manager.get_client_for_thread(
+            req.thread_id, req.project_id
+        )
         sub = await client.start_turn(
             prompt=enriched_prompt,
             mode=req.mode,
@@ -158,12 +177,13 @@ async def stream_turn(
     prompt: str = Query(..., description="Prompt text"),
     mode: str = Query("start", description="Execution mode"),
     thread_id: str | None = Query(None, description="Thread ID"),
+    project_id: str | None = Query(None, description="Project ID"),
 ) -> StreamingResponse:
     """Stream token deltas, tool executions, and turn events via Server-Sent Events (SSE)."""
 
     async def event_generator():
         try:
-            client = await session_manager.get_client_for_thread(thread_id)
+            client = await session_manager.get_client_for_thread(thread_id, project_id)
             async for item in client.stream_turn(
                 prompt=prompt,
                 mode=mode,
@@ -180,6 +200,7 @@ async def stream_turn(
                     "scope": "turn",
                     "terminal": True,
                     "threadId": thread_id or "default",
+                    "projectId": project_id,
                     "message": str(err),
                 },
                 ensure_ascii=False,
@@ -201,7 +222,9 @@ async def stream_turn(
 async def steer_turn(req: SteerTurnRequest) -> dict[str, Any]:
     """Inject a dynamic steering instruction into a currently executing turn."""
     try:
-        client = await session_manager.get_client_for_thread(req.thread_id)
+        client = await session_manager.get_client_for_thread(
+            req.thread_id, req.project_id
+        )
         res = await client.steer_turn(
             turn_id=req.turn_id,
             text=req.text,
@@ -216,7 +239,9 @@ async def steer_turn(req: SteerTurnRequest) -> dict[str, Any]:
 async def interrupt_turn(req: InterruptTurnRequest) -> dict[str, Any]:
     """Cooperatively interrupt and cancel an active turn."""
     try:
-        client = await session_manager.get_client_for_thread(req.thread_id)
+        client = await session_manager.get_client_for_thread(
+            req.thread_id, req.project_id
+        )
         await client.interrupt_turn(
             turn_id=req.turn_id,
             thread_id=req.thread_id,
@@ -234,6 +259,7 @@ async def respond_approval(req: ApprovalResponseRequest) -> dict[str, Any]:
         decision=req.decision,
         grant_scope=req.grant_scope,
         reason=req.reason,
+        project_id=req.project_id,
     )
     if not resolved:
         raise HTTPException(
@@ -248,9 +274,14 @@ async def respond_approval(req: ApprovalResponseRequest) -> dict[str, Any]:
 
 
 @router.get("/approval/pending", summary="List pending approval requests")
-async def list_pending_approvals() -> dict[str, Any]:
+async def list_pending_approvals(
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
     """List IDs of active approval requests currently waiting for human decision."""
-    return {"pending_requests": session_manager.list_pending_approvals()}
+    return {
+        "project_id": project_id,
+        "pending_requests": session_manager.list_pending_approvals(project_id),
+    }
 
 
 # -----------------------------------------------------------------------------
@@ -267,7 +298,8 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
     Bidirectional WebSocket endpoint.
     Handles real-time streaming, interactive steering, interrupts, and security approval round-trips.
     """
-    await session_manager.connect_ws(websocket)
+    websocket_project_id = websocket.query_params.get("project_id")
+    await session_manager.connect_ws(websocket, websocket_project_id)
     background_tasks: set[asyncio.Task[None]] = set()
 
     def spawn_background(coroutine: Coroutine[Any, Any, None]) -> None:
@@ -292,6 +324,11 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
             if action == "turn":
                 prompt = data.get("prompt", "")
                 thread_id = data.get("threadId")
+                project_id = (
+                    data.get("project_id")
+                    or data.get("projectId")
+                    or websocket_project_id
+                )
                 mode = data.get("mode", "start")
                 if mode not in ("start", "start_if_idle"):
                     mode = "start"
@@ -299,18 +336,25 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 referenced_files = data.get("referencedFiles")
 
                 enriched_prompt = _process_attachments(
-                    prompt, images, referenced_files, thread_id
+                    prompt, images, referenced_files, thread_id, project_id
                 )
 
                 # Background task to stream turn events back over WebSocket
                 spawn_background(
-                    _stream_turn_to_ws(websocket, enriched_prompt, mode, thread_id)
+                    _stream_turn_to_ws(
+                        websocket, enriched_prompt, mode, thread_id, project_id
+                    )
                 )
 
             elif action == "steer":
                 thread_id = data.get("threadId") or "default"
+                project_id = (
+                    data.get("project_id")
+                    or data.get("projectId")
+                    or websocket_project_id
+                )
                 turn_id = data.get("turnId") or session_manager.get_active_turn(
-                    thread_id
+                    thread_id, project_id
                 )
                 text = data.get("text", "")
                 source = data.get("source") or "unknown"
@@ -325,7 +369,9 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     # action. Keep it off the receive loop so an approval
                     # response can still be read from this same WebSocket.
                     spawn_background(
-                        _steer_turn_to_ws(websocket, thread_id, turn_id, text)
+                        _steer_turn_to_ws(
+                            websocket, thread_id, turn_id, text, project_id
+                        )
                     )
                 else:
                     await websocket.send_json(
@@ -337,8 +383,13 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
 
             elif action == "interrupt":
                 thread_id = data.get("threadId") or "default"
+                project_id = (
+                    data.get("project_id")
+                    or data.get("projectId")
+                    or websocket_project_id
+                )
                 turn_id = data.get("turnId") or session_manager.get_active_turn(
-                    thread_id
+                    thread_id, project_id
                 )
                 source = data.get("source") or "unknown"
                 logger.info(
@@ -349,14 +400,14 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 )
 
                 # 1. Cancel background stream task
-                session_manager.cancel_active_task(thread_id)
+                session_manager.cancel_active_task(thread_id, project_id)
 
                 # 2. Notify App Server engine
                 if turn_id:
                     # As with steering, interruption must not stop the
                     # receive loop from accepting an approval response.
                     spawn_background(
-                        _interrupt_turn_to_ws(websocket, thread_id, turn_id)
+                        _interrupt_turn_to_ws(websocket, thread_id, turn_id, project_id)
                     )
 
                 # Send immediate interrupt ack to client (stream CancelledError will emit turn_finished)
@@ -365,6 +416,7 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                         "type": "interrupt_ack",
                         "threadId": thread_id,
                         "turnId": turn_id,
+                        "projectId": project_id,
                         "source": source,
                     }
                 )
@@ -374,11 +426,33 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 decision = data.get("decision", "denied")
                 grant_scope = data.get("grantScope")
                 reason = data.get("reason")
-                session_manager.resolve_approval(req_id, decision, grant_scope, reason)
-                await websocket.send_json({"type": "approval_ack", "requestId": req_id})
+                project_id = (
+                    data.get("project_id")
+                    or data.get("projectId")
+                    or websocket_project_id
+                )
+                session_manager.resolve_approval(
+                    req_id, decision, grant_scope, reason, project_id
+                )
+                await websocket.send_json(
+                    {
+                        "type": "approval_ack",
+                        "requestId": req_id,
+                        "projectId": project_id,
+                    }
+                )
 
             elif action == "ping":
-                await websocket.send_json({"type": "pong"})
+                await websocket.send_json(
+                    {
+                        "type": "pong",
+                        "projectId": (
+                            data.get("project_id")
+                            or data.get("projectId")
+                            or websocket_project_id
+                        ),
+                    }
+                )
 
     except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
         pass
@@ -395,12 +469,15 @@ async def _steer_turn_to_ws(
     thread_id: str,
     turn_id: str,
     text: str,
+    project_id: str | None = None,
 ) -> None:
     """Submit steering without blocking the WebSocket receive loop."""
     try:
-        client = await session_manager.get_client_for_thread(thread_id)
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
         await client.steer_turn(turn_id, text, thread_id)
-        await websocket.send_json({"type": "steer_ack", "turnId": turn_id})
+        await websocket.send_json(
+            {"type": "steer_ack", "turnId": turn_id, "projectId": project_id}
+        )
     except asyncio.CancelledError:
         raise
     except Exception as err:  # noqa: BLE001
@@ -417,10 +494,11 @@ async def _interrupt_turn_to_ws(
     websocket: WebSocket,
     thread_id: str,
     turn_id: str,
+    project_id: str | None = None,
 ) -> None:
     """Notify the App Server of an interrupt without blocking receives."""
     try:
-        client = await session_manager.get_client_for_thread(thread_id)
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
         await client.interrupt_turn(turn_id, thread_id)
     except asyncio.CancelledError:
         raise
@@ -433,16 +511,23 @@ async def _stream_turn_to_ws(
     prompt: str,
     mode: str,
     thread_id: str | None,
+    requested_project_id: str | None = None,
 ) -> None:
     """Stream events from MiniAgentClient directly to the initiating WebSocket."""
     target_thread = thread_id or "default"
     current_task = asyncio.current_task()
-    effort = session_manager.get_settings().get("reasoning_effort", "high")
+    effort = session_manager.get_settings(requested_project_id).get(
+        "reasoning_effort", "high"
+    )
     active_turn_id: str | None = None
     project_id: str | None = None
     try:
-        client = await session_manager.get_client_for_thread(target_thread)
-        project_id = session_manager._client_projects.get(target_thread)
+        client = await session_manager.get_client_for_thread(
+            target_thread, requested_project_id
+        )
+        project_id = requested_project_id or session_manager._client_projects.get(
+            target_thread
+        )
         async for item in client.stream_turn(
             prompt=prompt,
             mode=mode,
@@ -479,6 +564,8 @@ async def _stream_turn_to_ws(
             # this request; sending the stream again here would duplicate
             # every event for the initiating WebSocket.
             if safe_item.get("type") == "_turn_submission":
+                if project_id:
+                    safe_item["projectId"] = project_id
                 await websocket.send_json(safe_item)
     except asyncio.CancelledError:
         logger.info("WebSocket stream turn cancelled for thread: %s", target_thread)

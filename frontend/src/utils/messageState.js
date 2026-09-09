@@ -266,6 +266,64 @@ function ensureTurnAssistant(messages, turnId) {
   ];
 }
 
+function normalizedHistoryText(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+/**
+ * Attach durable Turn ownership to checkpoint messages without relying on the
+ * number/order of assistant bubbles. SessionStore item projections are the
+ * authoritative join key; this matters when one turn has multiple assistant
+ * segments or when a later turn contains no visible text.
+ */
+export function assignHistoryTurnIds(messages = [], entries = []) {
+  const candidates = (entries || [])
+    .map((entry, index) => ({
+      index,
+      turnId: entry.turnId || entry.turn_id || null,
+      item: entry.item || {},
+      used: false,
+    }))
+    .filter((candidate) => candidate.turnId);
+
+  const findCandidate = (message) => {
+    const toolCalls = Array.isArray(message.tool_calls)
+      ? message.tool_calls
+      : Array.isArray(message.toolCalls)
+        ? message.toolCalls
+        : [];
+    const callIds = toolCalls
+      .map((call) => call?.id || call?.call_id)
+      .filter(Boolean);
+    if (callIds.length > 0) {
+      const toolCandidate = candidates.find((candidate) => (
+        !candidate.used
+          && (candidate.item.type === 'toolCall' || candidate.item.type === 'tool_call')
+          && callIds.includes(candidate.item.id)
+      ));
+      if (toolCandidate) return toolCandidate;
+    }
+
+    const text = normalizedHistoryText(message.text);
+    const reasoning = normalizedHistoryText(message.reasoning || message.thinking);
+    const expectedTypes = message.role === 'user'
+      ? ['userMessage']
+      : ['agentMessage', 'reasoning'];
+    return candidates.find((candidate) => {
+      if (candidate.used || !expectedTypes.includes(candidate.item.type)) return false;
+      const candidateText = normalizedHistoryText(candidate.item.text);
+      return Boolean(candidateText) && (candidateText === text || candidateText === reasoning);
+    }) || null;
+  };
+
+  return messages.map((message) => {
+    const candidate = findCandidate(message);
+    if (!candidate) return message;
+    candidate.used = true;
+    return { ...message, turnId: candidate.turnId };
+  });
+}
+
 /**
  * Apply a dedicated App Server item lifecycle notification.
  *
@@ -309,32 +367,34 @@ export function aggregateItemLifecycle(messages, data) {
 export function aggregateThreadItems(messages, entries) {
   let next = messages;
   const targetByTurn = new Map();
-  const turnOrder = [];
-  for (const entry of entries || []) {
-    const turnId = entry.turnId || entry.turn_id || 'unknown';
-    if (!targetByTurn.has(turnId)) {
-      targetByTurn.set(turnId, null);
-      turnOrder.push(turnId);
+  for (let index = 0; index < next.length; index += 1) {
+    const message = next[index];
+    if (message.role === 'assistant' && message.turnId && !targetByTurn.has(message.turnId)) {
+      targetByTurn.set(message.turnId, index);
     }
   }
-  const assistantIndexes = next
-    .map((message, index) => (message.role === 'assistant' ? index : -1))
-    .filter((index) => index !== -1);
-  turnOrder.forEach((turnId, index) => {
-    const existingIndex = assistantIndexes[index];
-    if (existingIndex !== undefined) {
-      targetByTurn.set(turnId, existingIndex);
-    } else {
-      next = ensureTurnAssistant(next, turnId);
-      targetByTurn.set(turnId, next.length - 1);
-    }
-  });
 
   for (const entry of entries || []) {
     const turnId = entry.turnId || entry.turn_id || 'unknown';
     const item = entry.item || {};
     if (!item.type || item.type === 'userMessage') continue;
-    const targetIndex = targetByTurn.get(turnId) ?? next.length - 1;
+    let targetIndex = targetByTurn.get(turnId);
+    if (targetIndex === undefined) {
+      if (item.type === 'toolCall' || item.type === 'tool_call') {
+        targetIndex = findToolTargetIndex(next, item, -1);
+      }
+      if (targetIndex === undefined || targetIndex < 0) {
+        // Legacy checkpoints may lack message turn IDs. Bind a turn to an
+        // existing assistant only when the item itself cannot provide a more
+        // precise call-id match; never bind by the turn's ordinal position.
+        targetIndex = next.findIndex((message) => message.role === 'assistant');
+      }
+      if (targetIndex < 0) {
+        next = ensureTurnAssistant(next, turnId);
+        targetIndex = findTurnAssistantIndex(next, turnId);
+      }
+      targetByTurn.set(turnId, targetIndex);
+    }
     if (item.type === 'toolCall' || item.type === 'tool_call') {
       next = mergeProjectedToolItems(
         next,

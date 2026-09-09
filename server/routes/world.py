@@ -39,6 +39,9 @@ class SetExecutionRequest(BaseModel):
         default="interactive",
         description="Interactive approval, bounded automation, or trusted workspace execution",
     )
+    project_id: str | None = Field(
+        default=None, description="Canonical project routing context"
+    )
 
 
 class UpdateThreadSettingsRequest(BaseModel):
@@ -229,10 +232,13 @@ async def browse_folder_endpoint() -> dict[str, Any]:
 
 
 @router.get("/world/state", summary="Get environment & world state")
-async def get_world_state() -> dict[str, Any]:
+async def get_world_state(
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
     """Retrieve snapshot of environment, available tools, and sandbox configuration."""
     try:
-        res = await session_manager.client.get_world_state()
+        client = await session_manager.get_client_for_project(project_id)
+        res = await client.get_world_state()
         return {
             "context": res.context,
             "lines": res.lines,
@@ -244,10 +250,11 @@ async def get_world_state() -> dict[str, Any]:
 
 
 @router.post("/world/refresh", summary="Refresh environment detection")
-async def refresh_world() -> dict[str, Any]:
+async def refresh_world(project_id: str | None = Query(default=None)) -> dict[str, Any]:
     """Re-scan workspace commands, installed packages, and toolchains."""
     try:
-        res = await session_manager.client.refresh_world()
+        client = await session_manager.get_client_for_project(project_id)
+        res = await client.refresh_world()
         return {
             "changed": res.changed,
             "state": res.state,
@@ -257,16 +264,22 @@ async def refresh_world() -> dict[str, Any]:
 
 
 @router.post("/world/execution", summary="Configure execution policy")
-async def set_world_execution(req: SetExecutionRequest) -> dict[str, Any]:
+async def set_world_execution(
+    req: SetExecutionRequest, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
     """Configure independent access and approval policy."""
     try:
-        previous_execution = session_manager.project_execution()
-        res = await session_manager.client.set_world_execution(
+        target_project = project_id or req.project_id
+        previous_execution = session_manager.project_execution(target_project)
+        client = await session_manager.get_client_for_project(target_project)
+        res = await client.set_world_execution(
             access=req.access,
             policy=req.policy,
         )
-        session_manager.set_project_execution(req.access, req.policy)
-        if previous_execution != (req.access, req.policy):
+        session_manager.set_project_execution(req.access, req.policy, target_project)
+        if previous_execution != (req.access, req.policy) and (
+            not target_project or target_project == session_manager._current_project_id
+        ):
             await session_manager.restart_for_current_project()
         return {
             "changed": res.changed,
@@ -279,16 +292,20 @@ async def set_world_execution(req: SetExecutionRequest) -> dict[str, Any]:
 
 
 @router.get("/world/approval", summary="Inspect current project approvals")
-async def get_world_approval() -> dict[str, Any]:
+async def get_world_approval(
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
     """Show the project policy and pending requests, never raw approval grants."""
-    return session_manager.approval_snapshot()
+    return session_manager.approval_snapshot(project_id)
 
 
 @router.post("/world/approval/revoke", summary="Revoke current project approvals")
-async def revoke_world_approval() -> dict[str, Any]:
+async def revoke_world_approval(
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
     """Restart the bound App Server so cached project approvals are discarded."""
     try:
-        return await session_manager.revoke_current_project_approvals()
+        return await session_manager.revoke_current_project_approvals(project_id)
     except Exception as err:
         raise HTTPException(
             status_code=500, detail=f"Failed to revoke approvals: {err}"
@@ -296,10 +313,13 @@ async def revoke_world_approval() -> dict[str, Any]:
 
 
 @router.get("/mcp/status", summary="Get MCP servers and tool status")
-async def get_mcp_status() -> dict[str, Any]:
+async def get_mcp_status(
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
     """Retrieve registered MCP tools, enabled servers, and connectivity."""
     try:
-        res = await session_manager.client.get_mcp_status()
+        client = await session_manager.get_client_for_project(project_id)
+        res = await client.get_mcp_status()
         return {
             "enabled_servers": res.enabled_servers,
             "inactive_servers": res.inactive_servers,
@@ -311,10 +331,11 @@ async def get_mcp_status() -> dict[str, Any]:
 
 
 @router.post("/mcp/retry", summary="Retry MCP connections")
-async def retry_mcp() -> dict[str, Any]:
+async def retry_mcp(project_id: str | None = Query(default=None)) -> dict[str, Any]:
     """Retry connection to failed or inactive MCP servers."""
     try:
-        res = await session_manager.client.retry_mcp()
+        client = await session_manager.get_client_for_project(project_id)
+        res = await client.retry_mcp()
         return {
             "enabled_servers": res.enabled_servers,
             "inactive_servers": res.inactive_servers,
@@ -331,11 +352,18 @@ async def retry_mcp() -> dict[str, Any]:
 
 
 @router.get("/workflows/state", summary="Get workflow state")
-async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
+async def get_workflow_state(
+    thread_id: str | None = None,
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
     """Retrieve current collaboration mode, active Thread Goal, and builtin tools."""
     try:
         target_thread = thread_id or "default"
-        canonical = session_manager.read_any_project_thread(target_thread)
+        canonical = (
+            session_manager.read_any_project_thread(target_thread, project_id)
+            if project_id
+            else session_manager.read_any_project_thread(target_thread)
+        )
         if canonical:
             session = canonical.get("session", {})
             goal = session.get("goal")
@@ -362,7 +390,8 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
             else:
                 goal_dict = None
             selected_builtin_tools = session_manager.builtin_tools_for_thread(
-                target_thread
+                target_thread,
+                project_id,
             )
             effective_builtin_tools = (
                 selected_builtin_tools
@@ -384,7 +413,7 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
                 "runtime_status": session.get("runtime_status"),
             }
 
-        client = await session_manager.get_client_for_thread(thread_id)
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
         wf = await client.get_workflow_state(thread_id=thread_id)
         goal_dict = None
         if wf.goal:
@@ -412,7 +441,9 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
             "builtinTools" in workflow_payload or "builtin_tools" in workflow_payload
         )
         target_thread = thread_id or "default"
-        selected_builtin_tools = session_manager.builtin_tools_for_thread(target_thread)
+        selected_builtin_tools = session_manager.builtin_tools_for_thread(
+            target_thread, project_id
+        )
         if selected_builtin_tools is not None:
             effective_builtin_tools = selected_builtin_tools
         else:
@@ -435,18 +466,22 @@ async def get_workflow_state(thread_id: str | None = None) -> dict[str, Any]:
 
 @router.post("/threads/{thread_id}/settings", summary="Update Thread settings")
 async def update_thread_settings(
-    thread_id: str, req: UpdateThreadSettingsRequest
+    thread_id: str,
+    req: UpdateThreadSettingsRequest,
+    project_id: str | None = Query(default=None),
 ) -> dict[str, Any]:
     """Update collaboration mode and optional Builtin tool selection."""
     try:
-        client = await session_manager.get_client_for_thread(thread_id)
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
         res = await client.update_thread_settings(
             mode=req.mode,
             builtin_tools=req.builtin_tools,
             thread_id=thread_id,
             continuation_mode=req.continuation_mode,
         )
-        session_manager.set_builtin_tools_for_thread(thread_id, res.builtin_tools)
+        session_manager.set_builtin_tools_for_thread(
+            thread_id, res.builtin_tools, project_id
+        )
         return {
             "collaboration_mode": {"mode": res.collaboration_mode.mode},
             "builtin_tools": res.builtin_tools,
@@ -459,10 +494,14 @@ async def update_thread_settings(
 
 
 @router.post("/threads/{thread_id}/goal", summary="Set Thread Goal")
-async def set_goal(thread_id: str, req: SetGoalRequest) -> dict[str, Any]:
+async def set_goal(
+    thread_id: str,
+    req: SetGoalRequest,
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
     """Set or replace the active Thread Goal."""
     try:
-        client = await session_manager.get_client_for_thread(thread_id)
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
         res = await client.set_goal(
             objective=req.objective,
             status=req.status,
@@ -475,10 +514,12 @@ async def set_goal(thread_id: str, req: SetGoalRequest) -> dict[str, Any]:
 
 
 @router.get("/threads/{thread_id}/goal", summary="Get Thread Goal")
-async def get_goal(thread_id: str) -> dict[str, Any]:
+async def get_goal(
+    thread_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
     """Read the active Thread Goal."""
     try:
-        client = await session_manager.get_client_for_thread(thread_id)
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
         res = await client.get_goal(thread_id=thread_id)
         return {
             "goal": _goal_dict(res.goal) if res.goal else None,
@@ -489,10 +530,12 @@ async def get_goal(thread_id: str) -> dict[str, Any]:
 
 
 @router.delete("/threads/{thread_id}/goal", summary="Clear Thread Goal")
-async def clear_goal(thread_id: str) -> dict[str, Any]:
+async def clear_goal(
+    thread_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
     """Clear the active Thread Goal."""
     try:
-        client = await session_manager.get_client_for_thread(thread_id)
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
         res = await client.clear_goal(thread_id=thread_id)
         return {"cleared": res.cleared, "state_revision": res.state_revision}
     except AppServerError as err:
@@ -500,10 +543,12 @@ async def clear_goal(thread_id: str) -> dict[str, Any]:
 
 
 @router.post("/threads/{thread_id}/goal/pause", summary="Pause Thread Goal")
-async def pause_goal(thread_id: str) -> dict[str, Any]:
+async def pause_goal(
+    thread_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
     """Pause a Goal while retaining its objective and progress."""
     try:
-        client = await session_manager.get_client_for_thread(thread_id)
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
         current = await client.get_goal(thread_id=thread_id)
         if not current.goal:
             raise HTTPException(status_code=404, detail="Thread Goal not found")
@@ -525,10 +570,12 @@ async def pause_goal(thread_id: str) -> dict[str, Any]:
 
 
 @router.post("/threads/{thread_id}/goal/resume", summary="Resume Thread Goal")
-async def resume_goal(thread_id: str) -> dict[str, Any]:
+async def resume_goal(
+    thread_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
     """Resume a paused Goal with the same objective and progress."""
     try:
-        client = await session_manager.get_client_for_thread(thread_id)
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
         current = await client.get_goal(thread_id=thread_id)
         if not current.goal:
             raise HTTPException(status_code=404, detail="Thread Goal not found")
@@ -566,9 +613,16 @@ def _goal_dict(goal: Any) -> dict[str, Any]:
 
 
 @router.get("/workflows/files", summary="List workflow and plan files")
-async def list_workflow_files(thread_id: str | None = None) -> dict[str, Any]:
+async def list_workflow_files(
+    thread_id: str | None = None,
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
     """Scan workspace for plan/goal files like plan.md, goal/plan.md, etc."""
-    cwd = session_manager.project_path_for_thread(thread_id)
+    cwd = (
+        session_manager.project_path_for_thread(thread_id, project_id)
+        if project_id
+        else session_manager.project_path_for_thread(thread_id)
+    )
     candidate_paths: list[tuple[str, Path]] = [
         ("plan.md", cwd / "plan.md"),
         ("goal/plan.md", cwd / "goal" / "plan.md"),
@@ -579,7 +633,11 @@ async def list_workflow_files(thread_id: str | None = None) -> dict[str, Any]:
         ("README.md", cwd / "README.md"),
     ]
     if thread_id:
-        session_dir = session_manager.session_path_for_thread(thread_id)
+        session_dir = (
+            session_manager.session_path_for_thread(thread_id, project_id)
+            if project_id
+            else session_manager.session_path_for_thread(thread_id)
+        )
         if session_dir:
             candidate_paths = [
                 ("plan/plan.md", session_dir / "plan" / "plan.md"),
@@ -612,10 +670,15 @@ async def list_workflow_files(thread_id: str | None = None) -> dict[str, Any]:
 async def read_workflow_file_content(
     path: str = Query(..., description="Relative file path"),
     thread_id: str | None = Query(default=None),
+    project_id: str | None = Query(default=None),
 ) -> dict[str, Any]:
     """Read full text content of a workflow/plan file."""
     normalized_path = path.replace("\\", "/")
-    cwd = session_manager.project_path_for_thread(thread_id).resolve()
+    cwd = (
+        session_manager.project_path_for_thread(thread_id, project_id)
+        if project_id
+        else session_manager.project_path_for_thread(thread_id)
+    ).resolve()
     root = cwd
     if thread_id and normalized_path in {
         "plan/plan.md",
@@ -623,7 +686,11 @@ async def read_workflow_file_content(
         "goal/verifier_verdict.md",
         "goal/state.json",
     }:
-        session_dir = session_manager.session_path_for_thread(thread_id)
+        session_dir = (
+            session_manager.session_path_for_thread(thread_id, project_id)
+            if project_id
+            else session_manager.session_path_for_thread(thread_id)
+        )
         if session_dir:
             root = session_dir.resolve()
     target = (root / normalized_path).resolve()
@@ -646,8 +713,8 @@ async def read_workflow_file_content(
 # -----------------------------------------------------------------------------
 
 
-def _get_git_status_sync() -> dict[str, Any]:
-    cwd = str(session_manager.current_project_path)
+def _get_git_status_sync(project_id: str | None = None) -> dict[str, Any]:
+    cwd = str(session_manager.project_path_for_thread(project_id=project_id))
     try:
         branch_proc = subprocess.run(
             ["git", "branch", "--show-current"],
@@ -699,9 +766,11 @@ def _get_git_status_sync() -> dict[str, Any]:
 
 
 @router.get("/world/git/status", summary="Get git status and branch")
-async def get_git_status() -> dict[str, Any]:
+async def get_git_status(
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
     """Retrieve Git repository status, current branch, and changed files."""
-    return await asyncio.to_thread(_get_git_status_sync)
+    return await asyncio.to_thread(_get_git_status_sync, project_id)
 
 
 @router.get(
@@ -710,9 +779,10 @@ async def get_git_status() -> dict[str, Any]:
 async def list_workspace_files(
     query: str = Query("", description="Optional search filter"),
     limit: int = Query(80, description="Max files to return"),
+    project_id: str | None = Query(default=None),
 ) -> dict[str, Any]:
     """Fast list of workspace relative file paths for @-mention autocomplete."""
-    cwd = session_manager.current_project_path.resolve()
+    cwd = session_manager.project_path_for_thread(project_id=project_id).resolve()
     ignore_dirs = {
         ".git",
         "node_modules",

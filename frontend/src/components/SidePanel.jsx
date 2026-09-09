@@ -34,6 +34,7 @@ export default function SidePanel({
   onTogglePlan,
   goalState,
   threadId = 'default',
+  projectId = null,
   onGoalChanged,
   onToast,
 }) {
@@ -62,6 +63,11 @@ export default function SidePanel({
   const [isLoading, setIsLoading] = useState(false);
   const [isRetryingMcp, setIsRetryingMcp] = useState(false);
   const workflowRevisionRef = useRef(null);
+  const selectedFileRef = useRef(null);
+  const requestEpochRef = useRef(0);
+  const requestControllerRef = useRef(null);
+  const fileEpochRef = useRef(0);
+  const fileControllerRef = useRef(null);
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
@@ -80,68 +86,106 @@ export default function SidePanel({
   }, [goalState, planActive]);
 
   useEffect(() => {
-    if (isOpen) {
-      loadAllData();
-    }
-  }, [isOpen, activeTab]);
-
-  useEffect(() => {
-    if (isOpen && activeTab === 'plan_goal') {
-      loadWorkflow();
-      loadWorkflowFiles();
-    }
-  }, [threadId]);
-
-  useEffect(() => {
     workflowRevisionRef.current = null;
+    selectedFileRef.current = null;
     setSelectedFile(null);
     setSelectedFileContent('');
-  }, [threadId]);
+    setWorkflowFiles([]);
+    setWorkflowState(goalState || null);
+  }, [threadId, projectId]);
 
   useEffect(() => {
-    if (isOpen && activeTab === 'plan_goal') {
-      loadWorkflowFiles();
-    }
-  }, [isOpen, activeTab, threadId, goalState?.verification_status, goalState?.updated_at]);
+    requestControllerRef.current?.abort();
+    fileControllerRef.current?.abort();
+    if (!isOpen) return undefined;
+    const context = beginRequest();
+    loadAllData(context);
+    return () => {
+      requestControllerRef.current?.abort();
+      fileControllerRef.current?.abort();
+      requestEpochRef.current += 1;
+      fileEpochRef.current += 1;
+    };
+  }, [
+    isOpen,
+    activeTab,
+    threadId,
+    projectId,
+    goalState?.verification_status,
+    goalState?.updated_at,
+  ]);
 
-  const loadAllData = async () => {
+  const beginRequest = () => {
+    requestControllerRef.current?.abort();
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
+    requestEpochRef.current += 1;
+    return {
+      epoch: requestEpochRef.current,
+      threadId,
+      projectId,
+      signal: controller.signal,
+    };
+  };
+
+  const isCurrentRequest = (context) => (
+    context
+      && context.epoch === requestEpochRef.current
+      && context.threadId === threadId
+      && (context.projectId || null) === (projectId || null)
+  );
+
+  const isAbortError = (err) => err?.name === 'AbortError';
+
+  const loadAllData = async (context = null) => {
+    const requestContext = context || beginRequest();
     setIsLoading(true);
     try {
       if (activeTab === 'world') {
-        await loadWorld();
+        await loadWorld(requestContext);
       } else if (activeTab === 'plan_goal') {
-        await Promise.all([loadWorkflow(), loadWorkflowFiles()]);
+        await Promise.all([
+          loadWorkflow(requestContext),
+          loadWorkflowFiles(requestContext),
+        ]);
       } else if (activeTab === 'mcp') {
-        await loadMcp();
+        await loadMcp(requestContext);
       } else if (activeTab === 'git') {
-        await loadGit();
+        await loadGit(requestContext);
       }
     } finally {
-      setIsLoading(false);
+      if (isCurrentRequest(requestContext)) setIsLoading(false);
     }
   };
 
-  const loadWorld = async () => {
+  const loadWorld = async (context = null) => {
+    const requestContext = context || beginRequest();
     try {
-      const data = await api.getWorldState();
-      setWorldData(data);
+      const data = await api.getWorldState({ projectId, signal: requestContext.signal });
+      if (isCurrentRequest(requestContext)) setWorldData(data);
     } catch (err) {
+      if (isAbortError(err) || !isCurrentRequest(requestContext)) return;
       console.error('Failed to load world state:', err);
     }
   };
 
   const handleRefreshWorld = async () => {
     try {
-      await api.refreshWorld();
+      await api.refreshWorld({ projectId });
       await loadWorld();
     } catch (err) {
       alert(`刷新环境探测失败: ${err.message}`);
     }
   };
 
-  const loadWorkflow = async () => {
+  const loadWorkflow = async (context = null) => {
+    const requestContext = context || beginRequest();
     try {
-      const data = await api.getWorkflowState(threadId);
+      const data = await api.getWorkflowState(threadId, {
+        projectId,
+        signal: requestContext.signal,
+      });
+      if (!isCurrentRequest(requestContext)) return;
       const nextRevision = readStateRevision(data);
       if (!shouldApplyStateRevision(workflowRevisionRef.current, nextRevision)) return;
       if (nextRevision !== null) workflowRevisionRef.current = nextRevision;
@@ -156,6 +200,7 @@ export default function SidePanel({
         setAvailableBuiltinTools(data.available_builtin_tools);
       }
     } catch (err) {
+      if (isAbortError(err) || !isCurrentRequest(requestContext)) return;
       console.error('Failed to load workflow state:', err);
     }
   };
@@ -167,7 +212,13 @@ export default function SidePanel({
 
     setSelectedBuiltinTools(nextTools);
     try {
-      await api.updateThreadSettings(planActive ? 'plan' : 'default', nextTools, threadId);
+      await api.updateThreadSettings(
+        planActive ? 'plan' : 'default',
+        nextTools,
+        threadId,
+        null,
+        { projectId },
+      );
       if (onToast) {
         onToast(
           nextTools.includes(toolName)
@@ -185,37 +236,68 @@ export default function SidePanel({
     }
   };
 
-  const loadWorkflowFiles = async () => {
+  const loadWorkflowFiles = async (context = null) => {
+    const requestContext = context || beginRequest();
     try {
-      const res = await api.getWorkflowFiles(threadId);
+      const res = await api.getWorkflowFiles(threadId, {
+        projectId,
+        signal: requestContext.signal,
+      });
+      if (!isCurrentRequest(requestContext)) return;
       const files = res.files || [];
       setWorkflowFiles(files);
       if (
         files.length > 0
-        && (!selectedFile || !files.some((file) => file.path === selectedFile))
+        && (
+          !selectedFileRef.current
+          || !files.some((file) => file.path === selectedFileRef.current)
+        )
       ) {
-        handleSelectFile(files[0].path);
+        handleSelectFile(files[0].path, requestContext);
       }
     } catch (err) {
+      if (isAbortError(err) || !isCurrentRequest(requestContext)) return;
       console.error('Failed to load workflow files:', err);
     }
   };
 
-  const handleSelectFile = async (path) => {
+  const handleSelectFile = async (path, panelContext = null) => {
+    const requestContext = panelContext || {
+      epoch: requestEpochRef.current,
+      threadId,
+      projectId,
+    };
+    fileControllerRef.current?.abort();
+    const controller = new AbortController();
+    fileControllerRef.current = controller;
+    fileEpochRef.current += 1;
+    const fileEpoch = fileEpochRef.current;
+    if (!isCurrentRequest(requestContext)) return;
+    selectedFileRef.current = path;
     setSelectedFile(path);
+    setSelectedFileContent('');
     try {
-      const res = await api.getWorkflowFileContent(path, threadId);
-      setSelectedFileContent(res.content);
+      const res = await api.getWorkflowFileContent(path, threadId, {
+        projectId,
+        signal: controller.signal,
+      });
+      if (isCurrentRequest(requestContext) && fileEpoch === fileEpochRef.current) {
+        setSelectedFileContent(res.content);
+      }
     } catch (err) {
-      setSelectedFileContent(`// 读取文件失败: ${err.message}`);
+      if (!isAbortError(err) && isCurrentRequest(requestContext) && fileEpoch === fileEpochRef.current) {
+        setSelectedFileContent(`// 读取文件失败: ${err.message}`);
+      }
     }
   };
 
-  const loadMcp = async () => {
+  const loadMcp = async (context = null) => {
+    const requestContext = context || beginRequest();
     try {
-      const data = await api.getMcpStatus();
-      setMcpData(data);
+      const data = await api.getMcpStatus({ projectId, signal: requestContext.signal });
+      if (isCurrentRequest(requestContext)) setMcpData(data);
     } catch (err) {
+      if (isAbortError(err) || !isCurrentRequest(requestContext)) return;
       console.error('Failed to load MCP status:', err);
     }
   };
@@ -223,7 +305,7 @@ export default function SidePanel({
   const handleRetryMcp = async () => {
     setIsRetryingMcp(true);
     try {
-      const data = await api.retryMcp();
+      const data = await api.retryMcp({ projectId });
       setMcpData(data);
     } catch (err) {
       console.error('Failed to retry MCP:', err);
@@ -232,11 +314,13 @@ export default function SidePanel({
     }
   };
 
-  const loadGit = async () => {
+  const loadGit = async (context = null) => {
+    const requestContext = context || beginRequest();
     try {
-      const data = await api.getGitStatus();
-      setGitData(data);
+      const data = await api.getGitStatus({ projectId, signal: requestContext.signal });
+      if (isCurrentRequest(requestContext)) setGitData(data);
     } catch (err) {
+      if (isAbortError(err) || !isCurrentRequest(requestContext)) return;
       console.error('Failed to load git status:', err);
     }
   };
@@ -244,7 +328,13 @@ export default function SidePanel({
   const handleStartGoal = async () => {
     if (!goalObjectiveInput.trim()) return;
     try {
-      const result = await api.setGoal(goalObjectiveInput.trim(), null, 'active', threadId);
+      const result = await api.setGoal(
+        goalObjectiveInput.trim(),
+        null,
+        'active',
+        threadId,
+        { projectId },
+      );
       setGoalObjectiveInput('');
       if (onGoalChanged) onGoalChanged(result.goal || null, result);
       await loadWorkflow();
@@ -260,7 +350,7 @@ export default function SidePanel({
 
   const handleClearGoal = async () => {
     try {
-      const result = await api.clearGoal(threadId);
+      const result = await api.clearGoal(threadId, { projectId });
       if (onGoalChanged) onGoalChanged(null, result);
       await loadWorkflow();
       if (onToast) onToast('已清除 Thread Goal', 'success');
@@ -271,7 +361,7 @@ export default function SidePanel({
 
   const handlePauseGoal = async () => {
     try {
-      const result = await api.pauseGoal(threadId);
+      const result = await api.pauseGoal(threadId, { projectId });
       if (onGoalChanged) onGoalChanged(result.goal, result);
       await loadWorkflow();
       if (onToast) onToast('Goal 已暂停，可随时恢复', 'info');
@@ -282,7 +372,7 @@ export default function SidePanel({
 
   const handleResumeGoal = async () => {
     try {
-      const result = await api.resumeGoal(threadId);
+      const result = await api.resumeGoal(threadId, { projectId });
       if (onGoalChanged) onGoalChanged(result.goal, result);
       await loadWorkflow();
       if (onToast) onToast('Goal 已恢复，运行时将继续推进', 'success');
@@ -297,7 +387,12 @@ export default function SidePanel({
     const objective = window.prompt('更新当前 Thread Goal', goal.objective);
     if (!objective || objective.trim() === goal.objective.trim()) return;
     try {
-      const result = await api.updateGoal(objective.trim(), goal.token_budget, threadId);
+      const result = await api.updateGoal(
+        objective.trim(),
+        goal.token_budget,
+        threadId,
+        { projectId },
+      );
       if (onGoalChanged) onGoalChanged(result.goal, result);
       await loadWorkflow();
       if (onToast) onToast('Goal 目标已更新', 'success');

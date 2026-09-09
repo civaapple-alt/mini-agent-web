@@ -47,6 +47,7 @@ export default function InputBar({
   policy = 'interactive',
   continuationMode = 'manual',
   goalState = null,
+  projectId = null,
   pendingApproval,
   onRespondApproval,
   onChangeExecution,
@@ -89,6 +90,18 @@ export default function InputBar({
   const [mentionCursorPos, setMentionCursorPos] = useState(null);
 
   const textareaRef = useRef(null);
+  const mentionRequestEpochRef = useRef(0);
+  const mentionRequestControllerRef = useRef(null);
+
+  useEffect(() => () => {
+    mentionRequestControllerRef.current?.abort();
+  }, []);
+
+  useEffect(() => {
+    mentionRequestControllerRef.current?.abort();
+    mentionRequestEpochRef.current += 1;
+    setMentionFiles([]);
+  }, [projectId]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -139,10 +152,21 @@ export default function InputBar({
   }, [showFullAccessConfirm]);
 
   const loadWorkspaceFiles = async (q) => {
+    mentionRequestControllerRef.current?.abort();
+    const controller = new AbortController();
+    mentionRequestControllerRef.current = controller;
+    mentionRequestEpochRef.current += 1;
+    const requestEpoch = mentionRequestEpochRef.current;
     try {
-      const data = await api.getWorkspaceFiles(q);
-      setMentionFiles(data?.files || []);
+      const data = await api.getWorkspaceFiles(q, {
+        projectId,
+        signal: controller.signal,
+      });
+      if (requestEpoch === mentionRequestEpochRef.current) {
+        setMentionFiles(data?.files || []);
+      }
     } catch (err) {
+      if (err?.name === 'AbortError') return;
       console.warn('Failed to load workspace files:', err);
     }
   };

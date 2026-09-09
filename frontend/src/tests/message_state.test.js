@@ -4,10 +4,30 @@ import {
   aggregateItemLifecycle,
   aggregateStreamEvent,
   aggregateThreadItems,
+  assignHistoryTurnIds,
   filterEmptyMessages,
   groupCompactionBlocks,
   shouldAcceptEventForThread,
 } from '../utils/messageState.js';
+
+test('history messages join their durable Turn by item content and call id', () => {
+  const assigned = assignHistoryTurnIds(
+    [
+      { role: 'user', text: 'first' },
+      { role: 'assistant', text: '', tool_calls: [{ id: 'call-2' }] },
+      { role: 'assistant', text: 'second answer' },
+    ],
+    [
+      { turnId: 'turn-2', item: { type: 'toolCall', id: 'call-2' } },
+      { turnId: 'turn-1', item: { type: 'agentMessage', text: 'second answer' } },
+      { turnId: 'turn-1', item: { type: 'userMessage', text: 'first' } },
+    ],
+  );
+
+  assert.equal(assigned[0].turnId, 'turn-1');
+  assert.equal(assigned[1].turnId, 'turn-2');
+  assert.equal(assigned[2].turnId, 'turn-1');
+});
 
 test('message stream aggregation cleanly sequences thinking, text, and tools', () => {
   let messages = [];

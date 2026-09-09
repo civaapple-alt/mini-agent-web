@@ -135,13 +135,15 @@ export default function Sidebar({
         
         // Start default thread for this project
         const newThreadId = 't-' + Date.now().toString(36);
-        await api.startThread(newThreadId, '默认会话');
+        await api.startThread(newThreadId, '默认会话', newProj.id, {
+          projectId: newProj.id,
+        });
         setExpandedProjects((prev) => ({
           ...prev,
           [newProj.id]: true,
           [cleanName]: true,
         }));
-        onSelectThread(newThreadId);
+        onSelectThread(newThreadId, newProj.id);
       } else {
         await api.updateProject(editingProject.id || editingProject.name, {
           name: cleanName,

@@ -92,38 +92,49 @@ def test_smoke_offline_full_duplex_turn_streaming(smoke_test_app):
             "data": {"turn_id": "turn-smoke-offline-01", "status": "started"},
         }
         await asyncio.sleep(0.01)
-        # 2. Turn started event
-        yield {
+        # 2. Turn started event. In production the SDK notification handler
+        # broadcasts engine events; the stream itself only yields the local
+        # submission to avoid duplicating those broadcasts.
+        turn_started = {
             "type": "event",
             "threadId": "default",
             "turnId": "turn-smoke-offline-01",
+            "projectId": "smoke_project",
             "event": {
                 "type": "turn_started",
                 "turn_id": "turn-smoke-offline-01",
             },
         }
+        await session_manager.broadcast_ws(turn_started)
+        yield turn_started
         await asyncio.sleep(0.01)
         # 3. Content delta event
-        yield {
+        content_delta = {
             "type": "event",
             "threadId": "default",
             "turnId": "turn-smoke-offline-01",
+            "projectId": "smoke_project",
             "event": {
                 "type": "content_delta",
                 "delta": "Smoke verification in progress. All systems operational.",
             },
         }
+        await session_manager.broadcast_ws(content_delta)
+        yield content_delta
         await asyncio.sleep(0.01)
         # 4. Turn finished event
-        yield {
+        turn_finished = {
             "type": "event",
             "threadId": "default",
             "turnId": "turn-smoke-offline-01",
+            "projectId": "smoke_project",
             "event": {
                 "type": "turn_finished",
                 "stop_reason": "completed",
             },
         }
+        await session_manager.broadcast_ws(turn_finished)
+        yield turn_finished
 
     mock_client.stream_turn = mock_stream_turn
     session_manager._client = mock_client
@@ -134,7 +145,7 @@ def test_smoke_offline_full_duplex_turn_streaming(smoke_test_app):
         # Ping - Pong sanity check
         ws.send_json({"action": "ping"})
         pong = ws.receive_json()
-        assert pong == {"type": "pong"}
+        assert pong == {"type": "pong", "projectId": None}
 
         # Launch turn
         ws.send_json(
@@ -143,6 +154,7 @@ def test_smoke_offline_full_duplex_turn_streaming(smoke_test_app):
                 "prompt": "Run offline smoke verification",
                 "mode": "start",
                 "threadId": "default",
+                "project_id": "smoke_project",
             }
         )
 
@@ -223,6 +235,7 @@ def test_smoke_offline_interactive_control_and_items(smoke_test_app):
                 "turnId": "turn-smoke-offline-01",
                 "text": "steer verification",
                 "threadId": "default",
+                "project_id": "smoke_project",
             }
         )
         steer_ack = ws.receive_json()
@@ -234,6 +247,7 @@ def test_smoke_offline_interactive_control_and_items(smoke_test_app):
                 "action": "interrupt",
                 "turnId": "turn-smoke-offline-01",
                 "threadId": "default",
+                "project_id": "smoke_project",
             }
         )
         interrupt_ack = ws.receive_json()

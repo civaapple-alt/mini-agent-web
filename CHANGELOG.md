@@ -78,6 +78,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   online SessionStore process; Web Studio shows “运行中” only for the former
   and labels an idle locked process as “待命”.
 
+- **Project-qualified requests and session epochs:** every Studio REST and
+  WebSocket action carries its `project_id`; session history, workflow/runtime
+  reloads, SidePanel artifact reads, and @-file suggestions cancel stale work
+  when the selected Session or Project changes.
+
+- **Atomic Session reload:** switching Session clears the chat, Plan, Goal,
+  Runtime, approval, and pending-turn projections before reattaching and
+  reloading the selected project-qualified state.
+
+### Fixed
+
+- **History Turn ownership:** hydrate checkpoint messages by matching durable
+  ThreadItems and tool call IDs to their explicit `turnId`, avoiding positional
+  assistant-bubble mapping when a turn has multiple response segments.
+- **Realtime Compaction identity:** preserve one independent item identity
+  across Compaction start/finish events so adjacent live items can be grouped
+  without collisions.
+
 - **Compaction history presentation:** preserve the compaction `turn_id` through
   the Gateway projection and fold adjacent compactions into an expandable
   “上下文压缩 ×N” card with per-item Turn and ID details.

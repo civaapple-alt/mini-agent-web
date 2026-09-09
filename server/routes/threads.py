@@ -34,11 +34,17 @@ class StartThreadRequest(BaseModel):
     project: str | None = Field(
         default=None, description="Optional project ID or name to bind this thread to"
     )
+    project_id: str | None = Field(
+        default=None, description="Canonical project routing context"
+    )
 
 
 class AttachThreadRequest(BaseModel):
     project: str | None = Field(
         default=None, description="Optional project ID or name for a resumable Session"
+    )
+    project_id: str | None = Field(
+        default=None, description="Canonical project routing context"
     )
 
 
@@ -53,6 +59,9 @@ class ForkThreadRequest(BaseModel):
     project: str | None = Field(
         default=None, description="Optional Project ID or name for the source Thread"
     )
+    project_id: str | None = Field(
+        default=None, description="Canonical project routing context"
+    )
 
 
 class UpdateThreadSummaryRequest(BaseModel):
@@ -65,7 +74,9 @@ class RenameThreadRequest(BaseModel):
 
 @router.get("", summary="List all threads with enriched metadata")
 async def list_threads(
-    cursor: str | None = None, limit: int | None = None
+    cursor: str | None = None,
+    limit: int | None = None,
+    project_id: str | None = Query(default=None),
 ) -> dict[str, Any]:
     """List active and historical conversation threads with titles and summaries."""
     try:
@@ -82,7 +93,7 @@ async def list_threads(
         # so ``pi/default`` and ``mini-agent-web/default`` remain selectable.
         live_bindings = set(session_manager.live_thread_bindings())
         if res is not None and isinstance(res.data, list):
-            active_project = session_manager._current_project_id
+            active_project = project_id or session_manager._current_project_id
             for raw_thread in res.data:
                 if isinstance(raw_thread, str):
                     tid = raw_thread
@@ -171,13 +182,18 @@ async def list_threads(
 
 @router.post("/{thread_id}/attach", summary="Attach to a resumable Session")
 async def attach_thread(
-    thread_id: str, req: AttachThreadRequest | None = None
+    thread_id: str,
+    req: AttachThreadRequest | None = None,
+    project_id: str | None = Query(default=None),
 ) -> dict[str, Any]:
     """Attach to a historical/paused Session, or report a live external lock."""
     try:
-        return await session_manager.attach_thread(
-            thread_id, req.project if req else None
+        requested_project = (
+            project_id
+            or (req.project_id if req else None)
+            or (req.project if req else None)
         )
+        return await session_manager.attach_thread(thread_id, requested_project)
     except RuntimeError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err
     except KeyError as err:
@@ -188,15 +204,16 @@ async def attach_thread(
 async def start_thread(req: StartThreadRequest) -> dict[str, Any]:
     """Start or attach to a conversation thread."""
     try:
-        active_id = await session_manager.start_thread(req.thread_id, req.project)
+        requested_project = req.project_id or req.project
+        active_id = await session_manager.start_thread(req.thread_id, requested_project)
         updates: dict[str, Any] = {}
         if req.title:
             updates["title"] = req.title
-        if req.project:
-            updates["project"] = req.project
+        if requested_project:
+            updates["project"] = requested_project
         if updates:
-            session_manager.set_thread_meta(active_id, updates)
-        meta = session_manager.get_thread_meta(active_id)
+            session_manager.set_thread_meta(active_id, updates, requested_project)
+        meta = session_manager.get_thread_meta(active_id, requested_project)
         return {
             "thread_id": active_id,
             "status": "active",
@@ -217,10 +234,11 @@ async def replay_thread_events(
     thread_id: str,
     after_sequence: int | None = Query(default=None, ge=0),
     limit: int = Query(default=128, ge=1, le=128),
+    project_id: str | None = Query(default=None),
 ) -> dict[str, Any]:
     """Replay a bounded App Server event page after a sequence cursor."""
     try:
-        client = await session_manager.get_client_for_thread(thread_id)
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
         result = await client.replay_events(
             thread_id=thread_id,
             after_sequence=after_sequence,
@@ -242,10 +260,12 @@ async def replay_thread_events(
 
 
 @router.get("/{thread_id}/runtime/status", summary="Read runtime status")
-async def get_runtime_status(thread_id: str) -> dict[str, Any]:
+async def get_runtime_status(
+    thread_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
     """Read the non-blocking live App Server runtime snapshot."""
     try:
-        client = await session_manager.get_client_for_thread(thread_id)
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
         status = await client.get_runtime_status(thread_id)
         return {
             "phase": status.phase,
@@ -270,7 +290,10 @@ async def fork_thread(req: ForkThreadRequest) -> dict[str, Any]:
     """Fork an existing thread history into a new branched thread."""
     try:
         return await session_manager.fork_thread(
-            req.source_thread_id, req.new_thread_id, req.title, req.project
+            req.source_thread_id,
+            req.new_thread_id,
+            req.title,
+            req.project_id or req.project,
         )
     except RuntimeError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err
@@ -279,26 +302,28 @@ async def fork_thread(req: ForkThreadRequest) -> dict[str, Any]:
 
 
 @router.get("/{thread_id}", summary="Read canonical thread history")
-async def read_thread(thread_id: str) -> dict[str, Any]:
+async def read_thread(
+    thread_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
     """Read canonical App Server Session history for a specific thread."""
     try:
-        canonical = session_manager.read_any_project_thread(thread_id)
+        canonical = session_manager.read_any_project_thread(thread_id, project_id)
         if canonical:
-            meta = session_manager.get_thread_meta(thread_id)
+            meta = session_manager.get_thread_meta(thread_id, project_id)
             return {
                 **canonical,
                 "metadata": meta,
                 "raw": {"session": canonical["session"]},
             }
         try:
-            client = await session_manager.get_client_for_thread(thread_id)
+            client = await session_manager.get_client_for_thread(thread_id, project_id)
             cp = await client.read_thread(thread_id)
         except AppServerError:
-            client = await session_manager.get_client_for_thread(thread_id)
+            client = await session_manager.get_client_for_thread(thread_id, project_id)
             await client.start_thread(thread_id)
             cp = await client.read_thread(thread_id)
 
-        meta = session_manager.get_thread_meta(thread_id)
+        meta = session_manager.get_thread_meta(thread_id, project_id)
         return {
             "thread_id": cp.thread_id if cp else thread_id,
             "status": cp.status if cp else "active",
@@ -320,10 +345,11 @@ async def list_thread_items(
     cursor: str | None = Query(default=None),
     limit: int | None = Query(default=None, ge=1, le=128),
     sort_direction: Literal["asc", "desc"] | None = Query(default=None),
+    project_id: str | None = Query(default=None),
 ) -> dict[str, Any]:
     """Expose the App Server's bounded Session-backed item projection."""
     try:
-        canonical = session_manager.read_any_project_thread(thread_id)
+        canonical = session_manager.read_any_project_thread(thread_id, project_id)
         if canonical:
             return {
                 "thread_id": thread_id,
@@ -331,7 +357,7 @@ async def list_thread_items(
                 "next_cursor": None,
                 "backwards_cursor": None,
             }
-        client = await session_manager.get_client_for_thread(thread_id)
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
         result = await client.list_thread_items(
             thread_id=thread_id,
             turn_id=turn_id,
@@ -351,25 +377,35 @@ async def list_thread_items(
 
 @router.patch("/{thread_id}/summary", summary="Update thread summary")
 async def update_thread_summary(
-    thread_id: str, req: UpdateThreadSummaryRequest
+    thread_id: str,
+    req: UpdateThreadSummaryRequest,
+    project_id: str | None = Query(default=None),
 ) -> dict[str, Any]:
     """Set or update custom summary for a thread."""
-    meta = session_manager.set_thread_meta(thread_id, {"summary": req.summary})
+    meta = session_manager.set_thread_meta(
+        thread_id, {"summary": req.summary}, project_id
+    )
     return {"thread_id": thread_id, "metadata": meta}
 
 
 @router.patch("/{thread_id}/rename", summary="Rename thread title")
-async def rename_thread(thread_id: str, req: RenameThreadRequest) -> dict[str, Any]:
+async def rename_thread(
+    thread_id: str,
+    req: RenameThreadRequest,
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
     """Rename thread display title."""
-    meta = session_manager.set_thread_meta(thread_id, {"title": req.title})
+    meta = session_manager.set_thread_meta(thread_id, {"title": req.title}, project_id)
     return {"thread_id": thread_id, "metadata": meta}
 
 
 @router.post("/{thread_id}/close", summary="Close thread")
-async def close_thread(thread_id: str) -> dict[str, Any]:
+async def close_thread(
+    thread_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
     """Close an active thread and release server resources."""
     try:
-        client = await session_manager.get_client_for_thread(thread_id)
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
         closed = await client.close_thread(thread_id)
         return {"thread_id": thread_id, "closed": closed}
     except AppServerError as err:

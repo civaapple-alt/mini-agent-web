@@ -216,9 +216,11 @@ def _item_projection(record: dict[str, Any]) -> dict[str, Any] | None:
             else message.get("content")
         )
         outcome_name = str(outcome or "").lower()
-        failed = bool(message.get("is_error")) or (
-            isinstance(outcome, dict) and bool(outcome.get("error"))
-        ) or outcome_name in {"failed", "error", "cancelled"}
+        failed = (
+            bool(message.get("is_error"))
+            or (isinstance(outcome, dict) and bool(outcome.get("error")))
+            or outcome_name in {"failed", "error", "cancelled"}
+        )
         return {
             "type": "toolCall",
             "id": item_id,
@@ -293,9 +295,7 @@ def _checkpoint_projection(record: dict[str, Any]) -> dict[str, Any]:
                 continue
             projected = {
                 "role": role,
-                "text": _bounded_text(
-                    message.get("text"), MAX_CHECKPOINT_MESSAGE_CHARS
-                )
+                "text": _bounded_text(message.get("text"), MAX_CHECKPOINT_MESSAGE_CHARS)
                 or "",
             }
             if role == "assistant":

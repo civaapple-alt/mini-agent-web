@@ -302,6 +302,15 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
     await session_manager.connect_ws(websocket, websocket_project_id)
     background_tasks: set[asyncio.Task[None]] = set()
 
+    def project_for_message(data: dict[str, Any]) -> str | None:
+        # An explicit null clears a previous project binding when Studio
+        # returns to the unqualified/default workspace.
+        if "project_id" in data:
+            return data.get("project_id")
+        if "projectId" in data:
+            return data.get("projectId")
+        return websocket_project_id
+
     def spawn_background(coroutine: Coroutine[Any, Any, None]) -> None:
         task = asyncio.create_task(coroutine)
         background_tasks.add(task)
@@ -314,7 +323,11 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 data = json.loads(raw_text)
             except json.JSONDecodeError:
                 await websocket.send_json(
-                    {"type": "error", "message": "Invalid JSON message"}
+                    {
+                        "type": "error",
+                        "message": "Invalid JSON message",
+                        "projectId": websocket_project_id,
+                    }
                 )
                 continue
 
@@ -324,11 +337,9 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
             if action == "turn":
                 prompt = data.get("prompt", "")
                 thread_id = data.get("threadId")
-                project_id = (
-                    data.get("project_id")
-                    or data.get("projectId")
-                    or websocket_project_id
-                )
+                project_id = project_for_message(data)
+                websocket_project_id = project_id
+                session_manager.set_ws_project(websocket, project_id)
                 mode = data.get("mode", "start")
                 if mode not in ("start", "start_if_idle"):
                     mode = "start"
@@ -348,11 +359,9 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
 
             elif action == "steer":
                 thread_id = data.get("threadId") or "default"
-                project_id = (
-                    data.get("project_id")
-                    or data.get("projectId")
-                    or websocket_project_id
-                )
+                project_id = project_for_message(data)
+                websocket_project_id = project_id
+                session_manager.set_ws_project(websocket, project_id)
                 turn_id = data.get("turnId") or session_manager.get_active_turn(
                     thread_id, project_id
                 )
@@ -378,16 +387,16 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                         {
                             "type": "error",
                             "message": "无法执行纠偏：当前没有正在执行的任务轮次",
+                            "threadId": thread_id,
+                            "projectId": project_id,
                         }
                     )
 
             elif action == "interrupt":
                 thread_id = data.get("threadId") or "default"
-                project_id = (
-                    data.get("project_id")
-                    or data.get("projectId")
-                    or websocket_project_id
-                )
+                project_id = project_for_message(data)
+                websocket_project_id = project_id
+                session_manager.set_ws_project(websocket, project_id)
                 turn_id = data.get("turnId") or session_manager.get_active_turn(
                     thread_id, project_id
                 )
@@ -426,11 +435,9 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 decision = data.get("decision", "denied")
                 grant_scope = data.get("grantScope")
                 reason = data.get("reason")
-                project_id = (
-                    data.get("project_id")
-                    or data.get("projectId")
-                    or websocket_project_id
-                )
+                project_id = project_for_message(data)
+                websocket_project_id = project_id
+                session_manager.set_ws_project(websocket, project_id)
                 session_manager.resolve_approval(
                     req_id, decision, grant_scope, reason, project_id
                 )
@@ -443,14 +450,13 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 )
 
             elif action == "ping":
+                ping_project_id = project_for_message(data)
+                websocket_project_id = ping_project_id
+                session_manager.set_ws_project(websocket, ping_project_id)
                 await websocket.send_json(
                     {
                         "type": "pong",
-                        "projectId": (
-                            data.get("project_id")
-                            or data.get("projectId")
-                            or websocket_project_id
-                        ),
+                        "projectId": ping_project_id,
                     }
                 )
 
@@ -484,7 +490,14 @@ async def _steer_turn_to_ws(
         logger.warning("Failed to steer turn %s: %s", turn_id, err)
         try:
             await websocket.send_json(
-                {"type": "error", "message": f"纠偏下发失败: {err}"}
+                {
+                    "type": "error",
+                    "scope": "turn",
+                    "threadId": thread_id,
+                    "turnId": turn_id,
+                    "projectId": project_id,
+                    "message": f"纠偏下发失败: {err}",
+                }
             )
         except Exception:
             logger.debug("WebSocket closed before steer error response", exc_info=True)

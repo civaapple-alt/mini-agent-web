@@ -286,7 +286,9 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     session_manager._thread_metadata_by_project = orig_thread_metadata_by_project
     session_manager._active_turns_by_project = orig_active_turns_by_project
     session_manager._active_tasks_by_project = orig_active_tasks_by_project
-    session_manager._thread_builtin_tools_by_project = orig_thread_builtin_tools_by_project
+    session_manager._thread_builtin_tools_by_project = (
+        orig_thread_builtin_tools_by_project
+    )
     session_manager._thread_builtin_tools = orig_builtin_tools
     session_manager._current_project_id = orig_cur_id
     session_manager._current_project_path = orig_cur_path

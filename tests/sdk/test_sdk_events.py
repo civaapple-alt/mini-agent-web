@@ -198,8 +198,10 @@ async def test_read_loop_relays_turn_events_to_notification_handler_in_order():
         def __init__(self):
             self._lines = iter(
                 [
-                    b'{"jsonrpc":"2.0","method":"turn/event","params":'
-                    b'{"threadId":"thread-1","sequence":7,"event":{"type":"run_started"}}}\n'
+                    (
+                        b'{"jsonrpc":"2.0","method":"turn/event","params":'
+                        b'{"threadId":"thread-1","sequence":7,"event":{"type":"run_started"}}}\n'
+                    )
                 ]
             )
 

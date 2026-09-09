@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Plus,
   MoreHorizontal,
@@ -63,9 +63,15 @@ export default function Sidebar({
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
   const [newSessionProject, setNewSessionProject] = useState('');
   const [newSessionTitle, setNewSessionTitle] = useState('');
+  const projectRequestEpochRef = useRef(0);
+  const projectRequestControllerRef = useRef(null);
 
   useEffect(() => {
     loadProjects();
+    return () => {
+      projectRequestControllerRef.current?.abort();
+      projectRequestEpochRef.current += 1;
+    };
   }, []);
 
   // Close project popover on window click
@@ -79,15 +85,26 @@ export default function Sidebar({
   }, []);
 
   const loadProjects = async () => {
+    projectRequestControllerRef.current?.abort();
+    const controller = new AbortController();
+    projectRequestControllerRef.current = controller;
+    projectRequestEpochRef.current += 1;
+    const requestEpoch = projectRequestEpochRef.current;
     try {
-      const data = await api.listProjects();
+      const data = await api.listProjects({ signal: controller.signal });
+      if (requestEpoch !== projectRequestEpochRef.current) return null;
       setProjectsData(data);
       const curId = data?.current_project?.id || data?.current_project?.name;
       if (curId) {
         setExpandedProjects((prev) => ({ ...prev, [curId]: true, [data.current_project.name]: true }));
       }
+      return data;
     } catch (err) {
+      if (err?.name === 'AbortError' || requestEpoch !== projectRequestEpochRef.current) {
+        return null;
+      }
       console.error('Failed to load projects:', err);
+      return null;
     }
   };
 
@@ -323,6 +340,7 @@ export default function Sidebar({
         goal_status: t.goal_status || null,
         cleanup_pending: Boolean(t.cleanup_pending),
         resumable: Boolean(t.resumable),
+        plan_review_pending: Boolean(t.plan_review_pending),
         last_turn_status: t.last_turn_status || null,
         last_stop_reason: t.last_stop_reason || null,
         last_turn_complete: Boolean(t.last_turn_complete),
@@ -367,18 +385,18 @@ export default function Sidebar({
     setActiveMenuThread(null);
 
     if (action === 'fork') {
-      onForkThread(thread.thread_id);
+      onForkThread(thread.thread_id, thread.project);
     } else if (action === 'close') {
-      onCloseThread(thread.thread_id);
+      onCloseThread(thread.thread_id, thread.project);
     } else if (action === 'rename') {
       const newTitle = window.prompt('重命名会话:', thread.title);
       if (newTitle && newTitle.trim()) {
-        onRenameThread(thread.thread_id, newTitle.trim());
+        onRenameThread(thread.thread_id, newTitle.trim(), thread.project);
       }
     } else if (action === 'summary') {
       const newSum = window.prompt('设置阶段摘要:', thread.summary);
       if (newSum !== null) {
-        onUpdateSummary(thread.thread_id, newSum.trim());
+        onUpdateSummary(thread.thread_id, newSum.trim(), thread.project);
       }
     }
   };

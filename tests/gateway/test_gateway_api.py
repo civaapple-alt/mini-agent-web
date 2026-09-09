@@ -240,7 +240,9 @@ async def test_workflow_state_and_goal_artifacts_use_canonical_session(
             "runtime_status": "running",
         }
     }
-    monkeypatch.setattr(session_manager, "read_any_project_thread", lambda _thread_id: canonical)
+    monkeypatch.setattr(
+        session_manager, "read_any_project_thread", lambda _thread_id: canonical
+    )
     monkeypatch.setattr(
         session_manager, "session_path_for_thread", lambda _thread_id: session_dir
     )
@@ -298,7 +300,9 @@ async def test_runtime_observation_routes_expose_snapshot_and_replay(
         error=None,
     )
     client_mock.replay_events.return_value = SimpleNamespace(
-        data=[{"threadId": "t-observe", "sequence": 5, "event": {"type": "run_started"}}],
+        data=[
+            {"threadId": "t-observe", "sequence": 5, "event": {"type": "run_started"}}
+        ],
         next_cursor=5,
         oldest_sequence=1,
         has_gap=False,

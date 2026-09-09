@@ -29,6 +29,33 @@ test('history messages join their durable Turn by item content and call id', () 
   assert.equal(assigned[2].turnId, 'turn-1');
 });
 
+test('unmatched legacy items create a Turn projection instead of using first assistant', () => {
+  const messages = aggregateThreadItems(
+    [
+      { id: 'assistant-1', role: 'assistant', text: 'first', blocks: [] },
+      { id: 'assistant-2', role: 'assistant', text: 'second', blocks: [] },
+    ],
+    [
+      {
+        turnId: 'turn-unmatched',
+        item: {
+          type: 'toolCall',
+          id: 'call-unmatched',
+          name: 'shell',
+          arguments: { command: 'pwd' },
+          status: 'completed',
+        },
+      },
+    ],
+  );
+
+  assert.equal(messages.length, 3);
+  assert.equal(messages[0].blocks.length, 0);
+  assert.equal(messages[1].blocks.length, 0);
+  assert.equal(messages[2].turnId, 'turn-unmatched');
+  assert.equal(messages[2].blocks[0].id, 'call-unmatched');
+});
+
 test('message stream aggregation cleanly sequences thinking, text, and tools', () => {
   let messages = [];
 
@@ -126,6 +153,14 @@ test('thread isolation rejects foreign thread events', () => {
       { ...validEvent, projectId: 'pi' },
       activeThread,
       'mini-agent-web',
+    ),
+    false,
+  );
+  assert.equal(
+    shouldAcceptEventForThread(
+      { ...validEvent, projectId: 'pi' },
+      activeThread,
+      null,
     ),
     false,
   );
@@ -430,7 +465,13 @@ test('thread item history hydrates existing assistant turns and preserves item i
   const messages = aggregateThreadItems(
     [
       { id: 'user-1', role: 'user', text: 'Inspect', blocks: [{ type: 'text', content: 'Inspect' }] },
-      { id: 'assistant-1', role: 'assistant', text: 'Done', blocks: [{ type: 'text', content: 'Done' }] },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        turnId: 'turn-history',
+        text: 'Done',
+        blocks: [{ type: 'text', content: 'Done' }],
+      },
     ],
     [
       {

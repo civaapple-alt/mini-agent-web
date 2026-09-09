@@ -137,6 +137,8 @@ export default function SidePanel({
 
   const isAbortError = (err) => err?.name === 'AbortError';
 
+  const beginMutationRequest = () => beginRequest();
+
   const loadAllData = async (context = null) => {
     const requestContext = context || beginRequest();
     setIsLoading(true);
@@ -170,10 +172,13 @@ export default function SidePanel({
   };
 
   const handleRefreshWorld = async () => {
+    const context = beginMutationRequest();
     try {
-      await api.refreshWorld({ projectId });
-      await loadWorld();
+      await api.refreshWorld({ projectId, signal: context.signal });
+      if (!isCurrentRequest(context)) return;
+      await loadWorld(context);
     } catch (err) {
+      if (isAbortError(err) || !isCurrentRequest(context)) return;
       alert(`刷新环境探测失败: ${err.message}`);
     }
   };
@@ -206,6 +211,7 @@ export default function SidePanel({
   };
 
   const handleToggleBuiltinTool = async (toolName) => {
+    const context = beginMutationRequest();
     const nextTools = selectedBuiltinTools.includes(toolName)
       ? selectedBuiltinTools.filter((t) => t !== toolName)
       : [...selectedBuiltinTools, toolName];
@@ -217,8 +223,9 @@ export default function SidePanel({
         nextTools,
         threadId,
         null,
-        { projectId },
+        { projectId, signal: context.signal },
       );
+      if (!isCurrentRequest(context)) return;
       if (onToast) {
         onToast(
           nextTools.includes(toolName)
@@ -228,6 +235,7 @@ export default function SidePanel({
         );
       }
     } catch (err) {
+      if (isAbortError(err) || !isCurrentRequest(context)) return;
       console.error('Failed to update builtin tool settings:', err);
       if (onToast) {
         onToast(`更新内置工具配置失败: ${err.message}`, 'error');
@@ -303,14 +311,16 @@ export default function SidePanel({
   };
 
   const handleRetryMcp = async () => {
+    const context = beginMutationRequest();
     setIsRetryingMcp(true);
     try {
-      const data = await api.retryMcp({ projectId });
-      setMcpData(data);
+      const data = await api.retryMcp({ projectId, signal: context.signal });
+      if (isCurrentRequest(context)) setMcpData(data);
     } catch (err) {
+      if (isAbortError(err) || !isCurrentRequest(context)) return;
       console.error('Failed to retry MCP:', err);
     } finally {
-      setIsRetryingMcp(false);
+      if (isCurrentRequest(context)) setIsRetryingMcp(false);
     }
   };
 
@@ -327,21 +337,24 @@ export default function SidePanel({
 
   const handleStartGoal = async () => {
     if (!goalObjectiveInput.trim()) return;
+    const context = beginMutationRequest();
     try {
       const result = await api.setGoal(
         goalObjectiveInput.trim(),
         null,
         'active',
         threadId,
-        { projectId },
+        { projectId, signal: context.signal },
       );
+      if (!isCurrentRequest(context)) return;
       setGoalObjectiveInput('');
       if (onGoalChanged) onGoalChanged(result.goal || null, result);
-      await loadWorkflow();
+      await loadWorkflow(context);
       if (onToast) {
         onToast('已设置 Thread Goal，运行时将自动推进', 'success');
       }
     } catch (err) {
+      if (isAbortError(err) || !isCurrentRequest(context)) return;
       if (onToast) {
         onToast(`设置 Goal 失败: ${err.message}`, 'error');
       }
@@ -349,34 +362,43 @@ export default function SidePanel({
   };
 
   const handleClearGoal = async () => {
+    const context = beginMutationRequest();
     try {
-      const result = await api.clearGoal(threadId, { projectId });
+      const result = await api.clearGoal(threadId, { projectId, signal: context.signal });
+      if (!isCurrentRequest(context)) return;
       if (onGoalChanged) onGoalChanged(null, result);
-      await loadWorkflow();
+      await loadWorkflow(context);
       if (onToast) onToast('已清除 Thread Goal', 'success');
     } catch (err) {
+      if (isAbortError(err) || !isCurrentRequest(context)) return;
       if (onToast) onToast(`清除 Goal 失败: ${err.message}`, 'error');
     }
   };
 
   const handlePauseGoal = async () => {
+    const context = beginMutationRequest();
     try {
-      const result = await api.pauseGoal(threadId, { projectId });
+      const result = await api.pauseGoal(threadId, { projectId, signal: context.signal });
+      if (!isCurrentRequest(context)) return;
       if (onGoalChanged) onGoalChanged(result.goal, result);
-      await loadWorkflow();
+      await loadWorkflow(context);
       if (onToast) onToast('Goal 已暂停，可随时恢复', 'info');
     } catch (err) {
+      if (isAbortError(err) || !isCurrentRequest(context)) return;
       if (onToast) onToast(`暂停 Goal 失败: ${err.message}`, 'error');
     }
   };
 
   const handleResumeGoal = async () => {
+    const context = beginMutationRequest();
     try {
-      const result = await api.resumeGoal(threadId, { projectId });
+      const result = await api.resumeGoal(threadId, { projectId, signal: context.signal });
+      if (!isCurrentRequest(context)) return;
       if (onGoalChanged) onGoalChanged(result.goal, result);
-      await loadWorkflow();
+      await loadWorkflow(context);
       if (onToast) onToast('Goal 已恢复，运行时将继续推进', 'success');
     } catch (err) {
+      if (isAbortError(err) || !isCurrentRequest(context)) return;
       if (onToast) onToast(`恢复 Goal 失败: ${err.message}`, 'error');
     }
   };
@@ -386,17 +408,20 @@ export default function SidePanel({
     if (!goal) return;
     const objective = window.prompt('更新当前 Thread Goal', goal.objective);
     if (!objective || objective.trim() === goal.objective.trim()) return;
+    const context = beginMutationRequest();
     try {
       const result = await api.updateGoal(
         objective.trim(),
         goal.token_budget,
         threadId,
-        { projectId },
+        { projectId, signal: context.signal },
       );
+      if (!isCurrentRequest(context)) return;
       if (onGoalChanged) onGoalChanged(result.goal, result);
-      await loadWorkflow();
+      await loadWorkflow(context);
       if (onToast) onToast('Goal 目标已更新', 'success');
     } catch (err) {
+      if (isAbortError(err) || !isCurrentRequest(context)) return;
       if (onToast) onToast(`更新 Goal 失败: ${err.message}`, 'error');
     }
   };

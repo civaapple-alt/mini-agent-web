@@ -135,15 +135,19 @@ async def test_goal_lifecycle_full_state_machine(gateway_test_app):
         objective, status=None, token_budget=None, thread_id="default"
     ):
         nonlocal current_goal
-        set_goal_calls.append({
-            "objective": objective,
-            "status": status,
-            "token_budget": token_budget,
-            "thread_id": thread_id,
-        })
+        set_goal_calls.append(
+            {
+                "objective": objective,
+                "status": status,
+                "token_budget": token_budget,
+                "thread_id": thread_id,
+            }
+        )
         if current_goal is not None:
             objective = objective if objective is not None else current_goal.objective
-            token_budget = token_budget if token_budget is not None else current_goal.token_budget
+            token_budget = (
+                token_budget if token_budget is not None else current_goal.token_budget
+            )
         current_goal = MockGoalObject(
             thread_id=thread_id,
             objective=objective,

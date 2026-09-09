@@ -169,6 +169,8 @@ export default function App() {
   const selectionPersistenceReadyRef = useRef(false);
   const sessionEpochRef = useRef(0);
   const sessionRequestControllerRef = useRef(null);
+  const catalogEpochRef = useRef(0);
+  const catalogRequestControllerRef = useRef(null);
   currentThreadRef.current = currentThread;
   currentThreadProjectRef.current = currentThreadProject;
   setActiveProjectId(currentThreadProject);
@@ -215,6 +217,41 @@ export default function App() {
 
   const isAbortError = (err) => err?.name === 'AbortError';
 
+  const beginCatalogRequest = () => {
+    catalogRequestControllerRef.current?.abort();
+    const controller = new AbortController();
+    catalogRequestControllerRef.current = controller;
+    catalogEpochRef.current += 1;
+    return {
+      epoch: catalogEpochRef.current,
+      projectId: currentThreadProjectRef.current,
+      signal: controller.signal,
+    };
+  };
+
+  const isCurrentCatalogRequest = (context) => (
+    context && context.epoch === catalogEpochRef.current
+  );
+
+  const resetSessionProjections = ({ loadingHistory = false } = {}) => {
+    setIsGenerating(false);
+    setActiveTurnId(null);
+    interruptPendingRef.current = false;
+    queueDispatchingRef.current = false;
+    setPendingApproval(null);
+    setPendingMessages([]);
+    setComposerDraft(null);
+    setLastTurnResult(null);
+    setPlanReviewPending(false);
+    setPlanActive(false);
+    goalStateRef.current = null;
+    setGoalState(null);
+    setRuntimeStatus(null);
+    setLastWorkflowEvent(null);
+    setMessages([]);
+    setIsLoadingHistory(loadingHistory);
+  };
+
   // ---------------------------------------------------------------------------
   // Lifecycle & Initial Fetch
   // ---------------------------------------------------------------------------
@@ -249,7 +286,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    loadSettings();
     initializeSession();
 
     // Establish WebSocket Connection
@@ -257,6 +293,10 @@ export default function App() {
       handleServerEvent,
       () => {
         setIsConnected(true);
+        wsRef.current?.send({
+          action: 'ping',
+          project_id: currentThreadProjectRef.current,
+        });
         // A reconnect may follow an App Server restart, whose in-memory
         // revision sequence starts over. Re-read the canonical projection to
         // rebuild the Web cursor before accepting new notifications.
@@ -281,30 +321,52 @@ export default function App() {
 
     return () => {
       sessionRequestControllerRef.current?.abort();
+      catalogRequestControllerRef.current?.abort();
       wsClient.close();
     };
   }, []);
 
-  const loadSettings = async () => {
+  useEffect(() => {
+    // Keep the gateway's project-scoped WebSocket subscription aligned with
+    // the selected Session even before the next turn-control action.
+    if (wsRef.current?.isOpen()) {
+      wsRef.current.send({
+        action: 'ping',
+        project_id: currentThreadProject || null,
+      });
+    }
+  }, [currentThreadProject]);
+
+  const loadSettings = async (context = null) => {
     try {
-      const data = await api.getSettings();
+      const data = await api.getSettings({
+        projectId: context ? context.projectId : currentThreadProjectRef.current,
+        signal: context?.signal,
+      });
+      if (context && !isCurrentSessionRequest(context)) return;
       setUserSettings((prev) => ({ ...prev, ...data }));
       if (data.access) setAccessScope(data.access);
       if (data.policy) setPolicy(data.policy);
       const activeTheme = data.theme || 'light';
       document.body.className = `theme-${activeTheme}`;
     } catch (err) {
+      if (isAbortError(err) || (context && !isCurrentSessionRequest(context))) return;
       console.error('Failed to load settings:', err);
       document.body.className = 'theme-light';
     }
   };
 
-  const loadThreads = async () => {
+  const loadThreads = async (options = {}) => {
+    const requestContext = options.context || beginCatalogRequest();
     try {
-      const data = await api.listThreads();
+      const data = await api.listThreads({
+        projectId: requestContext.projectId,
+        signal: requestContext.signal,
+      });
+      if (!isCurrentCatalogRequest(requestContext)) return null;
       let cur = null;
+      setThreads(data.threads || []);
       if (data.threads && data.threads.length > 0) {
-        setThreads(data.threads);
         const preferredProject =
           currentThreadProjectRef.current || data.current_project || null;
         cur = data.threads.find(
@@ -332,7 +394,10 @@ export default function App() {
 
   const initializeSession = async () => {
     const selected = await loadThreads();
-    if (!selected) return;
+    if (!selected) {
+      await loadSettings();
+      return;
+    }
 
     const nextThread = selected.thread_id || 'default';
     const nextProject =
@@ -358,6 +423,7 @@ export default function App() {
       console.debug('Failed to attach persisted session during startup:', err);
     }
     await Promise.all([
+      loadSettings(context),
       loadThreadHistory(nextThread, nextProject, context),
       loadWorkflows(nextThread, nextProject, context),
       loadRuntimeStatus(nextThread, nextProject, context),
@@ -456,6 +522,9 @@ export default function App() {
     const planEnabled = mode?.mode === 'plan';
     setPlanActive(planEnabled);
     if (!planEnabled) setPlanReviewPending(false);
+    const reviewPending = workflowState.plan_review_pending
+      ?? workflowState.planReviewPending;
+    if (reviewPending !== undefined) setPlanReviewPending(Boolean(reviewPending));
     const nextContinuation = workflowState.continuation_mode || workflowState.continuationMode;
     if (nextContinuation) setContinuationMode(nextContinuation);
     return true;
@@ -1074,21 +1143,7 @@ export default function App() {
     // Clear every projection before the new session can render. The epoch and
     // AbortController below make late history/workflow/file responses unable
     // to repopulate this freshly selected session.
-    setIsGenerating(false);
-    setActiveTurnId(null);
-    interruptPendingRef.current = false;
-    setPendingApproval(null);
-    setPendingMessages([]);
-    setComposerDraft(null);
-    setLastTurnResult(null);
-    setPlanReviewPending(false);
-    setPlanActive(false);
-    goalStateRef.current = null;
-    setGoalState(null);
-    setRuntimeStatus(null);
-    setLastWorkflowEvent(null);
-    setMessages([]);
-    setIsLoadingHistory(true);
+    resetSessionProjections({ loadingHistory: true });
     workflowRevisionsRef.current.delete(scopedThreadKey(threadId, nextProject));
     currentThreadRef.current = threadId;
     currentThreadProjectRef.current = nextProject;
@@ -1110,6 +1165,7 @@ export default function App() {
         showToast('该 Session 正在另一个进程运行，当前为只读查看；结束后可重新 attach', 'info', 3500);
       }
       await Promise.all([
+        loadSettings(context),
         loadThreadHistory(threadId, nextProject, context),
         loadWorkflows(threadId, nextProject, context),
         loadRuntimeStatus(threadId, nextProject, context),
@@ -1131,66 +1187,49 @@ export default function App() {
       });
       const nextProject = result.project || customProject || null;
       await loadThreads();
-      beginSessionRequest(tid, nextProject);
+      const context = beginSessionRequest(tid, nextProject);
+      resetSessionProjections();
       currentThreadRef.current = tid;
       currentThreadProjectRef.current = nextProject;
       setActiveProjectId(nextProject);
       setCurrentThread(tid);
       setCurrentThreadProject(nextProject);
       setCurrentThreadMeta({ title: finalTitle, summary: '' });
-      setMessages([]);
-      setPendingMessages([]);
-      setComposerDraft(null);
-      interruptPendingRef.current = false;
-      setLastTurnResult(null);
-      setPlanReviewPending(false);
-      setPlanActive(false);
-      goalStateRef.current = null;
-      setGoalState(null);
-      setRuntimeStatus(null);
-      setLastWorkflowEvent(null);
+      await loadSettings(context);
       showToast(`已创建新会话: ${finalTitle}`, 'success');
     } catch (err) {
       showToast(`创建新会话失败: ${err.message}`, 'error');
     }
   };
 
-  const handleForkThread = async (sourceThreadId) => {
+  const handleForkThread = async (sourceThreadId, sourceProjectId = null) => {
     const newId = `${sourceThreadId}_fork_${Date.now().toString(36).slice(2, 6)}`;
     try {
+      const sourceProject = sourceProjectId || currentThreadProjectRef.current || null;
       const source = threads.find(
         (thread) =>
           thread.thread_id === sourceThreadId &&
-          (!currentThreadProjectRef.current ||
-            thread.project === currentThreadProjectRef.current),
+          (!sourceProject || thread.project === sourceProject),
       );
       const result = await api.forkThread(
         sourceThreadId,
         newId,
         null,
-        source?.project || currentThreadProjectRef.current || null,
-        { projectId: source?.project || currentThreadProjectRef.current || null },
+        source?.project || sourceProject,
+        { projectId: source?.project || sourceProject },
       );
       const nextProject = result.project || source?.project || null;
       await loadThreads();
       const context = beginSessionRequest(newId, nextProject);
+      resetSessionProjections({ loadingHistory: true });
       currentThreadRef.current = newId;
       currentThreadProjectRef.current = nextProject;
       setActiveProjectId(nextProject);
       setCurrentThread(newId);
       setCurrentThreadProject(nextProject);
-      setPendingMessages([]);
-      setComposerDraft(null);
-      interruptPendingRef.current = false;
-      setLastTurnResult(null);
-      setPlanReviewPending(false);
-      setPlanActive(false);
-      goalStateRef.current = null;
-      setGoalState(null);
-      setRuntimeStatus(null);
-      setLastWorkflowEvent(null);
       await loadThreadHistory(newId, nextProject, context);
       await Promise.all([
+        loadSettings(context),
         loadWorkflows(newId, nextProject, context),
         loadRuntimeStatus(newId, nextProject, context),
       ]);
@@ -1200,25 +1239,26 @@ export default function App() {
     }
   };
 
-  const handleCloseThread = async (threadId) => {
+  const handleCloseThread = async (threadId, projectId = null) => {
     try {
-      const closingProject = currentThreadProjectRef.current;
+      const closingProject =
+        projectId ||
+        threads.find((thread) => thread.thread_id === threadId)?.project ||
+        (threadId === currentThread ? currentThreadProjectRef.current : null);
       await api.closeThread(threadId, { projectId: closingProject });
       await loadThreads();
       if (currentThread === threadId) {
         const context = beginSessionRequest('default', null);
+        resetSessionProjections({ loadingHistory: true });
         currentThreadRef.current = 'default';
         currentThreadProjectRef.current = null;
         setActiveProjectId(null);
         setCurrentThread('default');
         setCurrentThreadProject(null);
-        setMessages([]);
-        setPlanActive(false);
-        goalStateRef.current = null;
-        setGoalState(null);
-        setRuntimeStatus(null);
-        setPlanReviewPending(false);
-        await loadThreadHistory('default', null, context);
+        await Promise.all([
+          loadSettings(context),
+          loadThreadHistory('default', null, context),
+        ]);
       }
       showToast(`已关闭并归档会话: ${threadId}`, 'info');
     } catch (err) {
@@ -1226,10 +1266,14 @@ export default function App() {
     }
   };
 
-  const handleRenameThread = async (threadId, newTitle) => {
+  const handleRenameThread = async (threadId, newTitle, projectId = null) => {
     try {
       const targetId = typeof threadId === 'string' ? threadId : currentThread;
-      await api.renameThread(targetId, newTitle, { projectId: currentThreadProjectRef.current });
+      const targetProject =
+        projectId ||
+        threads.find((thread) => thread.thread_id === targetId)?.project ||
+        (targetId === currentThread ? currentThreadProjectRef.current : null);
+      await api.renameThread(targetId, newTitle, { projectId: targetProject });
       if (targetId === currentThread) {
         setCurrentThreadMeta((prev) => ({ ...prev, title: newTitle }));
       }
@@ -1240,10 +1284,14 @@ export default function App() {
     }
   };
 
-  const handleUpdateSummary = async (threadId, newSummary) => {
+  const handleUpdateSummary = async (threadId, newSummary, projectId = null) => {
     try {
       const targetId = typeof threadId === 'string' ? threadId : currentThread;
-      await api.updateThreadSummary(targetId, newSummary, { projectId: currentThreadProjectRef.current });
+      const targetProject =
+        projectId ||
+        threads.find((thread) => thread.thread_id === targetId)?.project ||
+        (targetId === currentThread ? currentThreadProjectRef.current : null);
+      await api.updateThreadSummary(targetId, newSummary, { projectId: targetProject });
       if (targetId === currentThread) {
         setCurrentThreadMeta((prev) => ({ ...prev, summary: newSummary }));
       }

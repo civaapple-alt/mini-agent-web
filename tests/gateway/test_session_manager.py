@@ -111,6 +111,32 @@ async def test_session_manager_approval_is_typed_and_not_web_persisted(
     await second_task
 
 
+@pytest.mark.asyncio
+async def test_websocket_broadcast_is_project_scoped(mock_session_manager):
+    """Runtime notifications do not cross project-bound WebSocket clients."""
+
+    class FakeSocket:
+        def __init__(self):
+            self.send_json = AsyncMock()
+
+    pi_socket = FakeSocket()
+    web_socket = FakeSocket()
+    global_socket = FakeSocket()
+    mock_session_manager._active_connections = {
+        pi_socket: "pi",
+        web_socket: "mini-agent-web",
+        global_socket: None,
+    }
+
+    await mock_session_manager.broadcast_ws(
+        {"type": "event", "projectId": "pi", "threadId": "default"}
+    )
+
+    pi_socket.send_json.assert_awaited_once()
+    web_socket.send_json.assert_not_awaited()
+    global_socket.send_json.assert_awaited_once()
+
+
 def test_session_manager_settings_persistence(mock_session_manager, tmp_path):
     """Ensure UI settings and Project execution settings persist separately."""
     assert mock_session_manager.get_settings()["reasoning_effort"] == "high"
@@ -261,7 +287,9 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     session_base = tmp_path / "sessions"
-    monkeypatch.setattr("server.session_catalog._session_base", lambda _workspace: session_base)
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
     session_dir = session_base / "s-1"
     session_dir.mkdir(parents=True)
     records = [
@@ -333,9 +361,7 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
         encoding="utf-8",
     )
     (session_base / "thread_index.json").write_text(
-        json.dumps(
-            {"version": 1, "threads": {"t-1": {"session_id": "s-1"}}}
-        ),
+        json.dumps({"version": 1, "threads": {"t-1": {"session_id": "s-1"}}}),
         encoding="utf-8",
     )
     (session_dir / "session.lock").write_text("pid=999999\n", encoding="utf-8")
@@ -351,7 +377,9 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     assert listed["data"][0]["locked_by"] is None
     assert listed["data"][0]["last_turn_status"] == "step_limit"
     assert listed["data"][0]["last_stop_reason"] == "step_limit"
-    assert listed["data"][0]["last_turn_error"] == "model request failed: transport error"
+    assert (
+        listed["data"][0]["last_turn_error"] == "model request failed: transport error"
+    )
     assert listed["data"][0]["last_turn_id"] == "turn-1"
     assert listed["data"][0]["last_turn_steps"] == 8
     assert listed["data"][0]["last_turn_complete"] is False
@@ -362,6 +390,67 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     assert history["last_turn_status"] == "step_limit"
     assert history["last_turn_error"] == "model request failed: transport error"
     assert history["last_turn_id"] == "turn-1"
+
+
+def test_session_catalog_does_not_mark_dead_unsettled_turn_as_active(
+    tmp_path, monkeypatch
+):
+    """A crashed process is recoverable, not currently running in the sidebar."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    session_dir = session_base / "s-crashed"
+    session_dir.mkdir(parents=True)
+    records = [
+        {
+            "seq": 1,
+            "kind": "session_created",
+            "schema_version": 1,
+            "session_id": "s-crashed",
+            "timestamp_ms": 1000,
+        },
+        {"seq": 2, "kind": "thread_started", "thread_id": "t-crashed"},
+        {
+            "seq": 3,
+            "kind": "turn_started",
+            "thread_id": "t-crashed",
+            "turn_id": "turn-crashed",
+            "prompt": "inspect before crash",
+        },
+        {
+            "seq": 4,
+            "kind": "checkpoint",
+            "thread_id": "t-crashed",
+            "messages": [{"role": "user", "text": "inspect before crash"}],
+            "timestamp_ms": 2000,
+        },
+    ]
+    (session_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_dir / "summary.json").write_text(
+        json.dumps({"turn_count": 1, "last_prompt": "inspect before crash"}),
+        encoding="utf-8",
+    )
+    (session_base / "thread_index.json").write_text(
+        json.dumps(
+            {"version": 1, "threads": {"t-crashed": {"session_id": "s-crashed"}}}
+        ),
+        encoding="utf-8",
+    )
+    (session_dir / "session.lock").write_text("pid=999999\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    monkeypatch.setattr("server.session_catalog._process_alive", lambda pid: False)
+
+    entry = SessionCatalog().list_sessions(workspace, "project-1")["data"][0]
+    assert entry["turn_active"] is False
+    assert entry["process_online"] is False
+    assert entry["session_status"] == "historical"
+    assert entry["resumable"] is True
+    assert entry["active_turn_id"] is None
+    assert entry["last_turn_status"] == "in_progress"
 
 
 def test_session_catalog_projects_tool_settlement_content_and_arguments():
@@ -447,7 +536,9 @@ def test_session_catalog_skips_oversized_checkpoint_but_keeps_goal_state(
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     session_base = tmp_path / "sessions"
-    monkeypatch.setattr("server.session_catalog._session_base", lambda _workspace: session_base)
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
     session_dir = session_base / "s-large"
     (session_dir / "goal").mkdir(parents=True)
     records = [
@@ -537,14 +628,17 @@ def test_checkpoint_projection_keeps_reasoning_and_tool_call_identity():
 def test_session_catalog_only_projects_turn_bound_context_as_compaction():
     from server.session_catalog import _item_projection
 
-    assert _item_projection(
-        {
-            "item_id": "world-1",
-            "item_kind": "context",
-            "turn_id": None,
-            "message": {"role": "context", "text": "world state"},
-        }
-    ) is None
+    assert (
+        _item_projection(
+            {
+                "item_id": "world-1",
+                "item_kind": "context",
+                "turn_id": None,
+                "message": {"role": "context", "text": "world state"},
+            }
+        )
+        is None
+    )
 
     assert _item_projection(
         {
@@ -673,9 +767,9 @@ async def test_attach_thread_does_not_report_local_client_as_external_lock(
     monkeypatch.setattr(
         mock_session_manager,
         "read_project_thread",
-        lambda thread_id, project_id=None: canonical
-        if (thread_id, project_id) == ("default", "default")
-        else None,
+        lambda thread_id, project_id=None: (
+            canonical if (thread_id, project_id) == ("default", "default") else None
+        ),
     )
     create_client = AsyncMock(side_effect=AssertionError("would create a duplicate"))
     monkeypatch.setattr(mock_session_manager, "_create_client", create_client)
@@ -703,9 +797,9 @@ async def test_start_does_not_create_duplicate_when_default_session_is_locked(
     monkeypatch.setattr(
         mock_session_manager,
         "read_project_thread",
-        lambda thread_id, project_id=None: canonical
-        if (thread_id, project_id) == ("default", None)
-        else None,
+        lambda thread_id, project_id=None: (
+            canonical if (thread_id, project_id) == ("default", None) else None
+        ),
     )
     create_client = AsyncMock(side_effect=AssertionError("would create a duplicate"))
     monkeypatch.setattr(mock_session_manager, "_create_client", create_client)
@@ -737,7 +831,9 @@ async def test_attach_thread_allows_same_thread_id_in_another_project(
 
     assert result["attached"] is True
     assert mock_session_manager._client_projects["shared-thread"] == "other-project"
-    assert mock_session_manager._active_thread_projects["shared-thread"] == "other-project"
+    assert (
+        mock_session_manager._active_thread_projects["shared-thread"] == "other-project"
+    )
 
 
 @pytest.mark.asyncio
@@ -760,13 +856,19 @@ async def test_project_scoped_default_clients_can_switch_without_reuse(
         return client
 
     monkeypatch.setattr(mock_session_manager, "_create_client", create_client)
-    monkeypatch.setattr(mock_session_manager, "read_project_thread", lambda *_args: None)
+    monkeypatch.setattr(
+        mock_session_manager, "read_project_thread", lambda *_args: None
+    )
 
-    default_client = await mock_session_manager.get_client_for_thread("default", "default")
+    default_client = await mock_session_manager.get_client_for_thread(
+        "default", "default"
+    )
     other_client = await mock_session_manager.get_client_for_thread(
         "default", "other-project"
     )
-    switched_back = await mock_session_manager.get_client_for_thread("default", "default")
+    switched_back = await mock_session_manager.get_client_for_thread(
+        "default", "default"
+    )
 
     assert default_client is clients["default"]
     assert other_client is clients["other-project"]
@@ -778,7 +880,9 @@ async def test_project_scoped_default_clients_can_switch_without_reuse(
     ]
 
 
-def test_bind_forked_thread_keeps_explicit_source_project(mock_session_manager, tmp_path):
+def test_bind_forked_thread_keeps_explicit_source_project(
+    mock_session_manager, tmp_path
+):
     """A forked in-memory Thread inherits its source Project binding."""
     project_root = tmp_path / "other-project"
     project_root.mkdir()
@@ -872,9 +976,7 @@ async def test_fork_and_concurrent_attach_share_the_forked_binding(
 
 
 @pytest.mark.asyncio
-async def test_restart_broadcasts_runtime_generation(
-    mock_session_manager, monkeypatch
-):
+async def test_restart_broadcasts_runtime_generation(mock_session_manager, monkeypatch):
     """A successful Gateway restart invalidates Web Studio's old revision cursor."""
     old_client = AsyncMock()
     new_client = AsyncMock()

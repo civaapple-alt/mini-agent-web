@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Settings,
@@ -30,27 +30,45 @@ export default function SettingsModal({
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [approvalInfo, setApprovalInfo] = useState(null);
   const [isRevokingApprovals, setIsRevokingApprovals] = useState(false);
+  const requestEpochRef = useRef(0);
+  const requestControllerRef = useRef(null);
 
   useEffect(() => {
-    if (isOpen) {
-      loadSettings();
-      loadApprovalInfo();
-    }
+    requestControllerRef.current?.abort();
+    requestEpochRef.current += 1;
+    if (!isOpen) return undefined;
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
+    const requestEpoch = requestEpochRef.current;
+    const context = { epoch: requestEpoch, signal: controller.signal };
+    loadSettings(context);
+    loadApprovalInfo(context);
+    return () => {
+      controller.abort();
+      requestEpochRef.current += 1;
+    };
   }, [isOpen, projectId]);
 
-  const loadSettings = async () => {
+  const isCurrentRequest = (context) => (
+    context && context.epoch === requestEpochRef.current
+  );
+
+  const loadSettings = async (context = null) => {
     try {
-      const data = await api.getSettings({ projectId });
-      setSettings((prev) => ({ ...prev, ...data }));
+      const data = await api.getSettings({ projectId, signal: context?.signal });
+      if (isCurrentRequest(context)) setSettings((prev) => ({ ...prev, ...data }));
     } catch (err) {
+      if (err?.name === 'AbortError' || (context && !isCurrentRequest(context))) return;
       console.error('Failed to load settings:', err);
     }
   };
 
-  const loadApprovalInfo = async () => {
+  const loadApprovalInfo = async (context = null) => {
     try {
-      setApprovalInfo(await api.getWorldApproval({ projectId }));
+      const data = await api.getWorldApproval({ projectId, signal: context?.signal });
+      if (isCurrentRequest(context)) setApprovalInfo(data);
     } catch (err) {
+      if (err?.name === 'AbortError' || (context && !isCurrentRequest(context))) return;
       console.error('Failed to load project approval state:', err);
     }
   };
@@ -58,11 +76,17 @@ export default function SettingsModal({
   const handleRevokeApprovals = async () => {
     if (!window.confirm('撤销当前项目已缓存的批准？这会重启当前 App Server。')) return;
     setIsRevokingApprovals(true);
+    const context = {
+      epoch: requestEpochRef.current,
+      signal: requestControllerRef.current?.signal,
+    };
     try {
-      await api.revokeWorldApprovals({ projectId });
-      await loadApprovalInfo();
+      await api.revokeWorldApprovals({ projectId, signal: context.signal });
+      if (!isCurrentRequest(context)) return;
+      await loadApprovalInfo(context);
       if (onToast) onToast('当前项目批准已撤销，App Server 已重启', 'success');
     } catch (err) {
+      if (err?.name === 'AbortError' || !isCurrentRequest(context)) return;
       if (onToast) onToast(`撤销项目批准失败: ${err.message}`, 'error');
     } finally {
       setIsRevokingApprovals(false);
@@ -71,12 +95,21 @@ export default function SettingsModal({
 
   const handleSave = async () => {
     setIsSaving(true);
+    const context = {
+      epoch: requestEpochRef.current,
+      signal: requestControllerRef.current?.signal,
+    };
     try {
-      const res = await api.updateSettings(settings, { projectId });
+      const res = await api.updateSettings(settings, {
+        projectId,
+        signal: context.signal,
+      });
+      if (!isCurrentRequest(context)) return;
       setSavedSuccess(true);
       if (onSettingsSaved) onSettingsSaved(res.settings);
       setTimeout(() => setSavedSuccess(false), 2000);
     } catch (err) {
+      if (err?.name === 'AbortError' || !isCurrentRequest(context)) return;
       if (onToast) {
         onToast(`保存设置失败: ${err.message}`, 'error');
       }

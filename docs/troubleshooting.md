@@ -108,6 +108,9 @@ Turn 发送后，流式输出了部分思考链，随后一直停留在某个工
 - 如果 `/api/workflows/state?thread_id=...` 曾因 `thread/goal/get` 超时返回 500，刷新或重启
   网关后会优先读取 SessionStore 的有界状态投影；超大的历史 checkpoint 会被标记为截断，
   但 Goal 状态和验证 Markdown 仍可读取。若仍返回 503，请先确认对应 App Server 进程已退出或可恢复。
+- 如果进程在 `turn_started` 后异常退出，侧栏会将该 Session 显示为“可恢复”，而不是继续显示
+  “运行中”；确认对应 Session 的锁已释放后即可重新 attach。Plan Mode 在已完成规划 Turn 后的
+  “开始实施”确认也会随 Session-owned `plan_mode.json` 恢复。
 
 ---
 

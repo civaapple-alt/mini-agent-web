@@ -403,6 +403,7 @@ async def get_workflow_state(
                 "collaboration_mode": {
                     "mode": "plan" if session.get("plan_active") else "default"
                 },
+                "plan_review_pending": bool(session.get("plan_review_pending", False)),
                 "builtin_tools": effective_builtin_tools,
                 "continuation_mode": continuation_mode,
                 "available_builtin_tools": ALL_BUILTIN_TOOLS,

@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Session projection race guards**: add request cancellation and epoch checks
+  to the Web Studio thread/project/settings surfaces, reset all Turn and
+  workflow projections atomically for new, forked, closed, and switched
+  Sessions, and keep Plan review confirmation recoverable after reload.
+
+- **Project-scoped runtime routing**: bind WebSocket subscriptions to their
+  current project, filter gateway broadcasts before delivery, and include
+  Thread/Turn/Project identifiers on turn-control errors.
+
+- **Crash-safe Session status**: an unsettled record without a live SessionStore
+  lock is now shown as recoverable rather than an actively running Turn; legacy
+  history hydration never attaches an unmatched item to the first assistant
+  message.
+
 - **Plan implementation confirmation**: after a completed Plan Mode turn, Web
   Studio now asks whether to continue planning or start implementation; choosing
   implementation automatically switches the Thread back to the default mode.

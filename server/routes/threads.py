@@ -150,6 +150,9 @@ async def list_threads(
                         "goal_status": catalog_entry["goal_status"],
                         "cleanup_pending": catalog_entry["cleanup_pending"],
                         "resumable": catalog_entry["resumable"],
+                        "plan_review_pending": catalog_entry.get(
+                            "plan_review_pending", False
+                        ),
                         "last_turn_status": catalog_entry.get("last_turn_status"),
                         "last_stop_reason": catalog_entry.get("last_stop_reason"),
                         "last_turn_error": catalog_entry.get("last_turn_error"),

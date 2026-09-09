@@ -167,7 +167,9 @@ async def test_websocket_stream_error_is_terminal(agent_test_app):
     websocket = AsyncMock()
 
     with patch.object(
-        session_manager, "get_client_for_thread", new=AsyncMock(return_value=mock_client)
+        session_manager,
+        "get_client_for_thread",
+        new=AsyncMock(return_value=mock_client),
     ):
         await _stream_turn_to_ws(websocket, "hello", "start", "thread-error")
 
@@ -357,9 +359,10 @@ def test_gateway_websocket_reads_approval_while_steer_is_pending(agent_test_app)
     session_manager._clients["default"] = mock_client
 
     client = TestClient(agent_test_app)
-    with patch.object(
-        session_manager, "resolve_approval", side_effect=resolve_approval
-    ), client.websocket_connect("/ws/agent") as ws:
+    with (
+        patch.object(session_manager, "resolve_approval", side_effect=resolve_approval),
+        client.websocket_connect("/ws/agent") as ws,
+    ):
         ws.send_json(
             {
                 "action": "steer",

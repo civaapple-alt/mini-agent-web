@@ -30,7 +30,7 @@ export function shouldAcceptEventForThread(
   if (eventThreadId && eventThreadId !== currentThreadId) {
     return false;
   }
-  if (eventProjectId && currentProjectId && eventProjectId !== currentProjectId) {
+  if (eventProjectId && eventProjectId !== (currentProjectId || null)) {
     return false;
   }
   return true;
@@ -384,12 +384,9 @@ export function aggregateThreadItems(messages, entries) {
         targetIndex = findToolTargetIndex(next, item, -1);
       }
       if (targetIndex === undefined || targetIndex < 0) {
-        // Legacy checkpoints may lack message turn IDs. Bind a turn to an
-        // existing assistant only when the item itself cannot provide a more
-        // precise call-id match; never bind by the turn's ordinal position.
-        targetIndex = next.findIndex((message) => message.role === 'assistant');
-      }
-      if (targetIndex < 0) {
+        // Legacy checkpoints may lack message turn IDs. Never attach such an
+        // item to an arbitrary assistant by position: create an explicit
+        // Turn projection and keep the ambiguity visible to the user.
         next = ensureTurnAssistant(next, turnId);
         targetIndex = findTurnAssistantIndex(next, turnId);
       }

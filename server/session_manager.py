@@ -76,7 +76,10 @@ class SessionManager:
         self._client_projects: dict[str, str] = {}
         self._project_clients: dict[tuple[str, str], MiniAgentClient] = {}
         self._active_thread_projects: dict[str, str] = {}
-        self._active_connections: list[WebSocket] = []
+        # Keep the connection's latest project routing context alongside the
+        # socket. Runtime notifications are project-scoped; filtering them at
+        # the gateway prevents cross-project traffic before it reaches Studio.
+        self._active_connections: dict[WebSocket, str | None] = {}
         self._pending_approvals: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._pending_approval_details: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
@@ -887,7 +890,7 @@ class SessionManager:
                 source_thread_id=source_thread_id,
                 new_thread_id=new_thread_id,
             )
-            source_meta = self.get_thread_meta(source_thread_id)
+            source_meta = self.get_thread_meta(source_thread_id, source_project)
             fork_title = title or f"{source_meta.get('title', source_thread_id)} (Fork)"
             self.set_thread_meta(
                 result.thread_id,
@@ -1567,26 +1570,45 @@ class SessionManager:
     ) -> None:
         """Register a new WebSocket client."""
         await websocket.accept()
-        self._active_connections.append(websocket)
+        self._active_connections[websocket] = project_id
         logger.debug(
             "WebSocket client connected. Total clients: %d",
             len(self._active_connections),
         )
 
+    def set_ws_project(self, websocket: WebSocket, project_id: str | None) -> None:
+        """Update the project routing context for an existing WebSocket."""
+        if websocket in self._active_connections:
+            self._active_connections[websocket] = project_id
+
     def disconnect_ws(self, websocket: WebSocket) -> None:
         """Unregister a WebSocket client."""
         if websocket in self._active_connections:
-            self._active_connections.remove(websocket)
+            self._active_connections.pop(websocket, None)
             logger.debug(
                 "WebSocket client disconnected. Remaining: %d",
                 len(self._active_connections),
             )
 
     async def broadcast_ws(self, message: dict[str, Any]) -> None:
-        """Broadcast JSON payload to all connected WebSockets."""
+        """Broadcast JSON payload to WebSockets in the same project scope."""
         safe_message = to_json_serializable(message)
+        message_data = safe_message.get("data")
+        message_project = safe_message.get("projectId") or safe_message.get(
+            "project_id"
+        )
+        if not message_project and isinstance(message_data, dict):
+            message_project = message_data.get("projectId") or message_data.get(
+                "project_id"
+            )
         disconnected = []
-        for ws in self._active_connections:
+        for ws, connection_project in list(self._active_connections.items()):
+            if (
+                message_project
+                and connection_project
+                and message_project != connection_project
+            ):
+                continue
             try:
                 await ws.send_json(safe_message)
             except Exception:  # noqa: BLE001

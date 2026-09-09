@@ -559,6 +559,7 @@ class SessionCatalog:
             last_turn_error = latest_turn_error
             last_turn_complete = last_turn_status == "completed"
         workspace_id = hashlib.sha256(str(path.parent).encode("utf-8")).hexdigest()[:16]
+        turn_active = bool(latest_turn_id and not latest_turn_settled and lock_active)
         entry: dict[str, Any] = {
             "session_id": path.name,
             "thread_id": thread_id,
@@ -572,7 +573,9 @@ class SessionCatalog:
             # Keep Turn activity separate from the SessionStore process lock.
             # A live/idle App Server process is online, but only an unsettled
             # Turn should be shown as running in the Studio sidebar.
-            "turn_active": last_turn_status == "in_progress",
+            # An unsettled record without a live SessionStore lock is a
+            # recoverable/interrupted turn, not a currently running Turn.
+            "turn_active": turn_active,
             "process_online": lock_active,
             "session_status": (
                 "locked"
@@ -584,10 +587,13 @@ class SessionCatalog:
             "goal_status": goal_status,
             "goal": _goal_projection(goal, thread_id, goal_status),
             "plan_active": bool(plan.get("active", False)),
+            "plan_review_pending": bool(
+                plan.get("active", False) and plan.get("review_pending", False)
+            ),
             "continuation_mode": continuation_mode,
             "cleanup_pending": cleanup.get("status") == "cleanup_pending",
             "active_turn_id": goal.get("active_turn_id") or latest_turn_id
-            if last_turn_status == "in_progress"
+            if turn_active
             else None,
             "checkpoint_seq": latest_checkpoint.get("seq") if latest_checkpoint else 0,
             "turn_count": _bounded_int(summary.get("turn_count")) or turn_count,

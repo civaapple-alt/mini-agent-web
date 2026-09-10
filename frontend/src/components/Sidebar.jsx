@@ -8,18 +8,12 @@ import {
   ChevronRight,
   X,
   Edit2,
-  FileText,
-  GitFork,
-  Trash2,
-  MoreVertical,
-  Circle,
-  Loader2,
   Pin,
   Settings,
   SquarePen,
 } from 'lucide-react';
 import { api } from '../api';
-import { getThreadStatusPresentation } from '../utils/threadStatus';
+import ThreadRow from './sidebar/ThreadRow';
 import './Sidebar.css';
 
 export default function Sidebar({
@@ -668,114 +662,23 @@ export default function Sidebar({
                 {/* Nested Threads under Project */}
                 {isExpanded && (
                   <div className="project-nested-threads">
-                    {visibleThreads.map((thread) => {
-                      const status = getThreadStatusPresentation(thread);
-                      const isSelected =
-                        thread.thread_id === currentThread &&
-                        (!currentThreadProject || thread.project === currentThreadProject);
-                      const threadKey = `${thread.project || 'unknown'}:${thread.thread_id}`;
-                      return (
-                        <div
-                          key={threadKey}
-                          className={`nested-thread-item ${isSelected ? 'selected' : ''} ${status.turnActive ? 'is-running' : ''}`}
-                          onClick={() => onSelectThread(thread.thread_id, thread.project)}
-                          title={thread.title}
-                        >
-                          <span className="nested-thread-title">
-                            {thread.title}
-                          </span>
-
-                          {status.lifecycleLabel && (
-                            <span
-                              className={`thread-status-badge ${status.lifecycleClass}`}
-                              title={thread.resumable ? '可恢复的历史会话' : undefined}
-                            >
-                              {status.lifecycleLabel}
-                            </span>
-                          )}
-
-                          {status.processLabel && (
-                            <span
-                              className={`thread-process-badge ${status.turnActive ? 'active' : 'standby'}`}
-                              title={
-                                status.turnActive
-                                  ? 'Session 进程在线，当前 Turn 正在运行'
-                                  : 'Session 进程在线，当前没有活跃 Turn'
-                              }
-                            >
-                              {status.processLabel}
-                            </span>
-                          )}
-
-                          <div className="thread-tail-indicators">
-                            {isSelected && (
-                              <div className="selected-spinner-dot">
-                                {isGenerating ? (
-                                  <Loader2 size={11} className="animate-spin text-muted" />
-                                ) : (
-                                  <Circle size={10} className="active-circle" />
-                                )}
-                              </div>
-                            )}
-
-                            {/* Options Button on hover */}
-                            <button
-                              className="btn-thread-menu-trigger"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveMenuThread(
-                                  activeMenuThread === threadKey
-                                    ? null
-                                    : threadKey
-                                );
-                              }}
-                              title="会话选项"
-                            >
-                              <MoreVertical size={12} />
-                            </button>
-                          </div>
-
-                          {/* Popover Action Menu */}
-                          {activeMenuThread === threadKey && (
-                            <div
-                              className="thread-action-popover"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <button
-                                className="popover-btn"
-                                onClick={(e) => handleAction(e, 'rename', thread)}
-                              >
-                                <Edit2 size={12} />
-                                <span>重命名</span>
-                              </button>
-                              <button
-                                className="popover-btn"
-                                onClick={(e) => handleAction(e, 'summary', thread)}
-                              >
-                                <FileText size={12} />
-                                <span>指定摘要</span>
-                              </button>
-                              <button
-                                className="popover-btn"
-                                onClick={(e) => handleAction(e, 'fork', thread)}
-                              >
-                                <GitFork size={12} />
-                                <span>派生分支</span>
-                              </button>
-                              {thread.thread_id !== 'default' && (
-                                <button
-                                  className="popover-btn danger"
-                                  onClick={(e) => handleAction(e, 'close', thread)}
-                                >
-                                  <Trash2 size={12} />
-                                  <span>关闭会话</span>
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                    {visibleThreads.map((thread) => (
+                      <ThreadRow
+                        key={`${thread.project || 'unknown'}:${thread.thread_id}`}
+                        thread={thread}
+                        currentThread={currentThread}
+                        currentThreadProject={currentThreadProject}
+                        isGenerating={isGenerating}
+                        activeMenuThread={activeMenuThread}
+                        onSelectThread={onSelectThread}
+                        onToggleMenu={(threadKey) =>
+                          setActiveMenuThread((activeKey) =>
+                            activeKey === threadKey ? null : threadKey,
+                          )
+                        }
+                        onAction={handleAction}
+                      />
+                    ))}
 
                     {projThreads.length > 5 && (
                       <div

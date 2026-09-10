@@ -421,8 +421,16 @@ class MiniAgentClient:
     async def _read_loop(self) -> None:
         """Background loop reading JSONL lines from server stdout."""
         assert self._proc and self._proc.stdout
+        error_message = "App Server connection closed before stream settlement"
         while True:
-            line_bytes = await self._proc.stdout.readline()
+            try:
+                line_bytes = await self._proc.stdout.readline()
+            except Exception as err:
+                logger.exception("App Server stdout read failed")
+                error_message = (
+                    f"App Server connection failed before stream settlement: {err}"
+                )
+                break
             if not line_bytes:
                 break
             line = line_bytes.decode("utf-8", errors="replace").strip()
@@ -497,6 +505,24 @@ class MiniAgentClient:
                     if self.notification_handler is not None:
                         asyncio.create_task(self.notification_handler(notification))
                     logger.debug("Received server notification: %s", method)
+
+        for fut in self._pending_requests.values():
+            if not fut.done():
+                fut.set_exception(ServerProcessError(error_message))
+        self._pending_requests.clear()
+        for q in self._event_queues:
+            await q.put({"type": "_client_error", "message": error_message})
+        if self.notification_handler is not None:
+            try:
+                await self.notification_handler(
+                    {
+                        "type": "runtime_error",
+                        "threadId": self._active_thread_id,
+                        "message": error_message,
+                    }
+                )
+            except Exception:
+                logger.exception("Runtime error notification handler failed")
 
     async def _stderr_loop(self) -> None:
         """Background loop reading and logging any stderr output from the server."""
@@ -842,6 +868,11 @@ class MiniAgentClient:
 
             while True:
                 envelope = await queue.get()
+                if envelope.get("type") == "_client_error":
+                    raise ServerProcessError(
+                        envelope.get("message")
+                        or "App Server connection closed before stream settlement"
+                    )
                 if envelope.get("type") == "approval":
                     approval = envelope.get("approval", {})
                     approval_thread = approval.get("threadId") or approval.get(

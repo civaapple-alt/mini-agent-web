@@ -344,9 +344,7 @@ async def test_approval_identity_survives_background_session_switch(
     assert payload["projectId"] == "default"
     assert payload["threadId"] == "background-thread"
 
-    snapshot = mock_session_manager.approval_snapshot(
-        "default", "background-thread"
-    )
+    snapshot = mock_session_manager.approval_snapshot("default", "background-thread")
     assert snapshot["pending_requests"][0]["thread_id"] == "background-thread"
     assert (
         mock_session_manager.resolve_approval(
@@ -358,14 +356,83 @@ async def test_approval_identity_survives_background_session_switch(
         )
         is False
     )
-    assert mock_session_manager.resolve_approval(
-        request_id,
-        "approve",
-        "once",
-        project_id="default",
-        thread_id="background-thread",
-    ) is True
+    assert (
+        mock_session_manager.resolve_approval(
+            request_id,
+            "approve",
+            "once",
+            project_id="default",
+            thread_id="background-thread",
+        )
+        is True
+    )
     assert (await task)["decision"] == "approve"
+
+
+@pytest.mark.asyncio
+async def test_runtime_eof_cancels_pending_approval(
+    mock_session_manager,
+):
+    """A dead App Server cannot leave a tool approval waiting in memory."""
+    mock_session_manager.broadcast_ws = AsyncMock()
+    request_id = "approval-runtime-eof"
+    task = asyncio.create_task(
+        mock_session_manager._handle_approval_request(
+            {
+                "requestId": request_id,
+                "actionSummary": "Run workspace command",
+                "allowedGrantScopes": ["once"],
+                "projectId": "default",
+                "threadId": "runtime-thread",
+                "turnId": "turn-runtime-eof",
+            },
+            runtime_id="runtime-a",
+        )
+    )
+    await asyncio.sleep(0)
+    other_task = asyncio.create_task(
+        mock_session_manager._handle_approval_request(
+            {
+                "requestId": "approval-other-runtime",
+                "actionSummary": "Run another workspace command",
+                "allowedGrantScopes": ["once"],
+                "projectId": "default",
+                "threadId": "runtime-thread",
+                "turnId": "turn-other-runtime",
+            },
+            runtime_id="runtime-b",
+        )
+    )
+    await asyncio.sleep(0)
+
+    await mock_session_manager._handle_runtime_notification(
+        {
+            "type": "runtime_error",
+            "projectId": "default",
+            "threadId": "runtime-thread",
+            "_runtimeId": "runtime-a",
+            "message": "App Server connection closed before stream settlement",
+        },
+        "default",
+    )
+
+    assert mock_session_manager.list_pending_approvals() == ["approval-other-runtime"]
+    assert (await task)["decision"] == "deny"
+    mock_session_manager.resolve_approval(
+        "approval-other-runtime", "deny", None, project_id="default"
+    )
+    assert (await other_task)["decision"] == "deny"
+    assert mock_session_manager.broadcast_ws.await_count == 4
+    assert (
+        mock_session_manager.broadcast_ws.await_args_list[2].args[0]["scope"]
+        == "runtime"
+    )
+    assert (
+        mock_session_manager.broadcast_ws.await_args_list[3].args[0]["approval"][
+            "phase"
+        ]
+        == "resolved"
+    )
 
 
 def test_session_manager_thread_metadata_management(mock_session_manager):
@@ -1135,7 +1202,9 @@ async def test_project_restart_preserves_other_project_clients(
         {"default": "default", "other-thread": "other-project"}
     )
     monkeypatch.setattr(
-        mock_session_manager, "_create_client", AsyncMock(return_value=replacement_client)
+        mock_session_manager,
+        "_create_client",
+        AsyncMock(return_value=replacement_client),
     )
     monkeypatch.setattr(mock_session_manager, "broadcast_ws", AsyncMock())
 
@@ -1143,9 +1212,15 @@ async def test_project_restart_preserves_other_project_clients(
 
     default_client.stop.assert_awaited_once()
     other_client.stop.assert_not_awaited()
-    assert mock_session_manager._project_clients[("other-project", "other-thread")] is other_client
+    assert (
+        mock_session_manager._project_clients[("other-project", "other-thread")]
+        is other_client
+    )
     assert mock_session_manager._clients["other-thread"] is other_client
-    assert mock_session_manager._project_clients[("default", "default")] is replacement_client
+    assert (
+        mock_session_manager._project_clients[("default", "default")]
+        is replacement_client
+    )
 
 
 @pytest.mark.asyncio
@@ -1340,3 +1415,36 @@ async def test_session_manager_automatic_policy_is_not_web_auto_approval(
     mock_session_manager.resolve_approval("req-auto-1", "deny", None)
     res = await task
     assert res["decision"] == "deny"
+
+
+def test_stale_stream_cleanup_does_not_clear_new_turn(mock_session_manager):
+    """A delayed old stream cannot clear a newer Turn for the same Thread."""
+    mock_session_manager.set_active_turn("thread-1", "turn-new", project_id="default")
+
+    mock_session_manager.clear_active_turn("thread-1", "default", turn_id="turn-old")
+
+    assert mock_session_manager.get_active_turn("thread-1", "default") == "turn-new"
+    mock_session_manager.clear_active_turn("thread-1", "default", turn_id="turn-new")
+    assert mock_session_manager.get_active_turn("thread-1", "default") is None
+
+
+def test_stale_stream_task_cannot_clear_same_turn_replacement(mock_session_manager):
+    """A replacement stream with the same external Turn ID remains active."""
+    old_task = object()
+    new_task = object()
+    mock_session_manager.set_active_turn(
+        "thread-1", "turn-shared", task=old_task, project_id="default"
+    )
+    mock_session_manager.set_active_turn(
+        "thread-1", "turn-shared", task=new_task, project_id="default"
+    )
+
+    mock_session_manager.clear_active_turn(
+        "thread-1", "default", "turn-shared", old_task
+    )
+
+    assert mock_session_manager.get_active_turn("thread-1", "default") == "turn-shared"
+    mock_session_manager.clear_active_turn(
+        "thread-1", "default", "turn-shared", new_task
+    )
+    assert mock_session_manager.get_active_turn("thread-1", "default") is None

@@ -83,7 +83,10 @@ async def list_threads(
         # A Gateway may intentionally start read-only when another process owns
         # the canonical default Session. The SessionStore catalog is still
         # sufficient for the sidebar and must remain available in that mode.
-        client = session_manager._client
+        requested_project = project_id or session_manager._current_project_id
+        client = session_manager._project_clients.get((requested_project, "default"))
+        if client is None and requested_project == session_manager._current_project_id:
+            client = session_manager._client
         res = (
             await client.list_threads(cursor=cursor, limit=limit)
             if client is not None
@@ -93,7 +96,7 @@ async def list_threads(
         # so ``pi/default`` and ``mini-agent-web/default`` remain selectable.
         live_bindings = set(session_manager.live_thread_bindings())
         if res is not None and isinstance(res.data, list):
-            active_project = project_id or session_manager._current_project_id
+            active_project = requested_project
             for raw_thread in res.data:
                 if isinstance(raw_thread, str):
                     tid = raw_thread
@@ -104,7 +107,7 @@ async def list_threads(
                 if tid:
                     live_bindings.add(
                         (
-                            session_manager._client_projects.get(tid, active_project),
+                            active_project,
                             str(tid),
                         )
                     )
@@ -117,13 +120,16 @@ async def list_threads(
             for session in session_manager.list_all_project_sessions()
         }
         all_bindings = set(live_bindings) | set(catalog_entries)
+        for meta_project, tid in session_manager._thread_metadata_by_project:
+            all_bindings.add((str(meta_project), str(tid)))
         for tid, meta in session_manager._thread_metadata.items():
             project_id = str(
                 meta.get("project")
                 or session_manager._client_projects.get(tid)
                 or session_manager._current_project_id
             )
-            all_bindings.add((project_id, tid))
+            if not any(existing_tid == tid for _, existing_tid in all_bindings):
+                all_bindings.add((project_id, tid))
 
         enriched_threads: list[dict[str, Any]] = []
         for project_id, tid in sorted(all_bindings):

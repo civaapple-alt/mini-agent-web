@@ -36,6 +36,15 @@ export function shouldAcceptEventForThread(
   return true;
 }
 
+/**
+ * Prevent an unscoped or stale Turn error from settling a newer active Turn.
+ */
+export function shouldSettleActiveTurnFromError(eventData, activeTurnId) {
+  if (!activeTurnId) return true;
+  const errorTurnId = eventData?.turnId || eventData?.turn_id;
+  return Boolean(errorTurnId && errorTurnId === activeTurnId);
+}
+
 function projectedStatus(status) {
   if (status === 'failed') return 'failed';
   if (status === 'completed') return 'completed';

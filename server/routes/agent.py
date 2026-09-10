@@ -285,7 +285,9 @@ async def list_pending_approvals(
     """List IDs of active approval requests currently waiting for human decision."""
     return {
         "project_id": project_id,
-        "pending_requests": session_manager.list_pending_approvals(project_id, thread_id),
+        "pending_requests": session_manager.list_pending_approvals(
+            project_id, thread_id
+        ),
     }
 
 
@@ -491,8 +493,9 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
     except Exception:
         logger.exception("WebSocket unhandled exception")
     finally:
-        for task in background_tasks:
-            task.cancel()
+        # Turn streams are Gateway-owned and must outlive this browser
+        # connection. A reconnecting Studio can recover them from catalog,
+        # runtime status, and bounded event replay.
         session_manager.disconnect_ws(websocket)
 
 
@@ -606,7 +609,16 @@ async def _stream_turn_to_ws(
                 safe_item["threadId"] = target_thread
                 if project_id:
                     safe_item["projectId"] = project_id
-                await websocket.send_json(safe_item)
+                try:
+                    await websocket.send_json(safe_item)
+                except Exception:  # noqa: BLE001
+                    # The initiating browser may have disconnected. Keep
+                    # consuming the App Server stream so the Turn can settle
+                    # and other Studio connections can still observe it.
+                    logger.info(
+                        "Origin WebSocket closed while Turn %s continued",
+                        active_turn_id,
+                    )
     except asyncio.CancelledError:
         logger.info("WebSocket stream turn cancelled for thread: %s", target_thread)
         try:
@@ -636,6 +648,11 @@ async def _stream_turn_to_ws(
         }
         if project_id:
             error_payload["projectId"] = project_id
-        await websocket.send_json(error_payload)
+        await session_manager.broadcast_ws(error_payload)
     finally:
-        session_manager.clear_active_turn(target_thread, project_id)
+        session_manager.clear_active_turn(
+            target_thread,
+            project_id,
+            active_turn_id,
+            current_task,
+        )

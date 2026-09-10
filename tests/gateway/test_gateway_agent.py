@@ -165,15 +165,19 @@ async def test_websocket_stream_error_is_terminal(agent_test_app):
     mock_client = AsyncMock()
     mock_client.stream_turn = failing_stream_turn
     websocket = AsyncMock()
+    broadcast = AsyncMock()
 
-    with patch.object(
-        session_manager,
-        "get_client_for_thread",
-        new=AsyncMock(return_value=mock_client),
+    with (
+        patch.object(
+            session_manager,
+            "get_client_for_thread",
+            new=AsyncMock(return_value=mock_client),
+        ),
+        patch.object(session_manager, "broadcast_ws", new=broadcast),
     ):
         await _stream_turn_to_ws(websocket, "hello", "start", "thread-error")
 
-    terminal_error = websocket.send_json.await_args.args[0]
+    terminal_error = broadcast.await_args.args[0]
     assert terminal_error == {
         "type": "error",
         "scope": "turn",
@@ -432,3 +436,32 @@ async def test_ws_stream_does_not_duplicate_app_server_events():
         }
     )
     broadcast.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ws_stream_continues_after_origin_socket_closes():
+    """A browser disconnect must not cancel the Gateway-owned Turn stream."""
+    websocket = AsyncMock()
+    websocket.send_json = AsyncMock(side_effect=RuntimeError("socket closed"))
+    client = AsyncMock()
+
+    async def stream_turn(**_kwargs):
+        yield {"type": "_turn_submission", "data": {"turn_id": "turn-closed"}}
+        yield {
+            "type": "event",
+            "threadId": "default",
+            "turnId": "turn-closed",
+            "sequence": 1,
+            "event": {"type": "turn_finished", "status": "completed"},
+        }
+
+    client.stream_turn = stream_turn
+    with patch.object(
+        session_manager,
+        "get_client_for_thread",
+        new=AsyncMock(return_value=client),
+    ):
+        await _stream_turn_to_ws(websocket, "hello", "start", "default")
+
+    websocket.send_json.assert_awaited_once()
+    assert session_manager.get_active_turn("default") is None

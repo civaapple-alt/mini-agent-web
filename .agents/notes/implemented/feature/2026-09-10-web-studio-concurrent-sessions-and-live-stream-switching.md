@@ -26,6 +26,11 @@ catalog 轮询和生命周期事件刷新多个会话的状态与项目活跃数
 Turn 存在时拒绝变更。审批请求补齐 Project/Thread/Turn 身份，前端切换回等待中的
 会话时通过审批快照恢复卡片，并使用原请求身份提交响应。
 
+本轮运行审计还覆盖了浏览器断线、App Server EOF、重复提交、旧流迟到清理、网关关闭
+以及跨项目列表读取：浏览器断线不会取消网关持有的 Turn；运行时 EOF 会结算等待中的
+SDK 流；旧流不能清理同 Thread 的新 Turn；重复提交的终态错误不会清理正在运行的首个
+Turn；网关关闭会按顺序清理流任务、审批和 Client。
+
 ## Implementation
 
 - `SessionManager` 的客户端解析、运行时重启、审批撤销和兼容指针均按项目隔离。
@@ -34,6 +39,7 @@ Turn 存在时拒绝变更。审批请求补齐 Project/Thread/Turn 身份，前
 - 前端恢复活跃 Turn、只读锁定会话、状态轮询和完成/中断标签。
 - 审批快照按项目/会话过滤，审批响应增加 Thread/Turn 身份校验。
 - 增加 Gateway、前端状态和 UI 测试，并同步 troubleshooting 与 changelog。
+- 增加断线继续消费、运行时 EOF、重复 Turn 错误、旧流清理和网关停止的回归保护。
 
 ## Verification
 
@@ -49,9 +55,11 @@ npm --prefix frontend run build
 git diff --check
 ```
 
-Python 测试会产生两个 Windows Proactor 子进程清理警告，但没有失败。
+Python 测试在 Windows 下可能产生 Proactor 子进程清理警告，但没有失败。
 
 ## Boundaries
 
 首版仍是单窗口单面板查看；同一会话不支持并行 Turn；外部 Gateway/进程只提供
 有界快照和最终状态，不承诺跨进程实时流；不修改 App Server JSON-RPC 协议。
+浏览器断线保护的生命周期边界是当前 Gateway 进程：若 Gateway 自身崩溃，不能继续消费
+内存中的流，但 SessionStore 锁、canonical history 和可恢复状态仍是重新 attach 的依据。

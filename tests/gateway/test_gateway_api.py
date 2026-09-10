@@ -249,9 +249,11 @@ async def test_execution_policy_change_does_not_restart_runtime(test_app, monkey
 async def test_project_switch_keeps_existing_runtime_tasks(test_app, monkeypatch):
     """Switching the UI project must not invoke the project restart path."""
     project = {"id": "project-2", "name": "Project 2", "primary_path": "C:/project-2"}
+
     def switch(path):
         assert path == project["primary_path"]
         return project
+
     start = AsyncMock()
     restart = AsyncMock()
     monkeypatch.setattr(session_manager, "switch_project", switch)

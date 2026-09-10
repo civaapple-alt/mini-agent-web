@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Multi-session interruption and failure isolation**: browser/WebSocket
+  disconnects no longer cancel Gateway-owned Turn streams; App Server EOF now
+  settles waiting SDK consumers; stale stream cleanup and concurrent Turn errors
+  cannot clear a newer active Turn; Gateway shutdown cancels owned streams before
+  stopping per-session clients.
+
 - **Live execution policy changes**: changing the access or approval policy no
   longer restarts the active project runtime and interrupts an in-flight Turn;
   Web Studio asks users to wait for the current Turn to settle before changing

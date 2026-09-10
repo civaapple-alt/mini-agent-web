@@ -16,6 +16,7 @@ import {
   aggregateThreadItems,
   assignHistoryTurnIds,
   filterEmptyMessages,
+  shouldSettleActiveTurnFromError,
 } from './utils/messageState';
 import {
   appendGoalMessage as appendGoalMessageToMessages,
@@ -178,6 +179,8 @@ export default function App() {
   const runtimeGenerationRef = useRef(0);
   const queueDispatchingRef = useRef(false);
   const interruptPendingRef = useRef(false);
+  const activeTurnIdRef = useRef(activeTurnId);
+  const planActiveRef = useRef(planActive);
   const currentThreadRef = useRef(currentThread);
   const currentThreadProjectRef = useRef(currentThreadProject);
   const goalStateRef = useRef(goalState);
@@ -188,6 +191,8 @@ export default function App() {
   const loadThreadsRef = useRef(null);
   const catalogEpochRef = useRef(0);
   const catalogRequestControllerRef = useRef(null);
+  activeTurnIdRef.current = activeTurnId;
+  planActiveRef.current = planActive;
   currentThreadRef.current = currentThread;
   currentThreadProjectRef.current = currentThreadProject;
   setActiveProjectId(currentThreadProject);
@@ -277,6 +282,7 @@ export default function App() {
 
   const resetSessionProjections = ({ loadingHistory = false } = {}) => {
     setIsGenerating(false);
+    activeTurnIdRef.current = null;
     setActiveTurnId(null);
     setCurrentSessionReadOnly(false);
     interruptPendingRef.current = false;
@@ -567,7 +573,10 @@ export default function App() {
         if (ACTIVE_RUNTIME_PHASES.has(status.phase)) {
           setIsGenerating(true);
           const runtimeTurnId = status.turn_id || status.turnId;
-          if (runtimeTurnId) setActiveTurnId(runtimeTurnId);
+          if (runtimeTurnId) {
+            activeTurnIdRef.current = runtimeTurnId;
+            setActiveTurnId(runtimeTurnId);
+          }
         }
       }
     } catch (err) {
@@ -700,15 +709,15 @@ export default function App() {
       const turnActive = Boolean(
         cp.turn_active ?? sessionSnapshot.turn_active,
       );
+      const restoredTurnId = turnActive
+        ? cp.active_turn_id
+          || sessionSnapshot.active_turn_id
+          || cp.last_turn_id
+          || sessionSnapshot.last_turn_id
+        : null;
       setIsGenerating(turnActive);
-      setActiveTurnId(
-        turnActive
-          ? cp.active_turn_id
-            || sessionSnapshot.active_turn_id
-            || cp.last_turn_id
-            || sessionSnapshot.last_turn_id
-          : null,
-      );
+      activeTurnIdRef.current = restoredTurnId;
+      setActiveTurnId(restoredTurnId);
       const persistedTurn = cp.last_turn_status || cp.session?.last_turn_status;
       if (!turnActive && persistedTurn && persistedTurn !== 'completed') {
         setLastTurnResult({
@@ -850,6 +859,7 @@ export default function App() {
     if (data.type === '_turn_submission') {
       const turnId = data.data?.turn_id || data.submission?.turn_id;
       if (turnId) {
+        activeTurnIdRef.current = turnId;
         setActiveTurnId(turnId);
         setIsGenerating(true);
         queueDispatchingRef.current = false;
@@ -875,25 +885,28 @@ export default function App() {
     }
 
     if (data.type === 'error') {
+      const visibleActiveTurnId = activeTurnIdRef.current;
       console.warn('[Studio][turn-control]', {
         action: 'gateway-error',
         source: data.source || data.scope || 'gateway',
         threadId: data.threadId || currentThreadRef.current,
-        turnId: data.turnId || activeTurnId || null,
+        turnId: data.turnId || visibleActiveTurnId || null,
         message: data.message || '操作异常',
       });
       showToast(`⚠️ ${data.message || '操作异常'}`, 'error', 4000);
       if (data.terminal && data.scope === 'turn') {
+        if (!shouldSettleActiveTurnFromError(data, visibleActiveTurnId)) return;
         setLastTurnResult({
           status: data.status || 'failed',
           stopReason: data.stopReason || data.stop_reason || 'failed',
           steps: data.steps || 0,
-          turnId: data.turnId || activeTurnId || null,
+          turnId: data.turnId || visibleActiveTurnId || null,
           error: data.message || '网关/运行时错误',
         });
         queueDispatchingRef.current = false;
         interruptPendingRef.current = false;
         setIsGenerating(false);
+        activeTurnIdRef.current = null;
         setActiveTurnId(null);
         setPendingApproval(null);
         loadThreads();
@@ -971,6 +984,7 @@ export default function App() {
     // 3. Engine Typed Events
     if (data.type === 'event') {
       if (data.turnId) {
+        activeTurnIdRef.current = data.turnId;
         setActiveTurnId(data.turnId);
       }
       const evt = data.event || {};
@@ -1018,10 +1032,11 @@ export default function App() {
           } else {
             setLastTurnResult(null);
           }
-          if (turnStatus === 'completed' && planActive) {
+          if (turnStatus === 'completed' && planActiveRef.current) {
             setPlanReviewPending(true);
           }
           setIsGenerating(false);
+          activeTurnIdRef.current = null;
           setActiveTurnId(null);
           interruptPendingRef.current = false;
           loadThreads();
@@ -1223,6 +1238,7 @@ export default function App() {
       turnId,
       sent,
     });
+    activeTurnIdRef.current = null;
     setActiveTurnId(null);
     showToast('已发送停止生成请求', 'info', 1800);
     setMessages((prev) => {

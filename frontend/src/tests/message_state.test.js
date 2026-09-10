@@ -8,6 +8,7 @@ import {
   filterEmptyMessages,
   groupCompactionBlocks,
   shouldAcceptEventForThread,
+  shouldSettleActiveTurnFromError,
 } from '../utils/messageState.js';
 
 test('history messages join their durable Turn by item content and call id', () => {
@@ -163,6 +164,34 @@ test('thread isolation rejects foreign thread events', () => {
       null,
     ),
     false,
+  );
+});
+
+test('a concurrent Turn error cannot settle the active Turn', () => {
+  assert.equal(
+    shouldSettleActiveTurnFromError(
+      { type: 'error', scope: 'turn', terminal: true },
+      'turn-running',
+    ),
+    false,
+  );
+  assert.equal(
+    shouldSettleActiveTurnFromError(
+      { type: 'error', scope: 'turn', terminal: true, turnId: 'turn-old' },
+      'turn-running',
+    ),
+    false,
+  );
+  assert.equal(
+    shouldSettleActiveTurnFromError(
+      { type: 'error', scope: 'turn', terminal: true, turnId: 'turn-running' },
+      'turn-running',
+    ),
+    true,
+  );
+  assert.equal(
+    shouldSettleActiveTurnFromError({ type: 'error', scope: 'turn' }, null),
+    true,
   );
 });
 

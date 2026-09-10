@@ -15,6 +15,7 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from fastapi import WebSocket
 from mini_agent import MiniAgentClient
@@ -724,6 +725,7 @@ class SessionManager:
         if session_id:
             env["MINI_AGENT_SESSION_ID"] = session_id
         notification_project_id = str(project.get("id") or self._current_project_id)
+        runtime_id = uuid4().hex
 
         async def handle_approval(req: dict[str, Any]) -> dict[str, Any]:
             approval = dict(req)
@@ -733,13 +735,25 @@ class SessionManager:
                 "turnId", self.get_active_turn(thread_id, notification_project_id)
             )
             return await self._handle_approval_request(
-                approval, notification_project_id, thread_id
+                approval, notification_project_id, thread_id, runtime_id
             )
 
         async def handle_notification(notification: dict[str, Any]) -> None:
-            await self._handle_runtime_notification(
-                notification, notification_project_id
-            )
+            enriched = dict(notification)
+            enriched.setdefault("projectId", notification_project_id)
+            if enriched.get("type") == "runtime_error":
+                enriched["_runtimeId"] = runtime_id
+            if enriched.get("type") == "event":
+                enriched.setdefault("threadId", thread_id)
+            elif isinstance(enriched.get("data"), dict):
+                enriched["data"] = {
+                    **enriched["data"],
+                    "projectId": enriched["data"].get(
+                        "projectId", notification_project_id
+                    ),
+                    "threadId": enriched["data"].get("threadId", thread_id),
+                }
+            await self._handle_runtime_notification(enriched, notification_project_id)
 
         client = MiniAgentClient(
             cwd=str(Path(project["primary_path"]).resolve()),
@@ -1041,26 +1055,22 @@ class SessionManager:
         async with self._lock:
             project_id = self._current_project_id
             active_keys = {
-                *(
-                    key
-                    for key in self._active_turns_by_project
-                    if key[0] == project_id
-                ),
-                *(
-                    key
-                    for key in self._active_tasks_by_project
-                    if key[0] == project_id
-                ),
+                *(key for key in self._active_turns_by_project if key[0] == project_id),
+                *(key for key in self._active_tasks_by_project if key[0] == project_id),
             }
             if active_keys:
-                active_threads = ", ".join(sorted(thread_id for _, thread_id in active_keys))
+                active_threads = ", ".join(
+                    sorted(thread_id for _, thread_id in active_keys)
+                )
                 raise RuntimeError(
                     f"Project '{project_id}' has active Turn(s): {active_threads}"
                 )
 
             current_default_project = self._client_projects.get("default")
             clients: list[MiniAgentClient] = []
-            for (bound_project, thread_id), client in list(self._project_clients.items()):
+            for (bound_project, thread_id), client in list(
+                self._project_clients.items()
+            ):
                 if bound_project != project_id:
                     continue
                 if client not in clients:
@@ -1145,7 +1155,21 @@ class SessionManager:
                     fut.cancel()
             self._pending_approvals.clear()
 
-            # 3. Terminate all per-session App Server processes
+            # 3. Stop Gateway-owned stream tasks before terminating clients.
+            tasks: list[asyncio.Task[Any]] = []
+            seen_tasks: set[int] = set()
+            for task in [
+                *self._active_tasks.values(),
+                *self._active_tasks_by_project.values(),
+            ]:
+                if id(task) in seen_tasks:
+                    continue
+                seen_tasks.add(id(task))
+                tasks.append(task)
+                if not task.done():
+                    task.cancel()
+
+            # 4. Terminate all per-session App Server processes
             clients = self._all_clients()
             self._clients.clear()
             self._client_projects.clear()
@@ -1159,10 +1183,21 @@ class SessionManager:
             for client in set(clients):
                 try:
                     await asyncio.wait_for(client.stop(), timeout=3.0)
-                except (asyncio.TimeoutError, Exception):  # noqa: BLE001, S110
+                except asyncio.TimeoutError:
+                    pass
+                except Exception:  # noqa: BLE001, S110
                     pass
             self._initialized = False
             logger.info("MiniAgentClient processes terminated cleanly.")
+        for task in tasks:
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=0.5)
+            except asyncio.CancelledError:
+                pass
+            except asyncio.TimeoutError:
+                pass
+            except Exception:  # noqa: BLE001, S110
+                pass
 
     # -------------------------------------------------------------------------
     # Thread Metadata Management
@@ -1518,6 +1553,7 @@ class SessionManager:
         req: dict[str, Any],
         project_id: str | None = None,
         thread_id: str | None = None,
+        runtime_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Called asynchronously by MiniAgentClient when the App Server encounters
@@ -1529,9 +1565,7 @@ class SessionManager:
             raise ValueError("approval request is missing requestId")
         resolved_project_id = project_id or req_data.get("projectId")
         resolved_thread_id = (
-            req_data.get("threadId")
-            or req_data.get("thread_id")
-            or thread_id
+            req_data.get("threadId") or req_data.get("thread_id") or thread_id
         )
         resolved_turn_id = req_data.get("turnId") or req_data.get("turn_id")
         if not resolved_turn_id and resolved_thread_id:
@@ -1556,6 +1590,7 @@ class SessionManager:
             "projectId": resolved_project_id,
             "threadId": str(resolved_thread_id) if resolved_thread_id else None,
             "turnId": str(resolved_turn_id) if resolved_turn_id else None,
+            "runtimeId": runtime_id,
         }
 
         # Broadcast approval request to all connected UI clients
@@ -1602,6 +1637,56 @@ class SessionManager:
                     **data,
                     "projectId": data.get("projectId", project_id),
                 }
+        if payload.get("type") == "runtime_error":
+            data = payload.get("data", {})
+            thread_id = str(
+                payload.get("threadId")
+                or payload.get("thread_id")
+                or (data.get("threadId") if isinstance(data, dict) else "")
+                or (data.get("thread_id") if isinstance(data, dict) else "")
+                or ""
+            )
+            runtime_id = payload.get("_runtimeId")
+            runtime_error = {
+                "type": "error",
+                "scope": "runtime",
+                "terminal": False,
+                "threadId": thread_id or None,
+                "projectId": project_id,
+                "message": payload.get("message") or "运行时连接已断开",
+            }
+            await self.broadcast_ws(runtime_error)
+
+            # An App Server EOF also invalidates approval requests that were
+            # waiting inside that process. Resolve them as denied so the
+            # Gateway does not retain a dead request for the full timeout.
+            cancelled_approvals = []
+            for request_id, details in list(self._pending_approval_details.items()):
+                if project_id and details.get("projectId") != project_id:
+                    continue
+                if thread_id and details.get("threadId") != thread_id:
+                    continue
+                if runtime_id and details.get("runtimeId") != runtime_id:
+                    continue
+                future = self._pending_approvals.pop(request_id, None)
+                self._pending_approval_details.pop(request_id, None)
+                if future and not future.done():
+                    future.cancel()
+                cancelled_approvals.append((request_id, details))
+            for request_id, details in cancelled_approvals:
+                await self.broadcast_ws(
+                    {
+                        "type": "approval",
+                        "approval": {
+                            **details.get("data", {}),
+                            "requestId": request_id,
+                            "phase": "resolved",
+                            "decision": "deny",
+                            "reason": "运行时连接已断开",
+                        },
+                    }
+                )
+            return
         await self.broadcast_ws(payload)
         if payload.get("type") == "event":
             return
@@ -1823,14 +1908,32 @@ class SessionManager:
         if task:
             self._active_tasks[thread_id] = task
 
-    def clear_active_turn(self, thread_id: str, project_id: str | None = None) -> None:
+    def clear_active_turn(
+        self,
+        thread_id: str,
+        project_id: str | None = None,
+        turn_id: str | None = None,
+        task: asyncio.Task[Any] | None = None,
+    ) -> None:
         """Clear active turn tracking upon turn settlement."""
         project_id = project_id or self._active_thread_projects.get(thread_id)
         if project_id:
             key = (project_id, thread_id)
+            if turn_id and self._active_turns_by_project.get(key) not in (
+                None,
+                turn_id,
+            ):
+                return
+            if task and self._active_tasks_by_project.get(key) not in (None, task):
+                return
             self._active_turns_by_project.pop(key, None)
             self._active_tasks_by_project.pop(key, None)
             if self._active_thread_projects.get(thread_id) != project_id:
+                return
+        else:
+            if turn_id and self._active_turns.get(thread_id) not in (None, turn_id):
+                return
+            if task and self._active_tasks.get(thread_id) not in (None, task):
                 return
         self._active_turns.pop(thread_id, None)
         self._active_tasks.pop(thread_id, None)

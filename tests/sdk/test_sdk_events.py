@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from mini_agent import (
     AssistantTextDeltaEvent,
@@ -14,6 +16,7 @@ from mini_agent import (
     RunFailedEvent,
     RunFailure,
     RunFinishedEvent,
+    ServerProcessError,
     ThreadItem,
     ToolFinishedEvent,
     TurnFinishedEvent,
@@ -219,8 +222,54 @@ async def test_read_loop_relays_turn_events_to_notification_handler_in_order():
             "threadId": "thread-1",
             "sequence": 7,
             "event": {"type": "run_started"},
-        }
+        },
+        {
+            "type": "runtime_error",
+            "threadId": "default",
+            "message": "App Server connection closed before stream settlement",
+        },
     ]
+
+
+@pytest.mark.asyncio
+async def test_read_loop_settles_event_queues_when_stdout_closes():
+    """EOF wakes stream consumers so a dead App Server cannot leave a Turn hung."""
+
+    class FakeStdout:
+        async def readline(self):
+            return b""
+
+    client = MiniAgentClient()
+    client._proc = type("FakeProcess", (), {"stdout": FakeStdout()})()
+    event_queue = asyncio.Queue()
+    client._event_queues.append(event_queue)
+
+    await client._read_loop()
+
+    assert await event_queue.get() == {
+        "type": "_client_error",
+        "message": "App Server connection closed before stream settlement",
+    }
+
+
+@pytest.mark.asyncio
+async def test_read_loop_settles_event_queues_when_stdout_fails():
+    """A transport read error also wakes consumers instead of leaking a task."""
+
+    class BrokenStdout:
+        async def readline(self):
+            raise ConnectionResetError("pipe reset")
+
+    client = MiniAgentClient()
+    client._proc = type("FakeProcess", (), {"stdout": BrokenStdout()})()
+    event_queue = asyncio.Queue()
+    client._event_queues.append(event_queue)
+
+    await client._read_loop()
+
+    failure = await event_queue.get()
+    assert failure["type"] == "_client_error"
+    assert "pipe reset" in failure["message"]
 
 
 @pytest.mark.asyncio
@@ -272,6 +321,28 @@ async def test_stream_turn_returns_when_submission_has_no_turn_id():
 
     assert len(items) == 1
     assert items[0]["data"]["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_stream_turn_fails_when_app_server_connection_closes():
+    """A dead App Server must settle the consumer instead of leaving it hung."""
+    client = MiniAgentClient()
+
+    async def fake_start_turn(prompt, mode="start", thread_id=None):
+        return TurnSubmissionResult(status="started", turn_id="turn-disconnected")
+
+    client.start_turn = fake_start_turn
+    stream = client.stream_turn("inspect", thread_id="thread-1")
+    await anext(stream)
+    await client._event_queues[0].put(
+        {
+            "type": "_client_error",
+            "message": "App Server connection closed before stream settlement",
+        }
+    )
+
+    with pytest.raises(ServerProcessError, match="connection closed"):
+        await anext(stream)
 
 
 @pytest.mark.asyncio

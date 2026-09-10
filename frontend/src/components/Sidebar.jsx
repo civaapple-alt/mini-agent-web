@@ -150,8 +150,9 @@ export default function Sidebar({
         const res = await api.createProject(cleanName, targetPath, folders, true);
         const newProj = res.project || { id: cleanName.toLowerCase().replace(/\s+/g, '-') };
         
-        // Start default thread for this project
-        const newThreadId = 't-' + Date.now().toString(36);
+        // The project creation endpoint already initializes the canonical
+        // default Session. Reuse it instead of creating a second t-* Session.
+        const newThreadId = 'default';
         await api.startThread(newThreadId, '默认会话', newProj.id, {
           projectId: newProj.id,
         });

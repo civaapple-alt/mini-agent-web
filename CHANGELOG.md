@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Multi-browser approval synchronization**: an accepted approval decision is
+  immediately broadcast to all same-Project Studio clients; stale peer approval
+  docks close authoritatively, duplicate or late responses show a conflict/expiry
+  warning, and a disconnected WebSocket falls back to the HTTP approval endpoint.
+
 - **Approval-safe Turn interruption and Plan lifecycle**: stopping a Turn now
   invalidates its pending and late approval requests before cancelling the local
   stream; a failed remote interrupt no longer masquerades as a settled Turn; the

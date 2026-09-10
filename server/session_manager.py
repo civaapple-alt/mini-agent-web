@@ -1866,6 +1866,45 @@ class SessionManager:
             return True
         return False
 
+    async def broadcast_approval_resolution(
+        self,
+        request_id: str,
+        decision: str,
+        grant_scope: str | None,
+        reason: str | None = None,
+    ) -> bool:
+        """Broadcast an accepted approval decision to every scoped Studio client.
+
+        The App Server normally emits its own ``approval/resolved`` notification
+        after receiving the response. The Gateway sends this bounded resolution
+        immediately as well, so a second browser can close a stale approval dock
+        without waiting for the tool runtime to reach its next notification.
+        """
+        details = self._pending_approval_details.get(request_id)
+        if not details:
+            return False
+        data = dict(details.get("data", {}))
+        project_id = details.get("projectId") or data.get("projectId")
+        thread_id = details.get("threadId") or data.get("threadId")
+        turn_id = details.get("turnId") or data.get("turnId")
+        approval = {
+            **data,
+            "requestId": request_id,
+            "phase": "resolved",
+            "decision": decision,
+            "grantScope": grant_scope,
+            "reason": reason or "",
+        }
+        payload: dict[str, Any] = {
+            "type": "approval",
+            "approval": approval,
+            "projectId": project_id,
+            "threadId": thread_id,
+            "turnId": turn_id,
+        }
+        await self.broadcast_ws(payload)
+        return True
+
     def list_pending_approvals(
         self,
         project_id: str | None = None,

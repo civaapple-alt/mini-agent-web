@@ -42,6 +42,10 @@ Goal/Plan 生命周期通知会显示最近的 workflow milestone。WebSocket �
 用有界 `turn/event` cursor 重放短暂断线期间的事件，遇到 `has_gap` 则重新读取
 canonical Thread/Item projection。
 
+同一 Gateway 下的多个浏览器可以同时观察同一 Session。工具审批会在同 Project 的
+客户端间同步；首个有效响应生效，其他浏览器收到权威结算后关闭本地审批卡片，过期
+或冲突响应会提示“可能已由其他浏览器处理或已失效”。
+
 Studio 侧栏从 App Server 的 SessionStore 投影同时展示历史、活跃 Turn 和已暂停
 Session。侧栏的“运行中”只表示当前 Turn 尚未结算；SessionStore 进程锁单独显示为
 “在线”或“待命”，避免把空闲进程误判为运行中。选择历史或已暂停 Session 会请求 attach；

@@ -93,6 +93,14 @@ async def test_session_manager_approval_is_typed_and_not_web_persisted(
         reason="User approved permanently",
     )
     assert resolved is True
+    assert (
+        mock_session_manager.resolve_approval(
+            request_id="req-123",
+            decision="deny",
+            grant_scope=None,
+        )
+        is False
+    )
 
     result = await task
     assert result.get("decision") == "approve"
@@ -135,6 +143,58 @@ async def test_websocket_broadcast_is_project_scoped(mock_session_manager):
     pi_socket.send_json.assert_awaited_once()
     web_socket.send_json.assert_not_awaited()
     global_socket.send_json.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_accepted_approval_resolution_reaches_all_same_project_clients(
+    mock_session_manager,
+):
+    """An accepted decision closes stale approval docks in peer browsers."""
+
+    class FakeSocket:
+        def __init__(self):
+            self.send_json = AsyncMock()
+
+    same_project_a = FakeSocket()
+    same_project_b = FakeSocket()
+    other_project = FakeSocket()
+    mock_session_manager._active_connections = {
+        same_project_a: "project-1",
+        same_project_b: "project-1",
+        other_project: "project-2",
+    }
+    request_id = "approval-peer-resolution"
+    fut = asyncio.get_running_loop().create_future()
+    mock_session_manager._pending_approvals[request_id] = fut
+    mock_session_manager._pending_approval_details[request_id] = {
+        "data": {
+            "requestId": request_id,
+            "actionSummary": "Run workspace command",
+            "allowedGrantScopes": ["once"],
+        },
+        "projectId": "project-1",
+        "threadId": "thread-1",
+        "turnId": "turn-1",
+    }
+
+    assert mock_session_manager.resolve_approval(request_id, "approve", "once")
+    assert await mock_session_manager.broadcast_approval_resolution(
+        request_id, "approve", "once", "approved by peer"
+    )
+
+    for socket in (same_project_a, same_project_b):
+        socket.send_json.assert_awaited_once()
+        payload = socket.send_json.await_args.args[0]
+        assert payload["type"] == "approval"
+        assert payload["approval"]["phase"] == "resolved"
+        assert payload["approval"]["requestId"] == request_id
+        assert payload["approval"]["decision"] == "approve"
+        assert payload["projectId"] == "project-1"
+        assert payload["threadId"] == "thread-1"
+        assert payload["turnId"] == "turn-1"
+    other_project.send_json.assert_not_awaited()
+    mock_session_manager._active_connections.clear()
+    await fut
 
 
 def test_session_manager_settings_persistence(mock_session_manager, tmp_path):

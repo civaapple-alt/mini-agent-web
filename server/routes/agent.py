@@ -278,6 +278,12 @@ async def respond_approval(req: ApprovalResponseRequest) -> dict[str, Any]:
             status_code=404,
             detail=f"Approval request '{req.request_id}' not found or already settled",
         )
+    await session_manager.broadcast_approval_resolution(
+        request_id=req.request_id,
+        decision=req.decision,
+        grant_scope=req.grant_scope,
+        reason=req.reason,
+    )
     return {
         "status": "resolved",
         "request_id": req.request_id,
@@ -490,6 +496,12 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                         }
                     )
                     continue
+                await session_manager.broadcast_approval_resolution(
+                    request_id=req_id,
+                    decision=decision,
+                    grant_scope=grant_scope,
+                    reason=reason,
+                )
                 await websocket.send_json(
                     {
                         "type": "approval_ack",

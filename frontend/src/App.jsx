@@ -187,6 +187,9 @@ export default function App() {
   const currentThreadRef = useRef(currentThread);
   const currentThreadProjectRef = useRef(currentThreadProject);
   const goalStateRef = useRef(goalState);
+  const pendingApprovalRef = useRef(pendingApproval);
+  const approvalSubmissionRef = useRef(null);
+  const resolvedApprovalIdsRef = useRef(new Set());
   const selectionPersistenceReadyRef = useRef(false);
   const sessionEpochRef = useRef(0);
   const sessionRequestControllerRef = useRef(null);
@@ -198,6 +201,7 @@ export default function App() {
   planActiveRef.current = planActive;
   currentThreadRef.current = currentThread;
   currentThreadProjectRef.current = currentThreadProject;
+  pendingApprovalRef.current = pendingApproval;
   setActiveProjectId(currentThreadProject);
 
   const showToast = (message, type = 'info', duration = 3000) => {
@@ -293,6 +297,7 @@ export default function App() {
     interruptTurnIdRef.current = null;
     queueDispatchingRef.current = false;
     setPendingApproval(null);
+    approvalSubmissionRef.current = null;
     setPendingMessages([]);
     setComposerDraft(null);
     setLastTurnResult(null);
@@ -426,6 +431,11 @@ export default function App() {
       if (!isCurrentSessionRequest(requestContext)) return;
       const pending = snapshot.pending_requests?.[0];
       if (!pending) {
+        setPendingApproval(null);
+        return;
+      }
+      const pendingRequestId = pending.request_id || pending.data?.requestId;
+      if (pendingRequestId && resolvedApprovalIdsRef.current.has(pendingRequestId)) {
         setPendingApproval(null);
         return;
       }
@@ -908,6 +918,26 @@ export default function App() {
         turnId: data.turnId || visibleActiveTurnId || null,
         message: data.message || '操作异常',
       });
+      if (data.scope === 'approval') {
+        const requestId = data.requestId || data.request_id;
+        const knownPending = pendingApprovalRef.current?.requestId === requestId;
+        const locallySubmitted = approvalSubmissionRef.current?.requestId === requestId;
+        if (knownPending || locallySubmitted) {
+          setPendingApproval((current) => (
+            current?.requestId === requestId ? null : current
+          ));
+          approvalSubmissionRef.current = null;
+          showToast(
+            '安全审批未生效：该请求可能已由其他浏览器处理或已失效，当前操作未执行。',
+            'warning',
+            5000,
+          );
+          loadPendingApproval(currentThreadRef.current, currentThreadProjectRef.current);
+        } else {
+          showToast(`⚠️ ${data.message || '安全审批操作失败'}`, 'error', 4000);
+        }
+        return;
+      }
       showToast(`⚠️ ${data.message || '操作异常'}`, 'error', 4000);
       if (
         data.scope === 'turn'
@@ -949,6 +979,7 @@ export default function App() {
 
     // 2. Security Approval Interception
     if (data.type === 'approval_request') {
+      if (data.requestId) resolvedApprovalIdsRef.current.delete(data.requestId);
       if (
         shouldIgnoreApprovalWhileInterrupting(
           data.data,
@@ -968,6 +999,7 @@ export default function App() {
     if (data.type === 'approval') {
       const approval = data.approval || {};
       if (approval.phase === 'requested') {
+        if (approval.requestId) resolvedApprovalIdsRef.current.delete(approval.requestId);
         if (
           shouldIgnoreApprovalWhileInterrupting(
             approval,
@@ -982,9 +1014,37 @@ export default function App() {
           data: approval,
         });
       } else if (approval.phase === 'resolved') {
-        setPendingApproval((current) =>
-          current?.requestId === approval.requestId ? null : current
-        );
+        const requestId = approval.requestId;
+        if (!requestId || !resolvedApprovalIdsRef.current.has(requestId)) {
+          if (requestId) {
+            resolvedApprovalIdsRef.current.add(requestId);
+            if (resolvedApprovalIdsRef.current.size > 128) {
+              const oldest = resolvedApprovalIdsRef.current.values().next().value;
+              resolvedApprovalIdsRef.current.delete(oldest);
+            }
+          }
+          const locallySubmitted = approvalSubmissionRef.current?.requestId === requestId;
+          const stoppedHere = shouldIgnoreApprovalWhileInterrupting(
+            approval,
+            interruptPendingRef.current,
+            interruptTurnIdRef.current,
+          );
+          setPendingApproval((current) =>
+            current?.requestId === requestId ? null : current
+          );
+          if (locallySubmitted) {
+            approvalSubmissionRef.current = null;
+          } else if (stoppedHere) {
+            showToast('当前 Turn 已停止，待审批已失效。', 'info', 3500);
+          } else {
+            showToast(
+              '审批状态已同步：该请求可能已由其他浏览器处理或已失效。',
+              'info',
+              4000,
+            );
+          }
+          loadPendingApproval(currentThreadRef.current, currentThreadProjectRef.current);
+        }
       }
       return;
     }
@@ -1346,6 +1406,10 @@ export default function App() {
       showToast('当前轮次正在停止，该审批已失效。', 'info', 2500);
       return;
     }
+    if (approvalSubmissionRef.current?.requestId === requestId) {
+      showToast('该审批正在提交，请等待其他浏览器同步结果。', 'info', 2500);
+      return;
+    }
     const approval = pendingApproval?.data || {};
     const approvalProjectId = approval.projectId || approval.project_id || currentThreadProject;
     const approvalThreadId = approval.threadId || approval.thread_id || currentThread;
@@ -1354,32 +1418,45 @@ export default function App() {
     const selectedScope = allowedScopes.includes(requestedScope)
       ? requestedScope
       : decision === 'approve' ? allowedScopes[0] : null;
-    if (wsRef.current) {
-      wsRef.current.send({
-        action: 'approval_response',
-        requestId,
-        decision,
-        reason,
-        grantScope: decision === 'approve' ? selectedScope : null,
-        project_id: approvalProjectId,
-        threadId: approvalThreadId,
-        turnId: approvalTurnId,
-      });
-    } else {
-      await api.respondApproval(
-        requestId,
-        decision,
-        decision === 'approve' ? selectedScope : null,
-        reason,
-        {
-          projectId: approvalProjectId,
-          threadId: approvalThreadId,
-          turnId: approvalTurnId,
-        },
+    const payload = {
+      action: 'approval_response',
+      requestId,
+      decision,
+      reason,
+      grantScope: decision === 'approve' ? selectedScope : null,
+      project_id: approvalProjectId,
+      threadId: approvalThreadId,
+      turnId: approvalTurnId,
+    };
+    approvalSubmissionRef.current = { requestId, decision };
+    try {
+      const sent = wsRef.current?.send(payload) || false;
+      if (!sent) {
+        await api.respondApproval(
+          requestId,
+          decision,
+          decision === 'approve' ? selectedScope : null,
+          reason,
+          {
+            projectId: approvalProjectId,
+            threadId: approvalThreadId,
+            turnId: approvalTurnId,
+          },
+        );
+      }
+    } catch {
+      approvalSubmissionRef.current = null;
+      setPendingApproval(null);
+      showToast(
+        '安全审批提交失败：该请求可能已由其他浏览器处理或已失效。',
+        'warning',
+        5000,
       );
+      loadPendingApproval(currentThreadRef.current, currentThreadProjectRef.current);
+      return;
     }
     setPendingApproval(null);
-    showToast(`已提交安全审批决定: ${decision === 'approve' ? '允许执行' : '拒绝'}`, 'info', 2000);
+    showToast(`已提交安全审批决定: ${decision === 'approve' ? '允许执行' : '拒绝'}，正在同步其他浏览器`, 'info', 2500);
   };
 
   const handleSelectThread = async (threadId, projectId = null) => {

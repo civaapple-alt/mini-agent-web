@@ -63,6 +63,11 @@ notification 广播给所有 WebSocket 客户端；单个请求的 WebSocket 只
 `/events?after_sequence=...` 补齐短暂断线期间的 Core 事件；如果返回
 `has_gap=true`，则先重新读取 Thread/Item canonical projection。
 
+工具审批也按 Project 广播给已连接的 Studio 客户端。多个浏览器可以同时看到同一
+审批，但只有第一个通过 Project/Thread/Turn 身份校验的响应生效；Gateway 会立即广播
+`approval.phase=resolved`，使其他浏览器关闭过期审批卡片。断线重连时仍通过审批快照
+对账；Gateway 进程退出会取消内存中的待审批请求。
+
 所有 Thread、Turn、Workflow、World 和 Session 请求都使用统一的
 `project_id` 路由上下文；REST 请求通过 query 参数传递，创建、attach、fork 和
 Goal 请求在需要时同时保留 payload 字段。WebSocket 建连时使用

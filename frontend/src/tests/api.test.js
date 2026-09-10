@@ -114,6 +114,16 @@ test('api client methods construct expected fetch endpoints and payloads', async
   assert.equal(parsedBody.request_id, 'req-1');
   assert.equal(parsedBody.decision, 'approve');
   assert.equal(parsedBody.grant_scope, 'project');
+
+  await api.respondApproval('req-2', 'deny', null, 'not now', {
+    projectId: 'project-2',
+    threadId: 'thread-2',
+    turnId: 'turn-2',
+  });
+  const scopedApprovalBody = JSON.parse(calls[calls.length - 1].options.body);
+  assert.equal(scopedApprovalBody.project_id, 'project-2');
+  assert.equal(scopedApprovalBody.thread_id, 'thread-2');
+  assert.equal(scopedApprovalBody.turn_id, 'turn-2');
 });
 
 test('createAgentWebSocket provides safe send and isOpen status', (t) => {

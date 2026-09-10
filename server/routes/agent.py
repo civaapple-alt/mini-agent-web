@@ -70,6 +70,8 @@ class ApprovalResponseRequest(BaseModel):
     project_id: str | None = Field(
         default=None, description="Canonical project routing context"
     )
+    thread_id: str | None = Field(default=None, description="Target Thread ID")
+    turn_id: str | None = Field(default=None, description="Target active Turn ID")
 
 
 def _process_attachments(
@@ -260,6 +262,8 @@ async def respond_approval(req: ApprovalResponseRequest) -> dict[str, Any]:
         grant_scope=req.grant_scope,
         reason=req.reason,
         project_id=req.project_id,
+        thread_id=req.thread_id,
+        turn_id=req.turn_id,
     )
     if not resolved:
         raise HTTPException(
@@ -276,11 +280,12 @@ async def respond_approval(req: ApprovalResponseRequest) -> dict[str, Any]:
 @router.get("/approval/pending", summary="List pending approval requests")
 async def list_pending_approvals(
     project_id: str | None = Query(default=None),
+    thread_id: str | None = Query(default=None),
 ) -> dict[str, Any]:
     """List IDs of active approval requests currently waiting for human decision."""
     return {
         "project_id": project_id,
-        "pending_requests": session_manager.list_pending_approvals(project_id),
+        "pending_requests": session_manager.list_pending_approvals(project_id, thread_id),
     }
 
 
@@ -438,14 +443,35 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 project_id = project_for_message(data)
                 websocket_project_id = project_id
                 session_manager.set_ws_project(websocket, project_id)
-                session_manager.resolve_approval(
-                    req_id, decision, grant_scope, reason, project_id
+                resolved = session_manager.resolve_approval(
+                    req_id,
+                    decision,
+                    grant_scope,
+                    reason,
+                    project_id,
+                    data.get("threadId") or data.get("thread_id"),
+                    data.get("turnId") or data.get("turn_id"),
                 )
+                if not resolved:
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "scope": "approval",
+                            "requestId": req_id,
+                            "projectId": project_id,
+                            "threadId": data.get("threadId") or data.get("thread_id"),
+                            "turnId": data.get("turnId") or data.get("turn_id"),
+                            "message": "审批请求不存在、已处理或会话身份不匹配",
+                        }
+                    )
+                    continue
                 await websocket.send_json(
                     {
                         "type": "approval_ack",
                         "requestId": req_id,
                         "projectId": project_id,
+                        "threadId": data.get("threadId") or data.get("thread_id"),
+                        "turnId": data.get("turnId") or data.get("turn_id"),
                     }
                 )
 

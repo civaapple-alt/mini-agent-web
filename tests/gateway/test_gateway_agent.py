@@ -254,6 +254,8 @@ async def test_approval_respond_http_endpoint(agent_test_app):
             "toolName": "shell",
             "actionSummary": "Execute command",
             "projectId": "default",
+            "threadId": "approval-thread",
+            "turnId": "approval-turn",
             "access": "project",
             "allowedGrantScopes": ["once", "project"],
         }
@@ -269,6 +271,9 @@ async def test_approval_respond_http_endpoint(agent_test_app):
                 "decision": "approve",
                 "grant_scope": "once",
                 "reason": "Approved by developer",
+                "project_id": "default",
+                "thread_id": "approval-thread",
+                "turn_id": "approval-turn",
             },
         )
         assert resp.status_code == 200

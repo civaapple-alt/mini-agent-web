@@ -726,7 +726,15 @@ class SessionManager:
         notification_project_id = str(project.get("id") or self._current_project_id)
 
         async def handle_approval(req: dict[str, Any]) -> dict[str, Any]:
-            return await self._handle_approval_request(req, notification_project_id)
+            approval = dict(req)
+            approval.setdefault("projectId", notification_project_id)
+            approval.setdefault("threadId", thread_id)
+            approval.setdefault(
+                "turnId", self.get_active_turn(thread_id, notification_project_id)
+            )
+            return await self._handle_approval_request(
+                approval, notification_project_id, thread_id
+            )
 
         async def handle_notification(notification: dict[str, Any]) -> None:
             await self._handle_runtime_notification(
@@ -1405,6 +1413,66 @@ class SessionManager:
         project["policy"] = policy
         self._save_projects()
 
+    async def update_project_execution(
+        self,
+        access: str,
+        policy: str,
+        project_id: str | None = None,
+        primary_client: Any | None = None,
+    ) -> Any:
+        """Persist and fan out Project execution settings to every live Client."""
+        resolved_project_id = project_id or self._current_project_id
+        active_keys = {
+            *(
+                key
+                for key in self._active_turns_by_project
+                if key[0] == resolved_project_id
+            ),
+            *(
+                key
+                for key in self._active_tasks_by_project
+                if key[0] == resolved_project_id
+            ),
+        }
+        if active_keys:
+            active_threads = ", ".join(
+                sorted(thread_id for _, thread_id in active_keys)
+            )
+            raise RuntimeError(
+                f"Project '{resolved_project_id}' has active Turn(s): {active_threads}"
+            )
+
+        if primary_client is None:
+            primary_client = await self.get_client_for_project(resolved_project_id)
+        self.set_project_execution(access, policy, resolved_project_id)
+        async with self._lock:
+            clients: list[Any] = []
+            seen: set[int] = set()
+
+            def add_client(client: Any | None) -> None:
+                if client is None or id(client) in seen:
+                    return
+                seen.add(id(client))
+                clients.append(client)
+
+            add_client(primary_client)
+            for (bound_project, _thread_id), client in self._project_clients.items():
+                if bound_project == resolved_project_id:
+                    add_client(client)
+            for thread_id, client in self._clients.items():
+                if self._client_projects.get(thread_id) == resolved_project_id:
+                    add_client(client)
+
+        if not clients:
+            return None
+        results = await asyncio.gather(
+            *(
+                client.set_world_execution(access=access, policy=policy)
+                for client in clients
+            )
+        )
+        return results[0]
+
     async def _apply_persisted_thread_continuation(
         self,
         thread_id: str,
@@ -1449,15 +1517,33 @@ class SessionManager:
         self,
         req: dict[str, Any],
         project_id: str | None = None,
+        thread_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Called asynchronously by MiniAgentClient when the App Server encounters
         a sensitive tool invocation requiring human approval.
         """
-        req_data = req
+        req_data = dict(req)
         req_id = str(req.get("requestId") or "")
         if not req_id:
             raise ValueError("approval request is missing requestId")
+        resolved_project_id = project_id or req_data.get("projectId")
+        resolved_thread_id = (
+            req_data.get("threadId")
+            or req_data.get("thread_id")
+            or thread_id
+        )
+        resolved_turn_id = req_data.get("turnId") or req_data.get("turn_id")
+        if not resolved_turn_id and resolved_thread_id:
+            resolved_turn_id = self.get_active_turn(
+                str(resolved_thread_id), resolved_project_id
+            )
+        if resolved_project_id:
+            req_data["projectId"] = resolved_project_id
+        if resolved_thread_id:
+            req_data["threadId"] = str(resolved_thread_id)
+        if resolved_turn_id:
+            req_data["turnId"] = str(resolved_turn_id)
         action_name = str(req.get("actionSummary") or req.get("action") or "")
         logger.info("Approval requested by server: %s", req_data)
 
@@ -1467,7 +1553,9 @@ class SessionManager:
         self._pending_approval_details[req_id] = {
             "action_name": action_name,
             "data": req_data,
-            "projectId": project_id,
+            "projectId": resolved_project_id,
+            "threadId": str(resolved_thread_id) if resolved_thread_id else None,
+            "turnId": str(resolved_turn_id) if resolved_turn_id else None,
         }
 
         # Broadcast approval request to all connected UI clients
@@ -1476,9 +1564,13 @@ class SessionManager:
             "requestId": req_id,
             "data": req_data,
         }
-        if project_id:
-            payload["projectId"] = project_id
-            payload["data"] = {**req_data, "projectId": project_id}
+        if resolved_project_id:
+            payload["projectId"] = resolved_project_id
+        if resolved_thread_id:
+            payload["threadId"] = str(resolved_thread_id)
+        if resolved_turn_id:
+            payload["turnId"] = str(resolved_turn_id)
+        payload["data"] = req_data
         await self.broadcast_ws(payload)
 
         try:
@@ -1543,6 +1635,8 @@ class SessionManager:
         grant_scope: str | None,
         reason: str | None = None,
         project_id: str | None = None,
+        thread_id: str | None = None,
+        turn_id: str | None = None,
     ) -> bool:
         """Resolve a pending approval; grant authority remains in Host/Capabilities."""
         details = self._pending_approval_details.get(request_id)
@@ -1550,7 +1644,13 @@ class SessionManager:
             return False
         data = details.get("data", {})
         request_project = details.get("projectId") or data.get("projectId")
-        if project_id and request_project and project_id != request_project:
+        request_thread = details.get("threadId") or data.get("threadId")
+        request_turn = details.get("turnId") or data.get("turnId")
+        if project_id and project_id != request_project:
+            return False
+        if thread_id and thread_id != request_thread:
+            return False
+        if turn_id and turn_id != request_turn:
             return False
         allowed_grant_scopes = data.get("allowedGrantScopes", [])
         if decision.lower() == "approve" and grant_scope not in allowed_grant_scopes:
@@ -1573,17 +1673,31 @@ class SessionManager:
             return True
         return False
 
-    def list_pending_approvals(self, project_id: str | None = None) -> list[str]:
-        if not project_id:
-            return list(self._pending_approvals.keys())
+    def list_pending_approvals(
+        self,
+        project_id: str | None = None,
+        thread_id: str | None = None,
+    ) -> list[str]:
         return [
             request_id
             for request_id in self._pending_approvals
-            if self._pending_approval_details.get(request_id, {}).get("projectId")
-            in (None, project_id)
+            if (
+                not project_id
+                or self._pending_approval_details.get(request_id, {}).get("projectId")
+                in (None, project_id)
+            )
+            and (
+                not thread_id
+                or self._pending_approval_details.get(request_id, {}).get("threadId")
+                == thread_id
+            )
         ]
 
-    def approval_snapshot(self, project_id: str | None = None) -> dict[str, Any]:
+    def approval_snapshot(
+        self,
+        project_id: str | None = None,
+        thread_id: str | None = None,
+    ) -> dict[str, Any]:
         """Expose project policy and pending requests without exposing grants."""
         resolved_project_id = project_id or self._current_project_id
         access, policy = self.project_execution(resolved_project_id)
@@ -1594,10 +1708,15 @@ class SessionManager:
                 resolved_project_id,
             ):
                 continue
+            if thread_id and details.get("threadId") != thread_id:
+                continue
             pending.append(
                 {
                     "request_id": request_id,
                     "action_name": details.get("action_name", ""),
+                    "project_id": details.get("projectId"),
+                    "thread_id": details.get("threadId"),
+                    "turn_id": details.get("turnId"),
                     "data": details.get("data", {}),
                 }
             )

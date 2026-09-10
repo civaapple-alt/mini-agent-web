@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Scoped execution settings and background approvals**: project-level access and
+  approval policy changes now fan out to every idle Client in that project; pending
+  approval requests carry Project/Thread/Turn identity and are restored when Studio
+  switches back to the waiting session.
+
 - **Web Studio 多项目多会话并发与实时切换**：项目切换不再停止其他项目的运行时；
   侧栏按最新会话 catalog 显示运行中、已完成、已中断等状态，切回运行中的会话时
   通过有界事件回放补齐快照后的流，并对外部锁定会话提供只读查看。

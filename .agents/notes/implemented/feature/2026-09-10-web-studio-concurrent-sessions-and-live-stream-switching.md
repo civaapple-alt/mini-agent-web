@@ -22,12 +22,17 @@ catalog 轮询和生命周期事件刷新多个会话的状态与项目活跃数
 由其他进程持有锁的会话以只读模式打开，禁止发送、纠偏、打断和审批响应。成功
 结算、失败、中断、步数上限、暂停和可恢复状态在侧栏中分别投影。
 
+项目级访问范围和审批策略更新会并行 fan-out 到该项目的所有空闲 Client；active
+Turn 存在时拒绝变更。审批请求补齐 Project/Thread/Turn 身份，前端切换回等待中的
+会话时通过审批快照恢复卡片，并使用原请求身份提交响应。
+
 ## Implementation
 
 - `SessionManager` 的客户端解析、运行时重启、审批撤销和兼容指针均按项目隔离。
 - 项目切换路由改为 `start()` 目标项目，不再调用全局 restart。
 - WebSocket turn submission 补齐 `threadId`；前端按项目/会话键处理、回放和缓存事件。
 - 前端恢复活跃 Turn、只读锁定会话、状态轮询和完成/中断标签。
+- 审批快照按项目/会话过滤，审批响应增加 Thread/Turn 身份校验。
 - 增加 Gateway、前端状态和 UI 测试，并同步 troubleshooting 与 changelog。
 
 ## Verification

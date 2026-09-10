@@ -204,7 +204,11 @@ export const api = {
   },
 
   async getWorldApproval(options = {}) {
-    const res = await request(`${API_BASE}/api/world/approval`, requestSignal(options), options.projectId);
+    const params = new URLSearchParams();
+    if (options.threadId) params.set('thread_id', options.threadId);
+    const query = params.toString();
+    const url = `${API_BASE}/api/world/approval${query ? `?${query}` : ''}`;
+    const res = await request(url, requestSignal(options), options.projectId);
     if (!res.ok) throw new Error('Failed to inspect project approvals');
     return res.json();
   },
@@ -456,6 +460,8 @@ export const api = {
         grant_scope: grantScope,
         reason,
         project_id: resolveProjectId(options.projectId),
+        thread_id: options.threadId || null,
+        turn_id: options.turnId || null,
       }),
       ...requestSignal(options),
     }, options.projectId);
@@ -464,8 +470,12 @@ export const api = {
   },
 
   async listPendingApprovals(options = {}) {
+    const params = new URLSearchParams();
+    if (options.threadId) params.set('thread_id', options.threadId);
+    const query = params.toString();
+    const url = `${API_BASE}/api/approval/pending${query ? `?${query}` : ''}`;
     const res = await request(
-      `${API_BASE}/api/approval/pending`,
+      url,
       requestSignal(options),
       options.projectId,
     );

@@ -272,28 +272,28 @@ async def set_world_execution(
     """Configure independent access and approval policy."""
     try:
         target_project = project_id or req.project_id
-        client = await session_manager.get_client_for_project(target_project)
-        res = await client.set_world_execution(
-            access=req.access,
-            policy=req.policy,
+        res = await session_manager.update_project_execution(
+            req.access,
+            req.policy,
+            target_project,
         )
-        session_manager.set_project_execution(req.access, req.policy, target_project)
         return {
             "changed": res.changed,
             "access": req.access,
             "policy": req.policy,
             "state": res.state,
         }
-    except AppServerError as err:
+    except (AppServerError, RuntimeError) as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
 @router.get("/world/approval", summary="Inspect current project approvals")
 async def get_world_approval(
     project_id: str | None = Query(default=None),
+    thread_id: str | None = Query(default=None),
 ) -> dict[str, Any]:
     """Show the project policy and pending requests, never raw approval grants."""
-    return session_manager.approval_snapshot(project_id)
+    return session_manager.approval_snapshot(project_id, thread_id)
 
 
 @router.post("/world/approval/revoke", summary="Revoke current project approvals")

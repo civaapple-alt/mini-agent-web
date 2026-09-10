@@ -348,6 +348,7 @@ export default function App() {
         const context = currentSessionRequest();
         loadWorkflows(context.threadId, context.projectId, context);
         loadRuntimeStatus(context.threadId, context.projectId, context);
+        loadPendingApproval(context.threadId, context.projectId, context);
         if (hasConnectedRef.current) {
           replayMissedEvents(context.threadId, context.projectId, context);
         }
@@ -396,6 +397,40 @@ export default function App() {
       if (isAbortError(err) || (context && !isCurrentSessionRequest(context))) return;
       console.error('Failed to load settings:', err);
       document.body.className = 'theme-light';
+    }
+  };
+
+  const loadPendingApproval = async (
+    threadId = currentThreadRef.current,
+    projectId = currentThreadProjectRef.current,
+    context = null,
+  ) => {
+    const requestContext = context || currentSessionRequest();
+    try {
+      const snapshot = await api.getWorldApproval({
+        projectId,
+        threadId,
+        signal: requestContext.signal,
+      });
+      if (!isCurrentSessionRequest(requestContext)) return;
+      const pending = snapshot.pending_requests?.[0];
+      if (!pending) {
+        setPendingApproval(null);
+        return;
+      }
+      const data = pending.data || {};
+      setPendingApproval({
+        requestId: pending.request_id || data.requestId,
+        data: {
+          ...data,
+          projectId: pending.project_id || data.projectId || projectId,
+          threadId: pending.thread_id || data.threadId || threadId,
+          turnId: pending.turn_id || data.turnId || null,
+        },
+      });
+    } catch (err) {
+      if (isAbortError(err) || !isCurrentSessionRequest(requestContext)) return;
+      console.debug('Failed to load pending approval:', err);
     }
   };
 
@@ -486,6 +521,7 @@ export default function App() {
       loadThreadHistory(nextThread, nextProject, context),
       loadWorkflows(nextThread, nextProject, context),
       loadRuntimeStatus(nextThread, nextProject, context),
+      loadPendingApproval(nextThread, nextProject, context),
     ]);
     await replayMissedEvents(nextThread, nextProject, context);
     finishSessionSync(nextThread, nextProject);
@@ -1208,6 +1244,9 @@ export default function App() {
 
   const handleRespondApproval = async (requestId, decision, reason = '', requestedScope = 'once') => {
     const approval = pendingApproval?.data || {};
+    const approvalProjectId = approval.projectId || approval.project_id || currentThreadProject;
+    const approvalThreadId = approval.threadId || approval.thread_id || currentThread;
+    const approvalTurnId = approval.turnId || approval.turn_id || null;
     const allowedScopes = approval.allowedGrantScopes || [];
     const selectedScope = allowedScopes.includes(requestedScope)
       ? requestedScope
@@ -1219,7 +1258,9 @@ export default function App() {
         decision,
         reason,
         grantScope: decision === 'approve' ? selectedScope : null,
-        project_id: currentThreadProject,
+        project_id: approvalProjectId,
+        threadId: approvalThreadId,
+        turnId: approvalTurnId,
       });
     } else {
       await api.respondApproval(
@@ -1227,7 +1268,11 @@ export default function App() {
         decision,
         decision === 'approve' ? selectedScope : null,
         reason,
-        { projectId: currentThreadProject },
+        {
+          projectId: approvalProjectId,
+          threadId: approvalThreadId,
+          turnId: approvalTurnId,
+        },
       );
     }
     setPendingApproval(null);
@@ -1280,6 +1325,7 @@ export default function App() {
         loadThreadHistory(threadId, nextProject, context),
         loadWorkflows(threadId, nextProject, context),
         loadRuntimeStatus(threadId, nextProject, context),
+        loadPendingApproval(threadId, nextProject, context),
       ]);
       await replayMissedEvents(threadId, nextProject, context);
       finishSessionSync(threadId, nextProject);

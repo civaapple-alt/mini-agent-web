@@ -266,6 +266,108 @@ def test_approval_snapshot_exposes_policy_without_web_grants(mock_session_manage
     assert snapshot["pending_requests"] == []
 
 
+@pytest.mark.asyncio
+async def test_project_execution_updates_all_live_clients_in_project(
+    mock_session_manager, tmp_path
+):
+    """Project execution changes fan out without touching another Project."""
+    other_root = tmp_path / "other-project"
+    other_root.mkdir()
+    mock_session_manager._projects_registry["other-project"] = {
+        "id": "other-project",
+        "name": "Other Project",
+        "primary_path": str(other_root),
+    }
+    default_client = AsyncMock()
+    worker_client = AsyncMock()
+    other_project_client = AsyncMock()
+    for client in (default_client, worker_client, other_project_client):
+        client.set_world_execution.return_value = SimpleNamespace(
+            changed=True, state={"access": "full_machine", "policy": "trusted"}
+        )
+    mock_session_manager._project_clients.update(
+        {
+            ("default", "default"): default_client,
+            ("default", "worker"): worker_client,
+            ("other-project", "default"): other_project_client,
+        }
+    )
+    mock_session_manager._clients.update(
+        {"default": default_client, "worker": worker_client}
+    )
+    mock_session_manager._client_projects.update(
+        {"default": "default", "worker": "default"}
+    )
+
+    result = await mock_session_manager.update_project_execution(
+        "full_machine", "trusted", "default", primary_client=default_client
+    )
+
+    assert result.changed is True
+    default_client.set_world_execution.assert_awaited_once_with(
+        access="full_machine", policy="trusted"
+    )
+    worker_client.set_world_execution.assert_awaited_once_with(
+        access="full_machine", policy="trusted"
+    )
+    other_project_client.set_world_execution.assert_not_awaited()
+    assert mock_session_manager.project_execution("default") == (
+        "full_machine",
+        "trusted",
+    )
+
+
+@pytest.mark.asyncio
+async def test_approval_identity_survives_background_session_switch(
+    mock_session_manager,
+):
+    """Approval snapshots and responses remain bound to Project/Thread/Turn."""
+    mock_session_manager.broadcast_ws = AsyncMock()
+    request_id = "approval-background-1"
+    task = asyncio.create_task(
+        mock_session_manager._handle_approval_request(
+            {
+                "requestId": request_id,
+                "actionSummary": "Run workspace command",
+                "allowedGrantScopes": ["once"],
+            },
+            "default",
+            "background-thread",
+        )
+    )
+    await asyncio.sleep(0)
+
+    details = mock_session_manager._pending_approval_details[request_id]
+    assert details["projectId"] == "default"
+    assert details["threadId"] == "background-thread"
+    payload = mock_session_manager.broadcast_ws.await_args.args[0]
+    assert payload["projectId"] == "default"
+    assert payload["threadId"] == "background-thread"
+
+    snapshot = mock_session_manager.approval_snapshot(
+        "default", "background-thread"
+    )
+    assert snapshot["pending_requests"][0]["thread_id"] == "background-thread"
+    assert (
+        mock_session_manager.resolve_approval(
+            request_id,
+            "approve",
+            "once",
+            project_id="default",
+            thread_id="other-thread",
+        )
+        is False
+    )
+    assert mock_session_manager.resolve_approval(
+        request_id,
+        "approve",
+        "once",
+        project_id="default",
+        thread_id="background-thread",
+    ) is True
+    assert (await task)["decision"] == "approve"
+
+
 def test_session_manager_thread_metadata_management(mock_session_manager):
     """Ensure thread metadata can be queried, updated, and persisted."""
     meta = mock_session_manager.get_thread_meta("t-custom")

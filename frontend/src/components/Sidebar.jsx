@@ -552,6 +552,13 @@ export default function Sidebar({
             const visibleThreads = isListExpanded
               ? projThreads
               : projThreads.slice(0, 5);
+            const activeThreadCount = normalizedThreads.filter(
+              (thread) =>
+                thread.turn_active &&
+                (thread.project === proj.name ||
+                  thread.project === proj.id ||
+                  (isCurrentProj && (!thread.project || thread.project === currentProjectName)))
+            ).length;
 
             return (
               <div key={proj.name || proj.id} className="project-tree-item">
@@ -616,7 +623,7 @@ export default function Sidebar({
 
                     <div className="popover-tasks-summary">
                       <SquarePen size={12} className="text-muted" />
-                      <span>{Math.max(proj.threads_count || 0, proj.sessions_count || 0, projThreads.length)} 个会话 · {proj.active_threads_count ?? 0} 个活跃</span>
+                      <span>{Math.max(proj.threads_count || 0, proj.sessions_count || 0, projThreads.length)} 个会话 · {activeThreadCount} 个活跃</span>
                     </div>
 
                     <div className="popover-divider"></div>

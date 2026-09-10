@@ -177,7 +177,9 @@ async def switch_project_endpoint(req: SwitchProjectRequest) -> dict[str, Any]:
     """Switch active project workspace."""
     try:
         proj = session_manager.switch_project(req.path)
-        await session_manager.restart_for_current_project()
+        # Project switching only changes the routing context. Existing clients,
+        # turns, approvals, and stream tasks in other Projects stay alive.
+        await session_manager.start()
         return {"project": proj, "status": "switched"}
     except Exception as err:
         raise HTTPException(

@@ -398,6 +398,7 @@ async def test_mcp_and_world_governance(gateway_test_app):
         return_value=MockMcpResult(enabled_servers=["fs-server"], retry_available=False)
     )
     session_manager._client = mock_client
+    session_manager._client_projects["default"] = "goals_test_proj"
 
     transport = ASGITransport(app=gateway_test_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

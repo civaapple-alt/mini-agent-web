@@ -519,9 +519,15 @@ body.theme-cyberpunk .nested-thread-item.selected {
 }
 
 .thread-status-badge.failed,
-.thread-status-badge.step-limit {
+.thread-status-badge.step-limit,
+.thread-status-badge.interrupted {
   border-color: #fca5a5;
   color: #b91c1c;
+}
+
+.thread-status-badge.completed {
+  border-color: #86efac;
+  color: #15803d;
 }
 
 .thread-status-badge.cleanup {

@@ -33,9 +33,20 @@ test('a locked idle process is standby, not running', () => {
     {
       turnActive: false,
       processOnline: true,
-      lifecycleLabel: '历史',
-      lifecycleClass: 'historical',
+      lifecycleLabel: '已完成',
+      lifecycleClass: 'completed',
       processLabel: '待命',
     },
   );
+});
+
+test('an interrupted Turn remains distinct from historical sessions', () => {
+  const status = getThreadStatusPresentation({
+    last_turn_status: 'interrupted',
+    turn_active: false,
+    process_online: false,
+  });
+
+  assert.equal(status.lifecycleLabel, '已中断');
+  assert.equal(status.lifecycleClass, 'interrupted');
 });

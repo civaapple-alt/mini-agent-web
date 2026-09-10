@@ -246,6 +246,32 @@ async def test_execution_policy_change_does_not_restart_runtime(test_app, monkey
 
 
 @pytest.mark.asyncio
+async def test_project_switch_keeps_existing_runtime_tasks(test_app, monkeypatch):
+    """Switching the UI project must not invoke the project restart path."""
+    project = {"id": "project-2", "name": "Project 2", "primary_path": "C:/project-2"}
+    def switch(path):
+        assert path == project["primary_path"]
+        return project
+    start = AsyncMock()
+    restart = AsyncMock()
+    monkeypatch.setattr(session_manager, "switch_project", switch)
+    monkeypatch.setattr(session_manager, "start", start)
+    monkeypatch.setattr(session_manager, "restart_for_current_project", restart)
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/projects/switch",
+            json={"path": project["primary_path"]},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"project": project, "status": "switched"}
+    start.assert_awaited_once_with()
+    restart.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_workflow_state_and_goal_artifacts_use_canonical_session(
     test_app, tmp_path, monkeypatch
 ):

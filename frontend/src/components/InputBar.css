@@ -1070,6 +1070,13 @@ body.theme-dark .btn-dock-deny {
   align-items: center;
 }
 
+.readonly-session-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 8px;
+}
+
 .btn-action {
   display: flex;
   align-items: center;

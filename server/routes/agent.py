@@ -577,6 +577,7 @@ async def _stream_turn_to_ws(
             # this request; sending the stream again here would duplicate
             # every event for the initiating WebSocket.
             if safe_item.get("type") == "_turn_submission":
+                safe_item["threadId"] = target_thread
                 if project_id:
                     safe_item["projectId"] = project_id
                 await websocket.send_json(safe_item)

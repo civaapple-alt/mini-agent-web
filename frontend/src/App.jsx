@@ -91,6 +91,20 @@ const RUNTIME_PHASE_LABELS = {
   failed: '失败',
 };
 
+const ACTIVE_RUNTIME_PHASES = new Set([
+  'starting_turn',
+  'model',
+  'tool',
+  'waiting_approval',
+  'compaction',
+  'persisting',
+  'goal_verification',
+  'goal_continuation_queued',
+  'resuming',
+]);
+
+const MAX_PENDING_SESSION_EVENTS = 128;
+
 function scopedThreadKey(threadId, projectId) {
   return `${projectId || ''}:${threadId}`;
 }
@@ -128,6 +142,7 @@ export default function App() {
   const [composerDraft, setComposerDraft] = useState(null);
   const [lastTurnResult, setLastTurnResult] = useState(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [currentSessionReadOnly, setCurrentSessionReadOnly] = useState(false);
   const [toasts, setToasts] = useState([]);
 
   // Workflow & Environment
@@ -169,6 +184,8 @@ export default function App() {
   const selectionPersistenceReadyRef = useRef(false);
   const sessionEpochRef = useRef(0);
   const sessionRequestControllerRef = useRef(null);
+  const sessionSyncRef = useRef(null);
+  const loadThreadsRef = useRef(null);
   const catalogEpochRef = useRef(0);
   const catalogRequestControllerRef = useRef(null);
   currentThreadRef.current = currentThread;
@@ -217,6 +234,31 @@ export default function App() {
 
   const isAbortError = (err) => err?.name === 'AbortError';
 
+  const startSessionSync = (threadId, projectId) => {
+    sessionSyncRef.current = {
+      key: scopedThreadKey(threadId, projectId),
+      pendingEvents: [],
+      syncing: true,
+    };
+  };
+
+  const clearSessionSync = (threadId, projectId) => {
+    const key = scopedThreadKey(threadId, projectId);
+    if (sessionSyncRef.current?.key === key) {
+      sessionSyncRef.current = null;
+    }
+  };
+
+  const finishSessionSync = (threadId, projectId) => {
+    const key = scopedThreadKey(threadId, projectId);
+    const sync = sessionSyncRef.current;
+    if (!sync || sync.key !== key) return;
+    sessionSyncRef.current = null;
+    [...sync.pendingEvents]
+      .sort((left, right) => (left.sequence || 0) - (right.sequence || 0))
+      .forEach((event) => handleServerEvent(event, { fromReplay: true }));
+  };
+
   const beginCatalogRequest = () => {
     catalogRequestControllerRef.current?.abort();
     const controller = new AbortController();
@@ -236,6 +278,7 @@ export default function App() {
   const resetSessionProjections = ({ loadingHistory = false } = {}) => {
     setIsGenerating(false);
     setActiveTurnId(null);
+    setCurrentSessionReadOnly(false);
     interruptPendingRef.current = false;
     queueDispatchingRef.current = false;
     setPendingApproval(null);
@@ -392,6 +435,18 @@ export default function App() {
     }
   };
 
+  loadThreadsRef.current = loadThreads;
+
+  useEffect(() => {
+    if (!isConnected) return undefined;
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadThreadsRef.current?.();
+      }
+    }, 2000);
+    return () => window.clearInterval(intervalId);
+  }, [isConnected]);
+
   const initializeSession = async () => {
     const selected = await loadThreads();
     if (!selected) {
@@ -403,6 +458,7 @@ export default function App() {
     const nextProject =
       selected.project || currentThreadProjectRef.current || null;
     const context = beginSessionRequest(nextThread, nextProject);
+    startSessionSync(nextThread, nextProject);
     currentThreadRef.current = nextThread;
     currentThreadProjectRef.current = nextProject;
     setCurrentThread(nextThread);
@@ -416,8 +472,11 @@ export default function App() {
     // project-agnostic history/workflow endpoints. A locked external Session
     // remains readable and will be retried by an explicit later attach.
     try {
-      await api.attachThread(nextThread, nextProject, { signal: context.signal });
+      const result = await api.attachThread(nextThread, nextProject, { signal: context.signal });
       if (!isCurrentSessionRequest(context)) return;
+      setCurrentSessionReadOnly(
+        result.attached === false && result.session_status === 'locked',
+      );
     } catch (err) {
       if (isAbortError(err) || !isCurrentSessionRequest(context)) return;
       console.debug('Failed to attach persisted session during startup:', err);
@@ -428,6 +487,8 @@ export default function App() {
       loadWorkflows(nextThread, nextProject, context),
       loadRuntimeStatus(nextThread, nextProject, context),
     ]);
+    await replayMissedEvents(nextThread, nextProject, context);
+    finishSessionSync(nextThread, nextProject);
   };
 
   const loadWorkflows = async (
@@ -465,7 +526,14 @@ export default function App() {
       });
       if (
         isCurrentSessionRequest(requestContext)
-      ) setRuntimeStatus(status);
+      ) {
+        setRuntimeStatus(status);
+        if (ACTIVE_RUNTIME_PHASES.has(status.phase)) {
+          setIsGenerating(true);
+          const runtimeTurnId = status.turn_id || status.turnId;
+          if (runtimeTurnId) setActiveTurnId(runtimeTurnId);
+        }
+      }
     } catch (err) {
       if (isAbortError(err) || !isCurrentSessionRequest(requestContext)) return;
       console.debug('Failed to load runtime status:', err);
@@ -490,10 +558,11 @@ export default function App() {
       if (page.has_gap) {
         // The bounded App Server cache no longer contains the complete gap;
         // canonical history is the safe reconciliation boundary.
+        showToast('事件回放存在缺口，已从最近会话快照恢复。', 'warning', 3500);
         await loadThreadHistory(threadId, projectId, requestContext);
       }
       for (const event of page.data || []) {
-        handleServerEvent({ type: 'event', ...event });
+        handleServerEvent({ type: 'event', ...event }, { fromReplay: true });
       }
     } catch (err) {
       console.debug('Failed to replay runtime events:', err);
@@ -591,8 +660,21 @@ export default function App() {
           summary: cp.metadata.summary || '',
         });
       }
+      const sessionSnapshot = cp.session || {};
+      const turnActive = Boolean(
+        cp.turn_active ?? sessionSnapshot.turn_active,
+      );
+      setIsGenerating(turnActive);
+      setActiveTurnId(
+        turnActive
+          ? cp.active_turn_id
+            || sessionSnapshot.active_turn_id
+            || cp.last_turn_id
+            || sessionSnapshot.last_turn_id
+          : null,
+      );
       const persistedTurn = cp.last_turn_status || cp.session?.last_turn_status;
-      if (persistedTurn && persistedTurn !== 'completed') {
+      if (!turnActive && persistedTurn && persistedTurn !== 'completed') {
         setLastTurnResult({
           status: persistedTurn,
           stopReason: cp.last_stop_reason || cp.session?.last_stop_reason || null,
@@ -692,24 +774,20 @@ export default function App() {
   // WebSocket Message / Event Dispatcher
   // ---------------------------------------------------------------------------
 
-  const handleServerEvent = (data) => {
+  const handleServerEvent = (data, { fromReplay = false } = {}) => {
     if (!data) return;
 
-    if (data.type === 'event' && data.threadId && data.sequence) {
-      const eventProject = data.projectId || data.data?.projectId || currentThreadProjectRef.current;
-      const eventKey = scopedThreadKey(data.threadId, eventProject);
-      const current = eventCursorsRef.current.get(eventKey) || 0;
-      if (data.sequence > current) {
-        eventCursorsRef.current.set(eventKey, data.sequence);
-      }
-    }
-
-    // A2: Isolate stream events by active thread to prevent cross-thread pollution
-    if (!shouldAcceptEventForThread(
+    const eventThread = data.threadId || data.thread_id || data.data?.threadId || data.data?.thread_id;
+    const eventProject = data.projectId || data.project_id || data.data?.projectId || data.data?.project_id || currentThreadProjectRef.current;
+    const eventKey = scopedThreadKey(eventThread || currentThreadRef.current, eventProject);
+    const acceptsEvent = shouldAcceptEventForThread(
       data,
       currentThreadRef.current,
       currentThreadProjectRef.current,
-    )) {
+    );
+
+    // A2: Isolate stream events by active thread to prevent cross-thread pollution
+    if (!acceptsEvent) {
       if (data.type === 'event') {
         const evtType = data.event?.type;
         if (evtType === 'turn_finished' || evtType === 'run_finished' || evtType === 'run_failed') {
@@ -717,6 +795,19 @@ export default function App() {
         }
       }
       return;
+    }
+
+    const sync = sessionSyncRef.current;
+    if (!fromReplay && sync?.syncing && sync.key === eventKey) {
+      sync.pendingEvents = [...sync.pendingEvents, data].slice(-MAX_PENDING_SESSION_EVENTS);
+      return;
+    }
+
+    if (data.type === 'event' && data.sequence) {
+      const sequence = Number(data.sequence);
+      const currentSequence = eventCursorsRef.current.get(eventKey) || 0;
+      if (sequence <= currentSequence) return;
+      eventCursorsRef.current.set(eventKey, sequence);
     }
 
     // 1. Capture Turn ID from submission
@@ -916,6 +1007,10 @@ export default function App() {
     const { prompt: promptText, images, referencedFiles } = normalizeInputPayload(inputPayload);
 
     if (!promptText.trim() && images.length === 0) return false;
+    if (currentSessionReadOnly) {
+      showToast('当前会话由其他进程运行，只能查看，暂不能发送消息。', 'info', 3000);
+      return false;
+    }
 
     // A1: Check WebSocket ready state (isOpen) before sending
     if (!wsRef.current || !wsRef.current.isOpen || !wsRef.current.isOpen()) {
@@ -960,6 +1055,10 @@ export default function App() {
   const handleQueueMessage = (inputPayload) => {
     const normalized = normalizeInputPayload(inputPayload);
     if (!normalized.prompt.trim() && normalized.images.length === 0) return;
+    if (currentSessionReadOnly) {
+      showToast('当前会话由其他进程运行，只能查看，暂不能排队消息。', 'info', 3000);
+      return;
+    }
 
     setPendingMessages((prev) => [
       ...prev,
@@ -1017,6 +1116,10 @@ export default function App() {
   const handleSteerMessage = (text, source = 'direct-steer') => {
     const { prompt: promptText, images, referencedFiles } = normalizeInputPayload(text);
     if (!promptText.trim() && images.length === 0) return;
+    if (currentSessionReadOnly) {
+      showToast('当前会话由其他进程运行，只能查看，暂不能纠偏。', 'info', 3000);
+      return;
+    }
 
     // 1. Render user's steer prompt in chat log immediately so it is clearly visible
     setMessages((prev) => [
@@ -1060,6 +1163,10 @@ export default function App() {
   };
 
   const handleInterrupt = (source = 'composer-stop') => {
+    if (currentSessionReadOnly) {
+      showToast('当前会话由其他进程运行，只能查看，暂不能中断。', 'info', 3000);
+      return;
+    }
     const turnId = activeTurnId;
     interruptPendingRef.current = true;
     setIsGenerating(false);
@@ -1139,6 +1246,7 @@ export default function App() {
       && (nextProject || null) === (currentThreadProject || null)
     ) return;
     const context = beginSessionRequest(threadId, nextProject);
+    startSessionSync(threadId, nextProject);
 
     // Clear every projection before the new session can render. The epoch and
     // AbortController below make late history/workflow/file responses unable
@@ -1161,6 +1269,9 @@ export default function App() {
       // project context after the attach completes.
       const result = await api.attachThread(threadId, nextProject, { signal: context.signal });
       if (!isCurrentSessionRequest(context)) return;
+      setCurrentSessionReadOnly(
+        result.attached === false && result.session_status === 'locked',
+      );
       if (!result.attached && result.session_status === 'locked') {
         showToast('该 Session 正在另一个进程运行，当前为只读查看；结束后可重新 attach', 'info', 3500);
       }
@@ -1170,9 +1281,12 @@ export default function App() {
         loadWorkflows(threadId, nextProject, context),
         loadRuntimeStatus(threadId, nextProject, context),
       ]);
+      await replayMissedEvents(threadId, nextProject, context);
+      finishSessionSync(threadId, nextProject);
     } catch (err) {
       if (isAbortError(err) || !isCurrentSessionRequest(context)) return;
       setIsLoadingHistory(false);
+      clearSessionSync(threadId, nextProject);
       showToast(`切换 Session 失败: ${err.message}`, 'error');
     }
   };
@@ -1594,6 +1708,7 @@ export default function App() {
 
           <InputBar
             isGenerating={isGenerating}
+            sessionReadOnly={currentSessionReadOnly}
             accessScope={accessScope}
             policy={policy}
             continuationMode={continuationMode}

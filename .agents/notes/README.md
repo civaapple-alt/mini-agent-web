@@ -25,6 +25,7 @@
 - [模块化测试体系重构与 FastAPI Gateway 质量保障](implemented/testing/2026-09-04-modular-test-architecture-and-gateway-coverage.md)
 - [持续集成 (CI) 流水线建设与日常 PR 门禁](implemented/testing/2026-09-04-continuous-integration-pipeline-and-pr-gate.md)
 - [Web Studio 状态持久化层拆分与解耦](implemented/architecture/2026-09-07-decoupled-state-persistence-architecture.md)
+- [Web Studio 多项目多会话并发与实时流切换](implemented/feature/2026-09-10-web-studio-concurrent-sessions-and-live-stream-switching.md)
 
 ## 提案
 

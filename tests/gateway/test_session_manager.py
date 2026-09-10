@@ -1001,6 +1001,76 @@ async def test_restart_broadcasts_runtime_generation(mock_session_manager, monke
     )
 
 
+@pytest.mark.asyncio
+async def test_project_restart_preserves_other_project_clients(
+    mock_session_manager, monkeypatch, tmp_path
+):
+    """Restarting one Project does not stop another Project's runtime."""
+    other_root = tmp_path / "other-project"
+    other_root.mkdir()
+    mock_session_manager._projects_registry["other-project"] = {
+        "id": "other-project",
+        "name": "Other Project",
+        "primary_path": str(other_root),
+    }
+
+    default_client = AsyncMock()
+    other_client = AsyncMock()
+    replacement_client = AsyncMock()
+    mock_session_manager._client = default_client
+    mock_session_manager._clients["default"] = default_client
+    mock_session_manager._clients["other-thread"] = other_client
+    mock_session_manager._client_projects.update(
+        {"default": "default", "other-thread": "other-project"}
+    )
+    mock_session_manager._project_clients.update(
+        {
+            ("default", "default"): default_client,
+            ("other-project", "other-thread"): other_client,
+        }
+    )
+    mock_session_manager._active_thread_projects.update(
+        {"default": "default", "other-thread": "other-project"}
+    )
+    monkeypatch.setattr(
+        mock_session_manager, "_create_client", AsyncMock(return_value=replacement_client)
+    )
+    monkeypatch.setattr(mock_session_manager, "broadcast_ws", AsyncMock())
+
+    await mock_session_manager.restart_for_current_project()
+
+    default_client.stop.assert_awaited_once()
+    other_client.stop.assert_not_awaited()
+    assert mock_session_manager._project_clients[("other-project", "other-thread")] is other_client
+    assert mock_session_manager._clients["other-thread"] is other_client
+    assert mock_session_manager._project_clients[("default", "default")] is replacement_client
+
+
+@pytest.mark.asyncio
+async def test_current_project_client_does_not_reuse_stale_compatibility_pointer(
+    mock_session_manager, tmp_path
+):
+    """Project-scoped lookup wins over the legacy unqualified _client pointer."""
+    other_root = tmp_path / "other-project"
+    other_root.mkdir()
+    mock_session_manager._projects_registry["other-project"] = {
+        "id": "other-project",
+        "name": "Other Project",
+        "primary_path": str(other_root),
+    }
+    old_client = AsyncMock()
+    other_client = AsyncMock()
+    mock_session_manager._client = old_client
+    mock_session_manager._client_projects["default"] = "default"
+    mock_session_manager._project_clients[("default", "default")] = old_client
+    mock_session_manager._project_clients[("other-project", "default")] = other_client
+    mock_session_manager.switch_project("other-project")
+
+    resolved = await mock_session_manager.get_client_for_project()
+
+    assert resolved is other_client
+
+
 def test_session_manager_avoids_duplicate_project_for_custom_id_path(tmp_path):
     """Ensure _load_state does not duplicate a project when its name differs from directory basename."""
     custom_ws = tmp_path / "pi"

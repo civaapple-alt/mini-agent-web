@@ -34,6 +34,15 @@ export function getThreadStatusPresentation(thread = {}) {
     ) {
       lifecycleLabel = '已暂停';
       lifecycleClass = 'paused';
+    } else if (thread.last_turn_status === 'completed' || thread.last_turn_complete) {
+      lifecycleLabel = '已完成';
+      lifecycleClass = 'completed';
+    } else if (
+      thread.last_turn_status === 'cancelled' ||
+      thread.last_turn_status === 'interrupted'
+    ) {
+      lifecycleLabel = '已中断';
+      lifecycleClass = 'interrupted';
     } else if (thread.last_turn_status === 'step_limit') {
       lifecycleLabel = '回答未完成';
       lifecycleClass = 'step-limit';

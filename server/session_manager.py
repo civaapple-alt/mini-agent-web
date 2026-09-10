@@ -815,10 +815,6 @@ class SessionManager:
     ) -> MiniAgentClient:
         """Resolve a project-qualified client for non-thread-scoped APIs."""
         target_project = project_id or self._current_project_id
-        if self._client is not None and (
-            not project_id or self._client_projects.get("default") == target_project
-        ):
-            return self._client
         if target_project not in self._projects_registry:
             target_project = next(
                 (
@@ -830,11 +826,18 @@ class SessionManager:
             )
         if target_project not in self._projects_registry:
             raise KeyError(f"Project '{target_project}' not found")
+        if (
+            self._client is not None
+            and self._client_projects.get("default") == target_project
+        ):
+            return self._client
         if thread_id:
             return await self.get_client_for_thread(thread_id, target_project)
-        for (bound_project, bound_thread), client in self._project_clients.items():
-            if bound_project == target_project and bound_thread == "default":
-                return client
+        project_default = self._project_clients.get((target_project, "default"))
+        if project_default is not None:
+            if target_project == self._current_project_id:
+                self._client = project_default
+            return project_default
         for (bound_project, _bound_thread), client in self._project_clients.items():
             if bound_project == target_project:
                 return client
@@ -990,8 +993,16 @@ class SessionManager:
     async def start(self) -> None:
         """Start and initialize the background MiniAgentClient."""
         async with self._lock:
-            if self._client is not None:
+            current_project_id = self._current_project_id
+            current_default = self._project_clients.get((current_project_id, "default"))
+            if current_default is not None:
+                self._client = current_default
+                self._activate_thread_client(
+                    "default", current_project_id, current_default
+                )
+                self._initialized = True
                 return
+            self._client = None
             canonical = self.read_project_thread("default")
             session = canonical.get("session") if canonical else None
             if session and session.get("session_status") == "locked":
@@ -1018,29 +1029,82 @@ class SessionManager:
             self._initialized = True
 
     async def restart_for_current_project(self) -> None:
-        """Rebind the Host process after the active Project/workspace changes."""
+        """Restart only the current Project runtime without touching other Projects."""
         async with self._lock:
-            clients = self._all_clients()
-            self._clients.clear()
-            self._client_projects.clear()
-            self._project_clients.clear()
-            self._active_thread_projects.clear()
-            self._client = None
+            project_id = self._current_project_id
+            active_keys = {
+                *(
+                    key
+                    for key in self._active_turns_by_project
+                    if key[0] == project_id
+                ),
+                *(
+                    key
+                    for key in self._active_tasks_by_project
+                    if key[0] == project_id
+                ),
+            }
+            if active_keys:
+                active_threads = ", ".join(sorted(thread_id for _, thread_id in active_keys))
+                raise RuntimeError(
+                    f"Project '{project_id}' has active Turn(s): {active_threads}"
+                )
+
+            current_default_project = self._client_projects.get("default")
+            clients: list[MiniAgentClient] = []
+            for (bound_project, thread_id), client in list(self._project_clients.items()):
+                if bound_project != project_id:
+                    continue
+                if client not in clients:
+                    clients.append(client)
+                self._project_clients.pop((bound_project, thread_id), None)
+                if self._clients.get(thread_id) is client:
+                    self._clients.pop(thread_id, None)
+                if self._client_projects.get(thread_id) == project_id:
+                    self._client_projects.pop(thread_id, None)
+                if self._active_thread_projects.get(thread_id) == project_id:
+                    self._active_thread_projects.pop(thread_id, None)
+                    self._active_turns.pop(thread_id, None)
+                    self._active_tasks.pop(thread_id, None)
+
+            # Older callers/tests may only have populated the compatibility
+            # view. Remove those bindings too, without touching other Projects.
+            for thread_id, client in list(self._clients.items()):
+                if self._client_projects.get(thread_id) != project_id:
+                    continue
+                if client not in clients:
+                    clients.append(client)
+                self._clients.pop(thread_id, None)
+                self._client_projects.pop(thread_id, None)
+                if self._active_thread_projects.get(thread_id) == project_id:
+                    self._active_thread_projects.pop(thread_id, None)
+                    self._active_turns.pop(thread_id, None)
+                    self._active_tasks.pop(thread_id, None)
+
+            for thread_id, bound_project in list(self._client_projects.items()):
+                if bound_project == project_id:
+                    self._client_projects.pop(thread_id, None)
+                    if self._active_thread_projects.get(thread_id) == project_id:
+                        self._active_thread_projects.pop(thread_id, None)
+
+            for key in list(self._active_tasks_by_project):
+                if key[0] == project_id:
+                    self._active_tasks_by_project.pop(key, None)
+                    self._active_turns_by_project.pop(key, None)
+            for thread_id, bound_project in list(self._active_thread_projects.items()):
+                if bound_project == project_id:
+                    self._active_thread_projects.pop(thread_id, None)
+
+            if current_default_project == project_id:
+                self._client = None
             self._initialized = False
-            for task in [
-                *self._active_tasks.values(),
-                *self._active_tasks_by_project.values(),
-            ]:
-                task.cancel()
-            self._active_tasks.clear()
-            self._active_turns.clear()
-            self._active_tasks_by_project.clear()
-            self._active_turns_by_project.clear()
-            for future in self._pending_approvals.values():
-                if not future.done():
+            for request_id, details in list(self._pending_approval_details.items()):
+                if details.get("projectId") != project_id:
+                    continue
+                future = self._pending_approvals.pop(request_id, None)
+                self._pending_approval_details.pop(request_id, None)
+                if future and not future.done():
                     future.cancel()
-            self._pending_approvals.clear()
-            self._pending_approval_details.clear()
         for client in set(clients):
             await client.stop()
         await self.start()
@@ -1557,7 +1621,6 @@ class SessionManager:
                 "revoked": False,
                 "reason": "Only the active project runtime can be restarted from this endpoint",
             }
-        self.cancel_active_task()
         await self.restart_for_current_project()
         return {"project_id": resolved_project_id, "revoked": True}
 

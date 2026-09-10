@@ -420,6 +420,10 @@ async def test_ws_stream_does_not_duplicate_app_server_events():
         await _stream_turn_to_ws(websocket, "hello", "start", "default")
 
     websocket.send_json.assert_awaited_once_with(
-        {"type": "_turn_submission", "data": {"turn_id": "turn-1"}}
+        {
+            "type": "_turn_submission",
+            "data": {"turn_id": "turn-1"},
+            "threadId": "default",
+        }
     )
     broadcast.assert_not_awaited()

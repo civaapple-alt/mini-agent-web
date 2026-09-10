@@ -43,6 +43,7 @@ const CONTINUATION_MODES = [
 
 export default function InputBar({
   isGenerating,
+  sessionReadOnly = false,
   accessScope = 'project',
   policy = 'interactive',
   continuationMode = 'manual',
@@ -103,6 +104,15 @@ export default function InputBar({
     mentionRequestEpochRef.current += 1;
     setMentionFiles([]);
   }, [projectId]);
+
+  useEffect(() => {
+    if (!sessionReadOnly) return;
+    setShowSlashPopup(false);
+    setShowMentionPopup(false);
+    setShowAccessMenu(false);
+    setShowApprovalMenu(false);
+    setShowContinuationMenu(false);
+  }, [sessionReadOnly]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -311,6 +321,7 @@ export default function InputBar({
 
   const handleSubmit = (e) => {
     if (e) e.preventDefault();
+    if (sessionReadOnly) return;
     const text = prompt.trim();
     if (!text && attachedImages.length === 0) return;
 
@@ -648,6 +659,7 @@ export default function InputBar({
           style={{ display: 'none' }}
           accept="image/*"
           multiple
+          disabled={sessionReadOnly}
           onChange={handleFileInputChange}
         />
 
@@ -703,8 +715,11 @@ export default function InputBar({
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            disabled={sessionReadOnly}
             placeholder={
-              pendingApproval
+              sessionReadOnly
+                ? '只读查看：该会话由其他进程运行，结束后可重新接管'
+                : pendingApproval
                 ? '⚠️ 等待上方安全权限审批确认后继续...'
                 : isGenerating
                 ? 'Agent 执行中... 按回车排队；本轮结束后可继续发送指令'
@@ -723,6 +738,7 @@ export default function InputBar({
               type="button"
               className="composer-icon-btn"
               onClick={() => fileInputRef.current?.click()}
+              disabled={sessionReadOnly}
               title="上传图片或截图 (支持直接在输入框按 Ctrl+V 粘贴截图)"
             >
               <ImageIcon size={14} />
@@ -732,6 +748,7 @@ export default function InputBar({
               <button
                 type="button"
                 className="composer-pill-btn font-mono"
+                disabled={sessionReadOnly}
                 onClick={() => {
                   setShowAccessMenu(!showAccessMenu);
                   setShowApprovalMenu(false);
@@ -772,6 +789,7 @@ export default function InputBar({
               <button
                 type="button"
                 className="composer-pill-btn font-mono"
+                disabled={sessionReadOnly}
                 onClick={() => {
                   setShowApprovalMenu(!showApprovalMenu);
                   setShowAccessMenu(false);
@@ -812,6 +830,7 @@ export default function InputBar({
               <button
                 type="button"
                 className="composer-pill-btn font-mono"
+                disabled={sessionReadOnly}
                 onClick={() => {
                   setShowContinuationMenu(!showContinuationMenu);
                   setShowAccessMenu(false);
@@ -871,7 +890,9 @@ export default function InputBar({
 
           {/* Bottom-Right: Action Buttons */}
           <div className="input-actions">
-            {isGenerating ? (
+            {sessionReadOnly ? (
+              <span className="readonly-session-label">只读查看</span>
+            ) : isGenerating ? (
               <button
                 type="button"
                 className="btn-action stop"

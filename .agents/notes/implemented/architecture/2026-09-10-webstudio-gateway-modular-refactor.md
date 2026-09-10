@@ -2,11 +2,33 @@
 
 ## Status
 
-Proposed
+Implemented
 
 ## Date
 
 2026-09-10
+
+## Result
+
+已完成本提案的职责拆分主线，并保持既有 REST、SSE、WebSocket、Project/Thread/Turn
+身份、审批停止保护和错误映射兼容。当前 `SessionManager`、Agent/World 路由和关键
+Web Studio 组件均保留 facade/props 入口，拆分后的模块不复制 SessionStore 或
+Capabilities authority。
+
+落地内容包括：
+
+- Frontend：`api/` domain facade、`sessionState` 纯 helper、`AppLayout`、Sidebar
+  `ThreadRow` 和 InputBar `ApprovalDock`；
+- Gateway control plane：JSON persistence、ProjectRegistry、ThreadRegistry、
+  ClientPool、TurnRegistry、ApprovalBridge 和 WebSocketBroker；
+- Gateway routes：Agent 模型/REST-SSE/WebSocket，以及 World 项目、执行/MCP、
+  Workflow/Goal、文件/Git 四组路由，原 `router`/`ws_router` 入口不变；
+- Verification：后端 `117 passed`，前端 Node `36 passed`、Vitest `13 passed`，
+  lint、production build 和 `git diff --check` 均通过。
+
+本轮刻意没有继续拆分 `InputBar` 的 Mention/Slash 交互和 `SidePanel` 的各数据面板，
+因为它们仍共享请求 epoch 与 UI 状态；后续若需要继续拆分，应先补组件挂载测试，不能
+仅为降低行数引入新的状态镜像。
 
 ## Scope
 

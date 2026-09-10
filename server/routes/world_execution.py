@@ -26,6 +26,7 @@ ALL_BUILTIN_TOOLS: list[str] = [
     "web_fetch",
 ]
 
+
 def _ask_directory_dialog() -> str:
     """Prompt native Windows/OS directory dialog."""
     try:

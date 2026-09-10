@@ -48,10 +48,16 @@ class ProjectRegistry:
                 if isinstance(s_data, dict):
                     allowed_settings = set(owner._settings)
                     owner._settings.update(
-                        {key: value for key, value in s_data.items() if key in allowed_settings}
+                        {
+                            key: value
+                            for key, value in s_data.items()
+                            if key in allowed_settings
+                        }
                     )
             except Exception as err:  # noqa: BLE001
-                logger.warning("Failed to parse settings from %s: %s", self._settings_file, err)
+                logger.warning(
+                    "Failed to parse settings from %s: %s", self._settings_file, err
+                )
 
         if self._projects_file.is_file():
             try:
@@ -63,13 +69,17 @@ class ProjectRegistry:
                     project.setdefault("policy", "interactive")
                     project_path = project.get("primary_path", "")
                     if (
-                        "pytest" in project_path.lower() or "temp" in project_path.lower()
+                        "pytest" in project_path.lower()
+                        or "temp" in project_path.lower()
                     ) and not Path(project_path).exists():
                         continue
                     clean_projects[pid] = project
                 owner._projects_registry = clean_projects
                 persisted_project_id = p_data.get("current_project_id")
-                if persisted_project_id and persisted_project_id in owner._projects_registry:
+                if (
+                    persisted_project_id
+                    and persisted_project_id in owner._projects_registry
+                ):
                     owner._current_project_id = persisted_project_id
                     owner._current_project_path = Path(
                         owner._projects_registry[persisted_project_id].get(
@@ -77,7 +87,9 @@ class ProjectRegistry:
                         )
                     )
             except Exception as err:  # noqa: BLE001
-                logger.warning("Failed to parse projects from %s: %s", self._projects_file, err)
+                logger.warning(
+                    "Failed to parse projects from %s: %s", self._projects_file, err
+                )
 
         owner._thread_metadata = {}
         owner._thread_metadata_by_project = {}
@@ -102,10 +114,14 @@ class ProjectRegistry:
                             project_id = project_dir.name
                         metadata["project"] = project_id
                         metadata.pop("continuation_mode", None)
-                        owner._thread_metadata_by_project[(project_id, thread_id)] = metadata
+                        owner._thread_metadata_by_project[(project_id, thread_id)] = (
+                            metadata
+                        )
                         owner._thread_metadata[thread_id] = metadata
                 except Exception as err:  # noqa: BLE001
-                    logger.warning("Failed to load threads from %s: %s", threads_file, err)
+                    logger.warning(
+                        "Failed to load threads from %s: %s", threads_file, err
+                    )
 
         current_name = owner._current_project_path.name
         current_resolved = owner._current_project_path.resolve()
@@ -120,7 +136,11 @@ class ProjectRegistry:
                 "pinned": False,
                 "primary_path": str(owner._current_project_path),
                 "source_folders": [
-                    {"name": current_name, "path": str(owner._current_project_path), "is_primary": True}
+                    {
+                        "name": current_name,
+                        "path": str(owner._current_project_path),
+                        "is_primary": True,
+                    }
                 ],
                 "access": "project",
                 "policy": "interactive",
@@ -131,7 +151,8 @@ class ProjectRegistry:
                 (
                     pid
                     for pid, project in owner._projects_registry.items()
-                    if Path(project.get("primary_path", "")).resolve() == current_resolved
+                    if Path(project.get("primary_path", "")).resolve()
+                    == current_resolved
                 ),
                 None,
             )
@@ -159,7 +180,9 @@ class ProjectRegistry:
         try:
             atomic_write_json(self._settings_file, self._owner._settings)
         except Exception as err:  # noqa: BLE001
-            logger.warning("Failed to persist settings to %s: %s", self._settings_file, err)
+            logger.warning(
+                "Failed to persist settings to %s: %s", self._settings_file, err
+            )
 
     def save_projects(self) -> None:
         try:
@@ -171,7 +194,9 @@ class ProjectRegistry:
                 },
             )
         except Exception as err:  # noqa: BLE001
-            logger.warning("Failed to persist projects to %s: %s", self._projects_file, err)
+            logger.warning(
+                "Failed to persist projects to %s: %s", self._projects_file, err
+            )
 
     def save_project_threads(self, project_id: str) -> None:
         if not project_id:
@@ -180,7 +205,10 @@ class ProjectRegistry:
         try:
             project_metadata = {
                 thread_id: metadata
-                for (bound_project, thread_id), metadata in owner._thread_metadata_by_project.items()
+                for (
+                    bound_project,
+                    thread_id,
+                ), metadata in owner._thread_metadata_by_project.items()
                 if bound_project == project_id
             }
             for thread_id, metadata in owner._thread_metadata.items():
@@ -225,7 +253,10 @@ class ProjectRegistry:
             project_id = project["id"]
             project_threads = [
                 metadata
-                for (bound_project, _thread_id), metadata in owner._thread_metadata_by_project.items()
+                for (
+                    bound_project,
+                    _thread_id,
+                ), metadata in owner._thread_metadata_by_project.items()
                 if bound_project == project_id
             ]
             if not project_threads:
@@ -304,7 +335,9 @@ class ProjectRegistry:
         self.save_projects()
         return project
 
-    def update_project(self, project_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+    def update_project(
+        self, project_id: str, updates: dict[str, Any]
+    ) -> dict[str, Any]:
         owner = self._owner
         project = owner._projects_registry.get(project_id)
         if not project:
@@ -327,7 +360,11 @@ class ProjectRegistry:
         if isinstance(updates.get("source_folders"), list):
             project["source_folders"] = updates["source_folders"]
             primary = next(
-                (folder["path"] for folder in project["source_folders"] if folder.get("is_primary")),
+                (
+                    folder["path"]
+                    for folder in project["source_folders"]
+                    if folder.get("is_primary")
+                ),
                 project["source_folders"][0]["path"]
                 if project["source_folders"]
                 else project["primary_path"],
@@ -403,7 +440,9 @@ class ProjectRegistry:
 
         project_path = Path(project_id_or_path).resolve()
         if not project_path.is_dir():
-            raise FileNotFoundError(f"Project directory not found: {project_id_or_path}")
+            raise FileNotFoundError(
+                f"Project directory not found: {project_id_or_path}"
+            )
         owner._current_project_path = project_path
         project_id = project_path.name.lower()
         project = {
@@ -412,7 +451,11 @@ class ProjectRegistry:
             "pinned": False,
             "primary_path": str(project_path),
             "source_folders": [
-                {"name": project_path.name, "path": str(project_path), "is_primary": True}
+                {
+                    "name": project_path.name,
+                    "path": str(project_path),
+                    "is_primary": True,
+                }
             ],
             "access": "project",
             "policy": "interactive",
@@ -445,7 +488,9 @@ class ProjectRegistry:
         read_roots: list[str] = []
         write_roots: list[str] = []
         project = project or owner._projects_registry.get(owner._current_project_id, {})
-        primary = Path(project.get("primary_path", owner._current_project_path)).resolve()
+        primary = Path(
+            project.get("primary_path", owner._current_project_path)
+        ).resolve()
         source_folders = project.get("source_folders") or [
             {"path": str(primary), "is_primary": True}
         ]

@@ -251,7 +251,9 @@ class SessionManager:
     async def _get_client_for_thread_locked(
         self, thread_id: str, project_id: str | None = None
     ) -> MiniAgentClient:
-        return await self._client_pool.get_client_for_thread_locked(thread_id, project_id)
+        return await self._client_pool.get_client_for_thread_locked(
+            thread_id, project_id
+        )
 
     async def get_client_for_thread(
         self, thread_id: str | None = None, project_id: str | None = None
@@ -538,6 +540,7 @@ class SessionManager:
     ) -> Path:
         """Resolve the active Thread's Project workspace for file inspection."""
         return self._thread_registry.project_path_for_thread(thread_id, project_id)
+
     # Settings Management
     # -------------------------------------------------------------------------
 

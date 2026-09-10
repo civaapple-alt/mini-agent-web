@@ -56,9 +56,9 @@ class ThreadRegistry:
         owner = self._owner
         if project_id:
             return str(project_id)
-        bound_project = owner._active_thread_projects.get(thread_id) or owner._client_projects.get(
+        bound_project = owner._active_thread_projects.get(
             thread_id
-        )
+        ) or owner._client_projects.get(thread_id)
         if bound_project:
             return str(bound_project)
         project = self.project_for_thread(thread_id)
@@ -76,9 +76,7 @@ class ThreadRegistry:
             return owner.read_project_thread(thread_id, active_project)
         return owner.read_any_project_thread(thread_id)
 
-    def metadata_project_id(
-        self, thread_id: str, project_id: str | None = None
-    ) -> str:
+    def metadata_project_id(self, thread_id: str, project_id: str | None = None) -> str:
         owner = self._owner
         candidate = (
             project_id
@@ -178,7 +176,9 @@ class ThreadRegistry:
         owner = self._owner
         sessions_by_key: dict[tuple[str, str], dict[str, Any]] = {}
         for project_id in owner._projects_registry:
-            project_sessions = self.list_project_sessions(project_id, limit=limit)["data"]
+            project_sessions = self.list_project_sessions(project_id, limit=limit)[
+                "data"
+            ]
             for session in project_sessions:
                 key = (
                     str(session.get("workspace_id") or project_id),
@@ -205,7 +205,9 @@ class ThreadRegistry:
         project = owner._projects_registry.get(target_id)
         if not project:
             return None
-        return session_catalog.read_thread(Path(project["primary_path"]), target_id, thread_id)
+        return session_catalog.read_thread(
+            Path(project["primary_path"]), target_id, thread_id
+        )
 
     def read_any_project_thread(
         self, thread_id: str, project_id: str | None = None
@@ -214,9 +216,9 @@ class ThreadRegistry:
         if project_id:
             project = self.project_for_thread(thread_id, project_id)
             return owner.read_project_thread(thread_id, project.get("id"))
-        metadata_project = owner._active_thread_projects.get(thread_id) or owner._thread_metadata.get(
-            thread_id, {}
-        ).get("project")
+        metadata_project = owner._active_thread_projects.get(
+            thread_id
+        ) or owner._thread_metadata.get(thread_id, {}).get("project")
         ordered_ids: list[str] = []
         if metadata_project in owner._projects_registry:
             ordered_ids.append(metadata_project)
@@ -241,9 +243,11 @@ class ThreadRegistry:
         self, thread_id: str, project_id: str | None = None
     ) -> Path | None:
         owner = self._owner
-        metadata_project = project_id or owner._active_thread_projects.get(thread_id) or owner._thread_metadata.get(
-            thread_id, {}
-        ).get("project")
+        metadata_project = (
+            project_id
+            or owner._active_thread_projects.get(thread_id)
+            or owner._thread_metadata.get(thread_id, {}).get("project")
+        )
         ordered_ids: list[str] = []
         if metadata_project in owner._projects_registry:
             ordered_ids.append(metadata_project)
@@ -275,5 +279,7 @@ class ThreadRegistry:
         if thread_id:
             bound_project = owner._active_thread_projects.get(thread_id)
             if bound_project and bound_project in owner._projects_registry:
-                return Path(owner._projects_registry[bound_project]["primary_path"]).resolve()
+                return Path(
+                    owner._projects_registry[bound_project]["primary_path"]
+                ).resolve()
         return owner._current_project_path.resolve()

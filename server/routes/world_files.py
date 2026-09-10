@@ -13,6 +13,7 @@ from server.session_manager import session_manager
 
 router = APIRouter(prefix="/api", tags=["World & Workflows"])
 
+
 @router.get("/workflows/files", summary="List workflow and plan files")
 async def list_workflow_files(
     thread_id: str | None = None,

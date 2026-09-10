@@ -90,7 +90,9 @@ class ApprovalBridge:
         owner = self._owner
         cancelled: list[tuple[str, dict[str, Any]]] = []
         for request_id, details in list(owner._pending_approval_details.items()):
-            request_project, request_thread, request_turn = self.approval_identity(details)
+            request_project, request_thread, request_turn = self.approval_identity(
+                details
+            )
             if project_id and request_project != project_id:
                 continue
             if thread_id and request_thread != thread_id:
@@ -316,7 +318,10 @@ class ApprovalBridge:
         access, policy = owner.project_execution(resolved_project_id)
         pending = []
         for request_id, details in owner._pending_approval_details.items():
-            if project_id and details.get("projectId") not in (None, resolved_project_id):
+            if project_id and details.get("projectId") not in (
+                None,
+                resolved_project_id,
+            ):
                 continue
             if thread_id and details.get("threadId") != thread_id:
                 continue

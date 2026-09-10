@@ -51,7 +51,10 @@ class TurnRegistry:
         project_id = project_id or owner._active_thread_projects.get(thread_id)
         if project_id:
             key = (project_id, thread_id)
-            if turn_id and owner._active_turns_by_project.get(key) not in (None, turn_id):
+            if turn_id and owner._active_turns_by_project.get(key) not in (
+                None,
+                turn_id,
+            ):
                 return
             if task and owner._active_tasks_by_project.get(key) not in (None, task):
                 return

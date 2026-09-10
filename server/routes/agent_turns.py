@@ -21,6 +21,7 @@ from server.session_manager import session_manager, to_json_serializable
 logger = logging.getLogger("mini_agent.server.agent")
 router = APIRouter(prefix="/api", tags=["Agent"])
 
+
 def _process_attachments(
     prompt: str,
     images: list[str] | None = None,

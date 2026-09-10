@@ -182,7 +182,9 @@ class ClientPool:
 
         canonical = owner._canonical_thread(target, resolved_project_id)
         if canonical and canonical["session"]["session_status"] == "locked":
-            raise RuntimeError(f"Session '{target}' is already running in another process")
+            raise RuntimeError(
+                f"Session '{target}' is already running in another process"
+            )
         session = canonical.get("session") if canonical else None
         # Preserve the manager's instance-level seam used by route tests and
         # integrations that replace client creation with a deterministic stub.
@@ -276,7 +278,9 @@ class ClientPool:
     ) -> dict[str, Any]:
         owner = self.owner
         async with owner._lock:
-            client = await self.get_client_for_thread_locked(source_thread_id, project_id)
+            client = await self.get_client_for_thread_locked(
+                source_thread_id, project_id
+            )
             source_project = owner._client_projects.get(source_thread_id)
             if not source_project:
                 source_project = owner._active_thread_projects.get(source_thread_id)

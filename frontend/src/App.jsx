@@ -1,13 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import Header from './components/Header';
-import Sidebar from './components/Sidebar';
-import ChatArea from './components/ChatArea';
-import InputBar from './components/InputBar';
-import SidePanel from './components/SidePanel';
-import PlanModeBanner from './components/PlanModeBanner';
-import SettingsModal from './components/SettingsModal';
-import Toast from './components/Toast';
-import ErrorBoundary from './components/ErrorBoundary';
+import AppLayout from './components/AppLayout';
 import { api, createAgentWebSocket, setActiveProjectId } from './api';
 import {
   shouldAcceptEventForThread,
@@ -34,7 +26,6 @@ import {
 import {
   ACTIVE_RUNTIME_PHASES,
   MAX_PENDING_SESSION_EVENTS,
-  RUNTIME_PHASE_LABELS,
   SELECTED_SESSION_STORAGE_KEY,
   formatRunFailure,
   normalizeGoal,
@@ -1768,178 +1759,87 @@ export default function App() {
   };
 
   return (
-    <div className="app-container">
-      <Header
-        currentThread={currentThread}
-        threadTitle={currentThreadMeta.title}
-        threadSummary={currentThreadMeta.summary}
-        isConnected={isConnected}
-        onOpenSidePanel={handleOpenSidePanel}
-        onOpenSettings={() => setSettingsModalOpen(true)}
-        onRenameThread={(title) => handleRenameThread(currentThread, title)}
-        onUpdateSummary={(summary) => handleUpdateSummary(currentThread, summary)}
-      />
-
-      <div className="app-main-layout">
-        <Sidebar
-          threads={threads}
-          currentThread={currentThread}
-          currentThreadProject={currentThreadProject}
-          isGenerating={isGenerating}
-          onSelectThread={handleSelectThread}
-          onNewThread={handleNewThread}
-          onForkThread={handleForkThread}
-          onCloseThread={handleCloseThread}
-          onRenameThread={handleRenameThread}
-          onUpdateSummary={handleUpdateSummary}
-          onRefreshThreads={loadThreads}
-          onToast={showToast}
-        />
-
-        <main className="app-content">
-          {planActive && (
-            <PlanModeBanner
-              reviewPending={planReviewPending && !isGenerating}
-              busy={isGenerating || isInterrupting || Boolean(activeTurnId) || Boolean(pendingApproval)}
-              onOpenDetails={() => handleOpenSidePanel('plan_goal')}
-              onContinuePlanning={handleContinuePlanning}
-              onStartImplementation={handleStartImplementation}
-              onClosePlan={() => handleSetPlanMode(false)}
-            />
-          )}
-          {goalState && (
-            <div className="goal-topbar" role="status">
-              <div className="goal-topbar-main">
-                <span className="goal-topbar-label">GOAL</span>
-                <span className={`goal-topbar-status ${goalState.status}`}>{goalState.status}</span>
-                {goalState.verification_status && goalState.verification_status !== 'idle' && (
-                  <span className={`goal-topbar-verification ${goalState.verification_status}`}>
-                    VERIFY {goalState.verification_status}
-                  </span>
-                )}
-                <span className="goal-topbar-objective" title={goalState.objective}>{goalState.objective}</span>
-              </div>
-              <div className="goal-topbar-actions">
-                <button type="button" onClick={() => handleOpenSidePanel('plan_goal')}>详情</button>
-                {goalState.status === 'paused' ? (
-                  <button type="button" onClick={handleResumeGoal}>恢复</button>
-                ) : goalState.status === 'active' ? (
-                  <button type="button" onClick={handlePauseGoal}>暂停</button>
-                ) : null}
-                <button type="button" onClick={handleUpdateGoal}>更新</button>
-                <button type="button" className="danger" onClick={handleClearGoal}>删除</button>
-              </div>
-            </div>
-          )}
-          {runtimeStatus && runtimeStatus.phase !== 'idle' && (
-            <div className={`runtime-status-bar ${runtimeStatus.phase}`} role="status">
-              <span className="runtime-status-label">RUNTIME</span>
-              <span>{RUNTIME_PHASE_LABELS[runtimeStatus.phase] || runtimeStatus.phase}</span>
-              {runtimeStatus.turnId && (
-                <span className="runtime-status-meta">turn {runtimeStatus.turnId}</span>
-              )}
-              {runtimeStatus.checkpointSeq !== null && runtimeStatus.checkpointSeq !== undefined && (
-                <span className="runtime-status-meta">checkpoint #{runtimeStatus.checkpointSeq}</span>
-              )}
-              {runtimeStatus.operationId && (
-                <span className="runtime-status-operation" title={runtimeStatus.operationId}>
-                  {runtimeStatus.operationId}
-                </span>
-              )}
-              {lastWorkflowEvent?.method && (
-                <span className="runtime-status-event">{lastWorkflowEvent.method}</span>
-              )}
-              {runtimeStatus.error && (
-                <span className="runtime-status-error" title={runtimeStatus.error}>⚠ {runtimeStatus.error}</span>
-              )}
-            </div>
-          )}
-          <ErrorBoundary title="对话区域渲染异常 (Chat Area Render Error)">
-            <ChatArea
-              messages={messages}
-              isGenerating={isGenerating}
-              pendingApproval={pendingApproval}
-              lastTurnResult={lastTurnResult}
-              policy={policy}
-              onQuickPrompt={handleSendMessage}
-              onRetryPrompt={handleSendMessage}
-              autoScroll={userSettings.auto_scroll}
-              wordWrap={userSettings.word_wrap}
-              fontSize={userSettings.font_size}
-              isLoadingHistory={isLoadingHistory}
-            />
-          </ErrorBoundary>
-
-          <InputBar
-            isGenerating={isGenerating}
-            isInterrupting={isInterrupting}
-            sessionReadOnly={currentSessionReadOnly}
-            accessScope={accessScope}
-            policy={policy}
-            continuationMode={continuationMode}
-            goalState={goalState}
-            projectId={currentThreadProject}
-            pendingApproval={pendingApproval}
-            onRespondApproval={handleRespondApproval}
-            onChangeExecution={handleUpdateExecution}
-            onChangeContinuation={handleUpdateContinuation}
-            onEnableAutoCopilot={handleEnableAutoCopilot}
-            onStartPlanTask={handleStartPlanTask}
-            onStartGoal={handleStartGoal}
-            onSendMessage={handleSendMessage}
-            onQueueMessage={handleQueueMessage}
-            pendingMessages={pendingMessages}
-            onSteerQueuedMessage={handleSteerQueuedMessage}
-            onEditQueuedMessage={handleEditQueuedMessage}
-            onUpdateQueuedMessage={handleUpdateQueuedMessage}
-            onRemoveQueuedMessage={handleRemoveQueuedMessage}
-            composerDraft={composerDraft}
-            onComposerDraftApplied={() => setComposerDraft(null)}
-            onInterrupt={handleInterrupt}
-            onClearChat={handleClearChat}
-            onTogglePlanMode={handleTogglePlan}
-            onToast={showToast}
-          />
-        </main>
-      </div>
-
-      {/* Multi-Tab Side Panel */}
-      <ErrorBoundary title="侧边栏渲染异常 (Side Panel Render Error)">
-        <SidePanel
-          isOpen={sidePanelOpen}
-          initialTab={sidePanelTab}
-          onClose={() => setSidePanelOpen(false)}
-          planActive={planActive}
-          goalState={goalState}
-          threadId={currentThread}
-          projectId={currentThreadProject}
-          onGoalChanged={(goal, payload) => applyGoalState(
-            currentThread,
-            goal,
-            payload,
-            currentThreadProject,
-          )}
-          onTogglePlan={handleTogglePlan}
-          onToast={showToast}
-        />
-      </ErrorBoundary>
-
-      {/* System Settings Modal */}
-      <SettingsModal
-        isOpen={settingsModalOpen}
-        onClose={() => setSettingsModalOpen(false)}
-        projectId={currentThreadProject}
-        onToast={showToast}
-        onSettingsSaved={(newSettings) => {
-          if (newSettings.theme) {
-            document.body.className = `theme-${newSettings.theme}`;
-          }
-          showToast('偏好设置已保存并生效', 'success', 2000);
-        }}
-      />
-
-      {/* Toast Notification Container */}
-      <Toast toasts={toasts} onDismiss={dismissToast} />
-    </div>
+    <AppLayout
+      currentThread={currentThread}
+      threadTitle={currentThreadMeta.title}
+      threadSummary={currentThreadMeta.summary}
+      isConnected={isConnected}
+      onOpenSidePanel={handleOpenSidePanel}
+      onOpenSettings={() => setSettingsModalOpen(true)}
+      onRenameThread={handleRenameThread}
+      onUpdateSummary={handleUpdateSummary}
+      onRenameCurrentThread={(title) => handleRenameThread(currentThread, title)}
+      onUpdateCurrentSummary={(summary) => handleUpdateSummary(currentThread, summary)}
+      threads={threads}
+      currentThreadProject={currentThreadProject}
+      isGenerating={isGenerating}
+      onSelectThread={handleSelectThread}
+      onNewThread={handleNewThread}
+      onForkThread={handleForkThread}
+      onCloseThread={handleCloseThread}
+      onRefreshThreads={loadThreads}
+      onToast={showToast}
+      planActive={planActive}
+      planReviewPending={planReviewPending}
+      isInterrupting={isInterrupting}
+      activeTurnId={activeTurnId}
+      pendingApproval={pendingApproval}
+      onContinuePlanning={handleContinuePlanning}
+      onStartImplementation={handleStartImplementation}
+      onClosePlan={() => handleSetPlanMode(false)}
+      goalState={goalState}
+      onResumeGoal={handleResumeGoal}
+      onPauseGoal={handlePauseGoal}
+      onUpdateGoal={handleUpdateGoal}
+      onClearGoal={handleClearGoal}
+      runtimeStatus={runtimeStatus}
+      lastWorkflowEvent={lastWorkflowEvent}
+      messages={messages}
+      lastTurnResult={lastTurnResult}
+      policy={policy}
+      onSendMessage={handleSendMessage}
+      userSettings={userSettings}
+      isLoadingHistory={isLoadingHistory}
+      sessionReadOnly={currentSessionReadOnly}
+      accessScope={accessScope}
+      continuationMode={continuationMode}
+      onRespondApproval={handleRespondApproval}
+      onChangeExecution={handleUpdateExecution}
+      onChangeContinuation={handleUpdateContinuation}
+      onEnableAutoCopilot={handleEnableAutoCopilot}
+      onStartPlanTask={handleStartPlanTask}
+      onStartGoal={handleStartGoal}
+      onQueueMessage={handleQueueMessage}
+      pendingMessages={pendingMessages}
+      onSteerQueuedMessage={handleSteerQueuedMessage}
+      onEditQueuedMessage={handleEditQueuedMessage}
+      onUpdateQueuedMessage={handleUpdateQueuedMessage}
+      onRemoveQueuedMessage={handleRemoveQueuedMessage}
+      composerDraft={composerDraft}
+      onComposerDraftApplied={() => setComposerDraft(null)}
+      onInterrupt={handleInterrupt}
+      onClearChat={handleClearChat}
+      onTogglePlanMode={handleTogglePlan}
+      sidePanelOpen={sidePanelOpen}
+      sidePanelTab={sidePanelTab}
+      onCloseSidePanelPanel={() => setSidePanelOpen(false)}
+      onGoalChanged={(goal, payload) => applyGoalState(
+        currentThread,
+        goal,
+        payload,
+        currentThreadProject,
+      )}
+      onTogglePlan={handleTogglePlan}
+      settingsModalOpen={settingsModalOpen}
+      onCloseSettings={() => setSettingsModalOpen(false)}
+      onSettingsSaved={(newSettings) => {
+        if (newSettings.theme) {
+          document.body.className = `theme-${newSettings.theme}`;
+        }
+        showToast('偏好设置已保存并生效', 'success', 2000);
+      }}
+      toasts={toasts}
+      onDismissToast={dismissToast}
+    />
   );
 }

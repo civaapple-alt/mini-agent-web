@@ -16,6 +16,7 @@ import {
   aggregateThreadItems,
   assignHistoryTurnIds,
   filterEmptyMessages,
+  shouldIgnoreApprovalWhileInterrupting,
   shouldSettleActiveTurnFromError,
 } from './utils/messageState';
 import {
@@ -137,6 +138,7 @@ export default function App() {
   });
   const [messages, setMessages] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isInterrupting, setIsInterrupting] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState(null);
   const [pendingApproval, setPendingApproval] = useState(null);
   const [pendingMessages, setPendingMessages] = useState([]);
@@ -179,6 +181,7 @@ export default function App() {
   const runtimeGenerationRef = useRef(0);
   const queueDispatchingRef = useRef(false);
   const interruptPendingRef = useRef(false);
+  const interruptTurnIdRef = useRef(null);
   const activeTurnIdRef = useRef(activeTurnId);
   const planActiveRef = useRef(planActive);
   const currentThreadRef = useRef(currentThread);
@@ -282,10 +285,12 @@ export default function App() {
 
   const resetSessionProjections = ({ loadingHistory = false } = {}) => {
     setIsGenerating(false);
+    setIsInterrupting(false);
     activeTurnIdRef.current = null;
     setActiveTurnId(null);
     setCurrentSessionReadOnly(false);
     interruptPendingRef.current = false;
+    interruptTurnIdRef.current = null;
     queueDispatchingRef.current = false;
     setPendingApproval(null);
     setPendingMessages([]);
@@ -570,9 +575,14 @@ export default function App() {
         isCurrentSessionRequest(requestContext)
       ) {
         setRuntimeStatus(status);
-        if (ACTIVE_RUNTIME_PHASES.has(status.phase)) {
+        const runtimeTurnId = status.turn_id || status.turnId;
+        const stoppedTurn = shouldIgnoreApprovalWhileInterrupting(
+          { turnId: runtimeTurnId },
+          interruptPendingRef.current,
+          interruptTurnIdRef.current,
+        );
+        if (ACTIVE_RUNTIME_PHASES.has(status.phase) && !stoppedTurn) {
           setIsGenerating(true);
-          const runtimeTurnId = status.turn_id || status.turnId;
           if (runtimeTurnId) {
             activeTurnIdRef.current = runtimeTurnId;
             setActiveTurnId(runtimeTurnId);
@@ -716,6 +726,9 @@ export default function App() {
           || sessionSnapshot.last_turn_id
         : null;
       setIsGenerating(turnActive);
+      setIsInterrupting(false);
+      interruptPendingRef.current = false;
+      interruptTurnIdRef.current = null;
       activeTurnIdRef.current = restoredTurnId;
       setActiveTurnId(restoredTurnId);
       const persistedTurn = cp.last_turn_status || cp.session?.last_turn_status;
@@ -862,8 +875,10 @@ export default function App() {
         activeTurnIdRef.current = turnId;
         setActiveTurnId(turnId);
         setIsGenerating(true);
+        setIsInterrupting(false);
         queueDispatchingRef.current = false;
         interruptPendingRef.current = false;
+        interruptTurnIdRef.current = null;
         setLastTurnResult(null);
       }
       return;
@@ -894,6 +909,22 @@ export default function App() {
         message: data.message || '操作异常',
       });
       showToast(`⚠️ ${data.message || '操作异常'}`, 'error', 4000);
+      if (
+        data.scope === 'turn'
+        && data.terminal === false
+        && data.turnId
+        && data.turnId === interruptTurnIdRef.current
+      ) {
+        // The remote interrupt was not admitted. Keep the Turn live and make
+        // the Stop action available again instead of showing a false terminal
+        // state or allowing a new message to race the old Turn.
+        interruptPendingRef.current = false;
+        interruptTurnIdRef.current = null;
+        setIsInterrupting(false);
+        activeTurnIdRef.current = data.turnId;
+        setActiveTurnId(data.turnId);
+        setIsGenerating(true);
+      }
       if (data.terminal && data.scope === 'turn') {
         if (!shouldSettleActiveTurnFromError(data, visibleActiveTurnId)) return;
         setLastTurnResult({
@@ -905,6 +936,8 @@ export default function App() {
         });
         queueDispatchingRef.current = false;
         interruptPendingRef.current = false;
+        interruptTurnIdRef.current = null;
+        setIsInterrupting(false);
         setIsGenerating(false);
         activeTurnIdRef.current = null;
         setActiveTurnId(null);
@@ -916,6 +949,15 @@ export default function App() {
 
     // 2. Security Approval Interception
     if (data.type === 'approval_request') {
+      if (
+        shouldIgnoreApprovalWhileInterrupting(
+          data.data,
+          interruptPendingRef.current,
+          interruptTurnIdRef.current,
+        )
+      ) {
+        return;
+      }
       setPendingApproval({
         requestId: data.requestId,
         data: data.data,
@@ -926,6 +968,15 @@ export default function App() {
     if (data.type === 'approval') {
       const approval = data.approval || {};
       if (approval.phase === 'requested') {
+        if (
+          shouldIgnoreApprovalWhileInterrupting(
+            approval,
+            interruptPendingRef.current,
+            interruptTurnIdRef.current,
+          )
+        ) {
+          return;
+        }
         setPendingApproval({
           requestId: approval.requestId,
           data: approval,
@@ -983,9 +1034,15 @@ export default function App() {
 
     // 3. Engine Typed Events
     if (data.type === 'event') {
-      if (data.turnId) {
-        activeTurnIdRef.current = data.turnId;
-        setActiveTurnId(data.turnId);
+      const eventTurnId = data.turnId || data.turn_id;
+      const stoppedTurn = shouldIgnoreApprovalWhileInterrupting(
+        { turnId: eventTurnId },
+        interruptPendingRef.current,
+        interruptTurnIdRef.current,
+      );
+      if (eventTurnId && !stoppedTurn) {
+        activeTurnIdRef.current = eventTurnId;
+        setActiveTurnId(eventTurnId);
       }
       const evt = data.event || {};
       if (evt.type === 'turn_started') {
@@ -993,8 +1050,11 @@ export default function App() {
         if (goalObjective) {
           setMessages((prev) => appendGoalMessageToMessages(prev, goalObjective));
         }
-        setIsGenerating(true);
-        setPlanReviewPending(false);
+        if (!stoppedTurn) {
+          setIsGenerating(true);
+          setIsInterrupting(false);
+          setPlanReviewPending(false);
+        }
       } else if (evt.type === 'run_failed') {
         // RunFailed is diagnostic only. The durable turn_finished event below
         // is the lifecycle boundary and owns generating/queue settlement.
@@ -1036,9 +1096,12 @@ export default function App() {
             setPlanReviewPending(true);
           }
           setIsGenerating(false);
+          setIsInterrupting(false);
           activeTurnIdRef.current = null;
           setActiveTurnId(null);
           interruptPendingRef.current = false;
+          interruptTurnIdRef.current = null;
+          setPendingApproval(null);
           loadThreads();
           loadWorkflows(currentThreadRef.current);
           if (turnStatus === 'failed') {
@@ -1058,6 +1121,10 @@ export default function App() {
     const { prompt: promptText, images, referencedFiles } = normalizeInputPayload(inputPayload);
 
     if (!promptText.trim() && images.length === 0) return false;
+    if (isInterrupting || interruptPendingRef.current || pendingApproval) {
+      showToast('当前轮次正在停止，请等待结算后再发送。', 'info', 2500);
+      return false;
+    }
     if (currentSessionReadOnly) {
       showToast('当前会话由其他进程运行，只能查看，暂不能发送消息。', 'info', 3000);
       return false;
@@ -1218,9 +1285,17 @@ export default function App() {
       showToast('当前会话由其他进程运行，只能查看，暂不能中断。', 'info', 3000);
       return;
     }
-    const turnId = activeTurnId;
+    const approvalTurnId = pendingApproval?.data?.turnId || pendingApproval?.data?.turn_id;
+    const turnId = activeTurnIdRef.current || approvalTurnId || activeTurnId;
+    if (!turnId) {
+      showToast('当前没有可停止的任务轮次。', 'info', 2500);
+      return;
+    }
     interruptPendingRef.current = true;
+    interruptTurnIdRef.current = turnId;
+    setIsInterrupting(true);
     setIsGenerating(false);
+    setPendingApproval(null);
     let sent = false;
     if (wsRef.current) {
       sent = wsRef.current.send({
@@ -1238,6 +1313,13 @@ export default function App() {
       turnId,
       sent,
     });
+    if (!sent) {
+      interruptPendingRef.current = false;
+      interruptTurnIdRef.current = null;
+      setIsInterrupting(false);
+      showToast('停止请求发送失败，请确认连接后重试。', 'error', 3000);
+      return;
+    }
     activeTurnIdRef.current = null;
     setActiveTurnId(null);
     showToast('已发送停止生成请求', 'info', 1800);
@@ -1259,6 +1341,11 @@ export default function App() {
   };
 
   const handleRespondApproval = async (requestId, decision, reason = '', requestedScope = 'once') => {
+    if (interruptPendingRef.current || isInterrupting) {
+      setPendingApproval(null);
+      showToast('当前轮次正在停止，该审批已失效。', 'info', 2500);
+      return;
+    }
     const approval = pendingApproval?.data || {};
     const approvalProjectId = approval.projectId || approval.project_id || currentThreadProject;
     const approvalThreadId = approval.threadId || approval.thread_id || currentThread;
@@ -1479,7 +1566,13 @@ export default function App() {
   };
 
   const handleSetPlanMode = async (active, reason = 'toggle') => {
-    if (isGenerating || activeTurnId) {
+    if (
+      isGenerating
+      || activeTurnIdRef.current
+      || isInterrupting
+      || interruptPendingRef.current
+      || pendingApproval
+    ) {
       showToast('当前轮次正在执行，Plan Mode 将在本轮结束后才能切换。', 'info', 3000);
       return false;
     }
@@ -1503,6 +1596,7 @@ export default function App() {
       );
       return confirmedActive === active;
     } catch (err) {
+      await loadWorkflows(currentThreadRef.current, currentThreadProjectRef.current);
       showToast(`切换 Plan Mode 失败: ${err.message}`, 'error');
       return false;
     }
@@ -1511,7 +1605,13 @@ export default function App() {
   const handleTogglePlan = async () => handleSetPlanMode(!planActive);
 
   const handleStartPlanTask = async ({ prompt, images = [], referencedFiles = [] }) => {
-    if (isGenerating || activeTurnId) {
+    if (
+      isGenerating
+      || activeTurnIdRef.current
+      || isInterrupting
+      || interruptPendingRef.current
+      || pendingApproval
+    ) {
       showToast('当前轮次正在执行，Plan 任务请在本轮结束后发送。', 'info', 3000);
       return;
     }
@@ -1604,7 +1704,7 @@ export default function App() {
   };
 
   const handleUpdateExecution = async (nextAccess, nextPolicy) => {
-    if (isGenerating || activeTurnId) {
+    if (isGenerating || activeTurnIdRef.current || isInterrupting || interruptPendingRef.current || pendingApproval) {
       showToast('当前轮次正在执行，策略未切换；请在本轮结束后重试。', 'info', 3000);
       return;
     }
@@ -1623,6 +1723,10 @@ export default function App() {
   };
 
   const handleUpdateContinuation = async (nextMode) => {
+    if (isGenerating || activeTurnIdRef.current || isInterrupting || interruptPendingRef.current || pendingApproval) {
+      showToast('当前轮次正在执行，推进方式未切换；请在本轮结束后重试。', 'info', 3000);
+      return;
+    }
     try {
       const res = await api.updateThreadSettings(
         planActive ? 'plan' : 'default',
@@ -1644,7 +1748,7 @@ export default function App() {
   };
 
   const handleEnableAutoCopilot = async () => {
-    if (isGenerating || activeTurnId) {
+    if (isGenerating || activeTurnIdRef.current || isInterrupting || interruptPendingRef.current || pendingApproval) {
       showToast('当前轮次正在执行，暂时无法开启 Auto Copilot；请在本轮结束后重试。', 'info', 3000);
       return;
     }
@@ -1699,6 +1803,7 @@ export default function App() {
           {planActive && (
             <PlanModeBanner
               reviewPending={planReviewPending && !isGenerating}
+              busy={isGenerating || isInterrupting || Boolean(activeTurnId) || Boolean(pendingApproval)}
               onOpenDetails={() => handleOpenSidePanel('plan_goal')}
               onContinuePlanning={handleContinuePlanning}
               onStartImplementation={handleStartImplementation}
@@ -1770,6 +1875,7 @@ export default function App() {
 
           <InputBar
             isGenerating={isGenerating}
+            isInterrupting={isInterrupting}
             sessionReadOnly={currentSessionReadOnly}
             accessScope={accessScope}
             policy={policy}

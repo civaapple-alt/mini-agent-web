@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Approval-safe Turn interruption and Plan lifecycle**: stopping a Turn now
+  invalidates its pending and late approval requests before cancelling the local
+  stream; a failed remote interrupt no longer masquerades as a settled Turn; the
+  Studio keeps a visible stopping state until authoritative settlement, and
+  Thread settings reject Plan Mode changes while a Turn or approval is active.
+
 - **Multi-session interruption and failure isolation**: browser/WebSocket
   disconnects no longer cancel Gateway-owned Turn streams; App Server EOF now
   settles waiting SDK consumers; stale stream cleanup and concurrent Turn errors

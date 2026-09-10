@@ -8,6 +8,7 @@ import {
   filterEmptyMessages,
   groupCompactionBlocks,
   shouldAcceptEventForThread,
+  shouldIgnoreApprovalWhileInterrupting,
   shouldSettleActiveTurnFromError,
 } from '../utils/messageState.js';
 
@@ -192,6 +193,33 @@ test('a concurrent Turn error cannot settle the active Turn', () => {
   assert.equal(
     shouldSettleActiveTurnFromError({ type: 'error', scope: 'turn' }, null),
     true,
+  );
+});
+
+test('a stopped Turn cannot reopen its approval dock', () => {
+  assert.equal(
+    shouldIgnoreApprovalWhileInterrupting(
+      { turnId: 'turn-stopped' },
+      true,
+      'turn-stopped',
+    ),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreApprovalWhileInterrupting(
+      { turnId: 'turn-next' },
+      true,
+      'turn-stopped',
+    ),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreApprovalWhileInterrupting({}, true, 'turn-stopped'),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreApprovalWhileInterrupting({ turnId: 'turn-stopped' }, false),
+    false,
   );
 });
 

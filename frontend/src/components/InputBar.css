@@ -1115,3 +1115,8 @@ body.theme-dark .btn-dock-deny {
 .btn-action.stop:hover {
   background-color: rgba(225, 29, 72, 0.2);
 }
+
+.btn-action.stop:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}

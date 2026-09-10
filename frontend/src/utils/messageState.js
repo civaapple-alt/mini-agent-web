@@ -45,6 +45,22 @@ export function shouldSettleActiveTurnFromError(eventData, activeTurnId) {
   return Boolean(errorTurnId && errorTurnId === activeTurnId);
 }
 
+/**
+ * Do not reopen an approval dock after its Turn has been stopped. A missing
+ * Turn ID is treated as belonging to the interrupted Turn because accepting
+ * an unscoped approval is less safe than dropping a stale notification.
+ */
+export function shouldIgnoreApprovalWhileInterrupting(
+  approvalData,
+  interrupting,
+  interruptedTurnId = null,
+) {
+  if (!interrupting) return false;
+  const approvalTurnId = approvalData?.turnId || approvalData?.turn_id;
+  if (!approvalTurnId || !interruptedTurnId) return true;
+  return approvalTurnId === interruptedTurnId;
+}
+
 function projectedStatus(status) {
   if (status === 'failed') return 'failed';
   if (status === 'completed') return 'completed';

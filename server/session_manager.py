@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import shutil
+from collections import OrderedDict
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +25,8 @@ from server.config import settings
 from server.session_catalog import session_catalog
 
 logger = logging.getLogger("mini_agent.server")
+
+MAX_INTERRUPTED_TURNS = 256
 
 
 def _atomic_write_json(path: Path, data: Any) -> None:
@@ -83,6 +86,11 @@ class SessionManager:
         self._active_connections: dict[WebSocket, str | None] = {}
         self._pending_approvals: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._pending_approval_details: dict[str, dict[str, Any]] = {}
+        # A bounded tombstone prevents a late approval/request from reopening
+        # a Turn after the user has already stopped it. The App Server is the
+        # source of execution truth; this is only the Gateway's admission
+        # guard for the approval bridge.
+        self._interrupted_turns: OrderedDict[tuple[str, str, str], None] = OrderedDict()
         self._lock = asyncio.Lock()
         self._initialized = False
         self._runtime_generation = 0
@@ -637,6 +645,20 @@ class SessionManager:
             if canonical_project in self._projects_registry:
                 return self._projects_registry[canonical_project]
         return self._projects_registry[self._current_project_id]
+
+    def resolve_thread_project(
+        self, thread_id: str, project_id: str | None = None
+    ) -> str:
+        """Resolve an explicit project identity for thread-scoped controls."""
+        if project_id:
+            return str(project_id)
+        bound_project = self._active_thread_projects.get(
+            thread_id
+        ) or self._client_projects.get(thread_id)
+        if bound_project:
+            return str(bound_project)
+        project = self._project_for_thread(thread_id)
+        return str(project.get("id") or self._current_project_id)
 
     def _canonical_thread(
         self, thread_id: str, project_id: str | None = None
@@ -1548,6 +1570,99 @@ class SessionManager:
     # Approval Handshake Management
     # -------------------------------------------------------------------------
 
+    @staticmethod
+    def _approval_identity(
+        details: dict[str, Any],
+    ) -> tuple[str | None, str | None, str | None]:
+        data = details.get("data", {})
+        return (
+            details.get("projectId") or data.get("projectId") or data.get("project_id"),
+            details.get("threadId") or data.get("threadId") or data.get("thread_id"),
+            details.get("turnId") or data.get("turnId") or data.get("turn_id"),
+        )
+
+    @staticmethod
+    def _turn_identity(
+        project_id: str | None, thread_id: str | None, turn_id: str | None
+    ) -> tuple[str, str, str] | None:
+        if not thread_id or not turn_id:
+            return None
+        return (str(project_id or ""), str(thread_id), str(turn_id))
+
+    def mark_turn_interrupted(
+        self,
+        thread_id: str | None,
+        turn_id: str | None,
+        project_id: str | None = None,
+    ) -> None:
+        """Remember a stopped Turn so late approval requests are denied."""
+        key = self._turn_identity(project_id, thread_id, turn_id)
+        if key is None:
+            return
+        self._interrupted_turns[key] = None
+        self._interrupted_turns.move_to_end(key)
+        while len(self._interrupted_turns) > MAX_INTERRUPTED_TURNS:
+            self._interrupted_turns.popitem(last=False)
+
+    def is_turn_interrupted(
+        self,
+        thread_id: str | None,
+        turn_id: str | None,
+        project_id: str | None = None,
+    ) -> bool:
+        key = self._turn_identity(project_id, thread_id, turn_id)
+        return key is not None and key in self._interrupted_turns
+
+    async def cancel_pending_approvals(
+        self,
+        project_id: str | None = None,
+        thread_id: str | None = None,
+        turn_id: str | None = None,
+        runtime_id: str | None = None,
+        reason: str = "当前 Turn 已停止，审批已失效",
+    ) -> int:
+        """Deny and remove approval waits matching one runtime/Turn identity."""
+        cancelled: list[tuple[str, dict[str, Any]]] = []
+        for request_id, details in list(self._pending_approval_details.items()):
+            request_project, request_thread, request_turn = self._approval_identity(
+                details
+            )
+            if project_id and request_project != project_id:
+                continue
+            if thread_id and request_thread != thread_id:
+                continue
+            # An older/foreign producer may omit Turn identity. Once the
+            # target Thread's active Turn is stopped, cancelling an unscoped
+            # approval is safer than leaving a tool wait alive.
+            if turn_id and request_turn not in (None, turn_id):
+                continue
+            if runtime_id and details.get("runtimeId") != runtime_id:
+                continue
+            future = self._pending_approvals.pop(request_id, None)
+            self._pending_approval_details.pop(request_id, None)
+            if future and not future.done():
+                future.cancel()
+            cancelled.append((request_id, details))
+
+        for request_id, details in cancelled:
+            approval = {
+                **details.get("data", {}),
+                "requestId": request_id,
+                "phase": "resolved",
+                "decision": "deny",
+                "reason": reason,
+            }
+            await self.broadcast_ws(
+                {
+                    "type": "approval",
+                    "approval": approval,
+                    "projectId": details.get("projectId"),
+                    "threadId": details.get("threadId"),
+                    "turnId": details.get("turnId"),
+                }
+            )
+        return len(cancelled)
+
     async def _handle_approval_request(
         self,
         req: dict[str, Any],
@@ -1578,6 +1693,19 @@ class SessionManager:
             req_data["threadId"] = str(resolved_thread_id)
         if resolved_turn_id:
             req_data["turnId"] = str(resolved_turn_id)
+        if self.is_turn_interrupted(
+            resolved_thread_id, resolved_turn_id, resolved_project_id
+        ):
+            logger.info(
+                "Denied late approval request %s for interrupted Turn %s",
+                req_id,
+                resolved_turn_id,
+            )
+            return {
+                "decision": "deny",
+                "grantScope": None,
+                "reason": "当前 Turn 已停止，审批已失效",
+            }
         action_name = str(req.get("actionSummary") or req.get("action") or "")
         logger.info("Approval requested by server: %s", req_data)
 
@@ -1660,32 +1788,12 @@ class SessionManager:
             # An App Server EOF also invalidates approval requests that were
             # waiting inside that process. Resolve them as denied so the
             # Gateway does not retain a dead request for the full timeout.
-            cancelled_approvals = []
-            for request_id, details in list(self._pending_approval_details.items()):
-                if project_id and details.get("projectId") != project_id:
-                    continue
-                if thread_id and details.get("threadId") != thread_id:
-                    continue
-                if runtime_id and details.get("runtimeId") != runtime_id:
-                    continue
-                future = self._pending_approvals.pop(request_id, None)
-                self._pending_approval_details.pop(request_id, None)
-                if future and not future.done():
-                    future.cancel()
-                cancelled_approvals.append((request_id, details))
-            for request_id, details in cancelled_approvals:
-                await self.broadcast_ws(
-                    {
-                        "type": "approval",
-                        "approval": {
-                            **details.get("data", {}),
-                            "requestId": request_id,
-                            "phase": "resolved",
-                            "decision": "deny",
-                            "reason": "运行时连接已断开",
-                        },
-                    }
-                )
+            await self.cancel_pending_approvals(
+                project_id=project_id,
+                thread_id=thread_id or None,
+                runtime_id=runtime_id,
+                reason="运行时连接已断开",
+            )
             return
         await self.broadcast_ws(payload)
         if payload.get("type") == "event":

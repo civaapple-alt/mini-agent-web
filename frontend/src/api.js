@@ -246,7 +246,12 @@ export const api = {
       body: JSON.stringify(payload),
       ...requestSignal(options),
     }, options.projectId);
-    if (!res.ok) throw new Error('Failed to update thread settings');
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new Error(
+        body?.detail || body?.message || `Failed to update thread settings (${res.status})`,
+      );
+    }
     return res.json();
   },
 

@@ -3,6 +3,7 @@ import { ArrowRight, Compass } from 'lucide-react';
 
 export default function PlanModeBanner({
   reviewPending = false,
+  busy = false,
   onOpenDetails,
   onContinuePlanning,
   onStartImplementation,
@@ -39,8 +40,14 @@ export default function PlanModeBanner({
             </button>
           </>
         ) : (
-          <button type="button" className="plan-close" onClick={onClosePlan}>
-            关闭 Plan Mode
+          <button
+            type="button"
+            className="plan-close"
+            onClick={onClosePlan}
+            disabled={busy}
+            title={busy ? '当前 Turn 结束后才能关闭 Plan Mode' : '关闭 Plan Mode'}
+          >
+            {busy ? '本轮结束后关闭' : '关闭 Plan Mode'}
           </button>
         )}
       </div>

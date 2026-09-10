@@ -26,6 +26,12 @@ catalog 轮询和生命周期事件刷新多个会话的状态与项目活跃数
 Turn 存在时拒绝变更。审批请求补齐 Project/Thread/Turn 身份，前端切换回等待中的
 会话时通过审批快照恢复卡片，并使用原请求身份提交响应。
 
+后续单 Session 运行审计补充了停止与审批的结算边界：点击停止会先撤销该 Turn 的待审批
+Future，并以有界 Turn tombstone 拒绝迟到审批；只有 App Server 接受 `turn/interrupt` 后
+才取消网关流，失败时保留运行态并允许重试。Studio 在收到权威 `turn_finished` 前显示“停止中”，
+不会因迟到事件重新打开审批或恢复停止按钮。Plan Mode 关闭则要求无 active Turn、无待审批，
+由 App Server 完成计划清理后再恢复普通模式；清理失败保留 Plan 状态。
+
 本轮运行审计还覆盖了浏览器断线、App Server EOF、重复提交、旧流迟到清理、网关关闭
 以及跨项目列表读取：浏览器断线不会取消网关持有的 Turn；运行时 EOF 会结算等待中的
 SDK 流；旧流不能清理同 Thread 的新 Turn；重复提交的终态错误不会清理正在运行的首个
@@ -40,6 +46,7 @@ Turn；网关关闭会按顺序清理流任务、审批和 Client。
 - 审批快照按项目/会话过滤，审批响应增加 Thread/Turn 身份校验。
 - 增加 Gateway、前端状态和 UI 测试，并同步 troubleshooting 与 changelog。
 - 增加断线继续消费、运行时 EOF、重复 Turn 错误、旧流清理和网关停止的回归保护。
+- 增加停止-审批竞态、迟到审批、远端中断失败和运行中关闭 Plan Mode 的回归保护。
 
 ## Verification
 

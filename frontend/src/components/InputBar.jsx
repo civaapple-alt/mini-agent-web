@@ -43,6 +43,7 @@ const CONTINUATION_MODES = [
 
 export default function InputBar({
   isGenerating,
+  isInterrupting = false,
   sessionReadOnly = false,
   accessScope = 'project',
   policy = 'interactive',
@@ -507,6 +508,7 @@ export default function InputBar({
                 type="button"
                 className="btn-dock-approve"
                 onClick={() => handleApprove('once')}
+                disabled={isInterrupting}
                 title="允许执行本次操作"
               >
                 <Check size={12} />
@@ -518,6 +520,7 @@ export default function InputBar({
                   type="button"
                   className="btn-dock-scope"
                   onClick={() => handleApprove('session')}
+                  disabled={isInterrupting}
                   title="在当前会话中记住此操作的授权"
                 >
                   <Check size={12} />
@@ -530,6 +533,7 @@ export default function InputBar({
                   type="button"
                   className="btn-dock-scope"
                   onClick={() => handleApprove('project')}
+                  disabled={isInterrupting}
                   title="在当前项目中记住此操作的授权"
                 >
                   <Check size={12} />
@@ -541,6 +545,7 @@ export default function InputBar({
                 type="button"
                 className="btn-dock-deny"
                 onClick={handleDeny}
+                disabled={isInterrupting}
                 title="拒绝执行"
               >
                 <X size={12} />
@@ -892,6 +897,16 @@ export default function InputBar({
           <div className="input-actions">
             {sessionReadOnly ? (
               <span className="readonly-session-label">只读查看</span>
+            ) : isInterrupting ? (
+              <button
+                type="button"
+                className="btn-action stop"
+                disabled
+                title="正在等待任务停止并结算"
+              >
+                <Square size={13} />
+                <span>停止中</span>
+              </button>
             ) : isGenerating ? (
               <button
                 type="button"

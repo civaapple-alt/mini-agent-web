@@ -241,13 +241,21 @@ async def steer_turn(req: SteerTurnRequest) -> dict[str, Any]:
 async def interrupt_turn(req: InterruptTurnRequest) -> dict[str, Any]:
     """Cooperatively interrupt and cancel an active turn."""
     try:
-        client = await session_manager.get_client_for_thread(
-            req.thread_id, req.project_id
+        thread_id = req.thread_id or "default"
+        project_id = session_manager.resolve_thread_project(thread_id, req.project_id)
+        session_manager.mark_turn_interrupted(thread_id, req.turn_id, project_id)
+        await session_manager.cancel_pending_approvals(
+            project_id=project_id,
+            thread_id=thread_id,
+            turn_id=req.turn_id,
         )
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
         await client.interrupt_turn(
             turn_id=req.turn_id,
-            thread_id=req.thread_id,
+            thread_id=thread_id,
         )
+        if session_manager.get_active_turn(thread_id, project_id) == req.turn_id:
+            session_manager.cancel_active_task(thread_id, project_id)
         return {"status": "interrupted", "turn_id": req.turn_id}
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
@@ -402,10 +410,13 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
             elif action == "interrupt":
                 thread_id = data.get("threadId") or "default"
                 project_id = project_for_message(data)
+                routing_project_id = session_manager.resolve_thread_project(
+                    thread_id, project_id
+                )
                 websocket_project_id = project_id
                 session_manager.set_ws_project(websocket, project_id)
                 turn_id = data.get("turnId") or session_manager.get_active_turn(
-                    thread_id, project_id
+                    thread_id, routing_project_id
                 )
                 source = data.get("source") or "unknown"
                 logger.info(
@@ -415,15 +426,27 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     source,
                 )
 
-                # 1. Cancel background stream task
-                session_manager.cancel_active_task(thread_id, project_id)
-
-                # 2. Notify App Server engine
+                # Invalidate the approval bridge before cancelling the local
+                # stream. A late click must not release a tool from this Turn.
                 if turn_id:
-                    # As with steering, interruption must not stop the
-                    # receive loop from accepting an approval response.
+                    session_manager.mark_turn_interrupted(
+                        thread_id, turn_id, routing_project_id
+                    )
+                await session_manager.cancel_pending_approvals(
+                    project_id=routing_project_id,
+                    thread_id=thread_id,
+                    turn_id=turn_id,
+                )
+
+                # Notify the App Server engine off the receive loop. The
+                # helper cancels the Gateway stream only after the remote
+                # runtime accepts the interrupt, so a failed control request
+                # cannot be mistaken for a settled Turn.
+                if turn_id:
                     spawn_background(
-                        _interrupt_turn_to_ws(websocket, thread_id, turn_id, project_id)
+                        _interrupt_turn_to_ws(
+                            websocket, thread_id, turn_id, routing_project_id
+                        )
                     )
 
                 # Send immediate interrupt ack to client (stream CancelledError will emit turn_finished)
@@ -542,10 +565,28 @@ async def _interrupt_turn_to_ws(
     try:
         client = await session_manager.get_client_for_thread(thread_id, project_id)
         await client.interrupt_turn(turn_id, thread_id)
+        if session_manager.get_active_turn(thread_id, project_id) == turn_id:
+            session_manager.cancel_active_task(thread_id, project_id)
     except asyncio.CancelledError:
         raise
     except Exception as err:  # noqa: BLE001
         logger.warning("Failed to call client.interrupt_turn: %s", err)
+        try:
+            await session_manager.broadcast_ws(
+                {
+                    "type": "error",
+                    "scope": "turn",
+                    "terminal": False,
+                    "threadId": thread_id,
+                    "turnId": turn_id,
+                    "projectId": project_id,
+                    "message": f"停止请求下发失败，请重试: {err}",
+                }
+            )
+        except Exception:
+            logger.debug(
+                "WebSocket closed before interrupt error response", exc_info=True
+            )
 
 
 async def _stream_turn_to_ws(

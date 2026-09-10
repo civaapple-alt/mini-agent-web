@@ -435,6 +435,51 @@ async def test_runtime_eof_cancels_pending_approval(
     )
 
 
+@pytest.mark.asyncio
+async def test_interrupt_cancels_approval_and_denies_late_request(
+    mock_session_manager,
+):
+    """Stopping a Turn invalidates both its current and late approval waits."""
+    mock_session_manager.broadcast_ws = AsyncMock()
+    request = {
+        "requestId": "approval-interrupt",
+        "actionSummary": "Run workspace command",
+        "allowedGrantScopes": ["once"],
+        "projectId": "default",
+        "threadId": "interrupt-thread",
+        "turnId": "turn-interrupt",
+    }
+    task = asyncio.create_task(
+        mock_session_manager._handle_approval_request(request, runtime_id="runtime-a")
+    )
+    await asyncio.sleep(0)
+
+    mock_session_manager.mark_turn_interrupted(
+        "interrupt-thread", "turn-interrupt", "default"
+    )
+    cancelled = await mock_session_manager.cancel_pending_approvals(
+        project_id="default",
+        thread_id="interrupt-thread",
+        turn_id="turn-interrupt",
+    )
+
+    assert cancelled == 1
+    assert mock_session_manager.list_pending_approvals() == []
+    assert (await task)["decision"] == "deny"
+    assert (
+        mock_session_manager.resolve_approval("approval-interrupt", "approve", "once")
+        is False
+    )
+
+    late_result = await mock_session_manager._handle_approval_request(
+        {**request, "requestId": "approval-interrupt-late"}, runtime_id="runtime-a"
+    )
+    assert late_result["decision"] == "deny"
+    assert mock_session_manager.list_pending_approvals() == []
+    resolved = mock_session_manager.broadcast_ws.await_args_list[-1].args[0]
+    assert resolved["approval"]["reason"] == "当前 Turn 已停止，审批已失效"
+
+
 def test_session_manager_thread_metadata_management(mock_session_manager):
     """Ensure thread metadata can be queried, updated, and persisted."""
     meta = mock_session_manager.get_thread_meta("t-custom")

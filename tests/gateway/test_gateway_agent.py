@@ -22,7 +22,11 @@ from mini_agent.errors import AppServerError
 from mini_agent.types import TurnSubmissionResult
 
 from server.app import create_app
-from server.routes.agent import _process_attachments, _stream_turn_to_ws
+from server.routes.agent import (
+    _interrupt_turn_to_ws,
+    _process_attachments,
+    _stream_turn_to_ws,
+)
 from server.session_manager import session_manager
 
 
@@ -185,6 +189,51 @@ async def test_websocket_stream_error_is_terminal(agent_test_app):
         "threadId": "thread-error",
         "turnId": "turn-stream-error",
         "message": "model request failed",
+    }
+
+
+@pytest.mark.asyncio
+async def test_interrupt_failure_does_not_fake_turn_settlement(agent_test_app):
+    """A rejected remote interrupt keeps the active Turn available for retry."""
+    mock_client = AsyncMock()
+    mock_client.interrupt_turn = AsyncMock(
+        side_effect=RuntimeError("App Server unavailable")
+    )
+    websocket = AsyncMock()
+    broadcast = AsyncMock()
+    session_manager.set_active_turn(
+        "thread-interrupt-failure",
+        "turn-interrupt-failure",
+        project_id="agent_test_proj",
+    )
+
+    with (
+        patch.object(
+            session_manager,
+            "get_client_for_thread",
+            new=AsyncMock(return_value=mock_client),
+        ),
+        patch.object(session_manager, "broadcast_ws", new=broadcast),
+    ):
+        await _interrupt_turn_to_ws(
+            websocket,
+            "thread-interrupt-failure",
+            "turn-interrupt-failure",
+            "agent_test_proj",
+        )
+
+    assert (
+        session_manager.get_active_turn("thread-interrupt-failure", "agent_test_proj")
+        == "turn-interrupt-failure"
+    )
+    assert broadcast.await_args.args[0] == {
+        "type": "error",
+        "scope": "turn",
+        "terminal": False,
+        "threadId": "thread-interrupt-failure",
+        "turnId": "turn-interrupt-failure",
+        "projectId": "agent_test_proj",
+        "message": "停止请求下发失败，请重试: App Server unavailable",
     }
 
 

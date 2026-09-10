@@ -126,6 +126,23 @@ test('api client methods construct expected fetch endpoints and payloads', async
   assert.equal(scopedApprovalBody.turn_id, 'turn-2');
 });
 
+test('thread settings preserve the server guard detail on conflict', async (t) => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 409,
+    json: async () => ({ detail: '当前 Turn 正在执行' }),
+  });
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  await assert.rejects(
+    api.setCollaborationMode('default', 'thread-active'),
+    { message: '当前 Turn 正在执行' },
+  );
+});
+
 test('createAgentWebSocket provides safe send and isOpen status', (t) => {
   // Mock WebSocket class
   class MockWebSocket {

@@ -470,7 +470,21 @@ async def update_thread_settings(
 ) -> dict[str, Any]:
     """Update collaboration mode and optional Builtin tool selection."""
     try:
-        client = await session_manager.get_client_for_thread(thread_id, project_id)
+        routing_project_id = session_manager.resolve_thread_project(
+            thread_id, project_id
+        )
+        if session_manager.get_active_turn(thread_id, routing_project_id) or (
+            session_manager.list_pending_approvals(routing_project_id, thread_id)
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "当前 Turn 正在执行或等待审批，需先完成/停止本轮后才能切换 Plan Mode"
+                ),
+            )
+        client = await session_manager.get_client_for_thread(
+            thread_id, routing_project_id
+        )
         res = await client.update_thread_settings(
             mode=req.mode,
             builtin_tools=req.builtin_tools,
@@ -478,7 +492,7 @@ async def update_thread_settings(
             continuation_mode=req.continuation_mode,
         )
         session_manager.set_builtin_tools_for_thread(
-            thread_id, res.builtin_tools, project_id
+            thread_id, res.builtin_tools, routing_project_id
         )
         return {
             "collaboration_mode": {"mode": res.collaboration_mode.mode},
@@ -487,6 +501,10 @@ async def update_thread_settings(
             "state_revision": res.state_revision,
             "available_builtin_tools": ALL_BUILTIN_TOOLS,
         }
+    except HTTPException:
+        raise
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 

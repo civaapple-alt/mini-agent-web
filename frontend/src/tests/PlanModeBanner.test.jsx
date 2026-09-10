@@ -33,4 +33,14 @@ describe('PlanModeBanner', () => {
     expect(onContinuePlanning).toHaveBeenCalledOnce();
     expect(onStartImplementation).toHaveBeenCalledOnce();
   });
+
+  it('disables closing Plan Mode while a Turn is settling', () => {
+    const onClosePlan = vi.fn();
+    render(<PlanModeBanner busy onClosePlan={onClosePlan} />);
+
+    const closeButton = screen.getByRole('button', { name: '本轮结束后关闭' });
+    expect(closeButton.disabled).toBe(true);
+    fireEvent.click(closeButton);
+    expect(onClosePlan).not.toHaveBeenCalled();
+  });
 });

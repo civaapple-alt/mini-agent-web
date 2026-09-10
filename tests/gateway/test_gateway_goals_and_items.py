@@ -256,6 +256,29 @@ async def test_thread_settings_without_continuation_keeps_persisted_preference(
 
 
 @pytest.mark.asyncio
+async def test_thread_settings_rejects_active_turn(
+    gateway_test_app,
+):
+    """Plan cleanup cannot race a running Turn or its approval wait."""
+    mock_client = AsyncMock()
+    session_manager._clients["t-active"] = mock_client
+    session_manager.set_active_turn(
+        "t-active", "turn-active", project_id="goals_test_proj"
+    )
+
+    transport = ASGITransport(app=gateway_test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/threads/t-active/settings?project_id=goals_test_proj",
+            json={"mode": "default"},
+        )
+
+    assert response.status_code == 409
+    assert "本轮" in response.json()["detail"]
+    mock_client.update_thread_settings.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_thread_attach_locked_and_resumable(gateway_test_app, monkeypatch):
     """Test POST /api/threads/{thread_id}/attach handling of locked and unlocked sessions."""
 

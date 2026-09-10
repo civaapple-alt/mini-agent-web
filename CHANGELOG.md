@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Web Studio asks users to wait for the current Turn to settle before changing
   policy.
 
+- **Mini Agent branding**: replace user-visible Codex Studio labels in Web
+  Studio and generated project README content with the Mini Agent brand while
+  retaining Codex terminology only for internal CSS identifiers and technical
+  compatibility references.
+
+- **Web Studio slash commands**: remove the stale `/steer` runtime hint and
+  support `/plan <task>` by enabling Plan Mode before submitting the task;
+  selecting `/plan` now also leaves a trailing space for direct task entry.
+
 ### Added
 
 - **Documentation synchronization**: document project-qualified routing, request

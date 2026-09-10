@@ -220,8 +220,8 @@ export default function SettingsModal({
                 value={settings.theme}
                 onChange={(e) => setSettings({ ...settings, theme: e.target.value })}
               >
-                <option value="light">Codex Light (浅色简约 - 默认)</option>
-                <option value="dark">Codex Obsidian (深邃黑)</option>
+                <option value="light">Mini Agent Light (浅色简约 - 默认)</option>
+                <option value="dark">Mini Agent Obsidian (深邃黑)</option>
                 <option value="midnight">Midnight Blue (极夜蓝)</option>
                 <option value="cyberpunk">Cyberpunk Neon (霓虹)</option>
               </select>

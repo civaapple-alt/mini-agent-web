@@ -1,4 +1,4 @@
-/* Codex Official Sidebar Layout & Aesthetic */
+/* Mini Agent Sidebar Layout & Aesthetic */
 .codex-sidebar {
   display: flex;
   flex-direction: column;
@@ -13,7 +13,7 @@
   font-family: inherit;
 }
 
-/* 1. Header: Codex ⌵ | Search | Notifications */
+/* 1. Header: Mini Agent ⌵ | Search | Notifications */
 .sidebar-top-bar {
   display: flex;
   align-items: center;
@@ -1131,7 +1131,7 @@ body.theme-cyberpunk .btn-save-project-primary {
   cursor: not-allowed;
 }
 
-/* New Session Prominent Row (Codex Style) */
+/* New Session Prominent Row (Mini Agent Style) */
 .nav-new-session-row {
   margin-top: 4px;
   background-color: var(--bg-card);

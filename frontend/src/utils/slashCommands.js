@@ -16,7 +16,7 @@ export const SLASH_COMMANDS = [
 export function getSlashCommandDraft(command) {
   const cleanCommand = (command || '').trim().toLowerCase();
   if (cleanCommand === '/plan') {
-    return cleanCommand;
+    return `${cleanCommand} `;
   }
   if (cleanCommand === '/goal') {
     return `${cleanCommand} `;
@@ -30,6 +30,7 @@ export function getSlashCommandDraft(command) {
  */
 export function parseAndExecuteSlashCommand(cmdStr, {
   onTogglePlanMode,
+  onStartPlanTask,
   onStartGoal,
   onClearChat,
   onToast,
@@ -37,8 +38,14 @@ export function parseAndExecuteSlashCommand(cmdStr, {
   const cleanCmd = (cmdStr || '').trim();
   const lowerCmd = cleanCmd.toLowerCase();
 
-  if (lowerCmd === '/plan') {
-    if (onTogglePlanMode) {
+  const planMatch = cleanCmd.match(/^\/plan(?:\s+([\s\S]+))?$/i);
+  if (planMatch) {
+    const task = planMatch[1]?.trim();
+    if (task && onStartPlanTask) {
+      onStartPlanTask(task);
+    } else if (task && onTogglePlanMode) {
+      onTogglePlanMode();
+    } else if (onTogglePlanMode) {
       onTogglePlanMode();
     }
     return true;

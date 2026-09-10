@@ -448,10 +448,10 @@ export default function Sidebar({
 
   return (
     <aside className="codex-sidebar">
-      {/* 1. Header: Codex ⌵ | Search */}
+      {/* 1. Header: Mini Agent ⌵ | Search */}
       <div className="sidebar-top-bar">
         <div className="codex-brand-dropdown">
-          <span className="brand-name">Codex</span>
+          <span className="brand-name">Mini Agent</span>
           <ChevronRight size={13} className="brand-chevron" style={{ transform: 'rotate(90deg)' }} />
         </div>
         <div className="top-bar-icons">

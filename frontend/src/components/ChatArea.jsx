@@ -60,9 +60,9 @@ export default function ChatArea({
           <div className="welcome-icon-box">
             <Sparkles size={24} />
           </div>
-          <h2 className="welcome-title">Codex Agent Studio</h2>
+          <h2 className="welcome-title">Mini Agent Studio</h2>
           <p className="welcome-subtitle">
-            基于 Codex JSON-RPC 协议与 Mini Agent 运行时。支持多轮交互、思维链打字机流式呈现、工具内嵌安全审批与全套工作流。
+            基于 Mini Agent JSON-RPC 协议与运行时。支持多轮交互、思维链打字机流式呈现、工具内嵌安全审批与全套工作流。
           </p>
 
           <div className="quick-prompts-grid">

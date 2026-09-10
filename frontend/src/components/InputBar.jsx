@@ -53,6 +53,7 @@ export default function InputBar({
   onChangeExecution,
   onChangeContinuation,
   onEnableAutoCopilot,
+  onStartPlanTask,
   onStartGoal,
   onSendMessage,
   onQueueMessage,
@@ -229,6 +230,11 @@ export default function InputBar({
 
     const handled = parseAndExecuteSlashCommand(cleanCmd, {
       onTogglePlanMode,
+      onStartPlanTask: (task) => onStartPlanTask?.({
+        prompt: task,
+        images: attachedImages.map((img) => img.dataUrl),
+        referencedFiles,
+      }),
       onStartGoal,
       onClearChat,
       onToast,
@@ -312,6 +318,8 @@ export default function InputBar({
       const handled = executeSlashCommand(text);
       if (handled) {
         setShowSlashPopup(false);
+        setAttachedImages([]);
+        setReferencedFiles([]);
         return;
       }
     }
@@ -699,7 +707,7 @@ export default function InputBar({
               pendingApproval
                 ? '⚠️ 等待上方安全权限审批确认后继续...'
                 : isGenerating
-                ? 'Agent 执行中... 按回车排队；需要立即调整方向可输入 /steer'
+                ? 'Agent 执行中... 按回车排队；本轮结束后可继续发送指令'
                 : '输入任务、指令或问题... (支持 Ctrl+V 粘贴截图、输入 @ 引用文件、输入 / 查看快捷命令)'
             }
             className="chat-textarea"

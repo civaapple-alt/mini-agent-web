@@ -103,6 +103,8 @@ Turn 发送后，流式输出了部分思考链，随后一直停留在某个工
 
 ### Goal 运行与控制
 
+- `/plan` 单独输入会切换 Plan Mode；也可以直接输入 `/plan 任务`，Studio 会先开启
+  Plan Mode，再把任务发送到当前会话。当前 Turn 运行时不能切换 Plan Mode，请等待本轮结算。
 - 从斜杠菜单选择 `/goal` 只会把 `/goal ` 填入输入框；输入目标后再按 Enter 才会创建 Goal。
 - 信息流中的 Goal 卡片是内部自治 turn 的用户可见投影；`Autonomous Goal Mode is active...`
   这类完整提示不会作为普通用户消息重复显示。

@@ -1303,6 +1303,10 @@ export default function App() {
   };
 
   const handleSetPlanMode = async (active, reason = 'toggle') => {
+    if (isGenerating || activeTurnId) {
+      showToast('当前轮次正在执行，Plan Mode 将在本轮结束后才能切换。', 'info', 3000);
+      return false;
+    }
     try {
       const res = await api.setCollaborationMode(
         active ? 'plan' : 'default',
@@ -1321,12 +1325,26 @@ export default function App() {
             : 'Plan Mode 已关闭',
         'info',
       );
+      return confirmedActive === active;
     } catch (err) {
       showToast(`切换 Plan Mode 失败: ${err.message}`, 'error');
+      return false;
     }
   };
 
   const handleTogglePlan = async () => handleSetPlanMode(!planActive);
+
+  const handleStartPlanTask = async ({ prompt, images = [], referencedFiles = [] }) => {
+    if (isGenerating || activeTurnId) {
+      showToast('当前轮次正在执行，Plan 任务请在本轮结束后发送。', 'info', 3000);
+      return;
+    }
+    if (!planActive) {
+      const enabled = await handleSetPlanMode(true, 'slash');
+      if (!enabled) return;
+    }
+    handleSendMessage({ prompt, images, referencedFiles });
+  };
 
   const handleContinuePlanning = () => {
     setPlanReviewPending(false);
@@ -1586,6 +1604,7 @@ export default function App() {
             onChangeExecution={handleUpdateExecution}
             onChangeContinuation={handleUpdateContinuation}
             onEnableAutoCopilot={handleEnableAutoCopilot}
+            onStartPlanTask={handleStartPlanTask}
             onStartGoal={handleStartGoal}
             onSendMessage={handleSendMessage}
             onQueueMessage={handleQueueMessage}

@@ -406,7 +406,7 @@ class SessionManager:
             readme_path = target_dir / "README.md"
             if not readme_path.exists():
                 readme_path.write_text(
-                    f"# {name}\n\nProject initialized via Mini Agent Codex Studio.\n",
+                    f"# {name}\n\nProject initialized via Mini Agent Studio.\n",
                     encoding="utf-8",
                 )
 

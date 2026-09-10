@@ -62,7 +62,7 @@ export default function Header({
           </div>
           <div className="brand-text">
             <span className="brand-title">Mini Agent</span>
-            <span className="brand-badge font-mono">Codex Studio</span>
+            <span className="brand-badge font-mono">Mini Agent Studio</span>
           </div>
         </div>
 

@@ -270,17 +270,12 @@ async def set_world_execution(
     """Configure independent access and approval policy."""
     try:
         target_project = project_id or req.project_id
-        previous_execution = session_manager.project_execution(target_project)
         client = await session_manager.get_client_for_project(target_project)
         res = await client.set_world_execution(
             access=req.access,
             policy=req.policy,
         )
         session_manager.set_project_execution(req.access, req.policy, target_project)
-        if previous_execution != (req.access, req.policy) and (
-            not target_project or target_project == session_manager._current_project_id
-        ):
-            await session_manager.restart_for_current_project()
         return {
             "changed": res.changed,
             "access": req.access,

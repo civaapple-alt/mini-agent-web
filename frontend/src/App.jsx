@@ -1410,6 +1410,10 @@ export default function App() {
   };
 
   const handleUpdateExecution = async (nextAccess, nextPolicy) => {
+    if (isGenerating || activeTurnId) {
+      showToast('当前轮次正在执行，策略未切换；请在本轮结束后重试。', 'info', 3000);
+      return;
+    }
     try {
       await api.setWorldExecution(nextAccess, nextPolicy, { projectId: currentThreadProject });
       setAccessScope(nextAccess);
@@ -1446,6 +1450,10 @@ export default function App() {
   };
 
   const handleEnableAutoCopilot = async () => {
+    if (isGenerating || activeTurnId) {
+      showToast('当前轮次正在执行，暂时无法开启 Auto Copilot；请在本轮结束后重试。', 'info', 3000);
+      return;
+    }
     try {
       await api.setWorldExecution(accessScope, 'trusted', { projectId: currentThreadProject });
       const res = await api.updateThreadSettings(

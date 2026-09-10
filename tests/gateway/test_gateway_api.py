@@ -205,6 +205,47 @@ async def test_gateway_threads_and_workflows(test_app):
 
 
 @pytest.mark.asyncio
+async def test_execution_policy_change_does_not_restart_runtime(test_app, monkeypatch):
+    """Changing execution policy must leave active runtime streams untouched."""
+    client_mock = AsyncMock()
+    client_mock.set_world_execution.return_value = SimpleNamespace(
+        changed=True,
+        state={"access": "project", "policy": "automatic"},
+    )
+    restart = AsyncMock()
+    monkeypatch.setattr(
+        session_manager,
+        "get_client_for_project",
+        AsyncMock(return_value=client_mock),
+    )
+    monkeypatch.setattr(
+        session_manager,
+        "project_execution",
+        lambda _project_id=None: ("project", "interactive"),
+    )
+    monkeypatch.setattr(session_manager, "set_project_execution", lambda *args: None)
+    monkeypatch.setattr(session_manager, "restart_for_current_project", restart)
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/world/execution",
+            json={
+                "access": "project",
+                "policy": "automatic",
+                "project_id": "project-1",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["policy"] == "automatic"
+    client_mock.set_world_execution.assert_awaited_once_with(
+        access="project", policy="automatic"
+    )
+    restart.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_workflow_state_and_goal_artifacts_use_canonical_session(
     test_app, tmp_path, monkeypatch
 ):

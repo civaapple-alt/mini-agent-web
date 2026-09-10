@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Live execution policy changes**: changing the access or approval policy no
+  longer restarts the active project runtime and interrupts an in-flight Turn;
+  Web Studio asks users to wait for the current Turn to settle before changing
+  policy.
+
 ### Added
 
 - **Documentation synchronization**: document project-qualified routing, request

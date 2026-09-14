@@ -8,6 +8,7 @@ import {
   aggregateThreadItems,
   assignHistoryTurnIds,
   filterEmptyMessages,
+  mergeApprovalEvent,
   shouldIgnoreApprovalWhileInterrupting,
   shouldSettleActiveTurnFromError,
 } from './utils/messageState';
@@ -834,6 +835,15 @@ export default function App() {
         const requestId = data.requestId || data.request_id;
         const knownPending = pendingApprovalRef.current?.requestId === requestId;
         const locallySubmitted = approvalSubmissionRef.current?.requestId === requestId;
+        if (knownPending) {
+          setMessages((prev) => mergeApprovalEvent(prev, {
+            ...(pendingApprovalRef.current.data || {}),
+            requestId,
+            phase: 'resolved',
+            state: 'expired',
+            reason: '审批请求已失效，当前操作未执行。',
+          }));
+        }
         if (knownPending || locallySubmitted) {
           setPendingApproval((current) => (
             current?.requestId === requestId ? null : current
@@ -905,6 +915,11 @@ export default function App() {
         requestId: data.requestId,
         data: data.data,
       });
+      setMessages((prev) => mergeApprovalEvent(prev, {
+        ...(data.data || {}),
+        requestId: data.requestId,
+        phase: 'requested',
+      }));
       return;
     }
 
@@ -925,6 +940,7 @@ export default function App() {
           requestId: approval.requestId,
           data: approval,
         });
+        setMessages((prev) => mergeApprovalEvent(prev, approval));
       } else if (approval.phase === 'resolved') {
         const requestId = approval.requestId;
         if (!requestId || !resolvedApprovalIdsRef.current.has(requestId)) {
@@ -941,6 +957,12 @@ export default function App() {
             interruptPendingRef.current,
             interruptTurnIdRef.current,
           );
+          setMessages((prev) => mergeApprovalEvent(prev, {
+            ...approval,
+            source: locallySubmitted
+              ? 'current_window'
+              : stoppedHere ? 'interrupted' : 'other_window',
+          }));
           setPendingApproval((current) =>
             current?.requestId === requestId ? null : current
           );

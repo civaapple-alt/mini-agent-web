@@ -68,6 +68,10 @@ notification 广播给所有 WebSocket 客户端；单个请求的 WebSocket 只
 `approval.phase=resolved`，使其他浏览器关闭过期审批卡片。断线重连时仍通过审批快照
 对账；Gateway 进程退出会取消内存中的待审批请求。
 
+Studio 同时把 `approval.phase=resolved` 投影到消息流中对应的工具卡片，展示允许、拒绝、
+失效或中断结果；审批 Dock 关闭后，用户仍能从工具卡片看到决策。工具匹配优先使用
+`callId`，不会因为多个工具名称相同而把它们全部标记为待审批。
+
 App Server 会在已绑定持久化 Session 的 Thread 目录旁写入独立的
 `approval-evidence.jsonl`。该文件在请求进入等待态和最终决策时分别记录
 `approval_requested` / `approval_resolved`，包含 Project/Thread/Turn/call 标识、策略、

@@ -61,6 +61,87 @@ export function shouldIgnoreApprovalWhileInterrupting(
   return approvalTurnId === interruptedTurnId;
 }
 
+function approvalField(approval, camel, snake = camel) {
+  return approval?.[camel] ?? approval?.[snake];
+}
+
+function approvalResultState(approval) {
+  if (approval?.phase === 'requested') return 'pending';
+  if (approval?.state) return approval.state;
+  if (approval?.expired || approval?.cancelled) return 'expired';
+  const outcome = String(
+    approvalField(approval, 'outcome') || approvalField(approval, 'decision') || '',
+  ).toLowerCase();
+  if (outcome === 'approved' || outcome === 'approve') return 'approved';
+  if (outcome === 'denied' || outcome === 'deny') return 'denied';
+  return 'expired';
+}
+
+/**
+ * Keep approval decisions in the transcript next to the tool they govern.
+ * Pending approval remains an App-level control; this projection is durable
+ * for the current message stream and survives the dock disappearing.
+ */
+export function mergeApprovalEvent(messages, approval) {
+  if (!approval || messages.length === 0) return messages;
+  const callId = approvalField(approval, 'callId', 'call_id') || null;
+  const requestId = approvalField(approval, 'requestId', 'request_id') || null;
+  const turnId = approvalField(approval, 'turnId', 'turn_id') || null;
+  const toolName = approvalField(approval, 'toolName', 'tool_name') || null;
+  let targetIndex = -1;
+
+  if (callId) {
+    targetIndex = messages.findIndex((message) => (
+      message.role === 'assistant'
+        && (message.blocks || []).some(
+          (block) => block.type === 'tool' && block.call_id === callId,
+        )
+    ));
+  }
+  if (targetIndex === -1 && requestId) {
+    targetIndex = messages.findIndex((message) => (
+      message.role === 'assistant'
+        && (message.blocks || []).some(
+          (block) => block.type === 'tool' && block.approval?.requestId === requestId,
+        )
+    ));
+  }
+  if (targetIndex === -1 && turnId) {
+    targetIndex = findTurnAssistantIndex(messages, turnId);
+  }
+  if (targetIndex === -1) return messages;
+
+  const state = approvalResultState(approval);
+  const current = messages[targetIndex];
+  let changed = false;
+  const blocks = (current.blocks || []).map((block) => {
+    if (block.type !== 'tool') return block;
+    const matchesCall = callId && block.call_id === callId;
+    const matchesRequest = requestId && block.approval?.requestId === requestId;
+    const matchesLegacyTool = !callId && !requestId && toolName
+      && block.name === toolName && !block.approval;
+    if (!matchesCall && !matchesRequest && !matchesLegacyTool) return block;
+    changed = true;
+    return {
+      ...block,
+      approval: {
+        ...block.approval,
+        state,
+        requestId: requestId || block.approval?.requestId || null,
+        callId: callId || block.call_id || null,
+        toolName: toolName || block.name || null,
+        grantScope: approvalField(approval, 'grantScope', 'grant_scope') || null,
+        reason: approval.reason || '',
+        source: approval.source || null,
+      },
+    };
+  });
+  if (!changed) return messages;
+  const copy = [...messages];
+  copy[targetIndex] = { ...current, blocks };
+  return copy;
+}
+
 function projectedStatus(status) {
   if (status === 'failed') return 'failed';
   if (status === 'completed') return 'completed';

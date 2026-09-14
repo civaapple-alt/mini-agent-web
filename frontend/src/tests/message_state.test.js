@@ -7,6 +7,7 @@ import {
   assignHistoryTurnIds,
   filterEmptyMessages,
   groupCompactionBlocks,
+  mergeApprovalEvent,
   normalizeAssistantBlocks,
   shouldAcceptEventForThread,
   shouldIgnoreApprovalWhileInterrupting,
@@ -559,6 +560,29 @@ test('legacy reasoning deltas create a new block after a tool boundary', () => {
       ['thinking', 'After tool.'],
     ],
   );
+});
+
+test('approval results stay attached to the matching tool block', () => {
+  const messages = [{
+    role: 'assistant',
+    turnId: 'turn-approval-result',
+    blocks: [
+      { type: 'tool', call_id: 'call-1', name: 'shell', status: 'running' },
+      { type: 'tool', call_id: 'call-2', name: 'shell', status: 'running' },
+    ],
+  }];
+
+  const next = mergeApprovalEvent(messages, {
+    phase: 'resolved',
+    requestId: 'approval-1',
+    callId: 'call-1',
+    outcome: 'approved',
+    grantScope: 'once',
+  });
+
+  assert.equal(next[0].blocks[0].approval.state, 'approved');
+  assert.equal(next[0].blocks[0].approval.grantScope, 'once');
+  assert.equal(next[0].blocks[1].approval, undefined);
 });
 
 test('dedicated ThreadItem lifecycle notifications reconcile without duplicate tool blocks', () => {

@@ -89,6 +89,46 @@ describe('ToolCard Component Rendering & Interaction', () => {
     expect(screen.queryByText('允许一次 (Allow)')).toBeNull();
     expect(screen.queryByText('拒绝 (Deny)')).toBeNull();
   });
+
+  it('does not mark another same-name tool as awaiting approval', () => {
+    const pendingApproval = {
+      requestId: 'req_123',
+      data: { callId: 'call_99', toolName: 'shell' },
+    };
+    render(
+      <>
+        <ToolCard
+          tool={{ id: 'call_99', name: 'shell', status: 'running' }}
+          pendingApproval={pendingApproval}
+        />
+        <ToolCard
+          tool={{ id: 'call_100', name: 'shell', status: 'running' }}
+          pendingApproval={pendingApproval}
+        />
+      </>,
+    );
+
+    expect(screen.getByText('等待授权')).toBeDefined();
+    expect(screen.getAllByText('运行中')).toHaveLength(1);
+  });
+
+  it('renders the settled approval result in the tool message', () => {
+    render(
+      <ToolCard
+        tool={{
+          id: 'call_approval-result',
+          name: 'shell',
+          status: 'completed',
+          approval: {
+            state: 'denied',
+            reason: '用户拒绝执行',
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/用户已拒绝执行 · 用户拒绝执行/)).toBeDefined();
+  });
 });
 
 describe('ErrorBoundary Component Protection', () => {

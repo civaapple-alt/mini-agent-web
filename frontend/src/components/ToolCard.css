@@ -123,6 +123,27 @@
   animation: pulse-border 2s infinite;
 }
 
+.tool-approval-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 5px 10px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.tool-approval-result.approved {
+  color: var(--status-success);
+  background: var(--status-success-soft);
+}
+
+.tool-approval-result.denied,
+.tool-approval-result.expired {
+  color: var(--status-failed);
+  background: var(--status-failed-soft);
+}
+
 @keyframes pulse-border {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }

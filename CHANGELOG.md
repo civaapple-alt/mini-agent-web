@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Approval result visibility**: keep each approval request and resolution
+  attached to its matching tool card, so allow, deny, expiry, interruption, and
+  peer-window handling remain visible in the message stream after the approval
+  dock closes. Same-name tool calls no longer all appear to be awaiting approval.
+
 - **Reasoning segment reconciliation**: assign one stable identity to each
   model-response reasoning segment and make streaming, lifecycle, replay, and
   ThreadItem projections idempotent, so a later reasoning segment is not

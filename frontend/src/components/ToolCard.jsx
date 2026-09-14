@@ -29,16 +29,37 @@ export default function ToolCard({
   const normalizedStatus = status === 'inProgress' ? 'running' : status;
   const isRunning = normalizedStatus === 'running';
   const isFailed = normalizedStatus === 'failed' || !!error;
+  const approvalState = tool.approval?.state || null;
+  const pendingCallId = pendingApproval?.data?.callId || pendingApproval?.data?.call_id;
+  const pendingRequestId = pendingApproval?.requestId;
+  const pendingToolName = pendingApproval?.data?.toolName || pendingApproval?.data?.tool_name;
 
   // Check if this tool is currently awaiting human approval
   const isAwaitingApproval =
-    Boolean(pendingApproval) &&
-    isRunning &&
-    Boolean(
-      pendingApproval.data?.toolName === name ||
-        pendingApproval.data?.callId === id ||
-        pendingApproval.requestId === id
+    isRunning && (
+      approvalState === 'pending' || (
+        Boolean(pendingApproval) &&
+        Boolean(
+          (pendingCallId && pendingCallId === id) ||
+            (!pendingCallId && pendingRequestId === id) ||
+            (!pendingCallId && !id && pendingToolName === name)
+        )
+      )
     );
+
+  const approvalResult = approvalState && approvalState !== 'pending'
+    ? tool.approval
+    : null;
+  const approvalScopeLabels = {
+    once: '本次',
+    session: '会话',
+    project: '项目',
+  };
+  const approvalResultText = approvalResult?.state === 'approved'
+    ? `用户已允许${approvalScopeLabels[approvalResult.grantScope] || ''}执行${approvalResult.source === 'other_window' ? ' · 其他窗口已处理' : ''}`
+    : approvalResult?.state === 'denied'
+      ? `用户已拒绝执行${approvalResult.reason ? ` · ${approvalResult.reason}` : ''}`
+      : `审批已失效${approvalResult?.source === 'interrupted' ? ' · Turn 已停止' : ''}`;
 
   const getToolIcon = (toolName) => {
     const n = (toolName || '').toLowerCase();
@@ -135,6 +156,23 @@ export default function ToolCard({
           )}
         </div>
       </div>
+
+      {approvalResult && (
+        <div
+          className={`tool-approval-result ${approvalResult.state}`}
+          role="status"
+          title={approvalResult.reason || undefined}
+        >
+          {approvalResult.state === 'approved' ? (
+            <CheckCircle size={12} />
+          ) : approvalResult.state === 'denied' ? (
+            <AlertTriangle size={12} />
+          ) : (
+            <ShieldAlert size={12} />
+          )}
+          <span>{approvalResultText}</span>
+        </div>
+      )}
 
       {/* Output Section (Foldable) */}
       {(!isAwaitingApproval || !isRunning) && (

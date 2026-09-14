@@ -68,6 +68,12 @@ notification 广播给所有 WebSocket 客户端；单个请求的 WebSocket 只
 `approval.phase=resolved`，使其他浏览器关闭过期审批卡片。断线重连时仍通过审批快照
 对账；Gateway 进程退出会取消内存中的待审批请求。
 
+App Server 会在已绑定持久化 Session 的 Thread 目录旁写入独立的
+`approval-evidence.jsonl`。该文件记录已完成审批决策的有界摘要，包含
+Project/Thread/Turn/call 标识、策略、访问范围、工具与命令首词、动作 hash 和结果。
+它不属于 Gateway 的 pending 状态，也不是 Session history 或授权缓存。多个 Thread
+的项目级分析应在读取时聚合，trace 不能自动扩大 allow 规则。
+
 所有 Thread、Turn、Workflow、World 和 Session 请求都使用统一的
 `project_id` 路由上下文；REST 请求通过 query 参数传递，创建、attach、fork 和
 Goal 请求在需要时同时保留 payload 字段。WebSocket 建连时使用

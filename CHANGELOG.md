@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Large-session restart recovery**: keep Gateway Session catalog visibility
+  aligned with the App Server's 32 MiB SessionStore bound, configure the SDK
+  stdout reader for bounded checkpoint responses, and recover a previous
+  history when a crash left the thread index pointing at a new empty Session.
+  Reader failures now reap the dead App Server process so later stop or resume
+  requests do not wait on a closed pipe until the generic request timeout.
+
 - **Low-interruption trusted execution**: ordinary validated workspace actions
   and Shell commands no longer open a Web Studio approval prompt under the
   `trusted` policy; recursive or forced deletion, destructive Git and system

@@ -54,6 +54,10 @@ from mini_agent.types import (
 logger = logging.getLogger("mini_agent")
 
 DEFAULT_REQUEST_TIMEOUT_SECS = 30.0
+# SessionStore records are bounded to 512 KiB, but JSON-RPC wraps those
+# records in a response envelope. Keep asyncio's StreamReader limit above that
+# protocol bound so a valid checkpoint cannot break the stdio transport.
+APP_SERVER_STDIO_LINE_LIMIT = 2 * 1024 * 1024
 
 
 def setup_logging(
@@ -283,6 +287,7 @@ class MiniAgentClient:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self.cwd,
                 env=self.env,
+                limit=APP_SERVER_STDIO_LINE_LIMIT,
             )
         except OSError as err:
             raise ServerProcessError(
@@ -429,11 +434,12 @@ class MiniAgentClient:
 
     async def _read_loop(self) -> None:
         """Background loop reading JSONL lines from server stdout."""
-        assert self._proc and self._proc.stdout
+        process = self._proc
+        assert process and process.stdout
         error_message = "App Server connection closed before stream settlement"
         while True:
             try:
-                line_bytes = await self._proc.stdout.readline()
+                line_bytes = await process.stdout.readline()
             except Exception as err:
                 logger.exception("App Server stdout read failed")
                 error_message = (
@@ -515,6 +521,32 @@ class MiniAgentClient:
                         asyncio.create_task(self.notification_handler(notification))
                     logger.debug("Received server notification: %s", method)
 
+        # A reader failure/EOF must not leave a live-looking client around.
+        # Otherwise a later stop or request can wait on a dead pipe until the
+        # generic request timeout, which is the source of long "stopping"
+        # states after a transport error.
+        if getattr(process, "returncode", None) is None:
+            try:
+                process.terminate()
+            except Exception:  # noqa: BLE001, S110
+                pass
+            try:
+                await asyncio.wait_for(process.wait(), timeout=1.0)
+            except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+                try:
+                    process.kill()
+                    await asyncio.wait_for(process.wait(), timeout=1.0)
+                except Exception:  # noqa: BLE001, S110
+                    pass
+        transport = getattr(process, "_transport", None)
+        if transport is not None:
+            try:
+                transport.close()
+            except Exception:  # noqa: BLE001, S110
+                pass
+        if self._proc is process and getattr(process, "returncode", None) is not None:
+            self._proc = None
+
         for fut in self._pending_requests.values():
             if not fut.done():
                 fut.set_exception(ServerProcessError(error_message))
@@ -535,9 +567,10 @@ class MiniAgentClient:
 
     async def _stderr_loop(self) -> None:
         """Background loop reading and logging any stderr output from the server."""
-        assert self._proc and self._proc.stderr
+        process = self._proc
+        assert process and process.stderr
         while True:
-            line_bytes = await self._proc.stderr.readline()
+            line_bytes = await process.stderr.readline()
             if not line_bytes:
                 break
             line = line_bytes.decode("utf-8", errors="replace").strip()

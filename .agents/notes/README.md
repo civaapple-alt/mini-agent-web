@@ -29,6 +29,7 @@
 - [Web Studio 与 Gateway 的职责化模块重构](implemented/architecture/2026-09-10-webstudio-gateway-modular-refactor.md)
 - [Web Studio UI 交互、布局与主题升级](implemented/feature/2026-09-14-web-studio-ui-simplification.md)
 - [审批身份与生命周期收敛](implemented/bug-fix/2026-09-14-approval-identity-and-lifecycle.md)
+- [停止超时与大 Session 重启恢复](implemented/bug-fix/2026-09-14-session-recovery-after-large-checkpoint.md)
 - [Trusted 低打断工具执行](implemented/feature/2026-09-14-trusted-low-interruption-execution.md)
 - [用户输入 Trace 与 Thread 历史](implemented/feature/2026-09-14-user-input-trace-and-thread-history.md)
 

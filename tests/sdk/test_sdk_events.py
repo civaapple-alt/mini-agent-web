@@ -24,6 +24,7 @@ from mini_agent import (
     TurnSubmissionResult,
     parse_event,
 )
+from mini_agent.client import APP_SERVER_STDIO_LINE_LIMIT
 
 
 @pytest.mark.parametrize(
@@ -270,6 +271,90 @@ async def test_read_loop_settles_event_queues_when_stdout_fails():
     failure = await event_queue.get()
     assert failure["type"] == "_client_error"
     assert "pipe reset" in failure["message"]
+
+
+@pytest.mark.asyncio
+async def test_read_loop_reaps_process_after_stdout_failure():
+    """A failed reader must not leave a live-looking client on a dead pipe."""
+
+    class BrokenStdout:
+        async def readline(self):
+            raise ConnectionResetError("pipe reset")
+
+    class FailedProcess:
+        def __init__(self):
+            self.stdout = BrokenStdout()
+            self.returncode = None
+            self.terminated = False
+
+        def terminate(self):
+            self.terminated = True
+            self.returncode = 1
+
+        async def wait(self):
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -9
+
+    client = MiniAgentClient()
+    process = FailedProcess()
+    client._proc = process
+
+    await client._read_loop()
+
+    assert process.terminated is True
+    assert client.is_running is False
+    assert client._proc is None
+
+
+@pytest.mark.asyncio
+async def test_start_sets_stdio_line_limit_above_session_record_bound(monkeypatch):
+    """Valid large checkpoint responses must fit the SDK stdout reader."""
+
+    class FakeStream:
+        async def readline(self):
+            return b""
+
+    class FakeStdin:
+        def is_closing(self):
+            return False
+
+        def close(self):
+            return None
+
+    class FakeProcess:
+        def __init__(self):
+            self.pid = 1234
+            self.returncode = None
+            self.stdin = FakeStdin()
+            self.stdout = FakeStream()
+            self.stderr = FakeStream()
+
+        def terminate(self):
+            self.returncode = 0
+
+        async def wait(self):
+            return self.returncode
+
+    process = FakeProcess()
+    captured = {}
+
+    async def fake_create_subprocess(*args, **kwargs):
+        captured.update(kwargs)
+        return process
+
+    monkeypatch.setattr(
+        "mini_agent.client.asyncio.create_subprocess_exec",
+        fake_create_subprocess,
+    )
+
+    client = MiniAgentClient()
+    await client.start()
+    await client.stop()
+
+    assert captured["limit"] == APP_SERVER_STDIO_LINE_LIMIT
+    assert APP_SERVER_STDIO_LINE_LIMIT > 512 * 1024
 
 
 @pytest.mark.asyncio

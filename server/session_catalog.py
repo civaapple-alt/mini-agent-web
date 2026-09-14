@@ -18,7 +18,10 @@ from typing import Any
 from urllib.parse import quote
 
 MAX_SESSIONS = 128
-MAX_SESSION_BYTES = 8 * 1024 * 1024
+# Keep this at least as large as the App Server SessionStore limit. Oversized
+# checkpoint records are projected below, so a large history remains readable
+# without copying its full model context into the Gateway response.
+MAX_SESSION_BYTES = 32 * 1024 * 1024
 MAX_RECORD_BYTES = 64 * 1024
 MAX_ERROR_CHARS = 2048
 MAX_CHECKPOINT_MESSAGES = 64
@@ -81,6 +84,18 @@ def _bounded_text(value: Any, limit: int = MAX_ERROR_CHARS) -> str | None:
     if len(value) <= limit:
         return value
     return f"{value[:limit]}…"
+
+
+def _entry_has_conversation_history(entry: dict[str, Any]) -> bool:
+    """Distinguish conversation messages from an empty Session header."""
+    if _bounded_int(entry.get("turn_count")) > 0:
+        return True
+    messages = entry.get("messages")
+    return any(
+        isinstance(message, dict)
+        and message.get("role") in {"user", "assistant", "tool"}
+        for message in messages or []
+    )
 
 
 def _process_alive(pid: int) -> bool:
@@ -328,6 +343,57 @@ def _checkpoint_projection(record: dict[str, Any]) -> dict[str, Any]:
 class SessionCatalog:
     """Bounded, read-only SessionStore listing and history reader."""
 
+    @staticmethod
+    def _valid_session_path(base: Path, session_id: str) -> Path | None:
+        path = base / session_id
+        if (
+            path.name != session_id
+            or not path.is_dir()
+            or not (path / "session.jsonl").is_file()
+        ):
+            return None
+        return path
+
+    def _find_thread_session(
+        self,
+        base: Path,
+        project_id: str,
+        thread_id: str,
+        excluded_session_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Find the best readable Session when an index entry is stale.
+
+        A crash during restart can leave thread_index.json pointing at a newly
+        created empty Session while the previous Session still contains the
+        actual conversation. History-bearing Sessions win over empty Sessions,
+        while lock state remains visible to the caller for safe attach decisions.
+        """
+        candidates: list[dict[str, Any]] = []
+        try:
+            paths = sorted(base.iterdir(), key=lambda path: path.name)
+        except OSError:
+            return None
+        for path in paths:
+            if path.name == excluded_session_id:
+                continue
+            if not path.is_dir() or not (path / "session.jsonl").is_file():
+                continue
+            entry = self._read_session(path, project_id, include_history=True)
+            if not entry or entry.get("thread_id") != thread_id:
+                continue
+            candidates.append(entry)
+        if not candidates:
+            return None
+        return max(
+            candidates,
+            key=lambda item: (
+                _entry_has_conversation_history(item),
+                _bounded_int(item.get("turn_count")),
+                str(item.get("updated_at") or ""),
+                str(item.get("session_id") or ""),
+            ),
+        )
+
     def list_sessions(
         self,
         workspace: Path,
@@ -368,65 +434,38 @@ class SessionCatalog:
 
         indexed_session_id = _read_thread_index(base).get(thread_id)
         if indexed_session_id:
-            indexed_path = base / indexed_session_id
-            if (
-                indexed_path.name == indexed_session_id
-                and indexed_path.is_dir()
-                and (indexed_path / "session.jsonl").is_file()
-            ):
+            indexed_path = self._valid_session_path(base, indexed_session_id)
+            if indexed_path:
                 entry = self._read_session(
                     indexed_path, project_id, include_history=True
                 )
                 if entry and entry.get("thread_id") == thread_id:
-                    return entry
+                    # A valid but empty replacement Session must not hide a
+                    # previous conversation after a restart. Once history is
+                    # present, the index remains authoritative.
+                    if _entry_has_conversation_history(entry):
+                        return entry
+                    recovered = self._find_thread_session(
+                        base,
+                        project_id,
+                        thread_id,
+                        excluded_session_id=indexed_session_id,
+                    )
+                    return recovered or entry
 
         # Legacy sessions created before thread_index.json remain readable. This
         # is a migration fallback, not the normal request-time lookup path.
-        for path in base.iterdir():
-            if not path.is_dir() or not (path / "session.jsonl").is_file():
-                continue
-            entry = self._read_session(path, project_id, include_history=True)
-            if entry and entry.get("thread_id") == thread_id:
-                return entry
-        return None
+        return self._find_thread_session(base, project_id, thread_id)
 
     def find_session_path(self, workspace: Path, thread_id: str) -> Path | None:
-        """Resolve a Thread to its Session directory without reading history."""
+        """Resolve a Thread to its Session directory with restart recovery."""
         base = _session_base(workspace)
         if not base.is_dir():
             return None
-
-        indexed_session_id = _read_thread_index(base).get(thread_id)
-        if indexed_session_id:
-            indexed_path = base / indexed_session_id
-            if (
-                indexed_path.name == indexed_session_id
-                and indexed_path.is_dir()
-                and (indexed_path / "session.jsonl").is_file()
-            ):
-                return indexed_path
-
-        for path in base.iterdir():
-            if not path.is_dir() or not (path / "session.jsonl").is_file():
-                continue
-            try:
-                with (path / "session.jsonl").open("rb") as session_file:
-                    for line in session_file:
-                        if len(line) > MAX_RECORD_BYTES:
-                            continue
-                        try:
-                            record = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        if (
-                            isinstance(record, dict)
-                            and record.get("kind") == "thread_started"
-                            and record.get("thread_id") == thread_id
-                        ):
-                            return path
-            except OSError:
-                continue
-        return None
+        entry = self.find_by_thread(workspace, "", thread_id)
+        if not entry:
+            return None
+        return self._valid_session_path(base, str(entry.get("session_id") or ""))
 
     def read_thread(
         self, workspace: Path, project_id: str, thread_id: str

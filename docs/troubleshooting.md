@@ -63,6 +63,20 @@
 
 `run_failed` 和 `run_finished` 是运行级诊断事件，`turn_finished` 才是本轮持久化后的权威终态。模型请求、传输或上下文错误会从已结算的 Session 回读并显示在状态条中；因此“本轮执行失败”不再等同于步数上限。若需要判断是谁发起了中断，查看浏览器控制台的 `[Studio][turn-control]` 记录，以及网关日志中的 `source` 字段（例如 `composer-stop`、`clear-chat` 或 `queue-steer`）。
 
+### 停止后重启，Session 无法加载
+
+如果点击“停止”后长时间显示“停止中”，随后重启 Web Studio 发现原会话无法打开，
+先不要删除 `~/.mini-agent/sessions` 下的目录。常见原因是本轮生成了较大的 checkpoint：
+旧版本的 Gateway 会把超过 8 MB 的 Session 隐藏，SDK 也可能因 JSONL 行缓冲过小而失去
+App Server 连接；重启期间这可能进一步留下一个指向空历史的新 Session。
+
+更新 Gateway/SDK 后重启 Gateway 即可恢复：Session catalog 现在与 App Server 的 32 MB
+边界一致，并对大 checkpoint 做有界投影；如果 thread index 指向空的重启 Session，
+会优先恢复同一 Thread 中已有历史的旧 Session。SDK 读管道失败时也会回收失联的
+App Server，避免停止、恢复或下一次请求继续等待一个已关闭的管道。恢复后的会话可能标记
+`history_truncated=true`，这表示展示层只保留了有界预览，原始 Session 日志仍由 App Server
+负责读取。若旧 Session 仍被其他进程锁定，页面会保持只读，需等待锁释放后再 attach。
+
 ### 长时间思考内容没有显示最新位置
 
 ThinkingBlock 超过可视高度后会使用内部滚动区域。只要用户没有手动向上滚动，

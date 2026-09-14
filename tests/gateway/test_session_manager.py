@@ -1041,6 +1041,126 @@ def test_session_catalog_skips_oversized_checkpoint_but_keeps_goal_state(
     assert SessionCatalog().find_session_path(workspace, "t-large") == session_dir
 
 
+def test_session_catalog_recovers_history_hidden_by_empty_restart_session(
+    tmp_path, monkeypatch
+):
+    """A restart-created empty Session cannot hide the previous conversation."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+
+    old_dir = session_base / "s-old"
+    old_dir.mkdir(parents=True)
+    old_records = [
+        {"kind": "session_created", "session_id": "s-old", "timestamp_ms": 1},
+        {"kind": "thread_started", "thread_id": "default"},
+        {
+            "kind": "turn_started",
+            "thread_id": "default",
+            "turn_id": "turn-1",
+        },
+        {
+            "kind": "turn_settled",
+            "thread_id": "default",
+            "turn_id": "turn-1",
+            "status": "completed",
+            "timestamp_ms": 2,
+        },
+        {
+            "kind": "checkpoint",
+            "thread_id": "default",
+            "seq": 5,
+            "timestamp_ms": 2,
+            "messages": [{"role": "user", "text": "recover this history"}],
+        },
+    ]
+    (old_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in old_records),
+        encoding="utf-8",
+    )
+    (old_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "created_at_ms": 1,
+                "updated_at_ms": 2,
+                "turn_count": 1,
+                "last_prompt": "recover this history",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    new_dir = session_base / "s-empty"
+    new_dir.mkdir(parents=True)
+    new_records = [
+        {"kind": "session_created", "session_id": "s-empty", "timestamp_ms": 3},
+        {"kind": "thread_started", "thread_id": "default"},
+        {
+            "kind": "checkpoint",
+            "thread_id": "default",
+            "seq": 2,
+            "timestamp_ms": 3,
+            "messages": [
+                {"role": "system", "text": "initial instructions"},
+                {"role": "context", "text": "initial world"},
+            ],
+        },
+    ]
+    (new_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in new_records),
+        encoding="utf-8",
+    )
+    (new_dir / "summary.json").write_text(
+        json.dumps({"created_at_ms": 3, "updated_at_ms": 3, "turn_count": 0}),
+        encoding="utf-8",
+    )
+    (session_base / "thread_index.json").write_text(
+        json.dumps({"version": 1, "threads": {"default": {"session_id": "s-empty"}}}),
+        encoding="utf-8",
+    )
+
+    catalog = SessionCatalog()
+    history = catalog.read_thread(workspace, "project-1", "default")
+
+    assert history is not None
+    assert history["session"]["session_id"] == "s-old"
+    assert history["messages"][0]["text"] == "recover this history"
+    assert catalog.find_session_path(workspace, "default") == old_dir
+
+
+@pytest.mark.asyncio
+async def test_client_pool_replaces_a_client_after_stdio_process_failure(
+    mock_session_manager,
+):
+    """A dead SDK client must not keep routing requests to a closed pipe."""
+
+    class FakeClient:
+        def __init__(self, is_running):
+            self.is_running = is_running
+
+    stale = FakeClient(False)
+    replacement = FakeClient(True)
+    mock_session_manager._project_clients[("default", "dead-thread")] = stale
+    mock_session_manager._clients["dead-thread"] = stale
+    mock_session_manager._client_projects["dead-thread"] = "default"
+    mock_session_manager._create_client = AsyncMock(return_value=replacement)
+
+    client = await mock_session_manager.get_client_for_thread("dead-thread", "default")
+
+    assert client is replacement
+    mock_session_manager._create_client.assert_awaited_once_with(
+        "dead-thread",
+        mock_session_manager._projects_registry["default"],
+        "new",
+        None,
+    )
+    assert mock_session_manager._clients["dead-thread"] is replacement
+    assert stale not in mock_session_manager._clients.values()
+
+
 def test_checkpoint_projection_keeps_reasoning_and_tool_call_identity():
     from server.session_catalog import _checkpoint_projection
 

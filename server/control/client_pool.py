@@ -44,6 +44,34 @@ class ClientPool:
             clients.append(client)
         return clients
 
+    @staticmethod
+    def _is_usable_client(client: MiniAgentClient) -> bool:
+        """Avoid reusing a client whose stdio process has already exited."""
+        return getattr(client, "is_running", True) is not False
+
+    def _discard_client(self, client: MiniAgentClient) -> None:
+        """Remove every compatibility binding for a failed client process."""
+        owner = self.owner
+        removed_threads: set[str] = set()
+        for key, bound_client in list(owner._project_clients.items()):
+            if bound_client is client:
+                removed_threads.add(key[1])
+                owner._project_clients.pop(key, None)
+        for thread_id, bound_client in list(owner._clients.items()):
+            if bound_client is client:
+                removed_threads.add(thread_id)
+                owner._clients.pop(thread_id, None)
+                owner._client_projects.pop(thread_id, None)
+        for thread_id in removed_threads:
+            if any(key[1] == thread_id for key in owner._project_clients):
+                continue
+            owner._client_projects.pop(thread_id, None)
+            owner._active_thread_projects.pop(thread_id, None)
+            owner._active_turns.pop(thread_id, None)
+            owner._active_tasks.pop(thread_id, None)
+        if owner._client is client:
+            owner._client = None
+
     def live_thread_bindings(self) -> list[tuple[str, str]]:
         """Return active ``(project_id, thread_id)`` bindings for the UI catalog."""
         owner = self.owner
@@ -188,6 +216,9 @@ class ClientPool:
             ):
                 existing = legacy
                 owner._project_clients[binding_key] = legacy
+        if existing is not None and not self._is_usable_client(existing):
+            self._discard_client(existing)
+            existing = None
         if existing is not None:
             self.activate_thread_client(target, resolved_project_id, existing)
             return existing
@@ -246,17 +277,18 @@ class ClientPool:
         if (
             owner._client is not None
             and owner._client_projects.get("default") == target_project
+            and self._is_usable_client(owner._client)
         ):
             return owner._client
         if thread_id:
             return await self.get_client_for_thread(thread_id, target_project)
         project_default = owner._project_clients.get((target_project, "default"))
-        if project_default is not None:
+        if project_default is not None and self._is_usable_client(project_default):
             if target_project == owner._current_project_id:
                 owner._client = project_default
             return project_default
         for (bound_project, _bound_thread), client in owner._project_clients.items():
-            if bound_project == target_project:
+            if bound_project == target_project and self._is_usable_client(client):
                 return client
         return await self.get_client_for_thread("default", target_project)
 

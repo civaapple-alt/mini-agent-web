@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **DeepSeek model naming**: align Web Studio examples with the current
+  unified `deepseek-flash` model entrypoint.
+
 - **Provider web search visibility**: keep the enabled server-side
   `web_search` capability distinct from Host function tools and document the
   supported DeepSeek Responses model identifier, so a user-level

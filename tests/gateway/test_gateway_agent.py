@@ -267,7 +267,7 @@ async def test_agent_steer_and_interrupt_endpoints(agent_test_app):
         assert interrupt_resp.json()["turn_id"] == "turn-1"
 
 
-def test_process_attachments_pipeline(tmp_path):
+def test_process_attachments_pipeline(tmp_path, monkeypatch):
     """Test _process_attachments Base64 image decoding, file saving, and prompt enrichment."""
     session_manager._current_project_path = tmp_path
 
@@ -275,21 +275,30 @@ def test_process_attachments_pipeline(tmp_path):
     tiny_png_b64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 
     raw_prompt = "Analyze this diagram"
+    attachment_dir = tmp_path.parent / f"{tmp_path.name}-gateway-state" / "attachments"
+    monkeypatch.setattr(
+        session_manager,
+        "attachments_path_for_thread",
+        lambda thread_id, project_id: attachment_dir,
+    )
     enriched = _process_attachments(
         raw_prompt,
         images=[tiny_png_b64],
         referenced_files=["src/main.py", "README.md"],
+        thread_id="thread-attachment-test",
+        project_id="project-attachment-test",
     )
 
-    assert "[User Attached Image: .mini-agent/attachments/" in enriched
+    assert f"[User Attached Image: {attachment_dir}" in enriched
+    assert ".mini-agent/attachments" not in enriched
     assert "[User Referenced Files: src/main.py, README.md]" in enriched
 
     # Verify image file was created in attachments directory
-    attach_dir = tmp_path / ".mini-agent" / "attachments"
-    assert attach_dir.is_dir()
-    saved_files = list(attach_dir.glob("*.png"))
+    assert attachment_dir.is_dir()
+    saved_files = list(attachment_dir.glob("*.png"))
     assert len(saved_files) == 1
     assert saved_files[0].stat().st_size > 0
+    assert not (tmp_path / ".mini-agent").exists()
 
 
 @pytest.mark.asyncio

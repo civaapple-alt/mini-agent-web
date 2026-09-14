@@ -4,11 +4,14 @@ Unit and integration tests for SessionManager state, approvals, and projects.
 
 import asyncio
 import json
+import os
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
+from server.control import client_pool as client_pool_module
 from server.session_catalog import SessionCatalog
 from server.session_manager import SessionManager
 
@@ -51,6 +54,88 @@ def test_session_manager_project_collision_avoidance(mock_session_manager, tmp_p
     assert "alpha-project" in ids
     assert "alpha-project-1" in ids
     assert "alpha-project-2" in ids
+
+
+def test_thread_attachment_root_is_gateway_state_and_project_scoped(
+    mock_session_manager, tmp_path
+):
+    """Uploaded files stay outside the workspace and differ by Project/Thread."""
+    state_dir = tmp_path / "gateway-state"
+    mock_session_manager._state_dir = state_dir
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    mock_session_manager._current_project_path = project_root
+    mock_session_manager._projects_registry["default"]["primary_path"] = str(
+        project_root
+    )
+    mock_session_manager._projects_registry["default"]["source_folders"] = [
+        {"name": "default", "path": str(project_root), "is_primary": True}
+    ]
+
+    first = mock_session_manager.attachments_path_for_thread("thread-a", "default")
+    second = mock_session_manager.attachments_path_for_thread("thread-b", "default")
+
+    assert first.parent == second.parent
+    assert first != second
+    assert first.is_relative_to(state_dir)
+    assert not first.is_relative_to(project_root)
+
+
+def test_thread_attachment_root_rejects_state_inside_project(mock_session_manager):
+    """A misconfigured state directory must never cause workspace writes."""
+    project_root = mock_session_manager._current_project_path
+    mock_session_manager._state_dir = project_root / "state"
+
+    with pytest.raises(RuntimeError, match="must not be inside a Project workspace"):
+        mock_session_manager.attachments_path_for_thread("thread-a", "default")
+
+
+@pytest.mark.asyncio
+async def test_client_runtime_receives_only_thread_attachment_root(
+    mock_session_manager, tmp_path, monkeypatch
+):
+    """New runtimes can read their Thread uploads without widening workspace access."""
+    state_dir = tmp_path.parent / f"{tmp_path.name}-gateway-state"
+    mock_session_manager._state_dir = state_dir
+    project = mock_session_manager._projects_registry["default"]
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        async def __aenter__(self):
+            return self
+
+        async def initialize(self):
+            return {"serverName": "fake", "serverVersion": "test"}
+
+        async def set_world_execution(self, **kwargs):
+            return None
+
+        async def start_thread(self, thread_id):
+            return None
+
+        async def stop(self):
+            return None
+
+    monkeypatch.setattr(client_pool_module, "MiniAgentClient", FakeClient)
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_apply_persisted_thread_continuation",
+        AsyncMock(),
+    )
+
+    await mock_session_manager._client_pool.create_client("thread-a", project, "new")
+
+    attachment_root = str(
+        mock_session_manager.attachments_path_for_thread(
+            "thread-a", "default"
+        ).resolve()
+    )
+    read_roots = captured["env"]["MINI_AGENT_EXTRA_READ_ROOTS"].split(os.pathsep)
+    assert attachment_root in read_roots
+    assert not Path(attachment_root).is_relative_to(Path(project["primary_path"]))
 
 
 @pytest.mark.asyncio
@@ -1135,6 +1220,7 @@ async def test_attach_thread_allows_same_thread_id_in_another_project(
     mock_session_manager, tmp_path
 ):
     """Project-qualified Thread bindings may coexist in the client pool."""
+    mock_session_manager._state_dir = tmp_path.parent / f"{tmp_path.name}-gateway-state"
     project_root = tmp_path / "other-project"
     project_root.mkdir()
     mock_session_manager._projects_registry["other-project"] = {

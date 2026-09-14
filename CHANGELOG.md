@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Workspace attachment isolation**: store Web Studio image uploads in the
+  Gateway state directory, scoped by Project and Thread, and pass only the
+  current Thread's attachment directory to the runtime as a read-only root;
+  uploads no longer create `.mini-agent/attachments` inside the Project.
+
 - **Partial `read_file` result visibility**: preserve the protocol's `content`
   field when reconciling legacy tool-finished events, show requested line ranges
   in the tool summary, and auto-expand bounded completed `read_file` results so

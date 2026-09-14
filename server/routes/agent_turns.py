@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -28,18 +30,21 @@ def _process_attachments(
     referenced_files: list[str] | None = None,
     thread_id: str | None = None,
     project_id: str | None = None,
+    attachment_dir: Path | None = None,
 ) -> str:
-    """Save image attachments to workspace .mini-agent/attachments/ and enrich prompt context."""
+    """Save image attachments to Gateway state and enrich prompt context.
+
+    ``attachment_dir`` is an internal test seam. Production callers use the
+    SessionManager-owned per-Project/per-Thread directory and never write to a
+    Project workspace.
+    """
     extra_context_parts = []
 
     if images:
         import base64
-        import time
 
-        attach_dir = (
-            session_manager.project_path_for_thread(thread_id, project_id)
-            / ".mini-agent"
-            / "attachments"
+        attach_dir = attachment_dir or session_manager.attachments_path_for_thread(
+            thread_id, project_id
         )
         attach_dir.mkdir(parents=True, exist_ok=True)
 
@@ -57,12 +62,11 @@ def _process_attachments(
                     ext = "png"
 
                 img_bytes = base64.b64decode(b64_str)
-                fname = f"clipboard_{int(time.time())}_{idx + 1}.{ext}"
+                fname = f"clipboard_{uuid4().hex}_{idx + 1}.{ext}"
                 file_path = attach_dir / fname
                 file_path.write_bytes(img_bytes)
-                rel_path = f".mini-agent/attachments/{fname}"
                 extra_context_parts.append(
-                    f"[User Attached Image: {rel_path} (Local path: {file_path})]"
+                    f"[User Attached Image: {file_path} (Gateway session attachment)]"
                 )
             except Exception as err:  # noqa: BLE001
                 logger.warning("Failed to save attached image: %s", err)

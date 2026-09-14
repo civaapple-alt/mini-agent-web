@@ -7,6 +7,7 @@ thread metadata caching (titles, summaries), and runtime user settings.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 from collections import OrderedDict
@@ -29,6 +30,11 @@ logger = logging.getLogger("mini_agent.server")
 
 MAX_INTERRUPTED_TURNS = 256
 __all__ = ["SessionManager", "session_manager", "to_json_serializable"]
+
+
+def _attachment_storage_key(value: str) -> str:
+    """Create a bounded, stable filesystem key for a Project or Thread identity."""
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:32]
 
 
 class SessionManager:
@@ -534,6 +540,42 @@ class SessionManager:
     ) -> Path | None:
         """Resolve a Thread to its canonical Session directory for read-only artifacts."""
         return self._thread_registry.session_path_for_thread(thread_id, project_id)
+
+    def attachments_path_for_thread(
+        self, thread_id: str | None = None, project_id: str | None = None
+    ) -> Path:
+        """Return the Gateway-owned, read-only attachment root for one Thread.
+
+        Uploaded bytes are Gateway state, not workspace content. Hashing the
+        identities keeps user-controlled project and thread values out of the
+        filesystem path while retaining a stable per-Project/per-Thread scope.
+        """
+        target_thread = thread_id or "default"
+        project = self._project_for_thread(target_thread, project_id)
+        candidate = (
+            self._state_dir.resolve()
+            / "attachments"
+            / _attachment_storage_key(
+                str(project.get("id") or project_id or self._current_project_id)
+            )
+            / _attachment_storage_key(target_thread)
+        )
+        project_roots: list[Path] = []
+        for registered_project in self._projects_registry.values():
+            primary_path = registered_project.get("primary_path")
+            if primary_path:
+                project_roots.append(Path(str(primary_path)).resolve())
+            for folder in registered_project.get("source_folders") or []:
+                raw_path = folder.get("path") if isinstance(folder, dict) else None
+                if raw_path:
+                    project_roots.append(Path(str(raw_path)).resolve())
+        project_roots.append(Path(project["primary_path"]).resolve())
+        if not any(candidate.is_relative_to(root) for root in project_roots):
+            return candidate
+        raise RuntimeError(
+            "MINI_AGENT_WEB_STATE_DIR must not be inside a Project workspace; "
+            "refusing to store an uploaded attachment there"
+        )
 
     def project_path_for_thread(
         self, thread_id: str | None = None, project_id: str | None = None

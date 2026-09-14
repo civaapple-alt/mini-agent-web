@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Long reasoning visibility**: keep the bounded ThinkingBlock viewport
+  following newly streamed reasoning until the user scrolls upward; returning
+  to the bottom resumes following the latest content.
+
 - **Approval-aware interruption settlement**: stopping a Turn while a tool
   approval is pending now resolves the approval as an explicit denial before
   releasing the App Server wait. The approval controls are visibly locked, the

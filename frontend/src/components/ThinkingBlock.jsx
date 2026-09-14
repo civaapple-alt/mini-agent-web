@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Brain, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
 import './ThinkingBlock.css';
 
@@ -8,6 +8,8 @@ export default function ThinkingBlock({ content, isStreaming }) {
   const [elapsedSec, setElapsedSec] = useState(0);
   const startTimeRef = useRef(Date.now());
   const finalTimeRef = useRef(null);
+  const bodyRef = useRef(null);
+  const followLatestRef = useRef(true);
 
   useEffect(() => {
     let interval = null;
@@ -24,6 +26,15 @@ export default function ThinkingBlock({ content, isStreaming }) {
     };
   }, [isStreaming, elapsedSec]);
 
+  useLayoutEffect(() => {
+    const body = bodyRef.current;
+    if (!body || !followLatestRef.current) return;
+    // The thinking body has its own bounded scroll area. Keep that viewport
+    // pinned to the newest reasoning text while the user has not scrolled it
+    // away from the bottom.
+    body.scrollTop = body.scrollHeight;
+  }, [content, isOpen, isStreaming]);
+
   if (!content && !isStreaming) return null;
 
   const charCount = (content || '').length;
@@ -37,6 +48,13 @@ export default function ThinkingBlock({ content, isStreaming }) {
   };
 
   const previewSnippet = (content || '').split('\n')[0].slice(0, 60);
+
+  const handleBodyScroll = () => {
+    const body = bodyRef.current;
+    if (!body) return;
+    const distanceFromBottom = body.scrollHeight - body.scrollTop - body.clientHeight;
+    followLatestRef.current = distanceFromBottom <= 24;
+  };
 
   return (
     <div
@@ -85,7 +103,12 @@ export default function ThinkingBlock({ content, isStreaming }) {
       )}
 
       {isOpen && (
-        <div className="thinking-body font-mono notranslate" translate="no">
+        <div
+          ref={bodyRef}
+          className="thinking-body font-mono notranslate"
+          translate="no"
+          onScroll={handleBodyScroll}
+        >
           {content}
           {isStreaming && <span className="cursor-blink"></span>}
         </div>

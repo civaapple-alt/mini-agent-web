@@ -63,6 +63,13 @@
 
 `run_failed` 和 `run_finished` 是运行级诊断事件，`turn_finished` 才是本轮持久化后的权威终态。模型请求、传输或上下文错误会从已结算的 Session 回读并显示在状态条中；因此“本轮执行失败”不再等同于步数上限。若需要判断是谁发起了中断，查看浏览器控制台的 `[Studio][turn-control]` 记录，以及网关日志中的 `source` 字段（例如 `composer-stop`、`clear-chat` 或 `queue-steer`）。
 
+### 长时间思考内容没有显示最新位置
+
+ThinkingBlock 超过可视高度后会使用内部滚动区域。只要用户没有手动向上滚动，
+新到达的 reasoning 内容会自动跟随到底部；如果用户向上查看旧内容，自动跟随会暂停，
+滚动回底部后恢复。外层聊天区的“回到底部”按钮只控制消息列表，不替代 ThinkingBlock
+内部滚动。
+
 ---
 
 ## 4. 大模型调用凭证丢失或鉴权失败 (401 Unauthorized)

@@ -41,6 +41,24 @@ describe('ToolCard Component Rendering & Interaction', () => {
     expect(screen.getByText('运行中')).toBeDefined();
   });
 
+  it('shows a completed partial read_file result and its line range', () => {
+    render(
+      <ToolCard
+        tool={{
+          id: 'read-file-page',
+          name: 'read_file',
+          arguments: { path: 'scripts/car_model.py', offset: 40, limit: 12 },
+          status: 'completed',
+          output: '--- file: scripts/car_model.py | total_lines=240 | offset=40 | limit=12 ---\n41: page content\n[page boundary: next_offset=52; call read_file with the same path and this offset]',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('scripts/car_model.py · 第 41-52 行')).toBeDefined();
+    expect(screen.getByText(/41: page content/)).toBeDefined();
+    expect(screen.getByText(/next_offset=52/)).toBeDefined();
+  });
+
   it('renders failed tool state with error message', () => {
     const tool = {
       id: 'tool_3',

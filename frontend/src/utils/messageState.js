@@ -148,6 +148,11 @@ function projectedStatus(status) {
   return 'running';
 }
 
+function projectedToolOutput(value) {
+  if (!value || typeof value !== 'object') return null;
+  return value.output ?? value.result ?? value.content ?? null;
+}
+
 function mergeProjectedToolItems(messages, items, targetIndex = messages.length - 1) {
   if (messages.length === 0 || items.length === 0) return messages;
   const copy = [...messages];
@@ -160,6 +165,7 @@ function mergeProjectedToolItems(messages, items, targetIndex = messages.length 
       (block) => block.type === 'tool' && block.call_id === callId
     );
     const toolName = item.name || item.toolName || item.tool || 'tool';
+    const output = projectedToolOutput(item);
     const nextBlock = {
       type: 'tool',
       id: callId,
@@ -169,8 +175,8 @@ function mergeProjectedToolItems(messages, items, targetIndex = messages.length 
       arguments: item.arguments ?? {},
       args: item.arguments ?? {},
       status: projectedStatus(item.status),
-      output: item.output ?? null,
-      error: item.status === 'failed' ? item.output ?? 'Tool failed' : null,
+      output,
+      error: item.status === 'failed' ? output ?? 'Tool failed' : null,
     };
 
     if (existingIndex === -1) {
@@ -183,7 +189,7 @@ function mergeProjectedToolItems(messages, items, targetIndex = messages.length 
       ...nextBlock,
       arguments: item.arguments ?? blocks[existingIndex].arguments ?? {},
       args: item.arguments ?? blocks[existingIndex].args ?? {},
-      output: item.output ?? blocks[existingIndex].output ?? null,
+      output: output ?? blocks[existingIndex].output ?? null,
     };
   }
 
@@ -853,6 +859,7 @@ export function aggregateStreamEvent(messages, data) {
     }
 
     if (type === 'tool_finished') {
+      const output = projectedToolOutput(evt) ?? '';
       for (let i = blocks.length - 1; i >= 0; i--) {
         if (
           blocks[i].type === 'tool' &&
@@ -861,7 +868,7 @@ export function aggregateStreamEvent(messages, data) {
           blocks[i] = {
             ...blocks[i],
             status: evt.error ? 'failed' : 'completed',
-            output: evt.output || evt.result || '',
+            output,
             error: evt.error || null,
           };
           break;

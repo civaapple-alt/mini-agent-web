@@ -121,6 +121,35 @@ test('message stream aggregation cleanly sequences thinking, text, and tools', (
   assert.equal(messages[0].blocks.every((b) => !b.isStreaming), true);
 });
 
+test('legacy tool_finished content is preserved as the read_file output', () => {
+  let messages = aggregateStreamEvent([], {
+    type: 'event',
+    turnId: 'turn-read-file-content',
+    event: { type: 'turn_started' },
+  });
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-read-file-content',
+    event: {
+      type: 'tool_started',
+      tool: 'read_file',
+      call_id: 'call-read-file-content',
+      args: { path: 'scripts/car_model.py', offset: 40, limit: 12 },
+    },
+  });
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-read-file-content',
+    event: {
+      type: 'tool_finished',
+      call_id: 'call-read-file-content',
+      content: '41: page content',
+    },
+  });
+
+  assert.equal(messages[0].blocks[0].output, '41: page content');
+});
+
 test('late reasoning remains before the final answer', () => {
   let messages = aggregateStreamEvent([], {
     type: 'event',

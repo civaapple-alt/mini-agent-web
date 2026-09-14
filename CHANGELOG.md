@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Partial `read_file` result visibility**: preserve the protocol's `content`
+  field when reconciling legacy tool-finished events, show requested line ranges
+  in the tool summary, and auto-expand bounded completed `read_file` results so
+  paginated content and `next_offset` are visible in the message stream.
+
 - **Long reasoning visibility**: keep the bounded ThinkingBlock viewport
   following newly streamed reasoning until the user scrolls upward; returning
   to the bottom resumes following the latest content.

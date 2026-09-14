@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Terminal,
   FileText,
@@ -23,16 +23,23 @@ export default function ToolCard({
   const [showOutput, setShowOutput] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const { status, output, error, id } = tool;
+  const { status, error, id } = tool;
   const name = tool.name || tool.toolName || tool.tool || tool.tool_name || '';
   const args = tool.arguments ?? tool.args;
+  const output = tool.output ?? tool.result ?? tool.content ?? null;
   const normalizedStatus = status === 'inProgress' ? 'running' : status;
   const isRunning = normalizedStatus === 'running';
   const isFailed = normalizedStatus === 'failed' || !!error;
+  const isReadFile = name.toLowerCase() === 'read_file';
+  const hasSettledOutput = !isRunning && (error != null || output != null);
   const approvalState = tool.approval?.state || null;
   const pendingCallId = pendingApproval?.data?.callId || pendingApproval?.data?.call_id;
   const pendingRequestId = pendingApproval?.requestId;
   const pendingToolName = pendingApproval?.data?.toolName || pendingApproval?.data?.tool_name;
+
+  useEffect(() => {
+    if (isReadFile && hasSettledOutput) setShowOutput(true);
+  }, [hasSettledOutput, isReadFile, output, error]);
 
   // Check if this tool is currently awaiting human approval
   const isAwaitingApproval =
@@ -90,6 +97,15 @@ export default function ToolCard({
       argsSummary = args.command;
     } else if (args.path || args.file_path || args.target_file || args.TargetFile || args.AbsolutePath) {
       argsSummary = args.path || args.file_path || args.target_file || args.TargetFile || args.AbsolutePath;
+      if (isReadFile && (args.offset !== undefined || args.limit !== undefined)) {
+        const offset = Number.isInteger(args.offset) && args.offset >= 0 ? args.offset : 0;
+        const limit = Number.isInteger(args.limit) && args.limit > 0 ? args.limit : null;
+        const firstLine = offset + 1;
+        const lastLine = limit ? offset + limit : null;
+        argsSummary += lastLine
+          ? ` · 第 ${firstLine}-${lastLine} 行`
+          : ` · 第 ${firstLine} 行起`;
+      }
     } else if (args.query || args.pattern || args.url) {
       argsSummary = args.query || args.pattern || args.url;
     } else if (Object.keys(args).length > 0) {

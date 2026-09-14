@@ -102,6 +102,15 @@ Turn 发送后，流式输出了部分思考链，随后一直停留在某个工
   网关会把该审批明确记为拒绝并唤醒 App Server，然后等待当前 Turn 的终态事件。此时不要
   重复点击审批；若仍停留在“停止中”，先确认 Gateway 日志中有对应 `turnId` 的停止请求，
   再刷新页面让 Studio 通过运行状态和事件回放完成核对。
+- **同一轮出现多个审批**：工具审批按 `Project + Thread + Turn + call_id` 区分，页面一次展示
+  一个待处理项并在标题显示队列数量，完成当前项后自动展示下一项。`requestId` 是传输标识，
+  不能在多个待审批项之间单独使用；如果外部客户端没有提供 `call_id` 且 request ID 重复，
+  网关会拒绝这次有歧义的响应，避免误放行另一条工具调用。
+- **审批证据与完整命令**：`approval-evidence.jsonl` 保持有界，只记录审批类型、`call_id`、
+  `session_item_id`、策略和哈希。需要核对完整命令时，用 `session_item_id`/`call_id` 关联同一
+  Thread 的 Session 日志；不要把完整命令复制进审批 trace，也不要仅凭 `action_summary` 还原
+  命令。Turn 在中断或运行时断开前未提交 Session item 时，trace 可能没有可关联的完整命令，
+  这属于有意保留的证据边界。
 
 ### 执行策略切换
 

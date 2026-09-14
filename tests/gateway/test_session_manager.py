@@ -205,6 +205,48 @@ async def test_session_manager_approval_is_typed_and_not_web_persisted(
 
 
 @pytest.mark.asyncio
+async def test_duplicate_provider_request_ids_are_resolved_by_call_identity(
+    mock_session_manager,
+):
+    """A reused provider request ID cannot overwrite another tool wait."""
+    base = {
+        "requestId": "approval-reused",
+        "actionSummary": "shell command",
+        "toolName": "shell",
+        "access": "project",
+        "allowedGrantScopes": ["once"],
+        "projectId": "default",
+        "threadId": "thread-reused",
+        "turnId": "turn-reused",
+    }
+    first_task = asyncio.create_task(
+        mock_session_manager._handle_approval_request({**base, "callId": "call-first"})
+    )
+    second_task = asyncio.create_task(
+        mock_session_manager._handle_approval_request({**base, "callId": "call-second"})
+    )
+    await asyncio.sleep(0.01)
+
+    assert len(mock_session_manager._pending_approvals) == 2
+    assert mock_session_manager.list_pending_approvals() == [
+        "approval-reused",
+        "approval-reused",
+    ]
+    assert mock_session_manager.resolve_approval(
+        "approval-reused", "approve", "once", call_id="call-first"
+    )
+    assert not mock_session_manager.resolve_approval("approval-reused", "deny", None), (
+        "request-id-only responses must be rejected while the ID is ambiguous"
+    )
+    assert mock_session_manager.resolve_approval(
+        "approval-reused", "deny", None, call_id="call-second"
+    )
+
+    assert (await first_task)["decision"] == "approve"
+    assert (await second_task)["decision"] == "deny"
+
+
+@pytest.mark.asyncio
 async def test_websocket_broadcast_is_project_scoped(mock_session_manager):
     """Runtime notifications do not cross project-bound WebSocket clients."""
 
@@ -628,6 +670,7 @@ async def test_interrupt_cancels_approval_and_denies_late_request(
     assert mock_session_manager.list_pending_approvals() == []
     resolved = mock_session_manager.broadcast_ws.await_args_list[-1].args[0]
     assert resolved["approval"]["reason"] == "当前 Turn 已停止，审批已失效"
+    assert resolved["approval"]["state"] == "expired"
 
 
 @pytest.mark.asyncio

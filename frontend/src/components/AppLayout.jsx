@@ -33,6 +33,7 @@ export default function AppLayout({
   planActive,
   isInterrupting,
   pendingApproval,
+  pendingApprovalCount = 0,
   onContinuePlanning,
   onStartImplementation,
   onClosePlan,
@@ -154,6 +155,7 @@ export default function AppLayout({
             sessionReadOnly={sessionReadOnly}
             projectId={currentThreadProject}
             pendingApproval={pendingApproval}
+            pendingApprovalCount={pendingApprovalCount}
             onRespondApproval={onRespondApproval}
             onStartPlanTask={onStartPlanTask}
             onStartGoal={onStartGoal}

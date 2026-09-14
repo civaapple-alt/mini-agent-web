@@ -119,11 +119,13 @@ test('api client methods construct expected fetch endpoints and payloads', async
     projectId: 'project-2',
     threadId: 'thread-2',
     turnId: 'turn-2',
+    callId: 'call-2',
   });
   const scopedApprovalBody = JSON.parse(calls[calls.length - 1].options.body);
   assert.equal(scopedApprovalBody.project_id, 'project-2');
   assert.equal(scopedApprovalBody.thread_id, 'thread-2');
   assert.equal(scopedApprovalBody.turn_id, 'turn-2');
+  assert.equal(scopedApprovalBody.call_id, 'call-2');
 });
 
 test('thread settings preserve the server guard detail on conflict', async (t) => {

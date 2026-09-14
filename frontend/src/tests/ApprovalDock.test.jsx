@@ -32,4 +32,33 @@ describe('ApprovalDock', () => {
     fireEvent.click(buttons[0]);
     expect(onRespondApproval).not.toHaveBeenCalled();
   });
+
+  it('sends the stable tool call id when approving one item in a queue', () => {
+    const onRespondApproval = vi.fn();
+
+    render(
+      <ApprovalDock
+        pendingApproval={{
+          requestId: 'approval-reused',
+          data: {
+            actionSummary: 'shell command `pwd`',
+            callId: 'call-second',
+            allowedGrantScopes: ['once'],
+          },
+        }}
+        pendingApprovalCount={2}
+        onRespondApproval={onRespondApproval}
+      />,
+    );
+
+    expect(screen.getByText('待审批 2 项 · ID: approval-reused')).toBeDefined();
+    fireEvent.click(screen.getByText('允许本次 (Once)'));
+    expect(onRespondApproval).toHaveBeenCalledWith(
+      'approval-reused',
+      'approve',
+      '',
+      'once',
+      'call-second',
+    );
+  });
 });

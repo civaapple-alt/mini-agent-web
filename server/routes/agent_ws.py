@@ -194,6 +194,7 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     project_id,
                     data.get("threadId") or data.get("thread_id"),
                     data.get("turnId") or data.get("turn_id"),
+                    data.get("callId") or data.get("call_id"),
                 )
                 if not resolved:
                     await websocket.send_json(
@@ -204,6 +205,7 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                             "projectId": project_id,
                             "threadId": data.get("threadId") or data.get("thread_id"),
                             "turnId": data.get("turnId") or data.get("turn_id"),
+                            "callId": data.get("callId") or data.get("call_id"),
                             "message": "审批请求不存在、已处理或会话身份不匹配",
                         }
                     )
@@ -213,6 +215,10 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     decision=decision,
                     grant_scope=grant_scope,
                     reason=reason,
+                    call_id=data.get("callId") or data.get("call_id"),
+                    project_id=project_id,
+                    thread_id=data.get("threadId") or data.get("thread_id"),
+                    turn_id=data.get("turnId") or data.get("turn_id"),
                 )
                 await websocket.send_json(
                     {
@@ -221,6 +227,7 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                         "projectId": project_id,
                         "threadId": data.get("threadId") or data.get("thread_id"),
                         "turnId": data.get("turnId") or data.get("turn_id"),
+                        "callId": data.get("callId") or data.get("call_id"),
                     }
                 )
 

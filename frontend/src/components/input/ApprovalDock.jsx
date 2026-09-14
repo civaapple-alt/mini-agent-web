@@ -3,6 +3,7 @@ import { Check, ShieldAlert, X } from 'lucide-react';
 
 export default function ApprovalDock({
   pendingApproval,
+  pendingApprovalCount = 1,
   isInterrupting,
   onRespondApproval,
 }) {
@@ -16,7 +17,13 @@ export default function ApprovalDock({
       : String(pendingApproval.data);
 
   const handleApprove = (scope = 'once') => {
-    onRespondApproval?.(pendingApproval.requestId, 'approve', '', scope);
+    onRespondApproval?.(
+      pendingApproval.requestId,
+      'approve',
+      '',
+      scope,
+      pendingApproval.data?.callId || pendingApproval.data?.call_id || null,
+    );
     setShowDenyInput(false);
     setDenyReason('');
   };
@@ -31,6 +38,7 @@ export default function ApprovalDock({
       'deny',
       denyReason.trim(),
       null,
+      pendingApproval.data?.callId || pendingApproval.data?.call_id || null,
     );
     setShowDenyInput(false);
     setDenyReason('');
@@ -48,6 +56,9 @@ export default function ApprovalDock({
           </span>
         </div>
         <span className="dock-request-id font-mono">
+          {pendingApprovalCount > 1
+            ? `待审批 ${pendingApprovalCount} 项 · `
+            : ''}
           ID: {pendingApproval.requestId}
         </span>
       </div>

@@ -6,6 +6,7 @@ import asyncio
 import logging
 from collections import OrderedDict
 from typing import Any, Protocol
+from uuid import uuid4
 
 logger = logging.getLogger("mini_agent.server")
 
@@ -44,6 +45,66 @@ class ApprovalBridge:
             details.get("threadId") or data.get("threadId") or data.get("thread_id"),
             details.get("turnId") or data.get("turnId") or data.get("turn_id"),
         )
+
+    @staticmethod
+    def approval_request_id(details: dict[str, Any]) -> str:
+        data = details.get("data", {})
+        return str(details.get("requestId") or data.get("requestId") or "")
+
+    @staticmethod
+    def approval_call_id(details: dict[str, Any]) -> str | None:
+        data = details.get("data", {})
+        value = data.get("callId") or data.get("call_id")
+        return str(value) if value else None
+
+    def _allocate_entry_key(self, request_id: str) -> str:
+        """Allocate a local key without treating a provider ID as unique."""
+        owner = self._owner
+        if request_id not in owner._pending_approvals:
+            return request_id
+        key = f"{request_id}:{uuid4().hex}"
+        while key in owner._pending_approvals:
+            key = f"{request_id}:{uuid4().hex}"
+        return key
+
+    def _find_pending_entry(
+        self,
+        request_id: str,
+        call_id: str | None = None,
+        project_id: str | None = None,
+        thread_id: str | None = None,
+        turn_id: str | None = None,
+    ) -> tuple[str, dict[str, Any]] | None:
+        """Find exactly one pending approval by its scoped tool identity."""
+        candidates: list[tuple[str, dict[str, Any]]] = []
+        for entry_key, details in self._owner._pending_approval_details.items():
+            if self.approval_request_id(details) != request_id:
+                continue
+            request_call_id = self.approval_call_id(details)
+            if call_id and request_call_id != call_id:
+                continue
+            # A request-id-only response remains compatible for a single
+            # pending entry. If the provider reused the ID, the candidate
+            # count check below rejects it instead of choosing arbitrarily.
+            request_project, request_thread, request_turn = self.approval_identity(
+                details
+            )
+            if project_id and project_id != request_project:
+                continue
+            if thread_id and thread_id != request_thread:
+                continue
+            if turn_id and turn_id != request_turn:
+                continue
+            candidates.append((entry_key, details))
+        if len(candidates) != 1:
+            if candidates:
+                logger.warning(
+                    "Rejected ambiguous approval response request_id=%s call_id=%s",
+                    request_id,
+                    call_id,
+                )
+            return None
+        return candidates[0]
 
     @staticmethod
     def turn_identity(
@@ -89,7 +150,7 @@ class ApprovalBridge:
         """Deny and remove approval waits matching one runtime/Turn identity."""
         owner = self._owner
         cancelled: list[tuple[str, dict[str, Any]]] = []
-        for request_id, details in list(owner._pending_approval_details.items()):
+        for entry_key, details in list(owner._pending_approval_details.items()):
             request_project, request_thread, request_turn = self.approval_identity(
                 details
             )
@@ -101,7 +162,7 @@ class ApprovalBridge:
                 continue
             if runtime_id and details.get("runtimeId") != runtime_id:
                 continue
-            future = owner._pending_approvals.get(request_id)
+            future = owner._pending_approvals.get(entry_key)
             # Resolve the wait with a typed denial instead of cancelling the
             # Future. The SDK approval handler must send approval/respond to
             # the App Server; a bare Future cancellation can leave the Rust
@@ -118,15 +179,18 @@ class ApprovalBridge:
                         "reason": reason,
                     }
                 )
-            owner._pending_approvals.pop(request_id, None)
-            owner._pending_approval_details.pop(request_id, None)
-            cancelled.append((request_id, details))
+            owner._pending_approvals.pop(entry_key, None)
+            owner._pending_approval_details.pop(entry_key, None)
+            cancelled.append((entry_key, details))
 
-        for request_id, details in cancelled:
+        for entry_key, details in cancelled:
+            request_id = self.approval_request_id(details) or entry_key
             approval = {
                 **details.get("data", {}),
                 "requestId": request_id,
                 "phase": "resolved",
+                "state": "expired",
+                "cancelled": True,
                 "decision": "deny",
                 "reason": reason,
             }
@@ -187,8 +251,11 @@ class ApprovalBridge:
 
         loop = asyncio.get_running_loop()
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
-        owner._pending_approvals[req_id] = future
-        owner._pending_approval_details[req_id] = {
+        entry_key = self._allocate_entry_key(req_id)
+        owner._pending_approvals[entry_key] = future
+        owner._pending_approval_details[entry_key] = {
+            "requestId": req_id,
+            "approvalKey": entry_key,
             "action_name": action_name,
             "data": req_data,
             "projectId": resolved_project_id,
@@ -218,8 +285,8 @@ class ApprovalBridge:
                 "reason": "Approval request timed out or cancelled",
             }
         finally:
-            owner._pending_approvals.pop(req_id, None)
-            owner._pending_approval_details.pop(req_id, None)
+            owner._pending_approvals.pop(entry_key, None)
+            owner._pending_approval_details.pop(entry_key, None)
 
     def resolve_approval(
         self,
@@ -230,22 +297,17 @@ class ApprovalBridge:
         project_id: str | None = None,
         thread_id: str | None = None,
         turn_id: str | None = None,
+        call_id: str | None = None,
     ) -> bool:
         """Resolve a pending approval after validating its scoped identity."""
         owner = self._owner
-        details = owner._pending_approval_details.get(request_id)
-        if not details:
+        entry = self._find_pending_entry(
+            request_id, call_id, project_id, thread_id, turn_id
+        )
+        if not entry:
             return False
+        entry_key, details = entry
         data = details.get("data", {})
-        request_project = details.get("projectId") or data.get("projectId")
-        request_thread = details.get("threadId") or data.get("threadId")
-        request_turn = details.get("turnId") or data.get("turnId")
-        if project_id and project_id != request_project:
-            return False
-        if thread_id and thread_id != request_thread:
-            return False
-        if turn_id and turn_id != request_turn:
-            return False
         allowed_grant_scopes = data.get("allowedGrantScopes", [])
         if decision.lower() == "approve" and grant_scope not in allowed_grant_scopes:
             logger.warning("Rejected out-of-scope approval response: %s", request_id)
@@ -255,7 +317,7 @@ class ApprovalBridge:
         if decision.lower() not in ("approve", "deny"):
             return False
 
-        future = owner._pending_approvals.get(request_id)
+        future = owner._pending_approvals.get(entry_key)
         if future and not future.done():
             future.set_result(
                 {
@@ -273,11 +335,18 @@ class ApprovalBridge:
         decision: str,
         grant_scope: str | None,
         reason: str | None = None,
+        call_id: str | None = None,
+        project_id: str | None = None,
+        thread_id: str | None = None,
+        turn_id: str | None = None,
     ) -> bool:
         owner = self._owner
-        details = owner._pending_approval_details.get(request_id)
-        if not details:
+        entry = self._find_pending_entry(
+            request_id, call_id, project_id, thread_id, turn_id
+        )
+        if not entry:
             return False
+        _entry_key, details = entry
         data = dict(details.get("data", {}))
         project_id = details.get("projectId") or data.get("projectId")
         thread_id = details.get("threadId") or data.get("threadId")
@@ -308,18 +377,10 @@ class ApprovalBridge:
     ) -> list[str]:
         owner = self._owner
         return [
-            request_id
-            for request_id in owner._pending_approvals
-            if (
-                not project_id
-                or owner._pending_approval_details.get(request_id, {}).get("projectId")
-                in (None, project_id)
-            )
-            and (
-                not thread_id
-                or owner._pending_approval_details.get(request_id, {}).get("threadId")
-                == thread_id
-            )
+            self.approval_request_id(details) or entry_key
+            for entry_key, details in owner._pending_approval_details.items()
+            if (not project_id or details.get("projectId") in (None, project_id))
+            and (not thread_id or details.get("threadId") == thread_id)
         ]
 
     def approval_snapshot(
@@ -332,7 +393,7 @@ class ApprovalBridge:
         resolved_project_id = project_id or owner._current_project_id
         access, policy = owner.project_execution(resolved_project_id)
         pending = []
-        for request_id, details in owner._pending_approval_details.items():
+        for entry_key, details in owner._pending_approval_details.items():
             if project_id and details.get("projectId") not in (
                 None,
                 resolved_project_id,
@@ -342,7 +403,8 @@ class ApprovalBridge:
                 continue
             pending.append(
                 {
-                    "request_id": request_id,
+                    "request_id": self.approval_request_id(details) or entry_key,
+                    "approval_key": entry_key,
                     "action_name": details.get("action_name", ""),
                     "project_id": details.get("projectId"),
                     "thread_id": details.get("threadId"),

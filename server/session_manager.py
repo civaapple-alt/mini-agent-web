@@ -343,6 +343,10 @@ class SessionManager:
 
     async def restart_for_current_project(self) -> None:
         """Restart only the current Project runtime without touching other Projects."""
+        await self.cancel_pending_approvals(
+            project_id=self._current_project_id,
+            reason="项目运行时即将重启，审批已失效",
+        )
         async with self._lock:
             project_id = self._current_project_id
             active_keys = {
@@ -407,13 +411,6 @@ class SessionManager:
             if current_default_project == project_id:
                 self._client = None
             self._initialized = False
-            for request_id, details in list(self._pending_approval_details.items()):
-                if details.get("projectId") != project_id:
-                    continue
-                future = self._pending_approvals.pop(request_id, None)
-                self._pending_approval_details.pop(request_id, None)
-                if future and not future.done():
-                    future.cancel()
         for client in set(clients):
             await client.stop()
         await self.start()
@@ -445,6 +442,7 @@ class SessionManager:
                 if not fut.done():
                     fut.cancel()
             self._pending_approvals.clear()
+            self._pending_approval_details.clear()
 
             # 3. Stop Gateway-owned stream tasks before terminating clients.
             tasks: list[asyncio.Task[Any]] = []
@@ -853,6 +851,7 @@ class SessionManager:
         project_id: str | None = None,
         thread_id: str | None = None,
         turn_id: str | None = None,
+        call_id: str | None = None,
     ) -> bool:
         """Resolve a pending approval; grant authority remains in Host/Capabilities."""
         return self._approval_bridge.resolve_approval(
@@ -863,6 +862,7 @@ class SessionManager:
             project_id,
             thread_id,
             turn_id,
+            call_id,
         )
 
     async def broadcast_approval_resolution(
@@ -871,6 +871,10 @@ class SessionManager:
         decision: str,
         grant_scope: str | None,
         reason: str | None = None,
+        call_id: str | None = None,
+        project_id: str | None = None,
+        thread_id: str | None = None,
+        turn_id: str | None = None,
     ) -> bool:
         """Broadcast an accepted approval decision to every scoped Studio client.
 
@@ -880,7 +884,14 @@ class SessionManager:
         without waiting for the tool runtime to reach its next notification.
         """
         return await self._approval_bridge.broadcast_approval_resolution(
-            request_id, decision, grant_scope, reason
+            request_id,
+            decision,
+            grant_scope,
+            reason,
+            call_id,
+            project_id,
+            thread_id,
+            turn_id,
         )
 
     def list_pending_approvals(

@@ -62,6 +62,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   docks close authoritatively, duplicate or late responses show a conflict/expiry
   warning, and a disconnected WebSocket falls back to the HTTP approval endpoint.
 
+- **Concurrent approval identity and queueing**: approval waits now use the
+  scoped tool `call_id` when provider `requestId` values collide; Gateway
+  routing rejects ambiguous request-id-only responses, while Web Studio queues
+  multiple approvals one at a time and preserves each result in the transcript.
+
 - **Approval-safe Turn interruption and Plan lifecycle**: stopping a Turn now
   invalidates its pending and late approval requests before cancelling the local
   stream; a failed remote interrupt no longer masquerades as a settled Turn; the

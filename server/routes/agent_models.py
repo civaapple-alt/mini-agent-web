@@ -57,3 +57,7 @@ class ApprovalResponseRequest(BaseModel):
     )
     thread_id: str | None = Field(default=None, description="Target Thread ID")
     turn_id: str | None = Field(default=None, description="Target active Turn ID")
+    call_id: str | None = Field(
+        default=None,
+        description="Stable tool call ID for duplicate request-id disambiguation",
+    )

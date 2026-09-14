@@ -8,6 +8,7 @@ import {
   aggregateThreadItems,
   assignHistoryTurnIds,
   filterEmptyMessages,
+  approvalIdentity,
   mergeApprovalEvent,
   shouldIgnoreApprovalWhileInterrupting,
   shouldSettleActiveTurnFromError,
@@ -54,6 +55,7 @@ export default function App() {
   const [isInterrupting, setIsInterrupting] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState(null);
   const [pendingApproval, setPendingApproval] = useState(null);
+  const [pendingApprovals, setPendingApprovals] = useState([]);
   const [pendingMessages, setPendingMessages] = useState([]);
   const [composerDraft, setComposerDraft] = useState(null);
   const [lastTurnResult, setLastTurnResult] = useState(null);
@@ -101,7 +103,8 @@ export default function App() {
   const currentThreadProjectRef = useRef(currentThreadProject);
   const goalStateRef = useRef(goalState);
   const pendingApprovalRef = useRef(pendingApproval);
-  const approvalSubmissionRef = useRef(null);
+  const pendingApprovalsRef = useRef(pendingApprovals);
+  const approvalSubmissionRef = useRef(new Map());
   const resolvedApprovalIdsRef = useRef(new Set());
   const selectionPersistenceReadyRef = useRef(false);
   const sessionEpochRef = useRef(0);
@@ -115,7 +118,47 @@ export default function App() {
   currentThreadRef.current = currentThread;
   currentThreadProjectRef.current = currentThreadProject;
   pendingApprovalRef.current = pendingApproval;
+  pendingApprovalsRef.current = pendingApprovals;
   setActiveProjectId(currentThreadProject);
+
+  const clearPendingApprovals = () => {
+    setPendingApprovals([]);
+    setPendingApproval(null);
+  };
+
+  const enqueuePendingApproval = (approval) => {
+    if (!approval?.requestId) return;
+    const key = approvalIdentity(approval);
+    setPendingApprovals((previous) => {
+      const existingIndex = previous.findIndex(
+        (item) => approvalIdentity(item) === key,
+      );
+      if (existingIndex === -1) return [...previous, approval];
+      const copy = [...previous];
+      copy[existingIndex] = approval;
+      return copy;
+    });
+    setPendingApproval((current) => {
+      if (!current || approvalIdentity(current) === key) return approval;
+      return current;
+    });
+  };
+
+  const removePendingApproval = (approval) => {
+    const key = approvalIdentity(approval);
+    setPendingApprovals((previous) => previous.filter(
+      (item) => approvalIdentity(item) !== key,
+    ));
+    setPendingApproval((current) => (
+      current && approvalIdentity(current) === key ? null : current
+    ));
+  };
+
+  useEffect(() => {
+    if (!pendingApproval && pendingApprovals.length > 0) {
+      setPendingApproval(pendingApprovals[0]);
+    }
+  }, [pendingApproval, pendingApprovals]);
 
   const showToast = (message, type = 'info', duration = 3000) => {
     const id = 'toast_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
@@ -209,8 +252,8 @@ export default function App() {
     interruptPendingRef.current = false;
     interruptTurnIdRef.current = null;
     queueDispatchingRef.current = false;
-    setPendingApproval(null);
-    approvalSubmissionRef.current = null;
+    clearPendingApprovals();
+    approvalSubmissionRef.current.clear();
     setPendingMessages([]);
     setComposerDraft(null);
     setLastTurnResult(null);
@@ -342,26 +385,40 @@ export default function App() {
         signal: requestContext.signal,
       });
       if (!isCurrentSessionRequest(requestContext)) return;
-      const pending = snapshot.pending_requests?.[0];
-      if (!pending) {
-        setPendingApproval(null);
+      const approvals = (snapshot.pending_requests || [])
+        .map((pending) => {
+          const data = pending.data || {};
+          return {
+            requestId: pending.request_id || data.requestId,
+            data: {
+              ...data,
+              projectId: pending.project_id || data.projectId || projectId,
+              threadId: pending.thread_id || data.threadId || threadId,
+              turnId: pending.turn_id || data.turnId || null,
+            },
+          };
+        })
+        .filter((approval) => (
+          approval.requestId
+          && !resolvedApprovalIdsRef.current.has(approvalIdentity(approval))
+        ));
+      const uniqueApprovals = approvals.filter((approval, index) => (
+        approvals.findIndex(
+          (item) => approvalIdentity(item) === approvalIdentity(approval),
+        ) === index
+      ));
+      if (uniqueApprovals.length === 0) {
+        clearPendingApprovals();
         return;
       }
-      const pendingRequestId = pending.request_id || pending.data?.requestId;
-      if (pendingRequestId && resolvedApprovalIdsRef.current.has(pendingRequestId)) {
-        setPendingApproval(null);
-        return;
-      }
-      const data = pending.data || {};
-      setPendingApproval({
-        requestId: pending.request_id || data.requestId,
-        data: {
-          ...data,
-          projectId: pending.project_id || data.projectId || projectId,
-          threadId: pending.thread_id || data.threadId || threadId,
-          turnId: pending.turn_id || data.turnId || null,
-        },
-      });
+      setPendingApprovals(uniqueApprovals);
+      setPendingApproval((current) => (
+        current && uniqueApprovals.some(
+          (item) => approvalIdentity(item) === approvalIdentity(current),
+        )
+          ? current
+          : uniqueApprovals[0]
+      ));
     } catch (err) {
       if (isAbortError(err) || !isCurrentSessionRequest(requestContext)) return;
       console.debug('Failed to load pending approval:', err);
@@ -833,11 +890,42 @@ export default function App() {
       });
       if (data.scope === 'approval') {
         const requestId = data.requestId || data.request_id;
-        const knownPending = pendingApprovalRef.current?.requestId === requestId;
-        const locallySubmitted = approvalSubmissionRef.current?.requestId === requestId;
+        const reportedCallId = data.callId || data.call_id;
+        const reportedProjectId = data.projectId || data.project_id;
+        const reportedThreadId = data.threadId || data.thread_id;
+        const reportedTurnId = data.turnId || data.turn_id;
+        const matchingApprovals = pendingApprovalsRef.current.filter((item) => {
+          const approvalData = item.data || {};
+          const itemCallId = approvalData.callId || approvalData.call_id;
+          const itemProjectId = approvalData.projectId || approvalData.project_id;
+          const itemThreadId = approvalData.threadId || approvalData.thread_id;
+          const itemTurnId = approvalData.turnId || approvalData.turn_id;
+          return item.requestId === requestId
+            && (!reportedCallId || itemCallId === reportedCallId)
+            && (!reportedProjectId || itemProjectId === reportedProjectId)
+            && (!reportedThreadId || itemThreadId === reportedThreadId)
+            && (!reportedTurnId || itemTurnId === reportedTurnId);
+        });
+        const trackedApproval = matchingApprovals.length === 1
+          ? matchingApprovals[0]
+          : null;
+        const trackedData = trackedApproval?.data || {};
+        const errorApproval = {
+          requestId: requestId || trackedApproval?.requestId,
+          data: {
+            ...trackedData,
+            callId: reportedCallId || trackedData.callId || trackedData.call_id,
+            projectId: data.projectId || data.project_id || trackedData.projectId || trackedData.project_id,
+            threadId: data.threadId || data.thread_id || trackedData.threadId || trackedData.thread_id,
+            turnId: data.turnId || data.turn_id || trackedData.turnId || trackedData.turn_id,
+          },
+        };
+        const errorKey = approvalIdentity(errorApproval);
+        const knownPending = Boolean(trackedApproval);
+        const locallySubmitted = approvalSubmissionRef.current.has(errorKey);
         if (knownPending) {
           setMessages((prev) => mergeApprovalEvent(prev, {
-            ...(pendingApprovalRef.current.data || {}),
+            ...(trackedApproval.data || {}),
             requestId,
             phase: 'resolved',
             state: 'expired',
@@ -845,10 +933,8 @@ export default function App() {
           }));
         }
         if (knownPending || locallySubmitted) {
-          setPendingApproval((current) => (
-            current?.requestId === requestId ? null : current
-          ));
-          approvalSubmissionRef.current = null;
+          removePendingApproval(errorApproval);
+          approvalSubmissionRef.current.delete(errorKey);
           showToast(
             '安全审批未生效：该请求可能已由其他浏览器处理或已失效，当前操作未执行。',
             'warning',
@@ -893,7 +979,7 @@ export default function App() {
         setIsGenerating(false);
         activeTurnIdRef.current = null;
         setActiveTurnId(null);
-        setPendingApproval(null);
+        clearPendingApprovals();
         loadThreads();
       }
       return;
@@ -901,20 +987,28 @@ export default function App() {
 
     // 2. Security Approval Interception
     if (data.type === 'approval_request') {
-      if (data.requestId) resolvedApprovalIdsRef.current.delete(data.requestId);
+      const incoming = {
+        requestId: data.requestId,
+        data: {
+          ...(data.data || {}),
+          projectId: data.data?.projectId || data.projectId || data.project_id,
+          threadId: data.data?.threadId || data.threadId || data.thread_id,
+          turnId: data.data?.turnId || data.turnId || data.turn_id,
+        },
+      };
+      if (incoming.requestId) {
+        resolvedApprovalIdsRef.current.delete(approvalIdentity(incoming));
+      }
       if (
         shouldIgnoreApprovalWhileInterrupting(
-          data.data,
+          incoming.data,
           interruptPendingRef.current,
           interruptTurnIdRef.current,
         )
       ) {
         return;
       }
-      setPendingApproval({
-        requestId: data.requestId,
-        data: data.data,
-      });
+      enqueuePendingApproval(incoming);
       setMessages((prev) => mergeApprovalEvent(prev, {
         ...(data.data || {}),
         requestId: data.requestId,
@@ -926,7 +1020,9 @@ export default function App() {
     if (data.type === 'approval') {
       const approval = data.approval || {};
       if (approval.phase === 'requested') {
-        if (approval.requestId) resolvedApprovalIdsRef.current.delete(approval.requestId);
+        if (approval.requestId) {
+          resolvedApprovalIdsRef.current.delete(approvalIdentity(approval));
+        }
         if (
           shouldIgnoreApprovalWhileInterrupting(
             approval,
@@ -936,22 +1032,23 @@ export default function App() {
         ) {
           return;
         }
-        setPendingApproval({
+        enqueuePendingApproval({
           requestId: approval.requestId,
           data: approval,
         });
         setMessages((prev) => mergeApprovalEvent(prev, approval));
       } else if (approval.phase === 'resolved') {
         const requestId = approval.requestId;
-        if (!requestId || !resolvedApprovalIdsRef.current.has(requestId)) {
+        const approvalKey = approvalIdentity(approval);
+        if (!requestId || !resolvedApprovalIdsRef.current.has(approvalKey)) {
           if (requestId) {
-            resolvedApprovalIdsRef.current.add(requestId);
+            resolvedApprovalIdsRef.current.add(approvalKey);
             if (resolvedApprovalIdsRef.current.size > 128) {
               const oldest = resolvedApprovalIdsRef.current.values().next().value;
               resolvedApprovalIdsRef.current.delete(oldest);
             }
           }
-          const locallySubmitted = approvalSubmissionRef.current?.requestId === requestId;
+          const locallySubmitted = approvalSubmissionRef.current.has(approvalKey);
           const stoppedHere = shouldIgnoreApprovalWhileInterrupting(
             approval,
             interruptPendingRef.current,
@@ -963,11 +1060,9 @@ export default function App() {
               ? 'current_window'
               : stoppedHere ? 'interrupted' : 'other_window',
           }));
-          setPendingApproval((current) =>
-            current?.requestId === requestId ? null : current
-          );
+          removePendingApproval({ requestId, data: approval });
           if (locallySubmitted) {
-            approvalSubmissionRef.current = null;
+            approvalSubmissionRef.current.delete(approvalKey);
           } else if (stoppedHere) {
             showToast('当前 Turn 已停止，待审批已失效。', 'info', 3500);
           } else {
@@ -1095,7 +1190,7 @@ export default function App() {
           setActiveTurnId(null);
           interruptPendingRef.current = false;
           interruptTurnIdRef.current = null;
-          setPendingApproval(null);
+          clearPendingApprovals();
           loadThreads();
           loadWorkflows(currentThreadRef.current);
           if (turnStatus === 'failed') {
@@ -1319,16 +1414,19 @@ export default function App() {
     // Keep the Turn identity until the authoritative turn_finished/error
     // arrives. Clearing it here makes a late terminal event look unscoped and
     // leaves the UI in "stopping" when the approval path settles first.
-    const approval = pendingApprovalRef.current;
-    if (approval) {
-      setMessages((prev) => mergeApprovalEvent(prev, {
-        ...(approval.data || {}),
-        requestId: approval.requestId,
-        phase: 'resolved',
-        state: 'expired',
-        source: 'interrupted',
-        reason: '当前 Turn 已停止，审批已失效。',
-      }));
+    const approvals = pendingApprovalsRef.current;
+    if (approvals.length > 0) {
+      setMessages((prev) => approvals.reduce(
+        (next, approval) => mergeApprovalEvent(next, {
+          ...(approval.data || {}),
+          requestId: approval.requestId,
+          phase: 'resolved',
+          state: 'expired',
+          source: 'interrupted',
+          reason: '当前 Turn 已停止，审批已失效。',
+        }),
+        prev,
+      ));
     }
     showToast('已发送停止生成请求', 'info', 1800);
     setMessages((prev) => {
@@ -1348,7 +1446,13 @@ export default function App() {
     });
   };
 
-  const handleRespondApproval = async (requestId, decision, reason = '', requestedScope = 'once') => {
+  const handleRespondApproval = async (
+    requestId,
+    decision,
+    reason = '',
+    requestedScope = 'once',
+    callId = null,
+  ) => {
     if (interruptPendingRef.current || isInterrupting) {
       // The dock is disabled during interruption. Keep its non-actionable
       // state visible until the Gateway publishes the resolved approval so a
@@ -1356,15 +1460,25 @@ export default function App() {
       showToast('当前轮次正在停止，该审批已失效。', 'info', 2500);
       return;
     }
-    if (approvalSubmissionRef.current?.requestId === requestId) {
+    const approval = pendingApprovalsRef.current.find((item) => (
+      item.requestId === requestId
+      && (!callId || (item.data?.callId || item.data?.call_id) === callId)
+    )) || pendingApprovalRef.current;
+    if (!approval) {
+      showToast('该审批已失效，请刷新当前会话状态。', 'warning', 3000);
+      return;
+    }
+    const approvalKey = approvalIdentity(approval);
+    if (approvalSubmissionRef.current.has(approvalKey)) {
       showToast('该审批正在提交，请等待其他浏览器同步结果。', 'info', 2500);
       return;
     }
-    const approval = pendingApproval?.data || {};
-    const approvalProjectId = approval.projectId || approval.project_id || currentThreadProject;
-    const approvalThreadId = approval.threadId || approval.thread_id || currentThread;
-    const approvalTurnId = approval.turnId || approval.turn_id || null;
-    const allowedScopes = approval.allowedGrantScopes || [];
+    const approvalData = approval?.data || {};
+    const approvalCallId = approvalData.callId || approvalData.call_id || callId;
+    const approvalProjectId = approvalData.projectId || approvalData.project_id || currentThreadProject;
+    const approvalThreadId = approvalData.threadId || approvalData.thread_id || currentThread;
+    const approvalTurnId = approvalData.turnId || approvalData.turn_id || null;
+    const allowedScopes = approvalData.allowedGrantScopes || [];
     const selectedScope = allowedScopes.includes(requestedScope)
       ? requestedScope
       : decision === 'approve' ? allowedScopes[0] : null;
@@ -1377,8 +1491,14 @@ export default function App() {
       project_id: approvalProjectId,
       threadId: approvalThreadId,
       turnId: approvalTurnId,
+      callId: approvalCallId,
     };
-    approvalSubmissionRef.current = { requestId, decision };
+    approvalSubmissionRef.current.set(approvalKey, {
+      requestId,
+      callId: approvalCallId,
+      identity: approvalKey,
+      decision,
+    });
     try {
       const sent = wsRef.current?.send(payload) || false;
       if (!sent) {
@@ -1391,12 +1511,13 @@ export default function App() {
             projectId: approvalProjectId,
             threadId: approvalThreadId,
             turnId: approvalTurnId,
+            callId: approvalCallId,
           },
         );
       }
     } catch {
-      approvalSubmissionRef.current = null;
-      setPendingApproval(null);
+      approvalSubmissionRef.current.delete(approvalKey);
+      enqueuePendingApproval(approval);
       showToast(
         '安全审批提交失败：该请求可能已由其他浏览器处理或已失效。',
         'warning',
@@ -1405,7 +1526,7 @@ export default function App() {
       loadPendingApproval(currentThreadRef.current, currentThreadProjectRef.current);
       return;
     }
-    setPendingApproval(null);
+    removePendingApproval(approval);
     showToast(`已提交安全审批决定: ${decision === 'approve' ? '允许执行' : '拒绝'}，正在同步其他浏览器`, 'info', 2500);
   };
 
@@ -1792,6 +1913,7 @@ export default function App() {
       statusModel={statusModel}
       isInterrupting={isInterrupting}
       pendingApproval={pendingApproval}
+      pendingApprovalCount={pendingApprovals.length}
       onContinuePlanning={handleContinuePlanning}
       onStartImplementation={handleStartImplementation}
       onClosePlan={() => handleSetPlanMode(false)}

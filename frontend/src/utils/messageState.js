@@ -65,6 +65,31 @@ function approvalField(approval, camel, snake = camel) {
   return approval?.[camel] ?? approval?.[snake];
 }
 
+function approvalPayload(approval) {
+  return approval?.data && typeof approval.data === 'object'
+    ? { ...approval.data, requestId: approval.requestId || approval.data.requestId }
+    : approval || {};
+}
+
+/**
+ * Stable UI identity for one approval wait. Provider request IDs are only a
+ * transport hint; call ID plus the owning scope identifies the tool call.
+ */
+export function approvalIdentity(approval) {
+  const payload = approvalPayload(approval);
+  const projectId = payload.projectId || payload.project_id || '';
+  const threadId = payload.threadId || payload.thread_id || '';
+  const turnId = payload.turnId || payload.turn_id || '';
+  const callId = payload.callId || payload.call_id;
+  const requestId = payload.requestId || payload.request_id || '';
+  return [
+    projectId,
+    threadId,
+    turnId,
+    callId ? `call:${callId}` : `request:${requestId}`,
+  ].join('\u001f');
+}
+
 function approvalResultState(approval) {
   if (approval?.phase === 'requested') return 'pending';
   if (approval?.state) return approval.state;
@@ -98,7 +123,7 @@ export function mergeApprovalEvent(messages, approval) {
         )
     ));
   }
-  if (targetIndex === -1 && requestId) {
+  if (targetIndex === -1 && requestId && !callId) {
     targetIndex = messages.findIndex((message) => (
       message.role === 'assistant'
         && (message.blocks || []).some(
@@ -117,7 +142,8 @@ export function mergeApprovalEvent(messages, approval) {
   const blocks = (current.blocks || []).map((block) => {
     if (block.type !== 'tool') return block;
     const matchesCall = callId && block.call_id === callId;
-    const matchesRequest = requestId && block.approval?.requestId === requestId;
+    const matchesRequest = !callId && requestId
+      && block.approval?.requestId === requestId;
     const matchesLegacyTool = !callId && !requestId && toolName
       && block.name === toolName && !block.approval;
     if (!matchesCall && !matchesRequest && !matchesLegacyTool) return block;

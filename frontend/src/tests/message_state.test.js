@@ -5,6 +5,7 @@ import {
   aggregateStreamEvent,
   aggregateThreadItems,
   assignHistoryTurnIds,
+  approvalIdentity,
   filterEmptyMessages,
   groupCompactionBlocks,
   mergeApprovalEvent,
@@ -612,6 +613,45 @@ test('approval results stay attached to the matching tool block', () => {
   assert.equal(next[0].blocks[0].approval.state, 'approved');
   assert.equal(next[0].blocks[0].approval.grantScope, 'once');
   assert.equal(next[0].blocks[1].approval, undefined);
+});
+
+test('approval identity keeps reused request ids distinct by tool call', () => {
+  assert.notEqual(
+    approvalIdentity({
+      requestId: 'approval-reused',
+      data: { projectId: 'project', threadId: 'thread', turnId: 'turn', callId: 'call-1' },
+    }),
+    approvalIdentity({
+      requestId: 'approval-reused',
+      data: { projectId: 'project', threadId: 'thread', turnId: 'turn', callId: 'call-2' },
+    }),
+  );
+});
+
+test('approval call identity wins over a colliding request id', () => {
+  const messages = [{
+    role: 'assistant',
+    turnId: 'turn-approval-collision',
+    blocks: [
+      {
+        type: 'tool',
+        call_id: 'call-1',
+        name: 'shell',
+        approval: { requestId: 'approval-reused' },
+      },
+      { type: 'tool', call_id: 'call-2', name: 'shell' },
+    ],
+  }];
+
+  const next = mergeApprovalEvent(messages, {
+    phase: 'resolved',
+    requestId: 'approval-reused',
+    callId: 'call-2',
+    outcome: 'denied',
+  });
+
+  assert.equal(next[0].blocks[0].approval.state, undefined);
+  assert.equal(next[0].blocks[1].approval.state, 'denied');
 });
 
 test('dedicated ThreadItem lifecycle notifications reconcile without duplicate tool blocks', () => {

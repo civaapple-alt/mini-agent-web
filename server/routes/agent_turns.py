@@ -224,6 +224,7 @@ async def respond_approval(req: ApprovalResponseRequest) -> dict[str, Any]:
         project_id=req.project_id,
         thread_id=req.thread_id,
         turn_id=req.turn_id,
+        call_id=req.call_id,
     )
     if not resolved:
         raise HTTPException(
@@ -235,11 +236,16 @@ async def respond_approval(req: ApprovalResponseRequest) -> dict[str, Any]:
         decision=req.decision,
         grant_scope=req.grant_scope,
         reason=req.reason,
+        call_id=req.call_id,
+        project_id=req.project_id,
+        thread_id=req.thread_id,
+        turn_id=req.turn_id,
     )
     return {
         "status": "resolved",
         "request_id": req.request_id,
         "decision": req.decision,
+        "call_id": req.call_id,
     }
 
 

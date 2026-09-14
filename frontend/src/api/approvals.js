@@ -13,6 +13,7 @@ export const approvalApi = {
         project_id: resolveProjectId(options.projectId),
         thread_id: options.threadId || null,
         turn_id: options.turnId || null,
+        call_id: options.callId || null,
       }),
       ...requestSignal(options),
     }, options.projectId);

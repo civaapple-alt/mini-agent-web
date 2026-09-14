@@ -27,6 +27,7 @@ export default function InputBar({
   sessionReadOnly = false,
   projectId = null,
   pendingApproval,
+  pendingApprovalCount = 0,
   onRespondApproval,
   onStartPlanTask,
   onStartGoal,
@@ -375,6 +376,7 @@ export default function InputBar({
 
       <ApprovalDock
         pendingApproval={pendingApproval}
+        pendingApprovalCount={pendingApprovalCount}
         isInterrupting={isInterrupting}
         onRespondApproval={onRespondApproval}
       />

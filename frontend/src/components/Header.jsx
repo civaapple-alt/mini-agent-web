@@ -16,6 +16,7 @@ export default function Header({
   currentThread,
   threadTitle,
   threadSummary,
+  sessionId,
   isConnected,
   onOpenSidePanel,
   onOpenSettings,
@@ -109,9 +110,19 @@ export default function Header({
               setNewTitle(threadTitle || currentThread);
               setIsEditingTitle(true);
             }}>
-              <span className="thread-title-text" title="点击重命名会话">
-                {threadTitle || currentThread}
-              </span>
+              <div className="thread-identity-copy">
+                <span className="thread-title-text" title="点击重命名会话">
+                  {threadTitle || currentThread}
+                </span>
+                {sessionId && (
+                  <span
+                    className="thread-session-id font-mono"
+                    title={`实际 Session ID: ${sessionId}`}
+                  >
+                    Session {sessionId}
+                  </span>
+                )}
+              </div>
               <Edit2 size={11} className="title-edit-hint" />
             </div>
           )}

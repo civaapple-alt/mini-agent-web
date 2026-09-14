@@ -32,6 +32,7 @@
 - [停止超时与大 Session 重启恢复](implemented/bug-fix/2026-09-14-session-recovery-after-large-checkpoint.md)
 - [Trusted 低打断工具执行](implemented/feature/2026-09-14-trusted-low-interruption-execution.md)
 - [用户输入 Trace 与 Thread 历史](implemented/feature/2026-09-14-user-input-trace-and-thread-history.md)
+- [Web Studio 实际 Session ID 展示](implemented/feature/2026-09-14-web-studio-session-id-visibility.md)
 
 ## 提案
 

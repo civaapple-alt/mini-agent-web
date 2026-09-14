@@ -197,6 +197,14 @@ Mini Agent 默认使用跨平台且现代的 **PowerShell 7 (`pwsh`)**。
 - 如果仍然无法恢复，先刷新 Web Studio，再检查对应 Project 的 SessionStore 和
   App Server 日志，避免删除 Session 文件来绕过锁。
 
+### 查看实际 Session ID
+
+Web Studio 的会话标题是可编辑的展示名称，不等同于磁盘上的 SessionStore
+身份。当前会话的 Header 会在标题下显示 `Session <session_id>`，项目会话树也会
+显示同一个 ID；鼠标悬停可以查看完整值。需要区分同一 Project/Thread 下的恢复、
+锁定或重复目录时，以这个 canonical `session_id` 和 Session 日志为准，Thread ID
+仍然只负责逻辑路由。
+
 ## 8. 侧栏出现多个“运行中”或上下文压缩记录连续出现
 
 侧栏的“运行中”只由当前 Project 中是否存在尚未结算的活跃 Turn 决定；SessionStore

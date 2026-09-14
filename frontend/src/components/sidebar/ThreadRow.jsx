@@ -30,9 +30,19 @@ export default function ThreadRow({
     <div
       className={`nested-thread-item ${isSelected ? 'selected' : ''} ${status.turnActive ? 'is-running' : ''}`}
       onClick={() => onSelectThread(thread.thread_id, thread.project)}
-      title={thread.title}
+      title={thread.session_id ? `${thread.title}\nSession ID: ${thread.session_id}` : thread.title}
     >
-      <span className="nested-thread-title">{thread.title}</span>
+      <div className="nested-thread-copy">
+        <span className="nested-thread-title">{thread.title}</span>
+        {thread.session_id && (
+          <span
+            className="nested-thread-session-id font-mono"
+            title={`实际 Session ID: ${thread.session_id}`}
+          >
+            {thread.session_id}
+          </span>
+        )}
+      </div>
 
       {status.lifecycleLabel && (
         <span

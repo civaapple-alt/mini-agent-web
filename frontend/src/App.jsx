@@ -50,6 +50,7 @@ export default function App() {
   const [currentThreadMeta, setCurrentThreadMeta] = useState({
     title: '默认会话 (Default Session)',
     summary: '',
+    sessionId: null,
   });
   const [messages, setMessages] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -456,6 +457,7 @@ export default function App() {
           setCurrentThreadMeta({
             title: cur.title || cur.thread_id,
             summary: cur.summary || '',
+            sessionId: cur.session_id || null,
           });
         }
       }
@@ -497,6 +499,7 @@ export default function App() {
     setCurrentThreadMeta({
       title: selected.title || nextThread,
       summary: selected.summary || '',
+      sessionId: selected.session_id || null,
     });
 
     // Establish the project-qualified routing context before reading the
@@ -694,13 +697,12 @@ export default function App() {
         }),
       ]);
       if (!isCurrentSessionRequest(requestContext)) return;
-      if (cp.metadata) {
-        setCurrentThreadMeta({
-          title: cp.metadata.title || threadId,
-          summary: cp.metadata.summary || '',
-        });
-      }
       const sessionSnapshot = cp.session || {};
+      setCurrentThreadMeta((previous) => ({
+        title: cp.metadata?.title || previous.title || threadId,
+        summary: cp.metadata ? (cp.metadata.summary || '') : (previous.summary || ''),
+        sessionId: sessionSnapshot.session_id || cp.session_id || previous.sessionId || null,
+      }));
       const turnActive = Boolean(
         cp.turn_active ?? sessionSnapshot.turn_active,
       );
@@ -1629,6 +1631,7 @@ export default function App() {
       setCurrentThreadMeta({
         title: selected.title || threadId,
         summary: selected.summary || '',
+        sessionId: selected.session_id || null,
       });
     }
     try {
@@ -1676,8 +1679,15 @@ export default function App() {
       setActiveProjectId(nextProject);
       setCurrentThread(tid);
       setCurrentThreadProject(nextProject);
-      setCurrentThreadMeta({ title: finalTitle, summary: '' });
-      await loadSettings(context);
+      setCurrentThreadMeta({
+        title: finalTitle,
+        summary: '',
+        sessionId: result.session_id || null,
+      });
+      await Promise.all([
+        loadSettings(context),
+        loadThreadHistory(tid, nextProject, context),
+      ]);
       showToast(`已创建新会话: ${finalTitle}`, 'success');
     } catch (err) {
       showToast(`创建新会话失败: ${err.message}`, 'error');

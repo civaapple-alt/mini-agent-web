@@ -119,6 +119,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Add mobile navigation, Escape-close drawers, semantic Light/Dark theme tokens,
   and explicit cancellation visibility for approval-pending Turns.
 
+- **Session identity visibility**: show the canonical SessionStore `session_id`
+  beside the display title in the current-session header and project session tree;
+  keep the full value available through the hover label and include it in session
+  search without changing logical Thread routing.
+
 - **User input trace and Thread history**: add a hover/focus trace card to each
   user input, showing its Project/Thread/Turn scope, captured execution
   settings, and attachment summary. Inputs can be placed back into the

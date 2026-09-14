@@ -360,6 +360,7 @@ export default function Sidebar({
       (t) =>
         t.title.toLowerCase().includes(q) ||
         t.thread_id.toLowerCase().includes(q) ||
+        (t.session_id || '').toLowerCase().includes(q) ||
         t.summary.toLowerCase().includes(q)
     );
   }, [normalizedThreads, searchQuery]);

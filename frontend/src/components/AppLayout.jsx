@@ -13,6 +13,7 @@ export default function AppLayout({
   currentThread,
   threadTitle,
   threadSummary,
+  sessionId,
   isConnected,
   onOpenSidePanel,
   onOpenSettings,
@@ -84,6 +85,7 @@ export default function AppLayout({
         currentThread={currentThread}
         threadTitle={threadTitle}
         threadSummary={threadSummary}
+        sessionId={sessionId}
         isConnected={isConnected}
         onOpenSidePanel={onOpenSidePanel}
         onOpenSettings={onOpenSettings}

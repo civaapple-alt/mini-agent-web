@@ -248,6 +248,7 @@
 
 .popover-textarea:focus {
   border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
 }
 
 .popover-footer {

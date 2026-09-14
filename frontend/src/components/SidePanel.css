@@ -634,6 +634,7 @@
 
 .goal-input:focus {
   border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
 }
 
 .btn-start-goal {

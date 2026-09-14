@@ -1181,8 +1181,8 @@ body.theme-dark .btn-save-project-primary {
 }
 
 .modal-input-wrap:focus-within {
-  border-color: var(--accent-green);
-  box-shadow: 0 0 0 2px rgba(16, 163, 127, 0.12);
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
 }
 
 .modal-text-input {
@@ -1192,6 +1192,10 @@ body.theme-dark .btn-save-project-primary {
   color: var(--text-primary);
   outline: none;
   width: 100%;
+}
+
+.modal-text-input:focus-visible {
+  box-shadow: none;
 }
 
 .modal-select-project {
@@ -1209,8 +1213,8 @@ body.theme-dark .btn-save-project-primary {
 }
 
 .modal-select-project:focus {
-  border-color: var(--accent-green);
-  box-shadow: 0 0 0 2px rgba(16, 163, 127, 0.12);
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
 }
 
 .field-hint-text {

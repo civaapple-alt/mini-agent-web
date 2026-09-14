@@ -33,6 +33,7 @@ import {
   readPersistedSessionSelection,
   scopedThreadKey,
 } from './utils/sessionState.js';
+import { getStatusViewModel, normalizeTheme } from './utils/statusModel.js';
 import './App.css';
 
 export default function App() {
@@ -81,7 +82,7 @@ export default function App() {
 
   // Panels & Modals
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
-  const [sidePanelTab, setSidePanelTab] = useState('world');
+  const [sidePanelTab, setSidePanelTab] = useState('status');
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
 
@@ -318,7 +319,7 @@ export default function App() {
       setUserSettings((prev) => ({ ...prev, ...data }));
       if (data.access) setAccessScope(data.access);
       if (data.policy) setPolicy(data.policy);
-      const activeTheme = data.theme || 'light';
+      const activeTheme = normalizeTheme(data.theme);
       document.body.className = `theme-${activeTheme}`;
     } catch (err) {
       if (isAbortError(err) || (context && !isCurrentSessionRequest(context))) return;
@@ -1266,7 +1267,9 @@ export default function App() {
     interruptTurnIdRef.current = turnId;
     setIsInterrupting(true);
     setIsGenerating(false);
-    setPendingApproval(null);
+    // Keep the approval dock visible while the interrupt settles. Its actions
+    // are disabled by isInterrupting, which makes the cancellation boundary
+    // observable and prevents a stale approval from looking actionable.
     let sent = false;
     if (wsRef.current) {
       sent = wsRef.current.send({
@@ -1630,63 +1633,13 @@ export default function App() {
       );
       const goal = result.goal || result;
       applyGoalState(currentThread, goal, result, currentThreadProject);
-      showToast('Goal 已启动，并会在当前任务顶部持续显示', 'success');
+      showToast('Goal 已启动，并会在状态栏与详情抽屉中显示', 'success');
     } catch (err) {
       showToast(`启动 Goal 失败: ${err.message}`, 'error');
     }
   };
 
-  const handlePauseGoal = async () => {
-    try {
-      const result = await api.pauseGoal(currentThread, { projectId: currentThreadProject });
-      applyGoalState(currentThread, result.goal, result, currentThreadProject);
-      if (isGenerating) handleInterrupt('goal-pause');
-      showToast('Goal 已暂停，可随时恢复', 'info');
-    } catch (err) {
-      showToast(`暂停 Goal 失败: ${err.message}`, 'error');
-    }
-  };
-
-  const handleResumeGoal = async () => {
-    try {
-      const result = await api.resumeGoal(currentThread, { projectId: currentThreadProject });
-      applyGoalState(currentThread, result.goal, result, currentThreadProject);
-      showToast('Goal 已恢复，运行时将继续推进', 'success');
-    } catch (err) {
-      showToast(`恢复 Goal 失败: ${err.message}`, 'error');
-    }
-  };
-
-  const handleUpdateGoal = async () => {
-    if (!goalState) return;
-    const objective = window.prompt('更新当前 Thread Goal', goalState.objective);
-    if (!objective || objective.trim() === goalState.objective.trim()) return;
-    try {
-      const result = await api.updateGoal(
-        objective.trim(),
-        goalState.token_budget,
-        currentThread,
-        { projectId: currentThreadProject },
-      );
-      const goal = result.goal || null;
-      applyGoalState(currentThread, goal, result, currentThreadProject);
-      showToast('Goal 目标已更新', 'success');
-    } catch (err) {
-      showToast(`更新 Goal 失败: ${err.message}`, 'error');
-    }
-  };
-
-  const handleClearGoal = async () => {
-    try {
-      const result = await api.clearGoal(currentThread, { projectId: currentThreadProject });
-      applyGoalState(currentThread, null, result, currentThreadProject);
-      showToast('Goal 已删除，Session 历史仍然保留', 'info');
-    } catch (err) {
-      showToast(`删除 Goal 失败: ${err.message}`, 'error');
-    }
-  };
-
-  const handleOpenSidePanel = (tab = 'world') => {
+  const handleOpenSidePanel = (tab = 'status') => {
     setSidePanelTab(tab);
     setSidePanelOpen(true);
   };
@@ -1758,6 +1711,26 @@ export default function App() {
     }
   };
 
+  const statusModel = getStatusViewModel({
+    projectId: currentThreadProject,
+    threadId: currentThread,
+    isConnected,
+    isGenerating,
+    isInterrupting,
+    activeTurnId,
+    pendingApproval,
+    planActive,
+    planReviewPending: planReviewPending && !isGenerating,
+    goalState,
+    runtimeStatus,
+    lastWorkflowEvent,
+    lastTurnResult,
+    accessScope,
+    policy,
+    continuationMode,
+    sessionReadOnly: currentSessionReadOnly,
+  });
+
   return (
     <AppLayout
       currentThread={currentThread}
@@ -1780,20 +1753,13 @@ export default function App() {
       onRefreshThreads={loadThreads}
       onToast={showToast}
       planActive={planActive}
-      planReviewPending={planReviewPending}
+      statusModel={statusModel}
       isInterrupting={isInterrupting}
-      activeTurnId={activeTurnId}
       pendingApproval={pendingApproval}
       onContinuePlanning={handleContinuePlanning}
       onStartImplementation={handleStartImplementation}
       onClosePlan={() => handleSetPlanMode(false)}
       goalState={goalState}
-      onResumeGoal={handleResumeGoal}
-      onPauseGoal={handlePauseGoal}
-      onUpdateGoal={handleUpdateGoal}
-      onClearGoal={handleClearGoal}
-      runtimeStatus={runtimeStatus}
-      lastWorkflowEvent={lastWorkflowEvent}
       messages={messages}
       lastTurnResult={lastTurnResult}
       policy={policy}
@@ -1801,8 +1767,6 @@ export default function App() {
       userSettings={userSettings}
       isLoadingHistory={isLoadingHistory}
       sessionReadOnly={currentSessionReadOnly}
-      accessScope={accessScope}
-      continuationMode={continuationMode}
       onRespondApproval={handleRespondApproval}
       onChangeExecution={handleUpdateExecution}
       onChangeContinuation={handleUpdateContinuation}
@@ -1834,7 +1798,7 @@ export default function App() {
       onCloseSettings={() => setSettingsModalOpen(false)}
       onSettingsSaved={(newSettings) => {
         if (newSettings.theme) {
-          document.body.className = `theme-${newSettings.theme}`;
+          document.body.className = `theme-${normalizeTheme(newSettings.theme)}`;
         }
         showToast('偏好设置已保存并生效', 'success', 2000);
       }}

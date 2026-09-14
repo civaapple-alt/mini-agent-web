@@ -4,7 +4,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.25);
+  background-color: var(--overlay);
   backdrop-filter: blur(2px);
   z-index: 100;
   display: flex;
@@ -13,12 +13,12 @@
 }
 
 .sidepanel-container {
-  width: 580px;
-  max-width: 90vw;
+  width: 540px;
+  max-width: min(92vw, 540px);
   height: 100vh;
   background-color: var(--bg-surface);
   border-left: 1px solid var(--border-color);
-  box-shadow: -6px 0 24px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-drawer);
   display: flex;
   flex-direction: column;
   animation: slideInRight 0.2s ease;
@@ -48,6 +48,13 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sidepanel-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .panel-tab-btn {
@@ -62,6 +69,8 @@
   background: transparent;
   border: none;
   cursor: pointer;
+  flex: 0 0 auto;
+  white-space: nowrap;
   transition: all 0.15s ease;
 }
 
@@ -97,10 +106,191 @@
   padding: 16px;
 }
 
+@media (max-width: 700px) {
+  .sidepanel-container {
+    width: 100vw;
+    max-width: 100vw;
+  }
+
+  .sidepanel-content {
+    padding: 12px;
+  }
+}
+
+.status-scope-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+
+.status-scope-card > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.status-scope-card strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.status-detail-badge,
+.status-detail-connection {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.status-detail-badge.running,
+.status-detail-badge.completed,
+.status-detail-connection.online {
+  color: var(--status-success);
+  background: var(--status-success-soft);
+}
+
+.status-detail-badge.approval,
+.status-detail-badge.plan_review,
+.status-detail-badge.goal_paused,
+.status-detail-connection.reconnecting {
+  color: var(--status-approval);
+  background: var(--status-approval-soft);
+}
+
+.status-detail-badge.stopping,
+.status-detail-badge.interrupted,
+.status-detail-badge.failed,
+.status-detail-connection.offline {
+  color: var(--status-failed);
+  background: var(--status-failed-soft);
+}
+
+.status-detail-badge.connection-reconnecting,
+.status-detail-badge.connection-offline {
+  color: var(--status-approval);
+  background: var(--status-approval-soft);
+}
+
+.status-detail-badge.connection-offline {
+  color: var(--status-failed);
+  background: var(--status-failed-soft);
+}
+
+.status-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.status-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.status-detail-settings,
+.status-detail-event {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 9px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-app);
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.status-detail-note {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.status-detail-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px;
+  border: 1px solid var(--status-approval-border);
+  border-radius: 7px;
+  background: var(--status-approval-soft);
+  color: var(--status-approval);
+}
+
+.status-detail-alert.error {
+  border-color: var(--status-failed-border);
+  background: var(--status-failed-soft);
+  color: var(--status-failed);
+}
+
+.status-detail-alert > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.status-detail-alert span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.status-detail-alert small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
 .tab-pane {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.workspace-subtabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-app);
+}
+
+.workspace-subtabs button {
+  flex: 1;
+  min-height: 27px;
+  padding: 4px 7px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.workspace-subtabs button:hover,
+.workspace-subtabs button.active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
 }
 
 .pane-section-header {
@@ -152,7 +342,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  box-shadow: var(--shadow-card);
 }
 
 .detail-card.full-width {
@@ -188,9 +378,9 @@
 }
 
 .cmd-tag.available {
-  background-color: rgba(16, 163, 127, 0.08);
-  color: #10a37f;
-  border: 1px solid rgba(16, 163, 127, 0.2);
+  background-color: var(--status-success-soft);
+  color: var(--status-success);
+  border: 1px solid var(--status-success-border);
 }
 
 .xml-preview {
@@ -214,7 +404,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  box-shadow: var(--shadow-card);
 }
 
 .workflow-card-header {
@@ -258,8 +448,8 @@
 }
 
 .plan-mode-badge.on {
-  color: #b45309;
-  background: rgba(217, 119, 6, 0.12);
+  color: var(--status-approval);
+  background: var(--status-approval-soft);
 }
 
 .plan-mode-badge.off {
@@ -278,8 +468,8 @@
 }
 
 .btn-toggle-switch.on {
-  background-color: #d97706;
-  color: #ffffff;
+  background-color: var(--status-approval);
+  color: var(--on-accent);
 }
 
 .btn-toggle-switch.off {
@@ -300,8 +490,8 @@
 }
 
 .plan-mode-state.active {
-  border-color: rgba(217, 119, 6, 0.35);
-  background: rgba(217, 119, 6, 0.06);
+  border-color: var(--status-approval-border);
+  background: var(--status-approval-soft);
 }
 
 .plan-mode-state-dot {
@@ -314,8 +504,8 @@
 }
 
 .plan-mode-state.active .plan-mode-state-dot {
-  background: #d97706;
-  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.14);
+  background: var(--status-approval);
+  box-shadow: 0 0 0 3px var(--status-approval-soft);
 }
 
 .plan-mode-state div {
@@ -366,8 +556,8 @@
 }
 
 .goal-badge.running {
-  background-color: rgba(16, 163, 127, 0.1);
-  color: #10a37f;
+  background-color: var(--status-success-soft);
+  color: var(--status-success);
 }
 
 .milestone-progress-bar {
@@ -379,7 +569,7 @@
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #0284c7, #10a37f);
+  background: linear-gradient(90deg, var(--accent-sky), var(--accent-green));
   transition: width 0.3s ease;
 }
 
@@ -401,25 +591,25 @@
 }
 
 .goal-verification-status.running {
-  color: #1d4ed8;
-  border-color: rgba(37, 99, 235, 0.3);
+  color: var(--status-running);
+  border-color: var(--status-running);
 }
 
 .goal-verification-status.completed {
-  color: #047857;
-  border-color: rgba(16, 163, 127, 0.3);
+  color: var(--status-success);
+  border-color: var(--status-success-border);
 }
 
 .goal-verification-status.failed {
-  color: #b42318;
-  border-color: rgba(180, 35, 24, 0.3);
+  color: var(--status-failed);
+  border-color: var(--status-failed-border);
 }
 
 .goal-error-detail {
   padding: 6px 8px;
-  border-left: 3px solid #b42318;
-  background: rgba(180, 35, 24, 0.06);
-  color: #b42318;
+  border-left: 3px solid var(--status-failed);
+  background: var(--status-failed-soft);
+  color: var(--status-failed);
   font-family: monospace;
   font-size: 11px;
   line-height: 1.4;
@@ -451,7 +641,7 @@
   align-items: center;
   gap: 6px;
   background-color: var(--accent-green);
-  color: #ffffff;
+  color: var(--on-accent);
   font-weight: 600;
   border: none;
   padding: 5px 12px;
@@ -611,13 +801,13 @@
 }
 
 .git-dot.mod {
-  background-color: rgba(217, 119, 6, 0.15);
-  color: #d97706;
+  background-color: var(--status-approval-soft);
+  color: var(--status-approval);
 }
 
 .git-dot.untr {
-  background-color: rgba(2, 132, 199, 0.15);
-  color: #0284c7;
+  background-color: var(--status-running-soft);
+  color: var(--accent-sky);
 }
 
 /* Builtin Tools Selection */
@@ -642,13 +832,13 @@
 }
 
 .builtin-tool-chip:hover {
-  border-color: var(--accent-color, #10b981);
-  background-color: var(--bg-card, rgba(255, 255, 255, 0.03));
+  border-color: var(--accent-green);
+  background-color: var(--bg-card-hover);
 }
 
 .builtin-tool-chip.active {
-  border-color: rgba(16, 185, 129, 0.4);
-  background-color: rgba(16, 185, 129, 0.05);
+  border-color: var(--status-success-border);
+  background-color: var(--status-success-soft);
 }
 
 .builtin-tool-chip.inactive {
@@ -676,13 +866,13 @@
 }
 
 .chip-badge.enabled {
-  background-color: rgba(16, 185, 129, 0.15);
-  color: #10b981;
+  background-color: var(--status-success-soft);
+  color: var(--status-success);
 }
 
 .chip-badge.disabled {
-  background-color: rgba(156, 163, 175, 0.15);
-  color: var(--text-muted, #9ca3af);
+  background-color: var(--bg-card-hover);
+  color: var(--text-muted);
 }
 
 .chip-label {

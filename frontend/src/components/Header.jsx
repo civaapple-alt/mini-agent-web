@@ -8,6 +8,7 @@ import {
   Check,
   X,
   FileText,
+  Menu,
 } from 'lucide-react';
 import './Header.css';
 
@@ -20,6 +21,8 @@ export default function Header({
   onOpenSettings,
   onRenameThread,
   onUpdateSummary,
+  sidebarOpen = false,
+  onToggleSidebar,
 }) {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [newTitle, setNewTitle] = useState(threadTitle || currentThread);
@@ -56,6 +59,15 @@ export default function Header({
     <header className="app-header">
       {/* Left: Branding & Current Thread / Workspace */}
       <div className="header-left">
+        <button
+          type="button"
+          className={`mobile-sidebar-button ${sidebarOpen ? 'active' : ''}`}
+          onClick={onToggleSidebar}
+          aria-label={sidebarOpen ? '关闭会话导航' : '打开会话导航'}
+          aria-expanded={sidebarOpen}
+        >
+          <Menu size={16} />
+        </button>
         <div className="app-branding">
           <div className="brand-logo">
             <Sparkles size={15} className="logo-icon" />
@@ -148,11 +160,11 @@ export default function Header({
       <div className="header-right">
         <button
           className="header-action-btn"
-          onClick={() => onOpenSidePanel('world')}
-          title="打开环境与工作流抽屉"
+          onClick={() => onOpenSidePanel('status')}
+          title="打开运行详情抽屉"
         >
           <Cpu size={13} />
-          <span>控制台面板</span>
+          <span>运行详情</span>
         </button>
 
         <button

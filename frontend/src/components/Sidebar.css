@@ -476,16 +476,9 @@
 }
 
 .nested-thread-item.selected {
-  background-color: #e5e7eb;
-  color: #111827;
+  background-color: var(--bg-card-hover);
+  color: var(--text-primary);
   font-weight: 500;
-}
-
-body.theme-dark .nested-thread-item.selected,
-body.theme-midnight .nested-thread-item.selected,
-body.theme-cyberpunk .nested-thread-item.selected {
-  background-color: #27272a;
-  color: #ffffff;
 }
 
 .nested-thread-title {
@@ -509,30 +502,30 @@ body.theme-cyberpunk .nested-thread-item.selected {
 }
 
 .thread-status-badge.running {
-  border-color: #60a5fa;
-  color: #2563eb;
+  border-color: var(--status-running);
+  color: var(--status-running);
 }
 
 .thread-status-badge.paused {
-  border-color: #f59e0b;
-  color: #b45309;
+  border-color: var(--status-approval);
+  color: var(--status-approval);
 }
 
 .thread-status-badge.failed,
 .thread-status-badge.step-limit,
 .thread-status-badge.interrupted {
-  border-color: #fca5a5;
-  color: #b91c1c;
+  border-color: var(--status-failed-border);
+  color: var(--status-failed);
 }
 
 .thread-status-badge.completed {
-  border-color: #86efac;
-  color: #15803d;
+  border-color: var(--status-success-border);
+  color: var(--status-success);
 }
 
 .thread-status-badge.cleanup {
-  border-color: #c4b5fd;
-  color: #6d28d9;
+  border-color: var(--accent-purple);
+  color: var(--accent-purple);
 }
 
 .thread-process-badge {
@@ -546,13 +539,13 @@ body.theme-cyberpunk .nested-thread-item.selected {
 }
 
 .thread-process-badge.active {
-  border-color: #86efac;
-  color: #15803d;
+  border-color: var(--status-success-border);
+  color: var(--status-success);
 }
 
 .thread-process-badge.standby {
-  border-color: #cbd5e1;
-  color: #64748b;
+  border-color: var(--border-color);
+  color: var(--text-muted);
 }
 
 .thread-tail-indicators {
@@ -1121,9 +1114,7 @@ body.theme-cyberpunk .nested-thread-item.selected {
   transition: opacity 0.15s ease;
 }
 
-body.theme-dark .btn-save-project-primary,
-body.theme-midnight .btn-save-project-primary,
-body.theme-cyberpunk .btn-save-project-primary {
+body.theme-dark .btn-save-project-primary {
   background-color: var(--accent-green);
   color: #ffffff;
 }
@@ -1148,12 +1139,12 @@ body.theme-cyberpunk .btn-save-project-primary {
 
 .nav-new-session-row:hover {
   background-color: var(--bg-card-hover);
-  border-color: var(--accent-color, #10a37f);
+  border-color: var(--accent-green);
   color: var(--text-primary);
 }
 
 .nav-new-session-row .nav-row-icon {
-  color: var(--accent-color, #10a37f);
+  color: var(--accent-green);
 }
 
 /* Modal Form Groups and Inputs */
@@ -1190,7 +1181,7 @@ body.theme-cyberpunk .btn-save-project-primary {
 }
 
 .modal-input-wrap:focus-within {
-  border-color: var(--accent-color, #10a37f);
+  border-color: var(--accent-green);
   box-shadow: 0 0 0 2px rgba(16, 163, 127, 0.12);
 }
 
@@ -1218,7 +1209,7 @@ body.theme-cyberpunk .btn-save-project-primary {
 }
 
 .modal-select-project:focus {
-  border-color: var(--accent-color, #10a37f);
+  border-color: var(--accent-green);
   box-shadow: 0 0 0 2px rgba(16, 163, 127, 0.12);
 }
 

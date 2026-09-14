@@ -44,6 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Web Studio UI simplification**: consolidate Plan, Goal, Runtime, connection,
+  execution settings, and scoped Turn identity into one status rail with a
+  three-level details drawer; keep the composer focused on task input and move
+  access, approval, and continuation controls into the run-settings popover.
+  Add mobile navigation, Escape-close drawers, semantic Light/Dark theme tokens,
+  and explicit cancellation visibility for approval-pending Turns.
+
 - **Scoped execution settings and background approvals**: project-level access and
   approval policy changes now fan out to every idle Client in that project; pending
   approval requests carry Project/Thread/Turn identity and are restored when Studio

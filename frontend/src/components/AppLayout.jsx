@@ -1,14 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import ChatArea from './ChatArea';
 import InputBar from './InputBar';
 import SidePanel from './SidePanel';
-import PlanModeBanner from './PlanModeBanner';
+import StatusRail from './StatusRail';
 import SettingsModal from './SettingsModal';
 import Toast from './Toast';
 import ErrorBoundary from './ErrorBoundary';
-import { RUNTIME_PHASE_LABELS } from '../utils/sessionState.js';
 
 export default function AppLayout({
   currentThread,
@@ -30,21 +29,14 @@ export default function AppLayout({
   onCloseThread,
   onRefreshThreads,
   onToast,
+  statusModel,
   planActive,
-  planReviewPending,
   isInterrupting,
-  activeTurnId,
   pendingApproval,
   onContinuePlanning,
   onStartImplementation,
   onClosePlan,
   goalState,
-  onResumeGoal,
-  onPauseGoal,
-  onUpdateGoal,
-  onClearGoal,
-  runtimeStatus,
-  lastWorkflowEvent,
   messages,
   lastTurnResult,
   policy,
@@ -52,8 +44,6 @@ export default function AppLayout({
   userSettings,
   isLoadingHistory,
   sessionReadOnly,
-  accessScope,
-  continuationMode,
   onRespondApproval,
   onChangeExecution,
   onChangeContinuation,
@@ -82,6 +72,8 @@ export default function AppLayout({
   toasts,
   onDismissToast,
 }) {
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
   return (
     <div className="app-container">
       <Header
@@ -93,6 +85,8 @@ export default function AppLayout({
         onOpenSettings={onOpenSettings}
         onRenameThread={onRenameCurrentThread}
         onUpdateSummary={onUpdateCurrentSummary}
+        sidebarOpen={mobileSidebarOpen}
+        onToggleSidebar={() => setMobileSidebarOpen((open) => !open)}
       />
 
       <div className="app-main-layout">
@@ -101,8 +95,15 @@ export default function AppLayout({
           currentThread={currentThread}
           currentThreadProject={currentThreadProject}
           isGenerating={isGenerating}
-          onSelectThread={onSelectThread}
-          onNewThread={onNewThread}
+          isMobileOpen={mobileSidebarOpen}
+          onSelectThread={(...args) => {
+            setMobileSidebarOpen(false);
+            onSelectThread(...args);
+          }}
+          onNewThread={() => {
+            setMobileSidebarOpen(false);
+            onNewThread();
+          }}
           onForkThread={onForkThread}
           onCloseThread={onCloseThread}
           onRenameThread={onRenameThread}
@@ -110,65 +111,27 @@ export default function AppLayout({
           onRefreshThreads={onRefreshThreads}
           onToast={onToast}
         />
+        {mobileSidebarOpen && (
+          <button
+            type="button"
+            className="mobile-sidebar-backdrop"
+            aria-label="关闭会话导航"
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+        )}
 
         <main className="app-content">
-          {planActive && (
-            <PlanModeBanner
-              reviewPending={planReviewPending && !isGenerating}
-              busy={isGenerating || isInterrupting || Boolean(activeTurnId) || Boolean(pendingApproval)}
-              onOpenDetails={() => onOpenSidePanel('plan_goal')}
-              onContinuePlanning={onContinuePlanning}
-              onStartImplementation={onStartImplementation}
-              onClosePlan={onClosePlan}
-            />
-          )}
-          {goalState && (
-            <div className="goal-topbar" role="status">
-              <div className="goal-topbar-main">
-                <span className="goal-topbar-label">GOAL</span>
-                <span className={`goal-topbar-status ${goalState.status}`}>{goalState.status}</span>
-                {goalState.verification_status && goalState.verification_status !== 'idle' && (
-                  <span className={`goal-topbar-verification ${goalState.verification_status}`}>
-                    VERIFY {goalState.verification_status}
-                  </span>
-                )}
-                <span className="goal-topbar-objective" title={goalState.objective}>{goalState.objective}</span>
-              </div>
-              <div className="goal-topbar-actions">
-                <button type="button" onClick={() => onOpenSidePanel('plan_goal')}>详情</button>
-                {goalState.status === 'paused' ? (
-                  <button type="button" onClick={onResumeGoal}>恢复</button>
-                ) : goalState.status === 'active' ? (
-                  <button type="button" onClick={onPauseGoal}>暂停</button>
-                ) : null}
-                <button type="button" onClick={onUpdateGoal}>更新</button>
-                <button type="button" className="danger" onClick={onClearGoal}>删除</button>
-              </div>
-            </div>
-          )}
-          {runtimeStatus && runtimeStatus.phase !== 'idle' && (
-            <div className={`runtime-status-bar ${runtimeStatus.phase}`} role="status">
-              <span className="runtime-status-label">RUNTIME</span>
-              <span>{RUNTIME_PHASE_LABELS[runtimeStatus.phase] || runtimeStatus.phase}</span>
-              {runtimeStatus.turnId && (
-                <span className="runtime-status-meta">turn {runtimeStatus.turnId}</span>
-              )}
-              {runtimeStatus.checkpointSeq !== null && runtimeStatus.checkpointSeq !== undefined && (
-                <span className="runtime-status-meta">checkpoint #{runtimeStatus.checkpointSeq}</span>
-              )}
-              {runtimeStatus.operationId && (
-                <span className="runtime-status-operation" title={runtimeStatus.operationId}>
-                  {runtimeStatus.operationId}
-                </span>
-              )}
-              {lastWorkflowEvent?.method && (
-                <span className="runtime-status-event">{lastWorkflowEvent.method}</span>
-              )}
-              {runtimeStatus.error && (
-                <span className="runtime-status-error" title={runtimeStatus.error}>⚠ {runtimeStatus.error}</span>
-              )}
-            </div>
-          )}
+          <StatusRail
+            status={statusModel}
+            onOpenDetails={() => onOpenSidePanel('status')}
+            onOpenPlanDetails={() => onOpenSidePanel('plan_goal')}
+            onChangeExecution={onChangeExecution}
+            onChangeContinuation={onChangeContinuation}
+            onEnableAutoCopilot={onEnableAutoCopilot}
+            onContinuePlanning={onContinuePlanning}
+            onStartImplementation={onStartImplementation}
+            onClosePlan={onClosePlan}
+          />
           <ErrorBoundary title="对话区域渲染异常 (Chat Area Render Error)">
             <ChatArea
               messages={messages}
@@ -189,16 +152,9 @@ export default function AppLayout({
             isGenerating={isGenerating}
             isInterrupting={isInterrupting}
             sessionReadOnly={sessionReadOnly}
-            accessScope={accessScope}
-            policy={policy}
-            continuationMode={continuationMode}
-            goalState={goalState}
             projectId={currentThreadProject}
             pendingApproval={pendingApproval}
             onRespondApproval={onRespondApproval}
-            onChangeExecution={onChangeExecution}
-            onChangeContinuation={onChangeContinuation}
-            onEnableAutoCopilot={onEnableAutoCopilot}
             onStartPlanTask={onStartPlanTask}
             onStartGoal={onStartGoal}
             onSendMessage={onSendMessage}
@@ -225,6 +181,7 @@ export default function AppLayout({
           onClose={onCloseSidePanelPanel}
           planActive={planActive}
           goalState={goalState}
+          status={statusModel}
           threadId={currentThread}
           projectId={currentThreadProject}
           onGoalChanged={onGoalChanged}

@@ -1,0 +1,436 @@
+.status-rail {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  min-height: 42px;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 11px;
+  z-index: 8;
+}
+
+.status-rail-main,
+.status-rail-meta,
+.status-rail-actions,
+.status-workflow-actions,
+.status-workflow-chip {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.status-rail-main {
+  flex: 1 1 240px;
+  gap: 7px;
+  overflow: hidden;
+}
+
+.status-rail-meta {
+  flex: 0 1 auto;
+  gap: 8px;
+}
+
+.status-rail-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--status-idle);
+}
+
+.lifecycle-running .status-rail-dot {
+  background: var(--status-running);
+  box-shadow: 0 0 0 3px var(--status-running-soft);
+  animation: status-rail-pulse 1.6s ease-in-out infinite;
+}
+
+.lifecycle-approval .status-rail-dot {
+  background: var(--status-approval);
+  box-shadow: 0 0 0 3px var(--status-approval-soft);
+}
+
+.lifecycle-stopping .status-rail-dot {
+  background: var(--status-stopping);
+}
+
+.connection-reconnecting .status-rail-dot {
+  background: var(--status-approval);
+  box-shadow: 0 0 0 3px var(--status-approval-soft);
+  animation: status-rail-pulse 1.6s ease-in-out infinite;
+}
+
+.connection-offline .status-rail-dot {
+  background: var(--status-failed);
+}
+
+.lifecycle-failed .status-rail-dot {
+  background: var(--status-failed);
+}
+
+.lifecycle-completed .status-rail-dot {
+  background: var(--status-success);
+}
+
+.status-rail-label {
+  flex: 0 0 auto;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.status-rail-summary,
+.status-rail-next,
+.status-scope,
+.status-turn-id,
+.status-goal-objective {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-rail-summary {
+  max-width: min(36vw, 420px);
+}
+
+.status-rail-next {
+  color: var(--text-muted);
+}
+
+.status-scope {
+  max-width: 190px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.status-turn-id {
+  max-width: 110px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.status-connection {
+  padding: 2px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.status-connection-online {
+  color: var(--status-success);
+  border-color: var(--status-success-border);
+  background: var(--status-success-soft);
+}
+
+.status-connection-reconnecting,
+.connection-reconnecting .status-connection {
+  color: var(--status-approval);
+  border-color: var(--status-approval-border);
+  background: var(--status-approval-soft);
+}
+
+.status-connection-offline {
+  color: var(--status-failed);
+  border-color: var(--status-failed-border);
+  background: var(--status-failed-soft);
+}
+
+.status-rail-actions {
+  position: relative;
+  gap: 5px;
+}
+
+.status-rail-button,
+.status-workflow-actions button,
+.status-workflow-chip button,
+.status-autopilot-button,
+.status-access-confirm-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.status-rail-button:hover,
+.status-rail-button.active,
+.status-workflow-actions button:hover,
+.status-workflow-chip button:hover,
+.status-autopilot-button:hover {
+  border-color: var(--border-focus);
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.status-rail-button:disabled,
+.status-setting-option:disabled,
+.status-autopilot-button:disabled,
+.status-workflow-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.status-settings-button {
+  max-width: 235px;
+  overflow: hidden;
+}
+
+.status-settings-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-settings-popover,
+.status-access-confirm {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 340px;
+  padding: 13px;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-popover);
+  color: var(--text-primary);
+  z-index: 40;
+}
+
+.status-settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.status-settings-header div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.status-settings-header span {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.status-settings-close {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.status-settings-close:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.status-settings-locked {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 10px 0 2px;
+  padding: 8px;
+  border: 1px solid var(--status-approval-border);
+  border-radius: 6px;
+  background: var(--status-approval-soft);
+  color: var(--status-approval);
+  line-height: 1.45;
+}
+
+.status-settings-saving {
+  margin: 10px 0 2px;
+  color: var(--accent-sky);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.status-setting-group {
+  padding: 11px 0 2px;
+}
+
+.status-setting-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.status-setting-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.status-setting-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 27px;
+  padding: 4px 7px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.status-setting-option:hover:not(:disabled),
+.status-setting-option.active {
+  border-color: var(--border-focus);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+.status-settings-note {
+  margin: 8px 0 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.status-autopilot-button {
+  width: 100%;
+  margin-top: 10px;
+  color: var(--accent-purple);
+}
+
+.status-workflow-actions,
+.status-workflow-chip {
+  flex: 1 0 100%;
+  gap: 7px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.status-workflow-actions > span,
+.status-workflow-chip > span:first-child {
+  color: var(--status-approval);
+  font-weight: 700;
+}
+
+.status-workflow-actions button,
+.status-workflow-chip button {
+  min-height: 24px;
+  padding: 3px 7px;
+  font-size: 10px;
+}
+
+.status-workflow-actions button.primary,
+.status-access-confirm-actions button.primary {
+  border-color: var(--accent-green);
+  background: var(--accent-green);
+  color: var(--on-accent);
+}
+
+.status-workflow-chip {
+  gap: 8px;
+}
+
+.status-workflow-chip strong {
+  color: var(--text-primary);
+}
+
+.status-goal-objective {
+  flex: 1;
+  color: var(--text-secondary);
+}
+
+.status-access-confirm {
+  width: 300px;
+}
+
+.status-access-confirm-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--status-approval);
+}
+
+.status-access-confirm p {
+  margin: 10px 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.status-access-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+@keyframes status-rail-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-rail-dot {
+    animation: none;
+  }
+}
+
+@media (max-width: 850px) {
+  .status-rail {
+    align-items: flex-start;
+    padding: 8px 12px;
+  }
+
+  .status-rail-main {
+    flex-basis: 100%;
+  }
+
+  .status-rail-meta {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .status-rail-summary {
+    max-width: 50vw;
+  }
+}
+
+@media (max-width: 560px) {
+  .status-scope,
+  .status-turn-id,
+  .status-rail-next {
+    display: none;
+  }
+
+  .status-settings-popover,
+  .status-access-confirm {
+    position: fixed;
+    top: auto;
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    width: auto;
+    max-height: calc(100vh - 20px);
+    overflow-y: auto;
+  }
+}

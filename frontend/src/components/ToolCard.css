@@ -8,17 +8,17 @@
 }
 
 .tool-card.awaiting-approval {
-  border-color: rgba(245, 158, 11, 0.5);
-  box-shadow: 0 0 16px rgba(245, 158, 11, 0.1);
-  background: linear-gradient(180deg, rgba(245, 158, 11, 0.04) 0%, var(--bg-card) 100%);
+  border-color: var(--status-approval-border);
+  box-shadow: var(--shadow-popover);
+  background: linear-gradient(180deg, var(--status-approval-soft) 0%, var(--bg-card) 100%);
 }
 
 .tool-card.running {
-  border-color: rgba(255, 255, 255, 0.14);
+  border-color: var(--status-running);
 }
 
 .tool-card.has-error {
-  border-color: rgba(244, 63, 94, 0.35);
+  border-color: var(--status-failed-border);
 }
 
 .tool-header {
@@ -26,7 +26,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 6px 10px;
-  background-color: rgba(255, 255, 255, 0.02);
+  background-color: var(--bg-card-hover);
   border-bottom: 1px solid var(--border-subtle);
   gap: 10px;
 }
@@ -44,19 +44,19 @@
 }
 
 .tool-type-icon.text-amber {
-  color: #f59e0b;
+  color: var(--accent-amber);
 }
 
 .tool-type-icon.text-sky {
-  color: #38bdf8;
+  color: var(--accent-sky);
 }
 
 .tool-type-icon.text-emerald {
-  color: #10b981;
+  color: var(--accent-green);
 }
 
 .tool-type-icon.text-purple {
-  color: #a855f7;
+  color: var(--accent-purple);
 }
 
 .tool-tag {
@@ -93,21 +93,21 @@
 }
 
 .badge.running {
-  background-color: rgba(56, 189, 248, 0.1);
-  color: #38bdf8;
-  border: 1px solid rgba(56, 189, 248, 0.25);
+  background-color: var(--status-running-soft);
+  color: var(--status-running);
+  border: 1px solid var(--status-running);
 }
 
 .badge.completed {
-  background-color: rgba(16, 185, 129, 0.1);
-  color: #10b981;
-  border: 1px solid rgba(16, 185, 129, 0.25);
+  background-color: var(--status-success-soft);
+  color: var(--status-success);
+  border: 1px solid var(--status-success-border);
 }
 
 .badge.failed {
-  background-color: rgba(244, 63, 94, 0.1);
-  color: #f43f5e;
-  border: 1px solid rgba(244, 63, 94, 0.25);
+  background-color: var(--status-failed-soft);
+  color: var(--status-failed);
+  border: 1px solid var(--status-failed-border);
 }
 
 .badge-approval-pending {
@@ -117,9 +117,9 @@
   padding: 1px 6px;
   border-radius: 4px;
   font-weight: 600;
-  background-color: rgba(245, 158, 11, 0.2);
-  color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.4);
+  background-color: var(--status-approval-soft);
+  color: var(--status-approval);
+  border: 1px solid var(--status-approval-border);
   animation: pulse-border 2s infinite;
 }
 
@@ -171,19 +171,19 @@
 }
 
 .btn-copy-output:hover {
-  background-color: var(--bg-hover);
+  background-color: var(--bg-card-hover);
   color: var(--text-primary);
 }
 
 .tool-output-box {
   margin-top: 4px;
   padding: 6px 8px;
-  background-color: #0c0c0e;
+  background-color: var(--bg-code);
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
   font-size: 11px;
   line-height: 1.45;
-  color: #d4d4d8;
+  color: var(--text-secondary);
   max-height: 200px;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -195,9 +195,9 @@
 }
 
 .text-rose-400 {
-  color: #f43f5e;
+  color: var(--status-failed);
 }
 
 .text-green {
-  color: #10b981;
+  color: var(--status-success);
 }

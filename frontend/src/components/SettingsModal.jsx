@@ -10,6 +10,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { api } from '../api';
+import { normalizeTheme } from '../utils/statusModel.js';
 import './SettingsModal.css';
 
 export default function SettingsModal({
@@ -56,7 +57,13 @@ export default function SettingsModal({
   const loadSettings = async (context = null) => {
     try {
       const data = await api.getSettings({ projectId, signal: context?.signal });
-      if (isCurrentRequest(context)) setSettings((prev) => ({ ...prev, ...data }));
+      if (isCurrentRequest(context)) {
+        setSettings((prev) => ({
+          ...prev,
+          ...data,
+          theme: normalizeTheme(data.theme || prev.theme),
+        }));
+      }
     } catch (err) {
       if (err?.name === 'AbortError' || (context && !isCurrentRequest(context))) return;
       console.error('Failed to load settings:', err);
@@ -156,7 +163,7 @@ export default function SettingsModal({
             <div className="setting-item">
               <div className="setting-text">
                 <span className="setting-title">访问范围与批准生命周期</span>
-                <span className="setting-desc">请在输入框底部直接设置 Project / Full access 与 Per-Action / Current Session / Current Project；它们独立生效。</span>
+                <span className="setting-desc">访问范围、审批策略和推进方式请在顶部运行状态栏的“运行设置”中调整。</span>
               </div>
               <Shield size={20} className="text-amber" />
             </div>
@@ -220,10 +227,8 @@ export default function SettingsModal({
                 value={settings.theme}
                 onChange={(e) => setSettings({ ...settings, theme: e.target.value })}
               >
-                <option value="light">Mini Agent Light (浅色简约 - 默认)</option>
-                <option value="dark">Mini Agent Obsidian (深邃黑)</option>
-                <option value="midnight">Midnight Blue (极夜蓝)</option>
-                <option value="cyberpunk">Cyberpunk Neon (霓虹)</option>
+                <option value="light">Light（浅色）</option>
+                <option value="dark">Dark（深色）</option>
               </select>
             </div>
 

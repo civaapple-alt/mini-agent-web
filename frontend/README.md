@@ -23,8 +23,8 @@ npm run build
 
 - `src/api.js`：REST 与 WebSocket 请求封装；
 - `src/App.jsx`：页面级状态和事件分发，集成顶层 ErrorBoundary 容错保护；
-- `src/utils/`：消息聚合、ThreadItem 投影和斜杠命令等纯逻辑；
-- `src/components/`：消息、工具、审批、侧栏、设置组件与 ErrorBoundary；
+- `src/utils/`：消息聚合、ThreadItem 投影、状态选择器和斜杠命令等纯逻辑；
+- `src/components/`：消息、工具、审批、状态栏、详情抽屉、侧栏、设置组件与 ErrorBoundary；
 - `src/tests/`：Node 原生测试与 Vitest 组件挂载测试；
 - `eslint.config.js`：ESLint 9 静态语法与 JSX 导入未声明标识符安全扫描。
 
@@ -37,8 +37,9 @@ Thread、Workflow、Runtime 和文件请求都绑定当前 `project_id` 与 Sess
 旧消息、Turn、Plan、Goal、Runtime 和审批投影；晚到响应会被丢弃。`/clear` 只清空
 当前页面显示，不删除 Session history。
 
-页面顶部的 Runtime 条显示 App Server 当前 phase、operation、checkpoint 和错误；
-Goal/Plan 生命周期通知会显示最近的 workflow milestone。WebSocket 重连后，页面
+页面使用统一状态栏显示当前生命周期、Project/Session/Turn 作用域、连接状态和执行设置；
+运行详情抽屉提供 phase、operation、checkpoint、审批、错误和最近工作流事件。计划与目标
+以及 World/MCP/Git 详情均从抽屉进入，不再堆叠多条顶部状态栏。WebSocket 重连后，页面
 用有界 `turn/event` cursor 重放短暂断线期间的事件，遇到 `has_gap` 则重新读取
 canonical Thread/Item projection。
 
@@ -50,9 +51,16 @@ Studio 侧栏从 App Server 的 SessionStore 投影同时展示历史、活跃 T
 Session。侧栏的“运行中”只表示当前 Turn 尚未结算；SessionStore 进程锁单独显示为
 “在线”或“待命”，避免把空闲进程误判为运行中。选择历史或已暂停 Session 会请求 attach；
 如果 Session 仍被另一个 App Server 进程锁定，Studio 保持只读历史，锁释放后即可再次 attach。活动 Goal
-固定显示在当前 Thread 顶部，状态和暂停、恢复、更新、删除操作仍以 App Server
+统一显示在状态栏和详情抽屉中，状态和暂停、恢复、更新、删除操作仍以 App Server
 为准。Plan Turn 完成后，待用户选择“继续规划”或“开始实施”；该待确认状态随
 Session 恢复，不依赖浏览器内存。
+
+访问范围、审批策略和会话推进方式统一在状态栏“运行设置”中调整；当前 Turn、审批
+等待或停止结算期间会锁定设置并说明原因。停止审批中的 Turn 时，审批卡保持可见但不可操作，
+直到终态事件结算；来自其他浏览器的审批结算会关闭本地操作卡并提示请求已失效或已被处理。
+
+Studio 只提供 `Light` 与 `Dark` 两种主题。历史 `midnight` 和 `cyberpunk` 设置读取时
+统一迁移为 `Dark`，组件颜色使用语义化主题 Token，并支持键盘焦点和减少动效偏好。
 
 ## 入口文件
 

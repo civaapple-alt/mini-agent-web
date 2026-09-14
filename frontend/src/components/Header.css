@@ -2,11 +2,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 50px;
-  min-height: 50px;
+  height: 48px;
+  min-height: 48px;
   background-color: var(--bg-surface);
   border-bottom: 1px solid var(--border-color);
-  padding: 0 16px;
+  padding: 0 14px;
   user-select: none;
   z-index: 20;
 }
@@ -17,6 +17,25 @@
   align-items: center;
   gap: 16px;
   flex: 1;
+}
+
+.mobile-sidebar-button {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.mobile-sidebar-button:hover,
+.mobile-sidebar-button.active {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
 }
 
 .app-branding {
@@ -32,7 +51,7 @@
   width: 26px;
   height: 26px;
   background-color: var(--accent-green);
-  color: #ffffff;
+  color: var(--on-accent);
   border-radius: 6px;
   box-shadow: 0 1px 4px rgba(16, 163, 127, 0.25);
 }
@@ -138,19 +157,19 @@
 }
 
 .icon-btn-micro.check {
-  background-color: rgba(16, 163, 127, 0.15);
-  color: #10a37f;
+  background-color: var(--status-success-soft);
+  color: var(--status-success);
 }
 .icon-btn-micro.check:hover {
-  background-color: rgba(16, 163, 127, 0.25);
+  background-color: var(--status-success-soft);
 }
 
 .icon-btn-micro.cancel {
-  background-color: rgba(225, 29, 72, 0.15);
-  color: #e11d48;
+  background-color: var(--status-failed-soft);
+  color: var(--status-failed);
 }
 .icon-btn-micro.cancel:hover {
-  background-color: rgba(225, 29, 72, 0.25);
+  background-color: var(--status-failed-soft);
 }
 
 /* Summary Popover */
@@ -178,9 +197,9 @@
 }
 
 .summary-badge-btn.has-summary {
-  background-color: rgba(16, 163, 127, 0.08);
-  border-color: rgba(16, 163, 127, 0.25);
-  color: #10a37f;
+  background-color: var(--status-success-soft);
+  border-color: var(--status-success-border);
+  color: var(--status-success);
 }
 
 .summary-popover {
@@ -192,7 +211,7 @@
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-popover);
   z-index: 50;
 }
 
@@ -238,7 +257,7 @@
 
 .popover-btn-save {
   background-color: var(--accent-green);
-  color: #ffffff;
+  color: var(--on-accent);
   font-size: 11px;
   font-weight: 600;
   border: none;
@@ -298,13 +317,13 @@
 }
 
 .mode-btn.plan.active {
-  color: #d97706;
-  border: 1px solid rgba(217, 119, 6, 0.3);
+  color: var(--status-approval);
+  border: 1px solid var(--status-approval-border);
 }
 
 .mode-btn.goal.active {
-  color: #10a37f;
-  border: 1px solid rgba(16, 163, 127, 0.3);
+  color: var(--status-success);
+  border: 1px solid var(--status-success-border);
 }
 
 .mode-pulse-dot {
@@ -315,13 +334,13 @@
 }
 
 .mode-pulse-dot.amber {
-  background-color: #d97706;
-  box-shadow: 0 0 5px rgba(217, 119, 6, 0.6);
+  background-color: var(--status-approval);
+  box-shadow: 0 0 5px var(--status-approval);
 }
 
 .mode-pulse-dot.green {
-  background-color: #10a37f;
-  box-shadow: 0 0 5px rgba(16, 163, 127, 0.6);
+  background-color: var(--status-success);
+  box-shadow: 0 0 5px var(--status-success);
 }
 
 @keyframes pulse-dot {
@@ -380,19 +399,19 @@
 }
 
 .connection-status.online .status-dot {
-  background-color: #10a37f;
-  box-shadow: 0 0 4px #10a37f;
+  background-color: var(--status-success);
+  box-shadow: 0 0 4px var(--status-success);
 }
 
 .connection-status.online .status-label {
-  color: #10a37f;
+  color: var(--status-success);
 }
 
 .connection-status.offline .status-dot {
-  background-color: #e11d48;
-  box-shadow: 0 0 4px #e11d48;
+  background-color: var(--status-failed);
+  box-shadow: 0 0 4px var(--status-failed);
 }
 
 .connection-status.offline .status-label {
-  color: #e11d48;
+  color: var(--status-failed);
 }

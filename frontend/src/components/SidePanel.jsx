@@ -13,9 +13,11 @@ import {
   Terminal,
   RotateCcw,
   Wrench,
+  Activity,
 } from 'lucide-react';
 import { api } from '../api';
 import { readStateRevision, shouldApplyStateRevision } from '../utils/revisionState';
+import StatusDetailsPane from './StatusDetailsPane';
 import './SidePanel.css';
 
 const BUILTIN_TOOL_INFO = {
@@ -26,6 +28,13 @@ const BUILTIN_TOOL_INFO = {
   read_image: { name: 'read_image', label: '图像读取', desc: '读取并解析视觉/图像资源' },
 };
 
+function normalizePanelTab(tab) {
+  if (tab === 'world' || tab === 'workspace') return 'workspace_world';
+  if (tab === 'mcp') return 'workspace_mcp';
+  if (tab === 'git') return 'workspace_git';
+  return tab || 'status';
+}
+
 export default function SidePanel({
   isOpen,
   initialTab = 'world',
@@ -33,12 +42,13 @@ export default function SidePanel({
   planActive,
   onTogglePlan,
   goalState,
+  status = null,
   threadId = 'default',
   projectId = null,
   onGoalChanged,
   onToast,
 }) {
-  const [activeTab, setActiveTab] = useState(initialTab);
+  const [activeTab, setActiveTab] = useState(() => normalizePanelTab(initialTab));
   const [worldData, setWorldData] = useState(null);
   const [mcpData, setMcpData] = useState(null);
   const [workflowState, setWorkflowState] = useState(goalState || null);
@@ -70,8 +80,17 @@ export default function SidePanel({
   const fileControllerRef = useRef(null);
 
   useEffect(() => {
-    if (initialTab) setActiveTab(initialTab);
+    if (initialTab) setActiveTab(normalizePanelTab(initialTab));
   }, [initialTab]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose?.();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     if (goalState === undefined && planActive === undefined) return;
@@ -143,16 +162,16 @@ export default function SidePanel({
     const requestContext = context || beginRequest();
     setIsLoading(true);
     try {
-      if (activeTab === 'world') {
+      if (activeTab === 'workspace_world') {
         await loadWorld(requestContext);
       } else if (activeTab === 'plan_goal') {
         await Promise.all([
           loadWorkflow(requestContext),
           loadWorkflowFiles(requestContext),
         ]);
-      } else if (activeTab === 'mcp') {
+      } else if (activeTab === 'workspace_mcp') {
         await loadMcp(requestContext);
-      } else if (activeTab === 'git') {
+      } else if (activeTab === 'workspace_git') {
         await loadGit(requestContext);
       }
     } finally {
@@ -432,16 +451,30 @@ export default function SidePanel({
 
   return (
     <div className="sidepanel-overlay" onClick={onClose}>
-      <div className="sidepanel-container" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="sidepanel-container"
+        role="dialog"
+        aria-modal="true"
+        aria-label="运行详情抽屉"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header with Tabs */}
         <div className="sidepanel-header">
           <div className="sidepanel-tabs">
             <button
-              className={`panel-tab-btn ${activeTab === 'world' ? 'active' : ''}`}
-              onClick={() => setActiveTab('world')}
+              className={`panel-tab-btn ${activeTab === 'status' ? 'active' : ''}`}
+              onClick={() => setActiveTab('status')}
+            >
+              <Activity size={14} />
+              <span>运行状态</span>
+            </button>
+
+            <button
+              className={`panel-tab-btn ${activeTab.startsWith('workspace_') ? 'active' : ''}`}
+              onClick={() => setActiveTab('workspace_world')}
             >
               <Cpu size={14} />
-              <span>环境状态 (World)</span>
+              <span>工作区</span>
             </button>
 
             <button
@@ -449,35 +482,50 @@ export default function SidePanel({
               onClick={() => setActiveTab('plan_goal')}
             >
               <Target size={14} />
-              <span>规划与目标 (Plan/Goal)</span>
+              <span>计划与目标</span>
             </button>
 
-            <button
-              className={`panel-tab-btn ${activeTab === 'mcp' ? 'active' : ''}`}
-              onClick={() => setActiveTab('mcp')}
-            >
-              <Layers size={14} />
-              <span>MCP 扩展</span>
-            </button>
-
-            <button
-              className={`panel-tab-btn ${activeTab === 'git' ? 'active' : ''}`}
-              onClick={() => setActiveTab('git')}
-            >
-              <GitBranch size={14} />
-              <span>文件与 Git</span>
-            </button>
           </div>
 
-          <button className="panel-close-btn" onClick={onClose}>
+          <button className="panel-close-btn" onClick={onClose} aria-label="关闭详情抽屉">
             <X size={15} />
           </button>
         </div>
 
         {/* Panel Content Body */}
         <div className="sidepanel-content custom-scrollbar">
+          {activeTab.startsWith('workspace_') && (
+            <div className="workspace-subtabs" role="tablist" aria-label="工作区详情">
+              <button
+                type="button"
+                className={activeTab === 'workspace_world' ? 'active' : ''}
+                onClick={() => setActiveTab('workspace_world')}
+              >
+                环境
+              </button>
+              <button
+                type="button"
+                className={activeTab === 'workspace_mcp' ? 'active' : ''}
+                onClick={() => setActiveTab('workspace_mcp')}
+              >
+                MCP
+              </button>
+              <button
+                type="button"
+                className={activeTab === 'workspace_git' ? 'active' : ''}
+                onClick={() => setActiveTab('workspace_git')}
+              >
+                文件与 Git
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'status' && (
+            <StatusDetailsPane status={status} />
+          )}
+
           {/* TAB 1: WorldState */}
-          {activeTab === 'world' && (
+          {activeTab === 'workspace_world' && (
             <div className="tab-pane">
               <div className="pane-section-header">
                 <span className="section-title">
@@ -753,7 +801,7 @@ export default function SidePanel({
           )}
 
           {/* TAB 3: MCP Status */}
-          {activeTab === 'mcp' && (
+          {activeTab === 'workspace_mcp' && (
             <div className="tab-pane">
               <div className="pane-section-header">
                 <span className="section-title">
@@ -805,7 +853,7 @@ export default function SidePanel({
           )}
 
           {/* TAB 4: Git & Changes */}
-          {activeTab === 'git' && (
+          {activeTab === 'workspace_git' && (
             <div className="tab-pane">
               <div className="pane-section-header">
                 <span className="section-title">

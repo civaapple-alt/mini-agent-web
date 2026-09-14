@@ -2,15 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Send,
   Square,
-  Navigation,
   Compass,
   Target,
   Sparkles,
-  ShieldAlert,
-  Shield,
-  Check,
   X,
-  ChevronDown,
   Image as ImageIcon,
   FileCode,
 } from 'lucide-react';
@@ -26,36 +21,13 @@ const SLASH_COMMANDS = [
   { cmd: '/clear', desc: '仅清空当前界面显示，不删除会话历史', icon: <Sparkles size={13} className="text-sky" /> },
 ];
 
-const ACCESS_SCOPES = [
-  { id: 'project', label: '项目范围 (Project)', desc: '仅当前 Project 的工作区范围' },
-  { id: 'full_machine', label: '完全访问 (Full access)', desc: '整机路径范围；不会绕过 Deny 或沙箱' },
-];
-
-const POLICIES = [
-  { id: 'interactive', label: '交互批准 (Interactive)', desc: '高风险敏感操作需要显式确认' },
-  { id: 'automatic', label: '自动低风险 (Automatic)', desc: '受限只读检查自动放行，高风险或越界操作仍需显式确认' },
-  { id: 'trusted', label: '信任执行 (Trusted)', desc: '普通工作区补丁直通；Shell、MCP、删除/移动和其他高风险操作仍需确认' },
-];
-
-const CONTINUATION_MODES = [
-  { id: 'manual', label: '手动推进 (Manual)', shortLabel: '手动', desc: '每轮使用有界步数，达到上限后由用户继续' },
-  { id: 'continuous', label: '连续执行 (Continuous)', shortLabel: '连续', desc: '普通 Chat 使用连续循环；仍受取消、超时和上下文边界约束' },
-];
-
 export default function InputBar({
   isGenerating,
   isInterrupting = false,
   sessionReadOnly = false,
-  accessScope = 'project',
-  policy = 'interactive',
-  continuationMode = 'manual',
-  goalState = null,
   projectId = null,
   pendingApproval,
   onRespondApproval,
-  onChangeExecution,
-  onChangeContinuation,
-  onEnableAutoCopilot,
   onStartPlanTask,
   onStartGoal,
   onSendMessage,
@@ -75,10 +47,6 @@ export default function InputBar({
   const [prompt, setPrompt] = useState('');
   const [showSlashPopup, setShowSlashPopup] = useState(false);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
-  const [showAccessMenu, setShowAccessMenu] = useState(false);
-  const [showApprovalMenu, setShowApprovalMenu] = useState(false);
-  const [showContinuationMenu, setShowContinuationMenu] = useState(false);
-  const [showFullAccessConfirm, setShowFullAccessConfirm] = useState(false);
 
   // Image & File Attachments
   const [attachedImages, setAttachedImages] = useState([]);
@@ -109,9 +77,6 @@ export default function InputBar({
     if (!sessionReadOnly) return;
     setShowSlashPopup(false);
     setShowMentionPopup(false);
-    setShowAccessMenu(false);
-    setShowApprovalMenu(false);
-    setShowContinuationMenu(false);
   }, [sessionReadOnly]);
 
   useEffect(() => {
@@ -139,28 +104,14 @@ export default function InputBar({
 
   // Close popup menus when clicking outside
   useEffect(() => {
-    const handleDocumentClick = () => {
-      setShowAccessMenu(false);
-      setShowApprovalMenu(false);
-      setShowContinuationMenu(false);
-      setShowMentionPopup(false);
-    };
-    if (showAccessMenu || showApprovalMenu || showContinuationMenu || showMentionPopup) {
+    const handleDocumentClick = () => setShowMentionPopup(false);
+    if (showMentionPopup) {
       window.addEventListener('click', handleDocumentClick);
     }
     return () => {
       window.removeEventListener('click', handleDocumentClick);
     };
-  }, [showAccessMenu, showApprovalMenu, showContinuationMenu, showMentionPopup]);
-
-  useEffect(() => {
-    if (!showFullAccessConfirm) return undefined;
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') setShowFullAccessConfirm(false);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showFullAccessConfirm]);
+  }, [showMentionPopup]);
 
   const loadWorkspaceFiles = async (q) => {
     mentionRequestControllerRef.current?.abort();
@@ -410,25 +361,6 @@ export default function InputBar({
     }
   };
 
-  const currentAccessObj = ACCESS_SCOPES.find((item) => item.id === accessScope) || ACCESS_SCOPES[0];
-  const currentPolicyObj = POLICIES.find((item) => item.id === policy) || POLICIES[0];
-  const currentContinuationObj = CONTINUATION_MODES.find((item) => item.id === continuationMode) || CONTINUATION_MODES[0];
-  const goalIsActive = goalState?.status === 'active';
-
-  const handleAccessScopeSelect = (nextScope) => {
-    setShowAccessMenu(false);
-    if (nextScope === 'full_machine' && accessScope !== 'full_machine') {
-      setShowFullAccessConfirm(true);
-      return;
-    }
-    if (onChangeExecution) onChangeExecution(nextScope, policy);
-  };
-
-  const confirmFullAccess = () => {
-    if (onChangeExecution) onChangeExecution('full_machine', policy);
-    setShowFullAccessConfirm(false);
-  };
-
   return (
     <div className="input-bar-container">
       {pendingMessages.length > 0 && (
@@ -485,64 +417,6 @@ export default function InputBar({
               <span className="slash-desc">{item.desc}</span>
             </div>
           ))}
-        </div>
-      )}
-
-      {showFullAccessConfirm && (
-        <div
-          className="access-confirm-overlay"
-          role="presentation"
-          onClick={() => setShowFullAccessConfirm(false)}
-        >
-          <div
-            className="access-confirm-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="full-access-confirm-title"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="access-confirm-header">
-              <div className="access-confirm-title-group">
-                <ShieldAlert size={17} className="access-confirm-icon" />
-                <h3 id="full-access-confirm-title">确认启用完全访问</h3>
-              </div>
-              <button
-                type="button"
-                className="access-confirm-close"
-                onClick={() => setShowFullAccessConfirm(false)}
-                aria-label="关闭确认框"
-              >
-                <X size={15} />
-              </button>
-            </div>
-
-            <div className="access-confirm-body">
-              <p>Agent 将获得整机路径范围的访问能力。</p>
-              <ul>
-                <li>Deny 规则、Plan 锁和工具可用性仍然有效。</li>
-                <li>高风险操作仍需要单独的安全审批。</li>
-                <li>只有明确需要访问项目外路径时才建议启用。</li>
-              </ul>
-            </div>
-
-            <div className="access-confirm-actions">
-              <button
-                type="button"
-                className="access-confirm-cancel"
-                onClick={() => setShowFullAccessConfirm(false)}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="access-confirm-submit"
-                onClick={confirmFullAccess}
-              >
-                <Shield size={13} />
-                确认启用
-              </button>
-            </div>
-          </div>
         </div>
       )}
 
@@ -627,7 +501,7 @@ export default function InputBar({
 
         {/* Bottom Composer Footer */}
         <div className="input-footer-bar">
-          {/* Bottom-Left Controls: access, approval, and image upload */}
+          {/* Bottom-Left Controls: attachments and keyboard hint */}
           <div className="input-hints">
             {/* Image Upload Button */}
             <button
@@ -639,148 +513,6 @@ export default function InputBar({
             >
               <ImageIcon size={14} />
             </button>
-            {/* 1. Access scope selector */}
-            <div className="composer-popover-wrapper" onClick={(e) => e.stopPropagation()}>
-              <button
-                type="button"
-                className="composer-pill-btn font-mono"
-                disabled={sessionReadOnly}
-                onClick={() => {
-                  setShowAccessMenu(!showAccessMenu);
-                  setShowApprovalMenu(false);
-                  setShowContinuationMenu(false);
-                }}
-                title="设置文件系统访问范围"
-              >
-                <Shield size={11} className={accessScope === 'full_machine' ? 'text-rose' : 'text-sky'} />
-                <span>{currentAccessObj.label.split(' ')[0]}</span>
-                <ChevronDown size={10} className="text-muted" />
-              </button>
-
-              {showAccessMenu && (
-                <div className="composer-popup-menu custom-scrollbar">
-                  <div className="composer-popup-title">访问范围 (Access)</div>
-                  {ACCESS_SCOPES.map((item) => (
-                    <div
-                      key={item.id}
-                      className={`composer-popup-item ${item.id === accessScope ? 'active' : ''}`}
-                      onClick={() => handleAccessScopeSelect(item.id)}
-                    >
-                      <div className="item-header">
-                        <div className="item-title-wrap">
-                          <Shield size={11} className="text-sky" />
-                          <span className="item-name font-mono">{item.label}</span>
-                        </div>
-                        {item.id === accessScope && <Check size={12} className="text-green" />}
-                      </div>
-                      <span className="item-desc">{item.desc}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* 2. Approval policy selector */}
-            <div className="composer-popover-wrapper" onClick={(e) => e.stopPropagation()}>
-              <button
-                type="button"
-                className="composer-pill-btn font-mono"
-                disabled={sessionReadOnly}
-                onClick={() => {
-                  setShowApprovalMenu(!showApprovalMenu);
-                  setShowAccessMenu(false);
-                  setShowContinuationMenu(false);
-                }}
-                title="设置批准策略"
-              >
-                <Shield size={11} className="text-amber" />
-                <span>策略: {currentPolicyObj.label.split(' ')[0]}</span>
-                <ChevronDown size={10} className="text-muted" />
-              </button>
-
-              {showApprovalMenu && (
-                <div className="composer-popup-menu custom-scrollbar">
-                  <div className="composer-popup-title">批准策略 (Policy)</div>
-                  {POLICIES.map((item) => (
-                    <div
-                      key={item.id}
-                      className={`composer-popup-item ${item.id === policy ? 'active' : ''}`}
-                      onClick={() => {
-                        if (onChangeExecution) onChangeExecution(accessScope, item.id);
-                        setShowApprovalMenu(false);
-                      }}
-                    >
-                      <div className="item-header">
-                        <span className="item-name font-mono">{item.label}</span>
-                        {item.id === policy && <Check size={12} className="text-green" />}
-                      </div>
-                      <span className="item-desc">{item.desc}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* 3. Explicit continuation / run preset selector */}
-            <div className="composer-popover-wrapper" onClick={(e) => e.stopPropagation()}>
-              <button
-                type="button"
-                className="composer-pill-btn font-mono"
-                disabled={sessionReadOnly}
-                onClick={() => {
-                  setShowContinuationMenu(!showContinuationMenu);
-                  setShowAccessMenu(false);
-                  setShowApprovalMenu(false);
-                }}
-                title="设置本轮之后的推进方式"
-              >
-                <Navigation size={11} className="text-purple" />
-                <span>推进: {goalIsActive ? 'Goal Runtime' : currentContinuationObj.shortLabel}</span>
-                <ChevronDown size={10} className="text-muted" />
-              </button>
-
-              {showContinuationMenu && (
-                <div className="composer-popup-menu custom-scrollbar">
-                  <div className="composer-popup-title">推进方式 (Continuation)</div>
-                  {goalIsActive && (
-                    <div className="composer-popup-note">
-                      当前 Goal 接管连续循环与里程碑预算；下面的普通 Chat 设置暂不覆盖它。
-                    </div>
-                  )}
-                  {CONTINUATION_MODES.map((item) => (
-                    <div
-                      key={item.id}
-                      className={`composer-popup-item ${!goalIsActive && item.id === continuationMode ? 'active' : ''}`}
-                      onClick={() => {
-                        if (goalIsActive) return;
-                        onChangeContinuation?.(item.id);
-                        setShowContinuationMenu(false);
-                      }}
-                    >
-                      <div className="item-header">
-                        <span className="item-name font-mono">{item.label}</span>
-                        {!goalIsActive && item.id === continuationMode && <Check size={12} className="text-green" />}
-                      </div>
-                      <span className="item-desc">{item.desc}</span>
-                    </div>
-                  ))}
-                  <div
-                    className="composer-popup-item composer-popup-item-preset"
-                    onClick={() => {
-                      onEnableAutoCopilot?.();
-                      setShowContinuationMenu(false);
-                    }}
-                  >
-                    <div className="item-header">
-                      <span className="item-name font-mono">Auto Copilot (显式预设)</span>
-                      <Sparkles size={12} className="text-purple" />
-                    </div>
-                    <span className="item-desc">连续执行 + 信任执行；高风险动作仍需审批，不由当前访问范围隐式触发。</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
             <span className="hint-kbd font-mono">Enter 发送</span>
           </div>
 

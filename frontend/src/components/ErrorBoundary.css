@@ -1,9 +1,9 @@
 .error-boundary-fallback {
   padding: 12px 16px;
-  background: var(--bg-card, #fff1f2);
-  border: 1px solid var(--border-danger, #fecdd3);
+  background: var(--status-failed-soft);
+  border: 1px solid var(--status-failed-border);
   border-radius: 8px;
-  color: var(--text-danger, #e11d48);
+  color: var(--status-failed);
   font-size: 13px;
   margin: 8px 0;
 }
@@ -22,12 +22,12 @@
 }
 
 .error-boundary-header .error-icon {
-  color: #e11d48;
+  color: var(--status-failed);
 }
 
 .error-message {
   margin: 6px 0;
-  color: #9f1239;
+  color: var(--status-failed);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   white-space: pre-wrap;
@@ -40,9 +40,9 @@
   gap: 6px;
   padding: 4px 8px;
   border-radius: 4px;
-  border: 1px solid #fda4af;
-  background: #ffffff;
-  color: #e11d48;
+  border: 1px solid var(--status-failed-border);
+  background: var(--bg-card);
+  color: var(--status-failed);
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
@@ -50,5 +50,5 @@
 }
 
 .btn-error-reset:hover {
-  background: #ffe4e6;
+  background: var(--status-failed-soft);
 }

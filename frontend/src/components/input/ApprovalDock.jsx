@@ -39,11 +39,13 @@ export default function ApprovalDock({
   const allowedGrantScopes = pendingApproval.data?.allowedGrantScopes || ['once'];
 
   return (
-    <div className="composer-approval-dock">
+    <div className={`composer-approval-dock ${isInterrupting ? 'is-cancelling' : ''}`} role="alert" aria-live="polite">
       <div className="dock-header">
         <div className="dock-title-group">
           <ShieldAlert size={14} className="dock-alert-icon" />
-          <span className="dock-title font-mono">待审批操作 (Action Intercepted)</span>
+        <span className="dock-title font-mono">
+          {isInterrupting ? '审批正在失效' : '待审批操作'}
+        </span>
         </div>
         <span className="dock-request-id font-mono">
           ID: {pendingApproval.requestId}
@@ -69,7 +71,9 @@ export default function ApprovalDock({
       )}
 
       <div className="dock-actions-row">
-        <span className="dock-left-hint">该操作需要您的授权方可执行</span>
+        <span className="dock-left-hint">
+          {isInterrupting ? '当前轮次正在停止，不会继续执行此工具' : '该操作需要您的授权方可执行'}
+        </span>
 
         <div className="dock-btn-group">
           <button

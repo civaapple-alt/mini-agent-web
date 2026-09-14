@@ -29,6 +29,7 @@ export default function Sidebar({
   onUpdateSummary,
   onRefreshThreads,
   onToast,
+  isMobileOpen = false,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchBox, setShowSearchBox] = useState(false);
@@ -442,7 +443,7 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="codex-sidebar">
+    <aside className={`codex-sidebar ${isMobileOpen ? 'mobile-open' : ''}`}>
       {/* 1. Header: Mini Agent ⌵ | Search */}
       <div className="sidebar-top-bar">
         <div className="codex-brand-dropdown">
@@ -513,8 +514,8 @@ export default function Sidebar({
                 fontSize: '11px',
                 padding: '4px 6px',
                 borderRadius: '4px',
-                border: '1px solid var(--border-color, #e5e7eb)',
-                background: 'var(--bg-secondary, #f9fafb)',
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-surface)',
                 color: 'inherit',
               }}
               placeholder="搜索会话标题/ID..."
@@ -952,7 +953,7 @@ export default function Sidebar({
           >
             <div className="modal-edit-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <SquarePen size={16} style={{ color: 'var(--accent-color, #10a37f)' }} />
+                <SquarePen size={16} style={{ color: 'var(--accent-green)' }} />
                 <span className="modal-edit-title">新建会话</span>
               </div>
               <button

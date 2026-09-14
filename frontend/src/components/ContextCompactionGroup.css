@@ -1,9 +1,9 @@
 .context-compaction-group {
   margin: 8px 0;
-  border: 1px solid rgba(245, 158, 11, 0.25);
+  border: 1px solid var(--status-approval-border);
   border-radius: 6px;
-  background: rgba(245, 158, 11, 0.08);
-  color: var(--text-secondary, #9ca3af);
+  background: var(--status-approval-soft);
+  color: var(--text-secondary);
   font-size: 12px;
   font-family: monospace;
 }
@@ -24,12 +24,12 @@
 }
 
 .context-compaction-summary:hover {
-  background: rgba(245, 158, 11, 0.1);
+  background: var(--status-approval-soft);
 }
 
 .context-compaction-icon {
   flex-shrink: 0;
-  color: #f59e0b;
+  color: var(--status-approval);
 }
 
 .context-compaction-summary > span {
@@ -40,7 +40,7 @@
   display: grid;
   gap: 4px;
   padding: 0 12px 8px 33px;
-  color: var(--text-muted, #6b7280);
+  color: var(--text-muted);
   font-size: 11px;
 }
 

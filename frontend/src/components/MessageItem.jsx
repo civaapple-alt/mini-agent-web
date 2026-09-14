@@ -69,7 +69,7 @@ export default function MessageItem({
                 left: 0,
                 right: 0,
                 bottom: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.75)',
+                backgroundColor: 'var(--overlay-strong)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -84,7 +84,7 @@ export default function MessageItem({
                   maxWidth: '90vw',
                   maxHeight: '90vh',
                   borderRadius: '8px',
-                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+                  boxShadow: 'var(--shadow-image)',
                 }}
                 onClick={(e) => e.stopPropagation()}
               />

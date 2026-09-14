@@ -134,10 +134,39 @@ function hasAssistantBlockBoundary(blocks) {
   );
 }
 
-function insertReasoningBlock(blocks, nextBlock) {
-  const existingIndex = blocks.findIndex(
-    (block) => block.type === 'thinking' && (!nextBlock.id || block.id === nextBlock.id),
+function reasoningIdFromEvent(data) {
+  const projectedReasoning = (data?.items || []).find(
+    (item) => item.type === 'reasoning' && item.id,
   );
+  if (projectedReasoning?.id) return projectedReasoning.id;
+
+  const itemId = data?.itemId || data?.item_id;
+  return itemId ? `${itemId}:reasoning` : null;
+}
+
+function appendReasoningDelta(content, delta) {
+  if (!delta) return content || '';
+  if (!content) return delta;
+  if (content.endsWith(delta)) return content;
+  if (delta.startsWith(content)) return delta;
+
+  const maxOverlap = Math.min(content.length, delta.length);
+  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+    if (content.endsWith(delta.slice(0, overlap))) {
+      return content + delta.slice(overlap);
+    }
+  }
+  return content + delta;
+}
+
+function insertReasoningBlock(blocks, nextBlock) {
+  const existingIndex = nextBlock.id
+    ? blocks.findIndex(
+      (block) => block.type === 'thinking' && block.id === nextBlock.id,
+    )
+    : blocks.findIndex(
+      (block) => block.type === 'thinking' && block.content === nextBlock.content,
+    );
   if (existingIndex !== -1) {
     blocks[existingIndex] = {
       ...blocks[existingIndex],
@@ -266,21 +295,29 @@ function mergeProjectedReasoningItems(messages, items, targetIndex = messages.le
 
   for (const item of items) {
     if (!item.text) continue;
-    const existingIndex = blocks.findIndex(
-      (b) => b.type === 'thinking' && (!item.id || b.id === item.id),
-    );
-    if (existingIndex === -1) {
+    const existingIndex = item.id
+      ? blocks.findIndex((b) => b.type === 'thinking' && b.id === item.id)
+      : -1;
+    const contentIndex = existingIndex === -1
+      ? blocks.findIndex(
+        (b) => b.type === 'thinking' && b.content === item.text,
+      )
+      : existingIndex;
+    if (contentIndex === -1) {
       insertReasoningBlock(blocks, {
         type: 'thinking',
         id: item.id,
         content: item.text,
         isStreaming: false,
       });
-    } else if ((blocks[existingIndex].content || '').length < item.text.length) {
-      blocks[existingIndex] = {
-        ...blocks[existingIndex],
+    } else if ((blocks[contentIndex].content || '').length < item.text.length) {
+      blocks[contentIndex] = {
+        ...blocks[contentIndex],
+        ...(item.id ? { id: item.id } : {}),
         content: item.text,
       };
+    } else if (item.id && !blocks[contentIndex].id) {
+      blocks[contentIndex] = { ...blocks[contentIndex], id: item.id };
     }
   }
 
@@ -635,26 +672,46 @@ export function aggregateStreamEvent(messages, data) {
 
     if (type === 'assistant_reasoning_delta') {
       const delta = evt.delta || '';
-      const lastBlock = blocks[blocks.length - 1];
-      if (lastBlock?.type === 'thinking') {
-        blocks[blocks.length - 1] = {
-          ...lastBlock,
-          content: (lastBlock.content || '') + delta,
+      const reasoningId = reasoningIdFromEvent(data);
+      const identifiedIndex = reasoningId
+        ? blocks.findIndex(
+          (block) => block.type === 'thinking' && block.id === reasoningId,
+        )
+        : -1;
+      if (identifiedIndex !== -1) {
+        blocks[identifiedIndex] = {
+          ...blocks[identifiedIndex],
+          content: appendReasoningDelta(blocks[identifiedIndex].content, delta),
           isStreaming: true,
         };
       } else {
+        const lastBlock = blocks[blocks.length - 1];
+        const lastThinkingIndex = blocks.findLastIndex(
+          (block) => block.type === 'thinking',
+        );
+        const boundaryAfterLastThinking = lastThinkingIndex !== -1
+          && blocks.slice(lastThinkingIndex + 1).some(
+            (block) => block.type === 'tool' || block.type === 'compaction',
+          );
         const existingThinking = !hasAssistantBlockBoundary(blocks)
           ? blocks.findIndex((block) => block.type === 'thinking')
           : -1;
-        if (existingThinking !== -1) {
+        if (lastBlock?.type === 'thinking' && !boundaryAfterLastThinking) {
+          blocks[blocks.length - 1] = {
+            ...lastBlock,
+            content: appendReasoningDelta(lastBlock.content, delta),
+            isStreaming: true,
+          };
+        } else if (existingThinking !== -1) {
           blocks[existingThinking] = {
             ...blocks[existingThinking],
-            content: (blocks[existingThinking].content || '') + delta,
+            content: appendReasoningDelta(blocks[existingThinking].content, delta),
             isStreaming: true,
           };
         } else {
           insertReasoningBlock(blocks, {
             type: 'thinking',
+            id: reasoningId || undefined,
             content: delta,
             isStreaming: true,
           });
@@ -701,6 +758,7 @@ export function aggregateStreamEvent(messages, data) {
       const toolName = evt.tool || evt.name || evt.toolName || '';
       blocks.push({
         type: 'tool',
+        id: evt.call_id || evt.id || '',
         name: toolName,
         toolName: toolName,
         args: evt.args || evt.parameters || {},

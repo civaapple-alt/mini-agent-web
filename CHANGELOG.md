@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reasoning segment reconciliation**: assign one stable identity to each
+  model-response reasoning segment and make streaming, lifecycle, replay, and
+  ThreadItem projections idempotent, so a later reasoning segment is not
+  appended to an earlier ThinkingBlock and rendered twice.
+
 - **DeepSeek model naming**: align Web Studio examples with the current
   unified `deepseek-flash` model entrypoint.
 
@@ -59,6 +64,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selecting `/plan` now also leaves a trailing space for direct task entry.
 
 ### Added
+
+- **Approval action evidence**: record request and resolution metadata in the
+  per-Thread `approval-evidence.jsonl` sidecar, including a `session_item_id`
+  join key so risk review can recover the bounded command from the co-located
+  Session log without duplicating it in the trace.
 
 - **Web Studio UI simplification**: consolidate Plan, Goal, Runtime, connection,
   execution settings, and scoped Turn identity into one status rail with a

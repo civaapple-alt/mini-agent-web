@@ -69,10 +69,12 @@ notification 广播给所有 WebSocket 客户端；单个请求的 WebSocket 只
 对账；Gateway 进程退出会取消内存中的待审批请求。
 
 App Server 会在已绑定持久化 Session 的 Thread 目录旁写入独立的
-`approval-evidence.jsonl`。该文件记录已完成审批决策的有界摘要，包含
-Project/Thread/Turn/call 标识、策略、访问范围、工具与命令首词、动作 hash 和结果。
-它不属于 Gateway 的 pending 状态，也不是 Session history 或授权缓存。多个 Thread
-的项目级分析应在读取时聚合，trace 不能自动扩大 allow 规则。
+`approval-evidence.jsonl`。该文件在请求进入等待态和最终决策时分别记录
+`approval_requested` / `approval_resolved`，包含 Project/Thread/Turn/call 标识、策略、
+访问范围、工具与命令首词、`session_item_id` 关联键、动作 hash 和结果。完整命令不复制
+到该 trace；读取方用 `session_item_id=call_id` 关联同目录 `session.jsonl` 中对应的
+`kind=item` 记录。它不属于 Gateway 的 pending 状态，也不是 Session history 或授权
+缓存。多个 Thread 的项目级分析应在读取时聚合，trace 不能自动扩大 allow 规则。
 
 所有 Thread、Turn、Workflow、World 和 Session 请求都使用统一的
 `project_id` 路由上下文；REST 请求通过 query 参数传递，创建、attach、fork 和

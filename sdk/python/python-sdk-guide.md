@@ -163,7 +163,9 @@ run lifecycle (`run_finished` / structured `run_failed`) events. Unknown future
 event types remain available as `GenericEvent` instead of breaking the stream.
 
 For App Server `turn/event` messages, `stream_turn()` also exposes the raw
-`items` list and typed `ThreadItem` values. This is the stable projection for
+`items` list and typed `ThreadItem` values. The optional `itemId` identifies one
+model response across its streamed deltas and final projection; reasoning items
+use the derived `<itemId>:reasoning` identity. This is the stable projection for
 renderers that reconcile a tool call across `inProgress`, `completed`, and
 `failed` states:
 

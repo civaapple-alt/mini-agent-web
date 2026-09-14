@@ -472,6 +472,95 @@ test('ThreadItem reasoning projections synchronize thinking block', () => {
   assert.equal(messages[0].blocks[0].content, 'System architecture analysis and design steps...');
 });
 
+test('reasoning segments keep their identity across tools and projected replay', () => {
+  let messages = aggregateStreamEvent([], {
+    type: 'event',
+    turnId: 'turn-reasoning-segments',
+    itemId: 'turn-reasoning-segments:model:1',
+    event: { type: 'turn_started' },
+  });
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-reasoning-segments',
+    itemId: 'turn-reasoning-segments:model:1',
+    event: { type: 'assistant_reasoning_delta', delta: 'First model step.' },
+  });
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-reasoning-segments',
+    event: {
+      type: 'tool_started',
+      tool: 'shell',
+      call_id: 'call-reasoning-segments',
+      args: { command: 'pwd' },
+    },
+  });
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-reasoning-segments',
+    itemId: 'turn-reasoning-segments:model:2',
+    event: { type: 'assistant_reasoning_delta', delta: 'Second model step.' },
+  });
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-reasoning-segments',
+    itemId: 'turn-reasoning-segments:model:2',
+    items: [
+      {
+        type: 'reasoning',
+        id: 'turn-reasoning-segments:model:2:reasoning',
+        text: 'Second model step.',
+      },
+    ],
+    event: { type: 'model_responded' },
+  });
+
+  assert.deepEqual(
+    messages[0].blocks.map((block) => [block.type, block.id, block.content]),
+    [
+      ['thinking', 'turn-reasoning-segments:model:1:reasoning', 'First model step.'],
+      ['tool', 'call-reasoning-segments', undefined],
+      ['thinking', 'turn-reasoning-segments:model:2:reasoning', 'Second model step.'],
+    ],
+  );
+});
+
+test('legacy reasoning deltas create a new block after a tool boundary', () => {
+  let messages = aggregateStreamEvent([], {
+    type: 'event',
+    turnId: 'turn-legacy-reasoning-segments',
+    event: { type: 'turn_started' },
+  });
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-legacy-reasoning-segments',
+    event: { type: 'assistant_reasoning_delta', delta: 'Before tool.' },
+  });
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-legacy-reasoning-segments',
+    event: {
+      type: 'tool_started',
+      tool: 'shell',
+      call_id: 'call-legacy-reasoning-segments',
+    },
+  });
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-legacy-reasoning-segments',
+    event: { type: 'assistant_reasoning_delta', delta: 'After tool.' },
+  });
+
+  assert.deepEqual(
+    messages[0].blocks.map((block) => [block.type, block.content]),
+    [
+      ['thinking', 'Before tool.'],
+      ['tool', undefined],
+      ['thinking', 'After tool.'],
+    ],
+  );
+});
+
 test('dedicated ThreadItem lifecycle notifications reconcile without duplicate tool blocks', () => {
   let messages = aggregateStreamEvent([], {
     type: 'event',

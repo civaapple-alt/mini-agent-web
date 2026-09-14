@@ -7,6 +7,7 @@ import {
   assignHistoryTurnIds,
   filterEmptyMessages,
   groupCompactionBlocks,
+  normalizeAssistantBlocks,
   shouldAcceptEventForThread,
   shouldIgnoreApprovalWhileInterrupting,
   shouldSettleActiveTurnFromError,
@@ -117,6 +118,42 @@ test('message stream aggregation cleanly sequences thinking, text, and tools', (
     event: { type: 'turn_finished' },
   });
   assert.equal(messages[0].blocks.every((b) => !b.isStreaming), true);
+});
+
+test('late reasoning remains before the final answer', () => {
+  let messages = aggregateStreamEvent([], {
+    type: 'event',
+    turnId: 'turn-late-reasoning',
+    event: { type: 'turn_started' },
+  });
+
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-late-reasoning',
+    event: { type: 'assistant_text_delta', delta: '最终回答' },
+  });
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-late-reasoning',
+    event: { type: 'assistant_reasoning_delta', delta: '补到的思考' },
+  });
+
+  assert.deepEqual(
+    messages[0].blocks.map((block) => block.type),
+    ['thinking', 'text'],
+  );
+  assert.equal(messages[0].blocks[0].content, '补到的思考');
+  assert.equal(messages[0].blocks[1].content, '最终回答');
+});
+
+test('late reasoning after a tool is moved before the answer without crossing the tool', () => {
+  const blocks = normalizeAssistantBlocks([
+    { type: 'tool', name: 'web_fetch' },
+    { type: 'text', content: '最终回答' },
+    { type: 'thinking', content: '补到的思考' },
+  ]);
+
+  assert.deepEqual(blocks.map((block) => block.type), ['tool', 'thinking', 'text']);
 });
 
 test('thread isolation rejects foreign thread events', () => {

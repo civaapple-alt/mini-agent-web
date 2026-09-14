@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Provider web search visibility**: keep the enabled server-side
+  `web_search` capability distinct from Host function tools and document the
+  supported DeepSeek Responses model identifier, so a user-level
+  `MINI_AGENT_WEB_SEARCH=true` setting is not silently confused with the
+  `web_fetch` extension.
+
+- **Web `.env` discovery**: include the Web workspace `.env` when the Gateway
+  starts an App Server for a Project located outside the Web repository, while
+  preserving Project-over-Web-over-user precedence.
+
+- **Reasoning/output ordering**: prevent a late reasoning stream from being
+  rendered after the assistant's final answer in Web Studio.
+
 - **Multi-browser approval synchronization**: an accepted approval decision is
   immediately broadcast to all same-Project Studio clients; stale peer approval
   docks close authoritatively, duplicate or late responses show a conflict/expiry

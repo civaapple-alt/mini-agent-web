@@ -128,6 +128,36 @@ function settleThinkingBlocks(messages, targetIndex) {
   return copy;
 }
 
+function hasAssistantBlockBoundary(blocks) {
+  return blocks.some(
+    (block) => block.type === 'tool' || block.type === 'compaction'
+  );
+}
+
+function insertReasoningBlock(blocks, nextBlock) {
+  const existingIndex = blocks.findIndex(
+    (block) => block.type === 'thinking' && (!nextBlock.id || block.id === nextBlock.id),
+  );
+  if (existingIndex !== -1) {
+    blocks[existingIndex] = {
+      ...blocks[existingIndex],
+      ...nextBlock,
+      content: nextBlock.content || blocks[existingIndex].content || '',
+    };
+    return;
+  }
+
+  // Provider streams can deliver the final answer before the complete
+  // reasoning item. Keep reasoning before the answer unless a tool or
+  // compaction already establishes a meaningful assistant block boundary.
+  if (!hasAssistantBlockBoundary(blocks)) {
+    const textIndex = blocks.findIndex((block) => block.type === 'text');
+    blocks.splice(textIndex === -1 ? blocks.length : textIndex, 0, nextBlock);
+  } else {
+    blocks.push(nextBlock);
+  }
+}
+
 function findToolTargetIndex(messages, item, fallbackIndex) {
   const callId = item.id || item.call_id;
   if (!callId) return fallbackIndex;
@@ -209,6 +239,25 @@ export function groupCompactionBlocks(blocks = []) {
   return grouped;
 }
 
+/**
+ * Providers may finish a reasoning item after the final text item. Keep a
+ * trailing reasoning-only suffix attached to the answer it explains while
+ * preserving tool and compaction boundaries.
+ */
+export function normalizeAssistantBlocks(blocks = []) {
+  const lastTextIndex = blocks.findLastIndex((block) => block.type === 'text');
+  if (lastTextIndex === -1 || lastTextIndex === blocks.length - 1) return blocks;
+
+  const trailing = blocks.slice(lastTextIndex + 1);
+  if (!trailing.every((block) => block.type === 'thinking')) return blocks;
+
+  return [
+    ...blocks.slice(0, lastTextIndex),
+    ...trailing,
+    blocks[lastTextIndex],
+  ];
+}
+
 function mergeProjectedReasoningItems(messages, items, targetIndex = messages.length - 1) {
   if (messages.length === 0 || items.length === 0) return messages;
   const copy = [...messages];
@@ -221,7 +270,7 @@ function mergeProjectedReasoningItems(messages, items, targetIndex = messages.le
       (b) => b.type === 'thinking' && (!item.id || b.id === item.id),
     );
     if (existingIndex === -1) {
-      blocks.push({
+      insertReasoningBlock(blocks, {
         type: 'thinking',
         id: item.id,
         content: item.text,
@@ -239,7 +288,7 @@ function mergeProjectedReasoningItems(messages, items, targetIndex = messages.le
     .filter((block) => block.type === 'thinking')
     .map((block) => block.content)
     .join('\n\n');
-  last.blocks = blocks;
+  last.blocks = normalizeAssistantBlocks(blocks);
   copy[targetIndex] = last;
   return copy;
 }
@@ -452,7 +501,7 @@ export function aggregateThreadItems(messages, entries) {
       if (textBlock === -1) blocks.push({ type: 'text', id: item.id, content: item.text });
       else blocks[textBlock] = { ...blocks[textBlock], content: item.text };
       last.text = item.text;
-      last.blocks = blocks;
+      last.blocks = normalizeAssistantBlocks(blocks);
       copy[targetIndex] = last;
       next = copy;
     }
@@ -585,22 +634,37 @@ export function aggregateStreamEvent(messages, data) {
     }
 
     if (type === 'assistant_reasoning_delta') {
+      const delta = evt.delta || '';
       const lastBlock = blocks[blocks.length - 1];
-      if (!lastBlock || lastBlock.type !== 'thinking') {
-        blocks.push({
-          type: 'thinking',
-          content: evt.delta || '',
-          isStreaming: true,
-        });
-      } else {
+      if (lastBlock?.type === 'thinking') {
         blocks[blocks.length - 1] = {
           ...lastBlock,
-          content: (lastBlock.content || '') + (evt.delta || ''),
+          content: (lastBlock.content || '') + delta,
           isStreaming: true,
         };
+      } else {
+        const existingThinking = !hasAssistantBlockBoundary(blocks)
+          ? blocks.findIndex((block) => block.type === 'thinking')
+          : -1;
+        if (existingThinking !== -1) {
+          blocks[existingThinking] = {
+            ...blocks[existingThinking],
+            content: (blocks[existingThinking].content || '') + delta,
+            isStreaming: true,
+          };
+        } else {
+          insertReasoningBlock(blocks, {
+            type: 'thinking',
+            content: delta,
+            isStreaming: true,
+          });
+        }
       }
-      last.thinking = (last.thinking || '') + (evt.delta || '');
-      last.blocks = blocks;
+      last.thinking = blocks
+        .filter((block) => block.type === 'thinking')
+        .map((block) => block.content || '')
+        .join('\n\n');
+      last.blocks = normalizeAssistantBlocks(blocks);
       copy[targetIndex] = last;
       return copy;
     }

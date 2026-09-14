@@ -6,7 +6,7 @@ import ThinkingBlock from './ThinkingBlock';
 import ToolCard from './ToolCard';
 import ContextCompactionGroup from './ContextCompactionGroup';
 import ErrorBoundary from './ErrorBoundary';
-import { groupCompactionBlocks } from '../utils/messageState';
+import { groupCompactionBlocks, normalizeAssistantBlocks } from '../utils/messageState';
 
 export default function MessageItem({
   message,
@@ -150,7 +150,7 @@ export default function MessageItem({
   const fullResponseText = blocks.length > 0
     ? blocks.filter((b) => b.type === 'text').map((b) => b.content).join('\n\n')
     : text;
-  const renderedBlocks = groupCompactionBlocks(blocks);
+  const renderedBlocks = groupCompactionBlocks(normalizeAssistantBlocks(blocks));
 
   return (
     <div className="message-row assistant">

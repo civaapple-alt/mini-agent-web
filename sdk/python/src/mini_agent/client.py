@@ -148,18 +148,27 @@ def _ensure_utf8_console() -> None:
                     pass
 
 
+def _env_search_dirs(cwd: str) -> list[str]:
+    """Return bounded project, Web workspace, and user config directories."""
+    module_dir = os.path.dirname(os.path.abspath(__file__))
+    web_workspace = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(module_dir)))
+    )
+    return [
+        cwd,
+        os.path.dirname(cwd),
+        module_dir,
+        os.path.dirname(module_dir),
+        os.path.dirname(os.path.dirname(module_dir)),
+        web_workspace,
+        os.path.expanduser("~/.mini-agent"),
+    ]
+
+
 def _find_and_load_env(cwd: str) -> dict[str, str]:
     """Lightweight built-in .env parser without external dependencies."""
     env_vars: dict[str, str] = {}
-    search_dirs = [
-        cwd,
-        os.path.dirname(cwd),
-        os.path.dirname(os.path.abspath(__file__)),
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        os.path.expanduser("~/.mini-agent"),
-    ]
-    for d in search_dirs:
+    for d in _env_search_dirs(cwd):
         env_path = os.path.join(d, ".env")
         if os.path.isfile(env_path):
             try:

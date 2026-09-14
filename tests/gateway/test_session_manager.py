@@ -525,7 +525,12 @@ async def test_interrupt_cancels_approval_and_denies_late_request(
 
     assert cancelled == 1
     assert mock_session_manager.list_pending_approvals() == []
-    assert (await task)["decision"] == "deny"
+    result = await task
+    assert result == {
+        "decision": "deny",
+        "grantScope": None,
+        "reason": "当前 Turn 已停止，审批已失效",
+    }
     assert (
         mock_session_manager.resolve_approval("approval-interrupt", "approve", "once")
         is False
@@ -538,6 +543,45 @@ async def test_interrupt_cancels_approval_and_denies_late_request(
     assert mock_session_manager.list_pending_approvals() == []
     resolved = mock_session_manager.broadcast_ws.await_args_list[-1].args[0]
     assert resolved["approval"]["reason"] == "当前 Turn 已停止，审批已失效"
+
+
+@pytest.mark.asyncio
+async def test_interrupt_does_not_publish_deny_after_approval_wins(
+    mock_session_manager,
+):
+    """A concurrent stop cannot rewrite an already accepted approval."""
+    mock_session_manager.broadcast_ws = AsyncMock()
+    request = {
+        "requestId": "approval-stop-race",
+        "actionSummary": "Run workspace command",
+        "allowedGrantScopes": ["once"],
+        "projectId": "default",
+        "threadId": "race-thread",
+        "turnId": "turn-race",
+    }
+    task = asyncio.create_task(
+        mock_session_manager._handle_approval_request(request, runtime_id="runtime-a")
+    )
+    await asyncio.sleep(0)
+
+    assert mock_session_manager.resolve_approval(
+        "approval-stop-race",
+        "approve",
+        "once",
+        project_id="default",
+        thread_id="race-thread",
+        turn_id="turn-race",
+    )
+    assert (
+        await mock_session_manager.cancel_pending_approvals(
+            project_id="default",
+            thread_id="race-thread",
+            turn_id="turn-race",
+        )
+        == 0
+    )
+    assert (await task)["decision"] == "approve"
+    assert mock_session_manager.broadcast_ws.await_count == 1
 
 
 def test_session_manager_thread_metadata_management(mock_session_manager):

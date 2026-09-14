@@ -101,10 +101,25 @@ class ApprovalBridge:
                 continue
             if runtime_id and details.get("runtimeId") != runtime_id:
                 continue
-            future = owner._pending_approvals.pop(request_id, None)
+            future = owner._pending_approvals.get(request_id)
+            # Resolve the wait with a typed denial instead of cancelling the
+            # Future. The SDK approval handler must send approval/respond to
+            # the App Server; a bare Future cancellation can leave the Rust
+            # approval callback blocked and the Turn stuck in stopping.
+            if future and future.done():
+                # A concurrent user decision won the race. Its handler owns
+                # the accepted outcome; do not publish a contradictory deny.
+                continue
+            if future:
+                future.set_result(
+                    {
+                        "decision": "deny",
+                        "grantScope": None,
+                        "reason": reason,
+                    }
+                )
+            owner._pending_approvals.pop(request_id, None)
             owner._pending_approval_details.pop(request_id, None)
-            if future and not future.done():
-                future.cancel()
             cancelled.append((request_id, details))
 
         for request_id, details in cancelled:

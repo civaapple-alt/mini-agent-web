@@ -19,6 +19,27 @@
   animation: slideDownDock 0.15s ease;
 }
 
+.composer-approval-dock.is-cancelling {
+  border-color: var(--status-approval-border);
+  background-color: var(--status-approval-soft);
+}
+
+.composer-approval-dock.is-cancelling .dock-left-hint {
+  color: var(--status-approval);
+}
+
+.composer-approval-dock button:disabled,
+.composer-approval-dock input:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  filter: grayscale(0.45);
+}
+
+.composer-approval-dock button:disabled:hover {
+  opacity: 0.48;
+  background-color: inherit;
+}
+
 @keyframes slideDownDock {
   from {
     opacity: 0;

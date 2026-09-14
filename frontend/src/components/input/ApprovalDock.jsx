@@ -43,9 +43,9 @@ export default function ApprovalDock({
       <div className="dock-header">
         <div className="dock-title-group">
           <ShieldAlert size={14} className="dock-alert-icon" />
-        <span className="dock-title font-mono">
-          {isInterrupting ? '审批正在失效' : '待审批操作'}
-        </span>
+          <span className="dock-title font-mono">
+            {isInterrupting ? '审批已锁定' : '待审批操作'}
+          </span>
         </div>
         <span className="dock-request-id font-mono">
           ID: {pendingApproval.requestId}
@@ -56,7 +56,7 @@ export default function ApprovalDock({
         <pre>{approvalActionText}</pre>
       </div>
 
-      {showDenyInput && (
+      {showDenyInput && !isInterrupting && (
         <div className="dock-deny-box">
           <input
             type="text"
@@ -72,7 +72,9 @@ export default function ApprovalDock({
 
       <div className="dock-actions-row">
         <span className="dock-left-hint">
-          {isInterrupting ? '当前轮次正在停止，不会继续执行此工具' : '该操作需要您的授权方可执行'}
+          {isInterrupting
+            ? '当前轮次正在停止，审批已失效；不会继续执行此工具'
+            : '该操作需要您的授权方可执行'}
         </span>
 
         <div className="dock-btn-group">

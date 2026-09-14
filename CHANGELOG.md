@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Approval-aware interruption settlement**: stopping a Turn while a tool
+  approval is pending now resolves the approval as an explicit denial before
+  releasing the App Server wait. The approval controls are visibly locked, the
+  active Turn identity remains until its authoritative terminal event, and a
+  stop/approval race cannot publish a contradictory result.
+
 - **Approval result visibility**: keep each approval request and resolution
   attached to its matching tool card, so allow, deny, expiry, interruption, and
   peer-window handling remain visible in the message stream after the approval

@@ -1316,8 +1316,20 @@ export default function App() {
       showToast('停止请求发送失败，请确认连接后重试。', 'error', 3000);
       return;
     }
-    activeTurnIdRef.current = null;
-    setActiveTurnId(null);
+    // Keep the Turn identity until the authoritative turn_finished/error
+    // arrives. Clearing it here makes a late terminal event look unscoped and
+    // leaves the UI in "stopping" when the approval path settles first.
+    const approval = pendingApprovalRef.current;
+    if (approval) {
+      setMessages((prev) => mergeApprovalEvent(prev, {
+        ...(approval.data || {}),
+        requestId: approval.requestId,
+        phase: 'resolved',
+        state: 'expired',
+        source: 'interrupted',
+        reason: '当前 Turn 已停止，审批已失效。',
+      }));
+    }
     showToast('已发送停止生成请求', 'info', 1800);
     setMessages((prev) => {
       if (prev.length === 0) return prev;
@@ -1338,7 +1350,9 @@ export default function App() {
 
   const handleRespondApproval = async (requestId, decision, reason = '', requestedScope = 'once') => {
     if (interruptPendingRef.current || isInterrupting) {
-      setPendingApproval(null);
+      // The dock is disabled during interruption. Keep its non-actionable
+      // state visible until the Gateway publishes the resolved approval so a
+      // user can see why a click cannot release the tool.
       showToast('当前轮次正在停止，该审批已失效。', 'info', 2500);
       return;
     }

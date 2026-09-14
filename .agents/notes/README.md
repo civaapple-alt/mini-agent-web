@@ -30,6 +30,7 @@
 - [Web Studio UI 交互、布局与主题升级](implemented/feature/2026-09-14-web-studio-ui-simplification.md)
 - [审批身份与生命周期收敛](implemented/bug-fix/2026-09-14-approval-identity-and-lifecycle.md)
 - [Trusted 低打断工具执行](implemented/feature/2026-09-14-trusted-low-interruption-execution.md)
+- [用户输入 Trace 与 Thread 历史](implemented/feature/2026-09-14-user-input-trace-and-thread-history.md)
 
 ## 提案
 

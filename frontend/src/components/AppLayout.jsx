@@ -42,6 +42,9 @@ export default function AppLayout({
   lastTurnResult,
   policy,
   onSendMessage,
+  onAdjustPrompt,
+  onViewThreadHistory,
+  historyFocusMessageId,
   userSettings,
   isLoadingHistory,
   sessionReadOnly,
@@ -142,6 +145,12 @@ export default function AppLayout({
               policy={policy}
               onQuickPrompt={onSendMessage}
               onRetryPrompt={onSendMessage}
+              onAdjustPrompt={onAdjustPrompt}
+              onViewThreadHistory={onViewThreadHistory}
+              traceScope={{
+                threadId: currentThread,
+                projectId: currentThreadProject,
+              }}
               autoScroll={userSettings.auto_scroll}
               wordWrap={userSettings.word_wrap}
               fontSize={userSettings.font_size}
@@ -189,6 +198,9 @@ export default function AppLayout({
           onGoalChanged={onGoalChanged}
           onTogglePlan={onTogglePlan}
           onToast={onToast}
+          messages={messages}
+          onAdjustPrompt={onAdjustPrompt}
+          historyFocusMessageId={historyFocusMessageId}
         />
       </ErrorBoundary>
 

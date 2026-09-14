@@ -11,6 +11,9 @@ export default function ChatArea({
   policy = 'interactive',
   onQuickPrompt,
   onRetryPrompt,
+  onAdjustPrompt,
+  onViewThreadHistory,
+  traceScope,
   autoScroll = true,
   wordWrap = true,
   fontSize = 13,
@@ -100,6 +103,9 @@ export default function ChatArea({
               pendingApproval={pendingApproval}
               policy={policy}
               onRetryPrompt={onRetryPrompt}
+              onAdjustPrompt={onAdjustPrompt}
+              onViewThreadHistory={onViewThreadHistory}
+              traceScope={traceScope}
             />
           ))}
         </div>

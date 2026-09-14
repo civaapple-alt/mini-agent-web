@@ -112,6 +112,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Add mobile navigation, Escape-close drawers, semantic Light/Dark theme tokens,
   and explicit cancellation visibility for approval-pending Turns.
 
+- **User input trace and Thread history**: add a hover/focus trace card to each
+  user input, showing its Project/Thread/Turn scope, captured execution
+  settings, and attachment summary. Inputs can be placed back into the
+  composer for adjustment, and the details drawer now provides the loaded
+  current Thread input history. Historical messages explicitly show when
+  submission-time settings or attachment details were not persisted.
+
 - **Scoped execution settings and background approvals**: project-level access and
   approval policy changes now fan out to every idle Client in that project; pending
   approval requests carry Project/Thread/Turn identity and are restored when Studio

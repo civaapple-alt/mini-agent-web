@@ -36,6 +36,7 @@ import {
   scopedThreadKey,
 } from './utils/sessionState.js';
 import { getStatusViewModel, normalizeTheme } from './utils/statusModel.js';
+import { createInputTrace } from './utils/inputTrace.js';
 import './App.css';
 
 export default function App() {
@@ -86,6 +87,7 @@ export default function App() {
   // Panels & Modals
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
   const [sidePanelTab, setSidePanelTab] = useState('status');
+  const [historyFocusMessageId, setHistoryFocusMessageId] = useState(null);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
 
@@ -113,6 +115,7 @@ export default function App() {
   const loadThreadsRef = useRef(null);
   const catalogEpochRef = useRef(0);
   const catalogRequestControllerRef = useRef(null);
+  const pendingUserMessageIdRef = useRef(null);
   activeTurnIdRef.current = activeTurnId;
   planActiveRef.current = planActive;
   currentThreadRef.current = currentThread;
@@ -257,6 +260,8 @@ export default function App() {
     setPendingMessages([]);
     setComposerDraft(null);
     setLastTurnResult(null);
+    setHistoryFocusMessageId(null);
+    pendingUserMessageIdRef.current = null;
     setPlanReviewPending(false);
     setPlanActive(false);
     goalStateRef.current = null;
@@ -754,6 +759,7 @@ export default function App() {
           : Array.isArray(m.toolCalls)
             ? m.toolCalls
             : [];
+        const isUserMessage = m.role === 'user';
         result.push({
           id: messageId,
           role: m.role,
@@ -761,6 +767,21 @@ export default function App() {
           text: m.text || '',
           thinking: reasoning,
           tools: [],
+          ...(isUserMessage
+            ? {
+              inputTrace: createInputTrace({
+                threadId,
+                projectId,
+                turnId: m.turnId || null,
+                source: 'user',
+                images: m.images,
+                referencedFiles: m.referencedFiles,
+                historical: true,
+                attachmentsKnown: Object.prototype.hasOwnProperty.call(m, 'images')
+                  || Object.prototype.hasOwnProperty.call(m, 'referencedFiles'),
+              }),
+            }
+            : {}),
           toolCallIds: toolCalls.map((call) => call?.id || call?.call_id).filter(Boolean),
           blocks: [
             ...(reasoning
@@ -852,6 +873,24 @@ export default function App() {
     if (data.type === '_turn_submission') {
       const turnId = data.data?.turn_id || data.submission?.turn_id;
       if (turnId) {
+        const submittedMessageId = pendingUserMessageIdRef.current;
+        if (submittedMessageId) {
+          setMessages((previous) => previous.map((message) => (
+            message.id === submittedMessageId
+              ? {
+                ...message,
+                turnId,
+                inputTrace: message.inputTrace
+                  ? {
+                    ...message.inputTrace,
+                    scope: { ...message.inputTrace.scope, turnId },
+                  }
+                  : message.inputTrace,
+              }
+              : message
+          )));
+          pendingUserMessageIdRef.current = null;
+        }
         activeTurnIdRef.current = turnId;
         setActiveTurnId(turnId);
         setIsGenerating(true);
@@ -1234,6 +1273,20 @@ export default function App() {
       threadId: currentThread,
       project_id: currentThreadProject,
     };
+    const messageId = 'user_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const inputTrace = createInputTrace({
+      threadId: currentThread,
+      projectId: currentThreadProject,
+      source: 'user',
+      capturedAt: new Date().toISOString(),
+      accessScope,
+      policy,
+      continuationMode,
+      planActive,
+      goalActive: goalState?.status === 'active',
+      images,
+      referencedFiles,
+    });
 
     setPlanReviewPending(false);
 
@@ -1243,16 +1296,18 @@ export default function App() {
       return false;
     }
 
+    pendingUserMessageIdRef.current = messageId;
     setMessages((prev) => [
       ...prev,
       {
-        id: 'user_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        id: messageId,
         role: 'user',
         text: promptText,
         images,
         referencedFiles,
         thinking: '',
         tools: [],
+        inputTrace,
         blocks: [{ type: 'text', content: promptText }],
       },
     ]);
@@ -1328,6 +1383,21 @@ export default function App() {
       return;
     }
 
+    const inputTrace = createInputTrace({
+      threadId: currentThread,
+      projectId: currentThreadProject,
+      turnId: activeTurnId,
+      source: 'steer',
+      capturedAt: new Date().toISOString(),
+      accessScope,
+      policy,
+      continuationMode,
+      planActive,
+      goalActive: goalState?.status === 'active',
+      images,
+      referencedFiles,
+    });
+
     // 1. Render user's steer prompt in chat log immediately so it is clearly visible
     setMessages((prev) => [
       ...prev,
@@ -1342,6 +1412,7 @@ export default function App() {
         referencedFiles,
         thinking: '',
         tools: [],
+        inputTrace,
         blocks: [{ type: 'text', content: promptText }],
       },
     ]);
@@ -1801,6 +1872,25 @@ export default function App() {
     setSidePanelOpen(true);
   };
 
+  const handleAdjustPrompt = (message) => {
+    if (!message) return;
+    setComposerDraft({
+      prompt: message.text || '',
+      images: Array.isArray(message.images) ? message.images : [],
+      referencedFiles: Array.isArray(message.referencedFiles)
+        ? message.referencedFiles
+        : [],
+      editToken: Date.now(),
+    });
+    setSidePanelOpen(false);
+    showToast('已将这条输入放回编辑器，可调整后重新发送', 'info', 2200);
+  };
+
+  const handleViewThreadHistory = (messageId = null) => {
+    setHistoryFocusMessageId(messageId);
+    handleOpenSidePanel('thread_history');
+  };
+
   const handleUpdateExecution = async (nextAccess, nextPolicy) => {
     if (isGenerating || activeTurnIdRef.current || isInterrupting || interruptPendingRef.current || pendingApproval) {
       showToast('当前轮次正在执行，策略未切换；请在本轮结束后重试。', 'info', 3000);
@@ -1922,6 +2012,9 @@ export default function App() {
       lastTurnResult={lastTurnResult}
       policy={policy}
       onSendMessage={handleSendMessage}
+      onAdjustPrompt={handleAdjustPrompt}
+      onViewThreadHistory={handleViewThreadHistory}
+      historyFocusMessageId={historyFocusMessageId}
       userSettings={userSettings}
       isLoadingHistory={isLoadingHistory}
       sessionReadOnly={currentSessionReadOnly}

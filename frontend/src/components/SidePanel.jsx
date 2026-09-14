@@ -14,10 +14,12 @@ import {
   RotateCcw,
   Wrench,
   Activity,
+  History,
 } from 'lucide-react';
 import { api } from '../api';
 import { readStateRevision, shouldApplyStateRevision } from '../utils/revisionState';
 import StatusDetailsPane from './StatusDetailsPane';
+import ThreadHistoryPane from './ThreadHistoryPane';
 import './SidePanel.css';
 
 const BUILTIN_TOOL_INFO = {
@@ -32,6 +34,7 @@ function normalizePanelTab(tab) {
   if (tab === 'world' || tab === 'workspace') return 'workspace_world';
   if (tab === 'mcp') return 'workspace_mcp';
   if (tab === 'git') return 'workspace_git';
+  if (tab === 'history' || tab === 'thread_history') return 'thread_history';
   return tab || 'status';
 }
 
@@ -47,6 +50,9 @@ export default function SidePanel({
   projectId = null,
   onGoalChanged,
   onToast,
+  messages = [],
+  onAdjustPrompt,
+  historyFocusMessageId = null,
 }) {
   const [activeTab, setActiveTab] = useState(() => normalizePanelTab(initialTab));
   const [worldData, setWorldData] = useState(null);
@@ -485,6 +491,14 @@ export default function SidePanel({
               <span>计划与目标</span>
             </button>
 
+            <button
+              className={`panel-tab-btn ${activeTab === 'thread_history' ? 'active' : ''}`}
+              onClick={() => setActiveTab('thread_history')}
+            >
+              <History size={14} />
+              <span>输入历史</span>
+            </button>
+
           </div>
 
           <button className="panel-close-btn" onClick={onClose} aria-label="关闭详情抽屉">
@@ -522,6 +536,16 @@ export default function SidePanel({
 
           {activeTab === 'status' && (
             <StatusDetailsPane status={status} />
+          )}
+
+          {activeTab === 'thread_history' && (
+            <ThreadHistoryPane
+              messages={messages}
+              threadId={threadId}
+              projectId={projectId}
+              focusMessageId={historyFocusMessageId}
+              onAdjustPrompt={onAdjustPrompt}
+            />
           )}
 
           {/* TAB 1: WorldState */}

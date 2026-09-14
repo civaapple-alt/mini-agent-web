@@ -15,7 +15,7 @@ body.theme-light {
 
   --border-color: #dfe3e8;
   --border-subtle: #edf0f2;
-  --border-focus: #0f8f72;
+  --border-focus: #98a2ad;
 
   --text-primary: #17191c;
   --text-secondary: #56606b;
@@ -47,7 +47,7 @@ body.theme-light {
   --shadow-popover: 0 12px 34px rgba(15, 23, 42, 0.14);
   --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.08);
   --shadow-drawer: -6px 0 24px rgba(15, 23, 42, 0.12);
-  --focus-ring: 0 0 0 3px rgba(16, 163, 127, 0.2);
+  --focus-ring: 0 0 0 3px rgba(100, 116, 139, 0.18);
   --tooltip-bg: #20242a;
   --tooltip-text: #ffffff;
   --tooltip-border: rgba(255, 255, 255, 0.14);
@@ -69,7 +69,7 @@ body.theme-dark {
 
   --border-color: rgba(255, 255, 255, 0.08);
   --border-subtle: rgba(255, 255, 255, 0.05);
-  --border-focus: rgba(255, 255, 255, 0.22);
+  --border-focus: rgba(255, 255, 255, 0.3);
 
   --text-primary: #f4f4f5;
   --text-secondary: #a1a1aa;
@@ -99,7 +99,7 @@ body.theme-dark {
   --shadow-popover: 0 16px 38px rgba(0, 0, 0, 0.38);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-drawer: -8px 0 30px rgba(0, 0, 0, 0.38);
-  --focus-ring: 0 0 0 3px rgba(52, 211, 153, 0.2);
+  --focus-ring: 0 0 0 3px rgba(203, 213, 225, 0.2);
   --tooltip-bg: #27272a;
   --tooltip-text: #ffffff;
   --tooltip-border: rgba(255, 255, 255, 0.18);

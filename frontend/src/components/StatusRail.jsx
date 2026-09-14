@@ -20,7 +20,7 @@ const ACCESS_SCOPES = [
 const POLICIES = [
   { id: 'interactive', label: '交互批准', description: '高风险敏感操作需要显式确认' },
   { id: 'automatic', label: '自动低风险', description: '受限检查自动放行，高风险或越界操作仍需确认' },
-  { id: 'trusted', label: '信任执行', description: '普通工作区补丁直通，高风险操作仍需确认' },
+  { id: 'trusted', label: '信任执行', description: '普通工作区操作和 Shell 自动执行，破坏性或外部操作仍需确认' },
 ];
 
 const CONTINUATION_MODES = [
@@ -268,7 +268,7 @@ export default function StatusRail({
                 <ShieldAlert size={15} aria-hidden="true" />
                 <strong>确认启用完全访问</strong>
               </div>
-              <p>Agent 将获得整机路径范围的访问能力，但 Deny 规则、Plan 锁和高风险审批仍然有效。</p>
+              <p>Agent 将获得整机路径范围的访问能力；普通工作区操作和 Shell 可自动执行，但 Deny 规则、Plan 锁、破坏性命令和外部工具审批仍然有效。</p>
               <div className="status-access-confirm-actions">
                 <button type="button" onClick={() => setShowFullAccessConfirm(false)}>取消</button>
                 <button type="button" className="primary" onClick={confirmFullAccess}>

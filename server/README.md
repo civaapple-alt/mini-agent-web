@@ -107,8 +107,9 @@ Session 目录中的 `turn_active` 与 `process_online` 是两个独立观察点
 只在审批响应中表达本次 action grant 的生命周期。
 `full_machine` 只表示整机路径范围，不是 allow-all；Deny、Plan 模式下的源文件变更锁、
 工具可用性和仍需人工确认的高风险动作继续由 App Server/Host 执行。Shell 仍按所选
-审批策略处理，Plan 不额外施加只读限制。`trusted` 只放行经过
-完整校验的普通工作区补丁更新；Shell、MCP、删除/移动和外部高风险动作仍需确认。
+审批策略处理，Plan 不额外施加只读限制。`trusted` 自动放行经过工具自身校验的普通工作区
+操作和普通 Shell；递归/强制删除、破坏性 Git、系统级命令、MCP、工作区外 `read_image`
+和安全 Deny 规则仍需确认或拒绝。
 `/api/world/execution` 更新这些 Project 设置时复用现有 App Server，不会为了策略切换重启
 运行时；活动 Turn 仍由 App Server 拒绝控制面变更，Studio 提示用户等本轮结算后重试。
 Auto Copilot 是 Web Studio 中显式选择的 `trusted + continuous` 运行预设，不由访问范围

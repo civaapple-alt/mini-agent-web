@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Low-interruption trusted execution**: ordinary validated workspace actions
+  and Shell commands no longer open a Web Studio approval prompt under the
+  `trusted` policy; recursive or forced deletion, destructive Git and system
+  commands, MCP/external actions, and Security Deny rules remain protected.
+
 - **Workspace attachment isolation**: store Web Studio image uploads in the
   Gateway state directory, scoped by Project and Thread, and pass only the
   current Thread's attachment directory to the runtime as a read-only root;

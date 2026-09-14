@@ -37,10 +37,10 @@
 
 ### 2.3 访问范围、批准与工作流
 - **访问范围**：`project` 限定在当前 Project 的主目录及关联目录；`full_machine` 只扩大路径范围到整机，不等于全部 Allow，Deny、Plan 模式下的源文件变更锁和高风险动作确认仍有效；Shell 仍按所选审批策略执行，Plan 不额外施加只读限制；
-- **审批策略**：`interactive` 每个敏感动作交互确认；`automatic` 只自动放行受限低风险检查；`trusted` 额外放行经过完整校验的非破坏性工作区补丁更新，Shell、MCP、删除/移动和外部高风险动作仍需确认；
+- **审批策略**：`interactive` 每个敏感动作交互确认；`automatic` 只自动放行受限低风险检查；`trusted` 自动放行经过工具自身校验的普通工作区操作和普通 Shell，递归/强制删除、破坏性 Git、系统级命令、MCP、工作区外 `read_image` 和安全 Deny 规则仍需确认或拒绝；
 - **策略切换边界**：`/api/world/execution` 通过现有 App Server 动态更新 Project 的访问范围和审批策略，不重启运行时；活动 Turn 期间不接受这类控制面变更，Web Studio 会提示本轮结算后重试。运行时重启仅用于 Project/Workspace 重绑或显式撤销批准授权等生命周期操作；
 - **推进方式**：普通 Chat 默认 `manual`，每轮最多 8 步；显式选择 `continuous` 后使用连续循环，但仍受取消、超时和上下文边界约束；该偏好由 App Server/SessionStore 持久化，Gateway 只在启动和 Goal settlement 时转发恢复请求；活动 Goal 使用独立的 Goal Runtime 里程碑预算，不继承或覆盖普通 Chat 设置；
-- **批准策略与授权**：Project 的 `policy` 为 `interactive` / `automatic` / `trusted`；审批响应的 `grantScope` 只有 `once` / `session` / `project`。Web 只展示和转发 pending request，action key、grant store、撤销与恢复由 Host/Capabilities 持有；`automatic` 只自动放行受限、只读且路径位于工作区或配置读取根内的 Shell 检查，`trusted` 额外放行完整校验的非破坏性工作区补丁，写操作、高风险命令、动态路径和越界访问仍需显式审批。
+- **批准策略与授权**：Project 的 `policy` 为 `interactive` / `automatic` / `trusted`；审批响应的 `grantScope` 只有 `once` / `session` / `project`。Web 只展示和转发 pending request，action key、grant store、撤销与恢复由 Host/Capabilities 持有；`automatic` 只自动放行受限、只读且路径位于工作区或配置读取根内的 Shell 检查；`trusted` 额外放行完整校验的普通工作区操作和普通 Shell，递归/强制删除、破坏性 Git、系统级命令、MCP、工作区外 `read_image` 和安全 Deny 规则仍需显式审批或拒绝。
 - **Goal 顶部控制**：活动 Goal 在当前 Thread 顶部显示，支持暂停、恢复、更新和删除；Goal 状态由 App Server canonical state 提供，页面刷新或切换 Session 后重新读取。
 
 ---

@@ -319,7 +319,7 @@ class ClientPool:
         new_thread_id: str,
         title: str | None = None,
         project_id: str | None = None,
-        context_policy: str = "compact_if_needed",
+        context_policy: str = "exact",
     ) -> dict[str, Any]:
         """Create and attach a child process backed by a new SessionStore."""
         owner = self.owner

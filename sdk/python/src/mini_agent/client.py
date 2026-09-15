@@ -764,7 +764,7 @@ class MiniAgentClient:
         self,
         source_thread_id: str,
         new_thread_id: str,
-        context_policy: str = "compact_if_needed",
+        context_policy: str = "exact",
     ) -> SessionForkResult:
         """Create an independent persisted Session from a settled checkpoint."""
         res = await self._send_request(

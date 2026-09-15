@@ -125,10 +125,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   search without changing logical Thread routing.
 
 - **Independent Session branches**: make Web Studio's fork operation create a new
-  persisted Session from the latest settled checkpoint, compact only the child
-  context when needed, record parent lineage and size metrics, and start a separate
-  App Server client. Parent and child Threads no longer share a process or Session
-  lock, and the returned canonical `session_id` is shown in the Studio catalog.
+  persisted Session from the latest settled checkpoint, copy that checkpoint exactly
+  by default, and start a separate App Server client. Explicit `contextPolicy=compact`
+  can compact the child before persistence. Parent and child Threads no longer share a
+  process or Session lock, and the returned canonical `session_id` is shown in the
+  Studio catalog.
 
 - **User input trace and Thread history**: add a hover/focus trace card to each
   user input, showing its Project/Thread/Turn scope, captured execution

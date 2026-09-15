@@ -62,9 +62,9 @@ class ForkThreadRequest(BaseModel):
     project_id: str | None = Field(
         default=None, description="Canonical project routing context"
     )
-    context_policy: Literal["exact", "compact_if_needed"] = Field(
-        default="compact_if_needed",
-        description="Fork exact history or compact only when the context requires it",
+    context_policy: Literal["exact", "compact"] = Field(
+        default="exact",
+        description="Fork the latest checkpoint exactly, or explicitly compact it",
     )
 
 

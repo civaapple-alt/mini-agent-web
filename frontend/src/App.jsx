@@ -1701,7 +1701,11 @@ export default function App() {
     }
   };
 
-  const handleForkThread = async (sourceThreadId, sourceProjectId = null) => {
+  const handleForkThread = async (
+    sourceThreadId,
+    sourceProjectId = null,
+    contextPolicy = 'exact',
+  ) => {
     const newId = `${sourceThreadId}_fork_${Date.now().toString(36).slice(2, 6)}`;
     try {
       const sourceProject = sourceProjectId || currentThreadProjectRef.current || null;
@@ -1715,7 +1719,10 @@ export default function App() {
         newId,
         null,
         source?.project || sourceProject,
-        { projectId: source?.project || sourceProject },
+        {
+          projectId: source?.project || sourceProject,
+          contextPolicy,
+        },
       );
       const nextProject = result.project || source?.project || null;
       await loadThreads();
@@ -1745,7 +1752,7 @@ export default function App() {
         loadRuntimeStatus(newId, nextProject, context),
       ]);
       showToast(
-        `已派生独立分支: ${newId} · Session ${result.session_id || '未知'}`,
+        `${contextPolicy === 'compact' ? '已派生并压缩分支' : '已派生独立分支'}: ${newId} · Session ${result.session_id || '未知'}`,
         'success',
       );
     } catch (err) {

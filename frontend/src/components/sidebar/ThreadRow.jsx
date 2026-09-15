@@ -113,7 +113,14 @@ export default function ThreadRow({
             onClick={(event) => onAction(event, 'fork', thread)}
           >
             <GitFork size={12} />
-            <span>派生独立分支</span>
+            <span>精确派生（默认）</span>
+          </button>
+          <button
+            className="popover-btn"
+            onClick={(event) => onAction(event, 'fork_compact', thread)}
+          >
+            <GitFork size={12} />
+            <span>派生并压缩</span>
           </button>
           {thread.thread_id !== 'default' && (
             <button

@@ -55,10 +55,11 @@ Session。侧栏的“运行中”只表示当前 Turn 尚未结算；SessionSto
 为准。Plan Turn 完成后，待用户选择“继续规划”或“开始实施”；该待确认状态随
 Session 恢复，不依赖浏览器内存。
 
-“派生独立分支”只复制 source Thread 最近一次已结算 checkpoint；默认在分支副本上
-按需压缩，不复制完整 `session.jsonl`。Gateway 随后为 child Session 启动独立的
-App Server client。Header、侧栏和运行详情使用 canonical `session_id`，并保留父
-Session、checkpoint 和压缩前后大小信息。
+“派生独立分支”只复制 source Thread 最近一次已结算 checkpoint；默认精确复制，不
+在派生时调用模型或触发压缩，也不复制完整 `session.jsonl`。侧栏另提供“派生并压缩”，
+通过显式 `contextPolicy=compact` 请求。Gateway 随后为 child Session 启动
+独立的 App Server client。Header、侧栏和运行详情使用 canonical `session_id`，并
+保留父 Session、checkpoint 和压缩前后大小信息。
 
 访问范围、审批策略和会话推进方式统一在状态栏“运行设置”中调整；当前 Turn、审批
 等待或停止结算期间会锁定设置并说明原因。停止审批中的 Turn 时，审批卡保持可见但不可操作，

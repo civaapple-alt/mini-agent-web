@@ -43,7 +43,7 @@ Thread、Turn、Goal 和 ThreadItem 的运行时语义来自 App Server；网关
 同一 Thread 的 Gateway attach/start 请求在客户端创建与 canonical Session 检查
 期间串行化；并发请求会复用同一个已建立的 App Server client，不会制造重复的
 workspace 绑定竞争。Thread fork 在同一 SessionManager 临界区内完成 source
-checkpoint 准备、独立 child Session 创建、child App Server 启动、metadata 写入和
+checkpoint 复制、独立 child Session 创建、child App Server 启动、metadata 写入和
 binding；父子 Thread 不共享 App Server client。并发 attach 会等待 child 完整绑定后
 复用 child client；如果 child 启动失败，已持久化的 Session 仍可从 catalog 重新 attach。
 

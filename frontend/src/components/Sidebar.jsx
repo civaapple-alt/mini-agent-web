@@ -381,8 +381,12 @@ export default function Sidebar({
     e.stopPropagation();
     setActiveMenuThread(null);
 
-    if (action === 'fork') {
-      onForkThread(thread.thread_id, thread.project);
+    if (action === 'fork' || action === 'fork_compact') {
+      onForkThread(
+        thread.thread_id,
+        thread.project,
+        action === 'fork_compact' ? 'compact' : 'exact',
+      );
     } else if (action === 'close') {
       onCloseThread(thread.thread_id, thread.project);
     } else if (action === 'rename') {

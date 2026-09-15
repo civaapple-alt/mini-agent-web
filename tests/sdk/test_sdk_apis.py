@@ -253,7 +253,7 @@ async def test_sdk_session_fork_api_mapping():
             {
                 "sourceThreadId": "thread-parent",
                 "newThreadId": "thread-child",
-                "contextPolicy": "compact_if_needed",
+                "contextPolicy": "exact",
             },
         )
     ]

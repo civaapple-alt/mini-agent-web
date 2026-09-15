@@ -78,7 +78,7 @@ def create_mock_client(project_name: str = "test-project") -> AsyncMock:
         )
     )
     mock.fork_session = AsyncMock(
-        side_effect=lambda source_thread_id, new_thread_id, context_policy="compact_if_needed": (
+        side_effect=lambda source_thread_id, new_thread_id, context_policy="exact": (
             SimpleNamespace(
                 session_id="s-forked",
                 thread_id=new_thread_id,

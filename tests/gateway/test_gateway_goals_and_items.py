@@ -409,7 +409,7 @@ async def test_thread_fork_preserves_source_project_binding(
     mock_client.fork_session.assert_awaited_once_with(
         source_thread_id="source-thread",
         new_thread_id="forked-thread",
-        context_policy="compact_if_needed",
+        context_policy="exact",
     )
 
 

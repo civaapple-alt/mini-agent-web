@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [Typed tool outcome consumption boundary](implemented/architecture/2026-09-15-typed-tool-outcome-boundary.md)
 - [Session fork 结构化冲突契约](implemented/bug-fix/2026-09-15-session-fork-structured-conflict.md)
 - [Local Gateway Session fork conflict contract](implemented/bug-fix/2026-09-15-local-gateway-fork-conflict.md)
 - [Session fork 上下文策略契约](implemented/bug-fix/2026-09-15-session-fork-context-policy-contract.md)

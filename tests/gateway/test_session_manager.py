@@ -1633,9 +1633,7 @@ async def test_fork_catalog_survives_child_start_failure_and_retry(
     monkeypatch.setattr(mock_session_manager, "_create_client", create_client)
 
     with pytest.raises(RuntimeError, match="child process failed"):
-        await mock_session_manager.fork_thread(
-            "source-thread", "forked-after-failure"
-        )
+        await mock_session_manager.fork_thread("source-thread", "forked-after-failure")
 
     failed_meta = mock_session_manager.get_thread_meta(
         "forked-after-failure", "default"

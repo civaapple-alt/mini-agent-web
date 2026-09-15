@@ -267,9 +267,7 @@ async def test_successful_interrupt_keeps_stream_registered_until_terminal_event
 
     stream_task.cancel.assert_not_called()
     assert (
-        session_manager.get_active_turn(
-            "thread-interrupt-accepted", "agent_test_proj"
-        )
+        session_manager.get_active_turn("thread-interrupt-accepted", "agent_test_proj")
         == "turn-interrupt-accepted"
     )
     session_manager.clear_active_turn(

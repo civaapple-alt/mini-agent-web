@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
+SESSION_FORK_CONFLICT_CODE = -32001
+
 
 class MiniAgentError(Exception):
     """Base exception for all Mini Agent SDK errors."""

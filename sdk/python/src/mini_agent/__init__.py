@@ -4,6 +4,7 @@ Mini Agent Official Python SDK
 
 from mini_agent.client import AsyncMiniAgentClient, MiniAgentClient, setup_logging
 from mini_agent.errors import (
+    SESSION_FORK_CONFLICT_CODE,
     AppServerError,
     MiniAgentError,
     ProtocolVersionMismatchError,
@@ -73,6 +74,7 @@ from mini_agent.types import (
 __version__ = "0.7.0"
 
 __all__ = [
+    "SESSION_FORK_CONFLICT_CODE",
     "AgentEvent",
     "AppServerError",
     "ApprovalPolicy",

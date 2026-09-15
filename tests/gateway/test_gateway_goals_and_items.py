@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from mini_agent.errors import SESSION_FORK_CONFLICT_CODE, AppServerError
 from mini_agent.types import ThreadItem, ThreadItemEntry, ThreadItemsListResult
 
 from server.app import create_app
@@ -433,6 +434,47 @@ async def test_thread_fork_preserves_source_project_binding(
         new_thread_id="forked-thread",
         context_policy="exact",
     )
+
+
+@pytest.mark.asyncio
+async def test_thread_fork_maps_app_server_conflict_to_structured_409(gateway_test_app):
+    """A cross-process Session conflict keeps its machine-readable reason."""
+    mock_client = AsyncMock()
+    mock_client.fork_session = AsyncMock(
+        side_effect=AppServerError(
+            SESSION_FORK_CONFLICT_CODE,
+            "session fork conflicts with existing child",
+            {
+                "kind": "contextPolicy",
+                "childThreadId": "forked-thread",
+                "requestedContextPolicy": "compact",
+                "existingContextPolicy": "exact",
+            },
+        )
+    )
+    session_manager._clients["source-thread"] = mock_client
+    session_manager._client_projects["source-thread"] = "goals_test_proj"
+    session_manager._thread_metadata["source-thread"] = {
+        "title": "Source",
+        "project": "goals_test_proj",
+    }
+
+    transport = ASGITransport(app=gateway_test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/threads/fork",
+            json={
+                "source_thread_id": "source-thread",
+                "new_thread_id": "forked-thread",
+                "context_policy": "compact",
+            },
+        )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == SESSION_FORK_CONFLICT_CODE
+    assert detail["data"]["kind"] == "contextPolicy"
+    assert detail["data"]["existingContextPolicy"] == "exact"
 
 
 @pytest.mark.asyncio

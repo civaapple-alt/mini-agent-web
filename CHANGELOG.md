@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Session fork conflict contract**: persist fork policy and compaction metadata
+  in the App Server child Session, return the durable result on an identical
+  retry, and expose child-lineage or policy conflicts as structured JSON-RPC
+  errors. The Gateway maps the conflict code to HTTP 409 while preserving the
+  error data for clients.
+
 - **Large-session restart recovery**: keep Gateway Session catalog visibility
   aligned with the App Server's 32 MiB SessionStore bound, configure the SDK
   stdout reader for bounded checkpoint responses, and recover a previous

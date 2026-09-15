@@ -7,7 +7,11 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from mini_agent.errors import AppServerError, ServerProcessError
+from mini_agent.errors import (
+    SESSION_FORK_CONFLICT_CODE,
+    AppServerError,
+    ServerProcessError,
+)
 from pydantic import BaseModel, Field
 
 from server.session_manager import session_manager, to_json_serializable
@@ -323,6 +327,11 @@ async def fork_thread(req: ForkThreadRequest) -> dict[str, Any]:
     except RuntimeError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err
     except AppServerError as err:
+        if err.code == SESSION_FORK_CONFLICT_CODE:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": err.code, "message": err.message, "data": err.data},
+            ) from err
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 

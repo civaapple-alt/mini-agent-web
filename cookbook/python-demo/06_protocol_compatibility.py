@@ -7,6 +7,8 @@ cross-repository stopping/session-fork control contract.
 """
 
 from mini_agent import (
+    SESSION_FORK_CONFLICT_CODE,
+    AppServerError,
     ContextCompactionFinishedEvent,
     ContextCompactionStartedEvent,
     GenericEvent,
@@ -105,6 +107,17 @@ SESSION_FORK_FIXTURE = {
     }
 }
 
+SESSION_FORK_CONFLICT_FIXTURE = {
+    "code": SESSION_FORK_CONFLICT_CODE,
+    "message": "session fork conflicts with existing child",
+    "data": {
+        "kind": "contextPolicy",
+        "childThreadId": "thread-child",
+        "requestedContextPolicy": "compact",
+        "existingContextPolicy": "exact",
+    },
+}
+
 
 def main() -> None:
     for payload in EVENT_FIXTURES:
@@ -137,9 +150,12 @@ def main() -> None:
     assert fork.session_id == "session-child"
     assert fork.parent_session_id == "session-parent"
     assert fork.method == "exact"
+    conflict = AppServerError(**SESSION_FORK_CONFLICT_FIXTURE)
+    assert conflict.code == SESSION_FORK_CONFLICT_CODE
+    assert conflict.data["kind"] == "contextPolicy"
     print(
         f"Validated {len(EVENT_FIXTURES)} protocol event fixtures and "
-        "2 control-plane fixtures."
+        "3 control-plane fixtures."
     )
 
 

@@ -68,6 +68,11 @@ ThreadItem 是 App Server Session history 的读取投影，不是 SDK 的第二
 `MiniAgentClient(request_timeout=...)` 为宿主测试或特殊本地环境调整。超时会
 清理 pending request，并抛出 `ServerProcessError`，不会无限等待。
 
+`AppServerError` 保留 JSON-RPC 的 `code`、`message` 和 `data`。`session/fork`
+发生 child 身份或上下文策略冲突时，`code` 为
+`SESSION_FORK_CONFLICT_CODE`（`-32001`），`data.kind` 标识冲突类型，调用方
+不应通过修改同一个 child Thread ID 来改变已落盘的 Session。
+
 ## 深入阅读
 
 [`python-sdk-guide.md`](python-sdk-guide.md) 介绍 SDK 的完整生命周期、配置、

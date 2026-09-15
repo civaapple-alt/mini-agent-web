@@ -206,8 +206,10 @@ async def interrupt_turn(req: InterruptTurnRequest) -> dict[str, Any]:
             turn_id=req.turn_id,
             thread_id=thread_id,
         )
-        if session_manager.get_active_turn(thread_id, project_id) == req.turn_id:
-            session_manager.cancel_active_task(thread_id, project_id)
+        # The App Server response only acknowledges the cooperative stop
+        # request. Keep the Gateway stream and active-turn identity alive until
+        # the authoritative turn_finished event arrives; cancelling the stream
+        # here would make a still-settling Turn disappear from Studio.
         return {"status": "interrupted", "turn_id": req.turn_id}
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err

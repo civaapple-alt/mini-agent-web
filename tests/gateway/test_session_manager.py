@@ -1321,6 +1321,9 @@ async def test_attach_thread_does_not_report_local_client_as_external_lock(
     mock_session_manager._clients["default"] = client
     mock_session_manager._client_projects["default"] = "default"
     mock_session_manager._project_clients[("default", "default")] = client
+    mock_session_manager.set_active_turn(
+        "default", "turn-attached", project_id="default"
+    )
     canonical = {
         "session": {
             "project_id": "default",
@@ -1344,6 +1347,8 @@ async def test_attach_thread_does_not_report_local_client_as_external_lock(
 
     assert result["attached"] is True
     assert result["session_id"] == "session-local"
+    assert result["active_turn_id"] == "turn-attached"
+    assert result["turn_active"] is True
     create_client.assert_not_awaited()
 
 

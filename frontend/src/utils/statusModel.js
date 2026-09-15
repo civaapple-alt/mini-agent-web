@@ -115,14 +115,15 @@ export function getStatusViewModel({
     || runtimeStatus?.turnId
     || lastTurnResult?.turnId
     || null;
-  const hasActiveTurn = Boolean(isGenerating || activeTurnId || runtimeStatus?.active);
+  const runtimeStopping = runtimeStatus?.phase === 'stopping';
+  const hasActiveTurn = Boolean(isGenerating || activeTurnId || runtimeStatus?.active || runtimeStopping);
   const hasApproval = Boolean(pendingApproval);
   const turnResultStatus = getTurnResultStatus(lastTurnResult);
 
   let lifecycle = 'idle';
   if (connection === 'reconnecting' && hasActiveTurn) {
     lifecycle = 'running';
-  } else if (isInterrupting) {
+  } else if (isInterrupting || runtimeStopping) {
     lifecycle = 'stopping';
   } else if (hasApproval) {
     lifecycle = 'approval';

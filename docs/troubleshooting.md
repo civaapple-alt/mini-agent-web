@@ -265,7 +265,7 @@ Web Studio 支持同一项目下的多个不同会话，以及多个项目下的
 待审批项，再向 App Server 请求中断。原审批 Future 会以拒绝结束，之后到达的同一 Turn
 审批也会被拒绝，因此停止后再点击“允许”不能放行工具。界面会暂时显示“停止中”，直到
 收到权威的 `turn_finished`；如果 App Server 没有接受中断，会恢复“停止”按钮并提示重试，
-不会把仍在远端运行的 Turn 误报成已完成。已经在停止请求被网关接收前提交的审批可能与
+不会把仍在远端运行的 Turn 误报成已完成；Gateway 不会因为停止确认而提前取消流任务。已经在停止请求被网关接收前提交的审批可能与
 停止存在时序竞争，但仍会同时下发 `turn/interrupt`，最终以 Turn 终态为准。
 
 Plan Mode 的“关闭 Plan Mode”是当前 Thread 的控制面操作，不会创建新的 Turn。空闲时
@@ -287,6 +287,11 @@ App Server 会执行计划工作区清理、清除 living plan 并恢复普通�
 - 同一个 `project_id + thread_id` 同时提交第二个 Turn 会被视为独立失败请求；它的错误
   不会清理第一个仍在运行的 Turn。不同项目或不同 Thread 的运行状态、审批和控制请求
   按完整身份隔离。
+- `thread/fork` 和 `session/fork` 都按 App Server worker 的命令顺序与当前 Turn 竞争：运行中
+  直接返回 busy，不复制未结算的消息、工具或审批；停止请求只在安全边界生效，之后再派生
+  才能看到已提交的 settled checkpoint。`attach` 若复用本 Gateway 的 Client，会返回当前
+  active Turn 标识并继续观察同一运行；若 Session 由其他进程持锁，则保持只读，不创建第二个
+  writer。
 - 网关关闭时会先关闭 WebSocket、取消待审批请求和流任务，再停止各项目的 App Server
   Client。已发出的工具副作用不能被网关回滚；需要依赖工具自身的幂等性或 SessionStore
   的恢复边界。

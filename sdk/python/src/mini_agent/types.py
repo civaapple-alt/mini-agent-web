@@ -48,6 +48,7 @@ RuntimePhase = Literal[
     "model",
     "tool",
     "waiting_approval",
+    "stopping",
     "compaction",
     "persisting",
     "goal_verification",

@@ -156,10 +156,9 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     turn_id=turn_id,
                 )
 
-                # Notify the App Server engine off the receive loop. The
-                # helper cancels the Gateway stream only after the remote
-                # runtime accepts the interrupt, so a failed control request
-                # cannot be mistaken for a settled Turn.
+                # Notify the App Server engine off the receive loop. A
+                # successful response only acknowledges admission; the
+                # Gateway stream remains authoritative until turn_finished.
                 if turn_id:
                     spawn_background(
                         _interrupt_turn_to_ws(
@@ -167,7 +166,8 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                         )
                     )
 
-                # Send immediate interrupt ack to client (stream CancelledError will emit turn_finished)
+                # Send an immediate admission acknowledgement. The stream
+                # remains authoritative and will emit the real turn_finished.
                 await websocket.send_json(
                     {
                         "type": "interrupt_ack",
@@ -296,8 +296,10 @@ async def _interrupt_turn_to_ws(
     try:
         client = await session_manager.get_client_for_thread(thread_id, project_id)
         await client.interrupt_turn(turn_id, thread_id)
-        if session_manager.get_active_turn(thread_id, project_id) == turn_id:
-            session_manager.cancel_active_task(thread_id, project_id)
+        # ``turn/interrupt`` is an acceptance acknowledgement, not the
+        # terminal boundary. Keep the stream/task registered until the App
+        # Server emits turn_finished so late tool/approval settlement remains
+        # observable and cannot be replaced by a synthetic completion.
     except asyncio.CancelledError:
         raise
     except Exception as err:  # noqa: BLE001

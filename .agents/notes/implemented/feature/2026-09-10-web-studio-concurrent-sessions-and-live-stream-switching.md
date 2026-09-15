@@ -27,8 +27,8 @@ Turn 存在时拒绝变更。审批请求补齐 Project/Thread/Turn 身份，前
 会话时通过审批快照恢复卡片，并使用原请求身份提交响应。
 
 后续单 Session 运行审计补充了停止与审批的结算边界：点击停止会先撤销该 Turn 的待审批
-Future，并以有界 Turn tombstone 拒绝迟到审批；只有 App Server 接受 `turn/interrupt` 后
-才取消网关流，失败时保留运行态并允许重试。Studio 在收到权威 `turn_finished` 前显示“停止中”，
+Future，并以有界 Turn tombstone 拒绝迟到审批；App Server 接受 `turn/interrupt` 只代表停止
+请求已入队，Gateway 会继续保留网关流和 active Turn 身份，直到权威 `turn_finished`。失败时保留运行态并允许重试。Studio 在收到权威 `turn_finished` 前显示“停止中”，
 不会因迟到事件重新打开审批或恢复停止按钮。Plan Mode 关闭则要求无 active Turn、无待审批，
 由 App Server 完成计划清理后再恢复普通模式；清理失败保留 Plan 状态。
 

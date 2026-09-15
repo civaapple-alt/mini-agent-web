@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from dataclasses import dataclass, field
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -235,6 +235,49 @@ async def test_interrupt_failure_does_not_fake_turn_settlement(agent_test_app):
         "projectId": "agent_test_proj",
         "message": "停止请求下发失败，请重试: App Server unavailable",
     }
+
+
+@pytest.mark.asyncio
+async def test_successful_interrupt_keeps_stream_registered_until_terminal_event(
+    agent_test_app,
+):
+    """Interrupt acknowledgement must not cancel the Gateway's live stream."""
+    mock_client = AsyncMock()
+    mock_client.interrupt_turn = AsyncMock(return_value={"accepted": True})
+    stream_task = MagicMock()
+    stream_task.done.return_value = False
+    session_manager.set_active_turn(
+        "thread-interrupt-accepted",
+        "turn-interrupt-accepted",
+        stream_task,
+        "agent_test_proj",
+    )
+
+    with patch.object(
+        session_manager,
+        "get_client_for_thread",
+        new=AsyncMock(return_value=mock_client),
+    ):
+        await _interrupt_turn_to_ws(
+            AsyncMock(),
+            "thread-interrupt-accepted",
+            "turn-interrupt-accepted",
+            "agent_test_proj",
+        )
+
+    stream_task.cancel.assert_not_called()
+    assert (
+        session_manager.get_active_turn(
+            "thread-interrupt-accepted", "agent_test_proj"
+        )
+        == "turn-interrupt-accepted"
+    )
+    session_manager.clear_active_turn(
+        "thread-interrupt-accepted",
+        "agent_test_proj",
+        "turn-interrupt-accepted",
+        stream_task,
+    )
 
 
 @pytest.mark.asyncio

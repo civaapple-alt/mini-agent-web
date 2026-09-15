@@ -46,6 +46,9 @@ workspace 绑定竞争。Thread fork 在同一 SessionManager 临界区内完成
 checkpoint 复制、独立 child Session 创建、child App Server 启动、metadata 写入和
 binding；父子 Thread 不共享 App Server client。并发 attach 会等待 child 完整绑定后
 复用 child client；如果 child 启动失败，已持久化的 Session 仍可从 catalog 重新 attach。
+Attach 成功响应同时返回 `active_turn_id` 和 `turn_active`；因此同一 Gateway
+上的第二个浏览器可以沿用当前 Turn 身份继续观察。若锁属于外部进程，attach
+只返回锁定信息并保持只读，不会创建第二个 writer。
 
 Thread settings 的 `state_revision` 只是 canonical App Server revision 的有界
 投影。Gateway 通过 WebSocket 原样转发 `thread/settings/updated` 以及带同一

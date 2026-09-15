@@ -36,6 +36,21 @@ test('approval is visible above an active Turn', () => {
   assert.equal(status.approval.actionSummary, '写入文件');
 });
 
+test('authoritative stopping phase locks the Turn even without local stop state', () => {
+  const status = getStatusViewModel({
+    isConnected: true,
+    runtimeStatus: { phase: 'stopping', turnId: 'turn-remote' },
+    pendingApproval: {
+      requestId: 'req-remote',
+      data: { turnId: 'turn-remote' },
+    },
+  });
+
+  assert.equal(status.lifecycle, 'stopping');
+  assert.equal(status.nextAction, '等待终止确认');
+  assert.equal(status.scope.turnId, 'turn-remote');
+});
+
 test('a locked idle process remains standby and does not become running', () => {
   const status = getStatusViewModel({
     isConnected: true,

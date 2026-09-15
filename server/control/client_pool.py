@@ -446,11 +446,14 @@ class ClientPool:
                     "session_status": session.get("session_status"),
                     "runtime_status": session.get("runtime_status"),
                     "locked_by": session.get("locked_by"),
+                    "active_turn_id": None,
+                    "turn_active": False,
                 }
 
             await self.get_client_for_thread_locked(target, resolved_project_id)
             refreshed = owner._canonical_thread(target, resolved_project_id)
             session = refreshed.get("session", {}) if refreshed else {}
+            active_turn_id = owner.get_active_turn(target, resolved_project_id)
             return {
                 "thread_id": target,
                 "attached": True,
@@ -459,4 +462,6 @@ class ClientPool:
                 "session_status": session.get("session_status", "locked"),
                 "runtime_status": session.get("runtime_status", "running"),
                 "locked_by": session.get("locked_by"),
+                "active_turn_id": active_turn_id,
+                "turn_active": active_turn_id is not None,
             }

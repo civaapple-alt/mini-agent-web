@@ -568,12 +568,20 @@ export default function App() {
       ) {
         setRuntimeStatus(status);
         const runtimeTurnId = status.turn_id || status.turnId;
+        if (status.phase === 'stopping' && runtimeTurnId) {
+          activeTurnIdRef.current = runtimeTurnId;
+          interruptTurnIdRef.current = runtimeTurnId;
+          interruptPendingRef.current = true;
+          setActiveTurnId(runtimeTurnId);
+          setIsGenerating(false);
+          setIsInterrupting(true);
+        }
         const stoppedTurn = shouldIgnoreApprovalWhileInterrupting(
           { turnId: runtimeTurnId },
           interruptPendingRef.current,
           interruptTurnIdRef.current,
         );
-        if (ACTIVE_RUNTIME_PHASES.has(status.phase) && !stoppedTurn) {
+        if (ACTIVE_RUNTIME_PHASES.has(status.phase) && status.phase !== 'stopping' && !stoppedTurn) {
           setIsGenerating(true);
           if (runtimeTurnId) {
             activeTurnIdRef.current = runtimeTurnId;
@@ -1142,8 +1150,21 @@ export default function App() {
         loadWorkflows(currentThreadRef.current);
         showToast('运行时已重启，正在同步控制面状态', 'info', 2500);
       } else if (data.method === 'runtime/status/updated') {
-        if (notification.threadId === currentThreadRef.current) {
+        const notificationProjectId = notification.projectId || notification.project_id;
+        if (
+          notification.threadId === currentThreadRef.current
+          && (!notificationProjectId || notificationProjectId === currentThreadProjectRef.current)
+        ) {
           setRuntimeStatus(notification);
+          const runtimeTurnId = notification.turnId || notification.turn_id;
+          if (notification.phase === 'stopping' && runtimeTurnId) {
+            activeTurnIdRef.current = runtimeTurnId;
+            interruptTurnIdRef.current = runtimeTurnId;
+            interruptPendingRef.current = true;
+            setActiveTurnId(runtimeTurnId);
+            setIsGenerating(false);
+            setIsInterrupting(true);
+          }
         }
       } else if (data.method?.startsWith('checkpoint/') || data.method?.startsWith('goal/') || data.method?.startsWith('plan/')) {
         setLastWorkflowEvent({ method: data.method, ...notification });

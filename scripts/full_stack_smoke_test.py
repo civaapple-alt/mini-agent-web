@@ -376,7 +376,7 @@ async def phase_1_preflight(env: dict[str, str], app_server_bin: Path) -> None:
         assert caps.get("workflows") is True, "workflows capability missing"
         as_repo = find_git_root(app_server_bin)
         as_info = get_git_info(as_repo)
-        server_version = str(init_res.get("serverVersion", "0.7.0"))
+        server_version = str(init_res.get("serverVersion", "0.8.0"))
 
         log_ok(
             f"Web Studio Commit: {report.metadata.get('Web Studio Commit ID')} @ {report.metadata.get('Web Studio Commit Time')}"

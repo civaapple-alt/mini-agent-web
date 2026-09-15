@@ -161,7 +161,7 @@ async def handle_slash_command(
 
     if lower_text == "/status":
         server_info = (
-            f"{init_res.get('serverName', 'mini-agent-app-server')} v{init_res.get('serverVersion', '0.7.0')}"
+            f"{init_res.get('serverName', 'mini-agent-app-server')} v{init_res.get('serverVersion', '0.8.0')}"
             if init_res
             else "mini-agent-app-server"
         )

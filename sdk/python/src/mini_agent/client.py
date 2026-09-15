@@ -639,7 +639,7 @@ class MiniAgentClient:
     async def initialize(
         self,
         client_name: str = "python-sdk",
-        client_version: str = "0.7.0",
+        client_version: str = "0.8.0",
         providers: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Negotiate protocol version 1 and receive capability manifest."""

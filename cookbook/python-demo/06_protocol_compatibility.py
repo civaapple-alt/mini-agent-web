@@ -1,7 +1,7 @@
 """Demo 06: Protocol Compatibility Smoke Test.
 
 This deterministic example uses no App Server process and no model provider.
-It validates that the 0.7.0 SDK parses public lifecycle events, dedicated
+It validates that the 0.8.0 SDK parses public lifecycle events, dedicated
 ThreadItem notifications, bounded ThreadItem list projections, and the
 cross-repository stopping/session-fork control contract.
 """

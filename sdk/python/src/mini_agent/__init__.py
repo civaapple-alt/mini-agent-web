@@ -73,7 +73,7 @@ from mini_agent.types import (
     WorldStateResult,
 )
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 __all__ = [
     "SESSION_FORK_CONFLICT_CODE",

@@ -1,4 +1,4 @@
-# Mini Agent Official Python SDK (`mini-agent`) 0.7.0 Developer Guide
+# Mini Agent Official Python SDK (`mini-agent`) 0.8.0 Developer Guide
 
 The `mini-agent` Python package is the official, zero-dependency async SDK designed to communicate with the [Mini Agent Harness (`mini-agent-app-server`)](https://github.com/civaapple-alt/mini-agent-harness) over **Stdio JSON-RPC 2.0**.
 
@@ -78,7 +78,7 @@ client = MiniAgentClient(
 ```
 
 ### 3.2 Automated `.env` Discovery
-`MiniAgentClient` automatically locates and parses `.env` files, providing credentials (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, etc.) directly to the backend process environment without modifying global state. Set `MINI_AGENT_APP_SERVER_PATH` to select an explicit 0.7.0 App Server binary.
+`MiniAgentClient` automatically locates and parses `.env` files, providing credentials (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, etc.) directly to the backend process environment without modifying global state. Set `MINI_AGENT_APP_SERVER_PATH` to select an explicit 0.8.0 App Server binary.
 
 ### 3.3 Dynamic File-Based Logging
 Passing `log_dir="logs"` automatically creates script-isolated logs (e.g. `logs/02_streaming_events.log`).
@@ -156,7 +156,7 @@ assert result.status == "cancelled"
 
 ### 4.5 Protocol Compatibility, ThreadItems, and Runtime Notifications
 
-The 0.7.0 SDK targets App Server JSON-RPC protocol version `1`. Parsed event
+The 0.8.0 SDK targets App Server JSON-RPC protocol version `1`. Parsed event
 objects expose `event_type`, and the typed event surface includes context
 compaction (`context_compaction_started` / `context_compaction_finished`) and
 run lifecycle (`run_finished` / structured `run_failed`) events. Unknown future

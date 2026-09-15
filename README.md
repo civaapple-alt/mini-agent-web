@@ -1,7 +1,7 @@
 # mini-agent-web
 
 `mini-agent-web` 是 Mini Agent App Server 的 Python SDK、FastAPI 网关、Web
-Studio、实验性 TUI 与 Cookbook 工作区。当前发布版本为 `0.7.0`，使用
+Studio、实验性 TUI 与 Cookbook 工作区。当前发布版本为 `0.8.0`，使用
 JSON-RPC wire protocol version `1`。
 
 ## 从哪里开始

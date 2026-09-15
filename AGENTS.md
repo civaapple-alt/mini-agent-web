@@ -33,7 +33,7 @@ Do not add a README section merely to link to a document outside its directory.
   for a release. Update `pyproject.toml`, `sdk/python/pyproject.toml`,
   `sdk/python/src/mini_agent/__init__.py`, `server/app.py`,
   `frontend/package.json`, and `frontend/package-lock.json` together.
-- The current release is `0.7.0`; the wire protocol remains JSON-RPC protocol
+- The current release is `0.8.0`; the wire protocol remains JSON-RPC protocol
   version `1`. Do not change the wire protocol or public field names casually.
 - Preserve unknown event types as `GenericEvent` so newer App Server events do
   not break older SDK consumers. Keep event identity bounded by Thread and Turn

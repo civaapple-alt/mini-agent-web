@@ -230,13 +230,23 @@ def _item_projection(record: dict[str, Any]) -> dict[str, Any] | None:
             if isinstance(outcome, dict)
             else message.get("content")
         )
-        outcome_name = str(outcome or "").lower()
+        if isinstance(outcome, dict):
+            outcome_name = outcome.get("status") or outcome.get("outcome")
+        else:
+            outcome_name = outcome
+        outcome_name = str(outcome_name or "").lower()
+        known_outcome = (
+            outcome_name
+            if outcome_name
+            in {"completed", "failed", "needs_approval", "deferred", "retryable"}
+            else None
+        )
         failed = (
             bool(message.get("is_error"))
             or (isinstance(outcome, dict) and bool(outcome.get("error")))
             or outcome_name in {"failed", "error", "cancelled"}
         )
-        return {
+        projected = {
             "type": "toolCall",
             "id": item_id,
             "name": str(message.get("name") or "tool"),
@@ -252,6 +262,9 @@ def _item_projection(record: dict[str, Any]) -> dict[str, Any] | None:
             # earlier dict-shaped outcome projection as well.
             "output": _bounded_text(output, 16 * 1024),
         }
+        if known_outcome is not None:
+            projected["outcome"] = known_outcome
+        return projected
     if role == "context":
         # Context updates used to be stored without a Turn (for example the
         # initial world-state snapshot). They are not compactions and must not

@@ -19,6 +19,7 @@ from tui.state import TUIState, TurnMetrics
 from tui.stream_renderer import (
     _format_args_preview,
     _format_output_preview,
+    _tool_outcome_label,
     render_turn_stream,
 )
 
@@ -45,6 +46,12 @@ def test_format_output_preview() -> None:
     assert "Line 1" in preview
     assert "Line 2" in preview
     assert "5 lines total" in preview
+
+
+def test_tool_outcome_label_does_not_use_diagnostic_text():
+    assert _tool_outcome_label("retryable", True) == "Tool retryable"
+    assert _tool_outcome_label("deferred", True) == "Tool deferred"
+    assert _tool_outcome_label(None, True) == "Tool failed"
 
 
 @pytest.mark.asyncio

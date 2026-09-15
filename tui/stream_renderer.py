@@ -76,6 +76,16 @@ def _stop_reason_label(reason: str) -> str:
     }.get(reason, reason)
 
 
+def _tool_outcome_label(outcome: str | None, is_error: bool) -> str:
+    return {
+        "completed": "Tool finished",
+        "failed": "Tool failed",
+        "needs_approval": "Tool needs approval",
+        "deferred": "Tool deferred",
+        "retryable": "Tool retryable",
+    }.get(outcome or "", "Tool failed" if is_error else "Tool finished")
+
+
 async def render_turn_stream(
     client: MiniAgentClient,
     user_input: str,
@@ -186,6 +196,11 @@ async def render_turn_stream(
                         if projected_tool
                         else evt.get("name") or "tool"
                     )
+                    outcome = (
+                        projected_tool.get("outcome")
+                        if projected_tool
+                        else evt.get("outcome")
+                    )
                     is_error = bool(evt.get("is_error")) or bool(
                         projected_tool and projected_tool.get("status") == "failed"
                     )
@@ -200,13 +215,18 @@ async def render_turn_stream(
                         " [dim yellow](truncated)[/dim yellow]" if truncated else ""
                     )
 
-                    if is_error:
+                    outcome_label = _tool_outcome_label(outcome, is_error)
+                    if is_error or outcome in {
+                        "needs_approval",
+                        "deferred",
+                        "retryable",
+                    }:
                         console.print(
-                            f"[bold red]✗ Tool failed: [bold]{tool_name}[/bold]{trunc_tag}[/bold red]"
+                            f"[bold red]✗ {outcome_label}: [bold]{tool_name}[/bold]{trunc_tag}[/bold red]"
                         )
                     else:
                         console.print(
-                            f"[dim green]✓ Tool finished: [bold]{tool_name}[/bold]{trunc_tag}[/dim green]"
+                            f"[dim green]✓ {outcome_label}: [bold]{tool_name}[/bold]{trunc_tag}[/dim green]"
                         )
 
                     preview = _format_output_preview(content)

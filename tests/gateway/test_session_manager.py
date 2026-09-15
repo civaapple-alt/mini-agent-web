@@ -923,6 +923,7 @@ def test_session_catalog_projects_tool_settlement_content_and_arguments():
         "name": "shell",
         "arguments": {"command": "Get-ChildItem"},
         "status": "completed",
+        "outcome": "completed",
         "output": "exit: 0\nstdout:\nfile.txt\nstderr:\n",
     }
 
@@ -944,7 +945,47 @@ def test_session_catalog_projects_failed_tool_settlement():
     )
 
     assert projected["status"] == "failed"
+    assert projected["outcome"] == "failed"
     assert projected["output"] == "permission denied"
+
+
+def test_session_catalog_projects_retryable_tool_outcome():
+    from server.session_catalog import _item_projection
+
+    projected = _item_projection(
+        {
+            "item_id": "call-3",
+            "message": {
+                "role": "tool",
+                "name": "mcp__fixture__slow",
+                "content": "MCP tool call timed out",
+                "is_error": True,
+                "outcome": "retryable",
+            },
+        }
+    )
+
+    assert projected["status"] == "failed"
+    assert projected["outcome"] == "retryable"
+
+
+def test_session_catalog_keeps_legacy_tool_projection_without_outcome():
+    from server.session_catalog import _item_projection
+
+    projected = _item_projection(
+        {
+            "item_id": "call-legacy",
+            "message": {
+                "role": "tool",
+                "name": "shell",
+                "content": "exit: 0",
+                "is_error": False,
+            },
+        }
+    )
+
+    assert projected["status"] == "completed"
+    assert "outcome" not in projected
 
 
 def test_session_catalog_projects_assistant_reasoning_and_text_items():

@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from mini_agent.types import ModelUsage, ToolCall
+from mini_agent.types import ModelUsage, ToolCall, ToolOutcome
 
 
 @dataclass
@@ -135,7 +135,7 @@ class ToolFinishedEvent(EventModel):
     content: str
     is_error: bool
     truncated: bool
-    outcome: str | None = None
+    outcome: ToolOutcome | None = None
     type: str = "tool_finished"
 
     @classmethod

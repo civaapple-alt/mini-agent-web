@@ -70,6 +70,7 @@ THREAD_ITEM_FIXTURE = {
     "name": "shell",
     "arguments": {"command": "pwd"},
     "status": "completed",
+    "outcome": "completed",
     "output": "workspace",
 }
 
@@ -133,6 +134,7 @@ def main() -> None:
     item = ThreadItem.from_dict(THREAD_ITEM_FIXTURE)
     assert item.id == "call-compat-1"
     assert item.arguments == {"command": "pwd"}
+    assert item.outcome == "completed"
     assert item.output == "workspace"
     item_event = ItemLifecycleNotification.from_dict(
         "item/completed", ITEM_COMPLETED_FIXTURE

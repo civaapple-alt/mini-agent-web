@@ -41,6 +41,13 @@ ThreadGoalStatus = Literal[
 ]
 
 ItemStatus = Literal["inProgress", "completed", "failed"]
+ToolOutcome = Literal[
+    "completed",
+    "failed",
+    "needs_approval",
+    "deferred",
+    "retryable",
+]
 ItemSortDirection = Literal["asc", "desc"]
 RuntimePhase = Literal[
     "idle",
@@ -93,6 +100,7 @@ class ThreadItem:
     name: str = ""
     arguments: Any = None
     status: str | None = None
+    outcome: ToolOutcome | None = None
     output: str | None = None
 
     @classmethod
@@ -104,6 +112,7 @@ class ThreadItem:
             name=str(data.get("name", "")),
             arguments=data.get("arguments"),
             status=data.get("status"),
+            outcome=data.get("outcome"),
             output=data.get("output"),
         )
 

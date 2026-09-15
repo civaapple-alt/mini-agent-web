@@ -127,6 +127,7 @@ async def test_stream_turn_filters_events_by_thread_and_turn():
                     "name": "shell",
                     "arguments": {"command": "pwd"},
                     "status": "completed",
+                    "outcome": "completed",
                     "output": "C:/workspace",
                 },
             },
@@ -183,6 +184,7 @@ async def test_stream_turn_filters_events_by_thread_and_turn():
             name="shell",
             arguments={"command": "pwd"},
             status="inProgress",
+            outcome=None,
         )
     ]
     assert finished_event["event"] == {
@@ -525,6 +527,23 @@ def test_thread_item_lifecycle_and_list_projection_parse_camel_case_wire_shape()
     assert started.thread_id == "thread-1"
     assert started.timestamp_ms == 10
     assert started.item.status == "inProgress"
+
+
+def test_thread_item_preserves_typed_tool_outcome():
+    item = ThreadItem.from_dict(
+        {
+            "type": "toolCall",
+            "id": "call-retry",
+            "name": "mcp__fixture__slow",
+            "arguments": {"query": "status"},
+            "status": "failed",
+            "outcome": "retryable",
+            "output": "MCP tool call timed out",
+        }
+    )
+
+    assert item.status == "failed"
+    assert item.outcome == "retryable"
 
     from mini_agent import ThreadItemsListResult
 

@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [Session fork 上下文策略契约](implemented/bug-fix/2026-09-15-session-fork-context-policy-contract.md)
 - [Session fork 重试幂等](implemented/bug-fix/2026-09-15-session-fork-retry-idempotency.md)
 - [Python SDK 与 App Server 集成](implemented/architecture/2026-08-31-python-sdk-architecture-and-app-server-integration.md)
 - [FastAPI Gateway 与 Web Studio](implemented/architecture/2026-08-31-fastapi-gateway-and-web-studio-ui.md)

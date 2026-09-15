@@ -348,6 +348,12 @@ class ClientPool:
                     existing_meta = owner.get_thread_meta(new_thread_id, source_project)
                     existing_session_id = existing_meta.get("session_id")
                     if existing_session_id:
+                        existing_policy = existing_meta.get("context_policy")
+                        if existing_policy and existing_policy != context_policy:
+                            raise RuntimeError(
+                                f"Thread '{new_thread_id}' already uses fork context "
+                                f"policy '{existing_policy}'"
+                            )
                         return {
                             "thread_id": new_thread_id,
                             "status": "forked",
@@ -404,6 +410,7 @@ class ClientPool:
                     "session_id": result.session_id,
                     "path": result.path,
                     "session_bytes": result.session_bytes,
+                    "context_policy": context_policy,
                     "parent_session_id": result.parent_session_id,
                     "parent_checkpoint_seq": result.parent_checkpoint_seq,
                     "context_before_bytes": result.context_before_bytes,

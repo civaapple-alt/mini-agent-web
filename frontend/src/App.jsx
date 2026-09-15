@@ -103,6 +103,7 @@ export default function App() {
   const [historyFocusMessageId, setHistoryFocusMessageId] = useState(null);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState('offline');
 
   const wsRef = useRef(null);
   const workflowRevisionsRef = useRef(new Map());
@@ -128,6 +129,7 @@ export default function App() {
   const loadThreadsRef = useRef(null);
   const catalogEpochRef = useRef(0);
   const catalogRequestControllerRef = useRef(null);
+  const runtimeRecoveryRef = useRef(new Set());
   const pendingUserMessageIdRef = useRef(null);
   activeTurnIdRef.current = activeTurnId;
   planActiveRef.current = planActive;
@@ -326,6 +328,7 @@ export default function App() {
       handleServerEvent,
       () => {
         setIsConnected(true);
+        setConnectionState('online');
         wsRef.current?.send({
           action: 'ping',
           project_id: currentThreadProjectRef.current,
@@ -347,6 +350,7 @@ export default function App() {
       },
       () => {
         setIsConnected(false);
+        setConnectionState('reconnecting');
         showToast('⚠️ 与 Agent Gateway 连接断开，尝试重连中...', 'warning', 2500);
       },
       () => currentThreadProjectRef.current,
@@ -850,6 +854,59 @@ export default function App() {
     });
   }
 
+  const recoverRuntimeAfterConnectionLoss = (threadId, projectId) => {
+    const recoveryKey = scopedThreadKey(threadId, projectId);
+    if (runtimeRecoveryRef.current.has(recoveryKey)) return;
+    runtimeRecoveryRef.current.add(recoveryKey);
+    setConnectionState('reconnecting');
+    const context = beginSessionRequest(threadId, projectId);
+    startSessionSync(threadId, projectId);
+
+    void (async () => {
+      try {
+        let attached = null;
+        try {
+          attached = await api.attachThread(threadId, projectId, {
+            signal: context.signal,
+          });
+        } catch (err) {
+          if (!isAbortError(err)) {
+            console.debug('Runtime recovery attach is not available:', err);
+          }
+        }
+        if (isCurrentSessionRequest(context) && attached) {
+          setCurrentSessionReadOnly(
+            attached.attached === false && attached.session_status === 'locked',
+          );
+        }
+        await Promise.all([
+          loadThreadHistory(threadId, projectId, context),
+          loadWorkflows(threadId, projectId, context),
+          loadRuntimeStatus(threadId, projectId, context),
+          loadPendingApproval(threadId, projectId, context),
+        ]);
+        await replayMissedEvents(threadId, projectId, context);
+        finishSessionSync(threadId, projectId);
+        if (isCurrentSessionRequest(context) && wsRef.current?.isOpen?.()) {
+          setConnectionState('online');
+          showToast('运行状态已恢复，会话历史已重新对账。', 'success', 2500);
+        }
+      } catch (err) {
+        if (!isAbortError(err) && isCurrentSessionRequest(context)) {
+          console.debug('Runtime recovery failed:', err);
+          finishSessionSync(threadId, projectId);
+          setConnectionState('offline');
+          showToast('运行时恢复失败，请稍后重新 attach 当前会话。', 'warning', 4000);
+        }
+      } finally {
+        if (sessionSyncRef.current?.key === recoveryKey) {
+          finishSessionSync(threadId, projectId);
+        }
+        runtimeRecoveryRef.current.delete(recoveryKey);
+      }
+    })();
+  };
+
   // ---------------------------------------------------------------------------
   // WebSocket Message / Event Dispatcher
   // ---------------------------------------------------------------------------
@@ -948,6 +1005,12 @@ export default function App() {
         turnId: data.turnId || visibleActiveTurnId || null,
         message: data.message || '操作异常',
       });
+      if (data.scope === 'runtime') {
+        const runtimeThreadId = data.threadId || data.thread_id || currentThreadRef.current;
+        const runtimeProjectId = data.projectId || data.project_id || currentThreadProjectRef.current;
+        recoverRuntimeAfterConnectionLoss(runtimeThreadId, runtimeProjectId);
+        return;
+      }
       if (data.scope === 'approval') {
         const requestId = data.requestId || data.request_id;
         const reportedCallId = data.callId || data.call_id;
@@ -2032,6 +2095,7 @@ export default function App() {
     runtimeStatus,
     lastWorkflowEvent,
     lastTurnResult,
+    connectionState,
     accessScope,
     policy,
     continuationMode,

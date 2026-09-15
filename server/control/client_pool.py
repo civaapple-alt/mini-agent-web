@@ -386,23 +386,11 @@ class ClientPool:
                 new_thread_id=new_thread_id,
                 context_policy=context_policy,
             )
-            create_client = owner.__dict__.get("_create_client")
-            if create_client is not None:
-                child_client = await create_client(
-                    new_thread_id,
-                    owner._project_for_thread(new_thread_id, source_project),
-                    "resume",
-                    result.session_id,
-                )
-            else:
-                child_client = await self.create_client(
-                    new_thread_id,
-                    owner._project_for_thread(new_thread_id, source_project),
-                    "resume",
-                    result.session_id,
-                )
             source_meta = owner.get_thread_meta(source_thread_id, source_project)
             fork_title = title or f"{source_meta.get('title', source_thread_id)} (Fork)"
+            # SessionStore has already committed the child before this point.
+            # Persist its Gateway projection before starting the child process
+            # so a startup failure leaves an attachable catalog entry.
             owner.set_thread_meta(
                 result.thread_id,
                 {
@@ -421,6 +409,21 @@ class ClientPool:
                     "compaction_method": result.method,
                 },
             )
+            create_client = owner.__dict__.get("_create_client")
+            if create_client is not None:
+                child_client = await create_client(
+                    new_thread_id,
+                    owner._project_for_thread(new_thread_id, source_project),
+                    "resume",
+                    result.session_id,
+                )
+            else:
+                child_client = await self.create_client(
+                    new_thread_id,
+                    owner._project_for_thread(new_thread_id, source_project),
+                    "resume",
+                    result.session_id,
+                )
             self.bind_thread_client(result.thread_id, child_client, source_project)
             return {
                 "thread_id": result.thread_id,

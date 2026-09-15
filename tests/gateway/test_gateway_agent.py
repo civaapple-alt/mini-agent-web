@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from mini_agent.errors import AppServerError
+from mini_agent.errors import AppServerError, ServerProcessError
 from mini_agent.types import TurnSubmissionResult
 
 from server.app import create_app
@@ -566,3 +566,55 @@ async def test_ws_stream_continues_after_origin_socket_closes():
 
     websocket.send_json.assert_awaited_once()
     assert session_manager.get_active_turn("default") is None
+
+
+@pytest.mark.asyncio
+async def test_cancelled_ws_stream_does_not_fake_turn_settlement():
+    """Transport task cancellation must not manufacture turn_finished."""
+    websocket = AsyncMock()
+    client = AsyncMock()
+
+    async def stream_turn(**_kwargs):
+        yield {"type": "_turn_submission", "data": {"turn_id": "turn-cancelled"}}
+        raise asyncio.CancelledError
+
+    client.stream_turn = stream_turn
+    broadcast = AsyncMock()
+    with (
+        patch.object(
+            session_manager,
+            "get_client_for_thread",
+            new=AsyncMock(return_value=client),
+        ),
+        patch.object(session_manager, "broadcast_ws", new=broadcast),
+    ):
+        await _stream_turn_to_ws(websocket, "hello", "start", "cancelled-thread")
+
+    broadcast.assert_not_awaited()
+    assert session_manager.get_active_turn("cancelled-thread") is None
+
+
+@pytest.mark.asyncio
+async def test_eof_stream_does_not_publish_terminal_turn_error():
+    """An App Server EOF is recoverable transport loss, not Turn failure."""
+    websocket = AsyncMock()
+    client = AsyncMock()
+
+    async def stream_turn(**_kwargs):
+        yield {"type": "_turn_submission", "data": {"turn_id": "turn-eof"}}
+        raise ServerProcessError("App Server connection closed")
+
+    client.stream_turn = stream_turn
+    broadcast = AsyncMock()
+    with (
+        patch.object(
+            session_manager,
+            "get_client_for_thread",
+            new=AsyncMock(return_value=client),
+        ),
+        patch.object(session_manager, "broadcast_ws", new=broadcast),
+    ):
+        await _stream_turn_to_ws(websocket, "hello", "start", "eof-thread")
+
+    broadcast.assert_not_awaited()
+    assert session_manager.get_active_turn("eof-thread") is None

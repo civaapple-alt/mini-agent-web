@@ -1601,6 +1601,59 @@ async def test_fork_and_concurrent_attach_share_the_forked_binding(
 
 
 @pytest.mark.asyncio
+async def test_fork_catalog_survives_child_start_failure_and_retry(
+    mock_session_manager, monkeypatch
+):
+    """A persisted child remains discoverable when process startup fails."""
+    source_client = AsyncMock()
+    source_client.fork_session = AsyncMock(
+        return_value=SimpleNamespace(
+            session_id="s-forked-after-failure",
+            thread_id="forked-after-failure",
+            path="/tmp/s-forked-after-failure/session.jsonl",
+            parent_session_id="s-source",
+            parent_checkpoint_seq=3,
+            session_bytes=256,
+            context_before_bytes=512,
+            context_after_bytes=512,
+            compacted=False,
+            method="exact",
+        )
+    )
+    mock_session_manager._clients["source-thread"] = source_client
+    mock_session_manager._client_projects["source-thread"] = "default"
+    mock_session_manager._thread_metadata["source-thread"] = {
+        "title": "Source",
+        "project": "default",
+    }
+    child_client = AsyncMock()
+    create_client = AsyncMock(
+        side_effect=[RuntimeError("child process failed to start"), child_client]
+    )
+    monkeypatch.setattr(mock_session_manager, "_create_client", create_client)
+
+    with pytest.raises(RuntimeError, match="child process failed"):
+        await mock_session_manager.fork_thread(
+            "source-thread", "forked-after-failure"
+        )
+
+    failed_meta = mock_session_manager.get_thread_meta(
+        "forked-after-failure", "default"
+    )
+    assert failed_meta["session_id"] == "s-forked-after-failure"
+    assert failed_meta["parent_checkpoint_seq"] == 3
+
+    retried = await mock_session_manager.fork_thread(
+        "source-thread", "forked-after-failure"
+    )
+
+    assert retried["session_id"] == "s-forked-after-failure"
+    assert mock_session_manager._clients["forked-after-failure"] is child_client
+    assert source_client.fork_session.await_count == 2
+    assert create_client.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_restart_broadcasts_runtime_generation(mock_session_manager, monkeypatch):
     """A successful Gateway restart invalidates Web Studio's old revision cursor."""
     old_client = AsyncMock()

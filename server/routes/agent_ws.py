@@ -9,6 +9,7 @@ from collections.abc import Coroutine
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from mini_agent.errors import ServerProcessError
 
 from server.routes.agent_turns import _process_attachments
 from server.session_manager import session_manager, to_json_serializable
@@ -395,22 +396,17 @@ async def _stream_turn_to_ws(
                     )
     except asyncio.CancelledError:
         logger.info("WebSocket stream turn cancelled for thread: %s", target_thread)
-        try:
-            await session_manager.broadcast_ws(
-                {
-                    "type": "event",
-                    "threadId": target_thread,
-                    "projectId": project_id,
-                    "turnId": active_turn_id,
-                    "event": {
-                        "type": "turn_finished",
-                        "stop_reason": "interrupted",
-                    },
-                }
-            )
-        except Exception:  # noqa: BLE001, S110
-            pass
+        # Task cancellation is a transport/lifecycle event, not an
+        # authoritative Turn settlement. The App Server must publish the
+        # real turn_finished event before the Gateway clears a Turn.
     except Exception as err:
+        if isinstance(err, ServerProcessError):
+            logger.warning(
+                "App Server stream ended before Turn %s settled: %s",
+                active_turn_id,
+                err,
+            )
+            return
         logger.exception("WebSocket stream error")
         error_payload = {
             "type": "error",

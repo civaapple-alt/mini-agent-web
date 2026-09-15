@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [Stopping、EOF 与跨仓恢复契约](implemented/architecture/2026-09-15-stopping-eof-recovery.md)
 - [Tool outcome public projection and Web consumption](implemented/architecture/2026-09-15-tool-outcome-public-projection.md)
 - [Web Studio tool outcome consumption](implemented/architecture/2026-09-15-web-studio-tool-outcome-consumption.md)
 - [Typed tool outcome consumption boundary](implemented/architecture/2026-09-15-typed-tool-outcome-boundary.md)

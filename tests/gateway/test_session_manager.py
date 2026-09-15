@@ -1426,9 +1426,14 @@ async def test_start_does_not_create_duplicate_when_default_session_is_locked(
 
 @pytest.mark.asyncio
 async def test_attach_thread_allows_same_thread_id_in_another_project(
-    mock_session_manager, tmp_path
+    mock_session_manager, monkeypatch, tmp_path
 ):
     """Project-qualified Thread bindings may coexist in the client pool."""
+
+    async def create_client(*_args, **_kwargs):
+        return AsyncMock()
+
+    monkeypatch.setattr(mock_session_manager, "_create_client", create_client)
     mock_session_manager._state_dir = tmp_path.parent / f"{tmp_path.name}-gateway-state"
     project_root = tmp_path / "other-project"
     project_root.mkdir()

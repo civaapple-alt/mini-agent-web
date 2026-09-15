@@ -2,7 +2,8 @@
 
 This deterministic example uses no App Server process and no model provider.
 It validates that the 0.7.0 SDK parses public lifecycle events, dedicated
-ThreadItem notifications, and bounded ThreadItem list projections.
+ThreadItem notifications, bounded ThreadItem list projections, and the
+cross-repository stopping/session-fork control contract.
 """
 
 from mini_agent import (
@@ -12,6 +13,8 @@ from mini_agent import (
     ItemLifecycleNotification,
     RunFailedEvent,
     RunFinishedEvent,
+    RuntimeStatus,
+    SessionForkResult,
     ThreadItem,
     ThreadItemsListResult,
     parse_event,
@@ -75,6 +78,33 @@ ITEM_COMPLETED_FIXTURE = {
     "item": THREAD_ITEM_FIXTURE,
 }
 
+RUNTIME_STATUS_FIXTURE = {
+    "value": {
+        "phase": "stopping",
+        "threadId": "thread-1",
+        "turnId": "turn-1",
+        "operationId": "action-1",
+        "checkpointSeq": 7,
+        "stateRevision": 9,
+        "timestampMs": 20,
+    }
+}
+
+SESSION_FORK_FIXTURE = {
+    "value": {
+        "sessionId": "session-child",
+        "threadId": "thread-child",
+        "path": "sessions/session-child/session.jsonl",
+        "parentSessionId": "session-parent",
+        "parentCheckpointSeq": 7,
+        "sessionBytes": 500,
+        "contextBeforeBytes": 1000,
+        "contextAfterBytes": 1000,
+        "compacted": False,
+        "method": "exact",
+    }
+}
+
 
 def main() -> None:
     for payload in EVENT_FIXTURES:
@@ -100,7 +130,17 @@ def main() -> None:
         {"value": {"data": [{"turnId": "turn-1", "item": THREAD_ITEM_FIXTURE}]}}
     )
     assert page.data[0].item.id == "call-compat-1"
-    print(f"Validated {len(EVENT_FIXTURES)} protocol event fixtures.")
+    runtime_status = RuntimeStatus.from_dict(RUNTIME_STATUS_FIXTURE)
+    assert runtime_status.phase == "stopping"
+    assert runtime_status.turn_id == "turn-1"
+    fork = SessionForkResult.from_dict(SESSION_FORK_FIXTURE)
+    assert fork.session_id == "session-child"
+    assert fork.parent_session_id == "session-parent"
+    assert fork.method == "exact"
+    print(
+        f"Validated {len(EVENT_FIXTURES)} protocol event fixtures and "
+        "2 control-plane fixtures."
+    )
 
 
 if __name__ == "__main__":

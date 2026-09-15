@@ -340,6 +340,39 @@ class ClientPool:
                     f"Thread '{new_thread_id}' is already bound to Project "
                     f"'{existing_project}'"
                 )
+            existing_child = owner._project_clients.get((source_project, new_thread_id))
+            if existing_child is not None:
+                if not self._is_usable_client(existing_child):
+                    self._discard_client(existing_child)
+                else:
+                    existing_meta = owner.get_thread_meta(new_thread_id, source_project)
+                    existing_session_id = existing_meta.get("session_id")
+                    if existing_session_id:
+                        return {
+                            "thread_id": new_thread_id,
+                            "status": "forked",
+                            "title": existing_meta.get(
+                                "title", f"会话 {new_thread_id}"
+                            ),
+                            "project": source_project,
+                            "session_id": existing_session_id,
+                            "parent_session_id": existing_meta.get(
+                                "parent_session_id", ""
+                            ),
+                            "parent_checkpoint_seq": existing_meta.get(
+                                "parent_checkpoint_seq", 0
+                            ),
+                            "path": existing_meta.get("path", ""),
+                            "session_bytes": existing_meta.get("session_bytes", 0),
+                            "context_before_bytes": existing_meta.get(
+                                "context_before_bytes", 0
+                            ),
+                            "context_after_bytes": existing_meta.get(
+                                "context_after_bytes", 0
+                            ),
+                            "compacted": existing_meta.get("compacted", False),
+                            "method": existing_meta.get("compaction_method", "exact"),
+                        }
             result = await client.fork_session(
                 source_thread_id=source_thread_id,
                 new_thread_id=new_thread_id,
@@ -369,6 +402,8 @@ class ClientPool:
                     "summary": f"Forked from {source_thread_id}",
                     "project": source_project,
                     "session_id": result.session_id,
+                    "path": result.path,
+                    "session_bytes": result.session_bytes,
                     "parent_session_id": result.parent_session_id,
                     "parent_checkpoint_seq": result.parent_checkpoint_seq,
                     "context_before_bytes": result.context_before_bytes,

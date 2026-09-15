@@ -384,8 +384,10 @@ async def test_thread_fork_preserves_source_project_binding(
         "project": "source-project",
     }
     child_client = AsyncMock()
+    create_calls = []
 
     async def create_child_client(*_args, **_kwargs):
+        create_calls.append(True)
         return child_client
 
     monkeypatch.setattr(session_manager, "_create_client", create_child_client)
@@ -399,6 +401,13 @@ async def test_thread_fork_preserves_source_project_binding(
                 "new_thread_id": "forked-thread",
             },
         )
+        retry = await client.post(
+            "/api/threads/fork",
+            json={
+                "source_thread_id": "source-thread",
+                "new_thread_id": "forked-thread",
+            },
+        )
 
     assert response.status_code == 200
     assert response.json()["project"] == "source-project"
@@ -406,6 +415,9 @@ async def test_thread_fork_preserves_source_project_binding(
     assert session_manager._thread_metadata["forked-thread"]["project"] == (
         "source-project"
     )
+    assert retry.status_code == 200
+    assert retry.json()["session_id"] == "s-forked"
+    assert len(create_calls) == 1
     mock_client.fork_session.assert_awaited_once_with(
         source_thread_id="source-thread",
         new_thread_id="forked-thread",

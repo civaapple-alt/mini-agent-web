@@ -14,6 +14,7 @@ export default function AppLayout({
   threadTitle,
   threadSummary,
   sessionId,
+  sessionMeta,
   isConnected,
   onOpenSidePanel,
   onOpenSettings,
@@ -195,6 +196,7 @@ export default function AppLayout({
           planActive={planActive}
           goalState={goalState}
           status={statusModel}
+          sessionMeta={sessionMeta}
           threadId={currentThread}
           projectId={currentThreadProject}
           onGoalChanged={onGoalChanged}

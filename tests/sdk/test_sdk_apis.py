@@ -81,6 +81,12 @@ async def test_advanced_thread_and_workflow_apis(tmp_path: Path):
         closed = await client.close_thread("thread-forked")
         assert closed is True
 
+        session_fork = await client.fork_session("default", "thread-session-fork")
+        assert session_fork.thread_id == "thread-session-fork"
+        assert session_fork.session_id
+        assert session_fork.parent_session_id
+        assert session_fork.context_after_bytes <= session_fork.context_before_bytes
+
         # 4. World Governance & MCP
         world = await client.get_world_state()
         assert hasattr(world, "context") and bool(world.context)
@@ -209,6 +215,47 @@ async def test_sdk_runtime_observation_api_mapping():
             "turn/events",
             {"threadId": "thread-1", "afterSequence": 7, "limit": 16},
         ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sdk_session_fork_api_mapping():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {
+            "value": {
+                "sessionId": "s-child",
+                "threadId": "thread-child",
+                "path": "sessions/s-child/session.jsonl",
+                "parentSessionId": "s-parent",
+                "parentCheckpointSeq": 7,
+                "sessionBytes": 2048,
+                "contextBeforeBytes": 8192,
+                "contextAfterBytes": 4096,
+                "compacted": True,
+                "method": "model_summary",
+            }
+        }
+
+    client._send_request = fake_send
+    result = await client.fork_session("thread-parent", "thread-child")
+
+    assert result.session_id == "s-child"
+    assert result.parent_checkpoint_seq == 7
+    assert result.context_after_bytes == 4096
+    assert result.compacted is True
+    assert calls == [
+        (
+            "session/fork",
+            {
+                "sourceThreadId": "thread-parent",
+                "newThreadId": "thread-child",
+                "contextPolicy": "compact_if_needed",
+            },
+        )
     ]
 
 

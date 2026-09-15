@@ -49,6 +49,7 @@ export const threadApi = {
         title,
         project,
         project_id: projectId,
+        context_policy: options.contextPolicy || 'compact_if_needed',
       }),
       ...requestSignal(options),
     }, projectId);

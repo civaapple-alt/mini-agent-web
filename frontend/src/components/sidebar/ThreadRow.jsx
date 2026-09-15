@@ -113,7 +113,7 @@ export default function ThreadRow({
             onClick={(event) => onAction(event, 'fork', thread)}
           >
             <GitFork size={12} />
-            <span>派生分支</span>
+            <span>派生独立分支</span>
           </button>
           {thread.thread_id !== 'default' && (
             <button

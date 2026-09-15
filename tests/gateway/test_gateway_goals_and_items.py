@@ -350,7 +350,9 @@ async def test_thread_attach_allows_same_thread_id_in_multiple_projects(
 
 
 @pytest.mark.asyncio
-async def test_thread_fork_preserves_source_project_binding(gateway_test_app, tmp_path):
+async def test_thread_fork_preserves_source_project_binding(
+    gateway_test_app, tmp_path, monkeypatch
+):
     """Fork must not rebind a source Thread to the Gateway's current Project."""
     project_root = tmp_path / "source-project"
     project_root.mkdir()
@@ -361,8 +363,19 @@ async def test_thread_fork_preserves_source_project_binding(gateway_test_app, tm
         "source_folders": [{"path": str(project_root), "is_primary": True}],
     }
     mock_client = AsyncMock()
-    mock_client.fork_thread = AsyncMock(
-        return_value=SimpleNamespace(thread_id="forked-thread")
+    mock_client.fork_session = AsyncMock(
+        return_value=SimpleNamespace(
+            session_id="s-forked",
+            thread_id="forked-thread",
+            path=str(project_root / "session.jsonl"),
+            parent_session_id="s-source",
+            parent_checkpoint_seq=1,
+            session_bytes=128,
+            context_before_bytes=128,
+            context_after_bytes=128,
+            compacted=False,
+            method="exact",
+        )
     )
     session_manager._clients["source-thread"] = mock_client
     session_manager._client_projects["source-thread"] = "source-project"
@@ -370,6 +383,12 @@ async def test_thread_fork_preserves_source_project_binding(gateway_test_app, tm
         "title": "Source",
         "project": "source-project",
     }
+    child_client = AsyncMock()
+
+    async def create_child_client(*_args, **_kwargs):
+        return child_client
+
+    monkeypatch.setattr(session_manager, "_create_client", create_child_client)
 
     transport = ASGITransport(app=gateway_test_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -387,8 +406,10 @@ async def test_thread_fork_preserves_source_project_binding(gateway_test_app, tm
     assert session_manager._thread_metadata["forked-thread"]["project"] == (
         "source-project"
     )
-    mock_client.fork_thread.assert_awaited_once_with(
-        source_thread_id="source-thread", new_thread_id="forked-thread"
+    mock_client.fork_session.assert_awaited_once_with(
+        source_thread_id="source-thread",
+        new_thread_id="forked-thread",
+        context_policy="compact_if_needed",
     )
 
 

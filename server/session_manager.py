@@ -288,9 +288,10 @@ class SessionManager:
         new_thread_id: str,
         title: str | None = None,
         project_id: str | None = None,
+        context_policy: str = "compact_if_needed",
     ) -> dict[str, Any]:
         return await self._client_pool.fork_thread(
-            source_thread_id, new_thread_id, title, project_id
+            source_thread_id, new_thread_id, title, project_id, context_policy
         )
 
     async def start_thread(

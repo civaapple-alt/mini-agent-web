@@ -39,6 +39,22 @@ import { getStatusViewModel, normalizeTheme } from './utils/statusModel.js';
 import { createInputTrace } from './utils/inputTrace.js';
 import './App.css';
 
+function readThreadMeta(thread, fallbackTitle = null) {
+  const source = thread || {};
+  return {
+    title: source.title || source.thread_id || fallbackTitle || '默认会话 (Default Session)',
+    summary: source.summary || '',
+    sessionId: source.session_id || null,
+    parentSessionId: source.parent_session_id || null,
+    parentCheckpointSeq: source.parent_checkpoint_seq ?? null,
+    sessionBytes: source.session_bytes ?? null,
+    contextBeforeBytes: source.context_before_bytes ?? null,
+    contextAfterBytes: source.context_after_bytes ?? null,
+    compacted: source.compacted ?? false,
+    compactionMethod: source.compaction_method || null,
+  };
+}
+
 export default function App() {
   const [threads, setThreads] = useState([]);
   const [currentThread, setCurrentThread] = useState(
@@ -47,11 +63,7 @@ export default function App() {
   const [currentThreadProject, setCurrentThreadProject] = useState(
     () => readPersistedSessionSelection().projectId || null,
   );
-  const [currentThreadMeta, setCurrentThreadMeta] = useState({
-    title: '默认会话 (Default Session)',
-    summary: '',
-    sessionId: null,
-  });
+  const [currentThreadMeta, setCurrentThreadMeta] = useState(() => readThreadMeta());
   const [messages, setMessages] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isInterrupting, setIsInterrupting] = useState(false);
@@ -454,11 +466,7 @@ export default function App() {
             currentThreadProjectRef.current = cur.project;
             setCurrentThreadProject(cur.project);
           }
-          setCurrentThreadMeta({
-            title: cur.title || cur.thread_id,
-            summary: cur.summary || '',
-            sessionId: cur.session_id || null,
-          });
+          setCurrentThreadMeta(readThreadMeta(cur));
         }
       }
       return cur;
@@ -496,11 +504,7 @@ export default function App() {
     currentThreadProjectRef.current = nextProject;
     setCurrentThread(nextThread);
     setCurrentThreadProject(nextProject);
-    setCurrentThreadMeta({
-      title: selected.title || nextThread,
-      summary: selected.summary || '',
-      sessionId: selected.session_id || null,
-    });
+    setCurrentThreadMeta(readThreadMeta(selected, nextThread));
 
     // Establish the project-qualified routing context before reading the
     // project-agnostic history/workflow endpoints. A locked external Session
@@ -702,6 +706,13 @@ export default function App() {
         title: cp.metadata?.title || previous.title || threadId,
         summary: cp.metadata ? (cp.metadata.summary || '') : (previous.summary || ''),
         sessionId: sessionSnapshot.session_id || cp.session_id || previous.sessionId || null,
+        parentSessionId: sessionSnapshot.parent_session_id || previous.parentSessionId || null,
+        parentCheckpointSeq: sessionSnapshot.parent_checkpoint_seq ?? previous.parentCheckpointSeq ?? null,
+        sessionBytes: sessionSnapshot.session_bytes ?? previous.sessionBytes ?? null,
+        contextBeforeBytes: sessionSnapshot.context_before_bytes ?? previous.contextBeforeBytes ?? null,
+        contextAfterBytes: sessionSnapshot.context_after_bytes ?? previous.contextAfterBytes ?? null,
+        compacted: sessionSnapshot.compacted ?? previous.compacted ?? false,
+        compactionMethod: sessionSnapshot.compaction_method || previous.compactionMethod || null,
       }));
       const turnActive = Boolean(
         cp.turn_active ?? sessionSnapshot.turn_active,
@@ -1628,11 +1639,7 @@ export default function App() {
     setCurrentThread(threadId);
     setCurrentThreadProject(nextProject);
     if (selected) {
-      setCurrentThreadMeta({
-        title: selected.title || threadId,
-        summary: selected.summary || '',
-        sessionId: selected.session_id || null,
-      });
+      setCurrentThreadMeta(readThreadMeta(selected, threadId));
     }
     try {
       // Attach first. All project-agnostic thread APIs use this active
@@ -1679,11 +1686,11 @@ export default function App() {
       setActiveProjectId(nextProject);
       setCurrentThread(tid);
       setCurrentThreadProject(nextProject);
-      setCurrentThreadMeta({
+      setCurrentThreadMeta(readThreadMeta({
         title: finalTitle,
         summary: '',
-        sessionId: result.session_id || null,
-      });
+        session_id: result.session_id,
+      }, tid));
       await Promise.all([
         loadSettings(context),
         loadThreadHistory(tid, nextProject, context),
@@ -1719,13 +1726,28 @@ export default function App() {
       setActiveProjectId(nextProject);
       setCurrentThread(newId);
       setCurrentThreadProject(nextProject);
+      setCurrentThreadMeta(readThreadMeta({
+        title: result.title || `${sourceThreadId} (Fork)`,
+        summary: `Forked from ${sourceThreadId}`,
+        session_id: result.session_id,
+        parent_session_id: result.parent_session_id,
+        parent_checkpoint_seq: result.parent_checkpoint_seq,
+        session_bytes: result.session_bytes,
+        context_before_bytes: result.context_before_bytes,
+        context_after_bytes: result.context_after_bytes,
+        compacted: result.compacted,
+        compaction_method: result.method,
+      }, newId));
       await loadThreadHistory(newId, nextProject, context);
       await Promise.all([
         loadSettings(context),
         loadWorkflows(newId, nextProject, context),
         loadRuntimeStatus(newId, nextProject, context),
       ]);
-      showToast(`已派生分支会话: ${newId}`, 'success');
+      showToast(
+        `已派生独立分支: ${newId} · Session ${result.session_id || '未知'}`,
+        'success',
+      );
     } catch (err) {
       showToast(`派生分支失败: ${err.message}`, 'error');
     }
@@ -1993,6 +2015,8 @@ export default function App() {
       currentThread={currentThread}
       threadTitle={currentThreadMeta.title}
       threadSummary={currentThreadMeta.summary}
+      sessionId={currentThreadMeta.sessionId}
+      sessionMeta={currentThreadMeta}
       isConnected={isConnected}
       onOpenSidePanel={handleOpenSidePanel}
       onOpenSettings={() => setSettingsModalOpen(true)}

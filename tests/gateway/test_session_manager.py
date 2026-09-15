@@ -1508,19 +1508,31 @@ async def test_fork_and_concurrent_attach_share_the_forked_binding(
     release_fork = asyncio.Event()
     source_client = AsyncMock()
 
-    async def fork_thread(**kwargs):
+    async def fork_session(**kwargs):
         fork_started.set()
         await release_fork.wait()
-        return SimpleNamespace(thread_id=kwargs["new_thread_id"])
+        return SimpleNamespace(
+            session_id="s-forked",
+            thread_id=kwargs["new_thread_id"],
+            path="/tmp/s-forked/session.jsonl",
+            parent_session_id="s-source",
+            parent_checkpoint_seq=1,
+            session_bytes=128,
+            context_before_bytes=128,
+            context_after_bytes=128,
+            compacted=False,
+            method="exact",
+        )
 
-    source_client.fork_thread = fork_thread
+    source_client.fork_session = fork_session
     mock_session_manager._clients["source-thread"] = source_client
     mock_session_manager._client_projects["source-thread"] = "default"
     mock_session_manager._thread_metadata["source-thread"] = {
         "title": "Source",
         "project": "default",
     }
-    create_client = AsyncMock(side_effect=AssertionError("attach raced the fork"))
+    child_client = AsyncMock()
+    create_client = AsyncMock(return_value=child_client)
     monkeypatch.setattr(mock_session_manager, "_create_client", create_client)
 
     fork_task = asyncio.create_task(
@@ -1538,8 +1550,8 @@ async def test_fork_and_concurrent_attach_share_the_forked_binding(
 
     assert forked["project"] == "default"
     assert attached["attached"] is True
-    assert mock_session_manager._clients["forked-thread"] is source_client
-    create_client.assert_not_awaited()
+    assert mock_session_manager._clients["forked-thread"] is child_client
+    create_client.assert_awaited_once()
 
 
 @pytest.mark.asyncio

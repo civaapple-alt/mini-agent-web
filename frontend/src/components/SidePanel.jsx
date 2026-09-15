@@ -46,6 +46,7 @@ export default function SidePanel({
   onTogglePlan,
   goalState,
   status = null,
+  sessionMeta = null,
   threadId = 'default',
   projectId = null,
   onGoalChanged,
@@ -535,7 +536,7 @@ export default function SidePanel({
           )}
 
           {activeTab === 'status' && (
-            <StatusDetailsPane status={status} />
+            <StatusDetailsPane status={status} sessionMeta={sessionMeta} />
           )}
 
           {activeTab === 'thread_history' && (

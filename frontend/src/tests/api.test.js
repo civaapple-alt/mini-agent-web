@@ -52,6 +52,7 @@ test('api client methods construct expected fetch endpoints and payloads', async
   assert.equal(forkCall.url, '/api/threads/fork?project_id=project-1');
   assert.equal(JSON.parse(forkCall.options.body).project, 'project-1');
   assert.equal(JSON.parse(forkCall.options.body).project_id, 'project-1');
+  assert.equal(JSON.parse(forkCall.options.body).context_policy, 'compact_if_needed');
 
   // 2. Settings APIs
   const setRes = await api.updateSettings({ reasoning_effort: 'high' });

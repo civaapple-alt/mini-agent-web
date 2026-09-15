@@ -24,7 +24,7 @@ uv run mini-agent-server-dev
 | 路由 | 作用 |
 | --- | --- |
 | `/ws/agent` | Turn 流、审批、Steer、Interrupt 和 runtime notifications |
-| `/api/threads` | Thread 列表、创建、读取、按 source Project 分叉、摘要和关闭 |
+| `/api/threads` | Thread 列表、创建、读取、按 source Project 派生独立 Session、摘要和关闭 |
 | `/api/threads/{thread_id}/attach` | 按可选 Project ID/name attach 历史/暂停 Session，或报告外部运行锁 |
 | `/api/threads/{thread_id}/items` | 有界 ThreadItem 历史投影 |
 | `/api/threads/{thread_id}/events` | App Server `turn/event` 的有界 cursor 重放；发生 gap 时回退到 canonical history |
@@ -42,9 +42,10 @@ Thread、Turn、Goal 和 ThreadItem 的运行时语义来自 App Server；网关
 
 同一 Thread 的 Gateway attach/start 请求在客户端创建与 canonical Session 检查
 期间串行化；并发请求会复用同一个已建立的 App Server client，不会制造重复的
-workspace 绑定竞争。Thread fork 也在同一 SessionManager 临界区内完成 source
-client 复用、分叉、child metadata 写入和 binding；并发 attach 会等待完整绑定后
-复用该 client。
+workspace 绑定竞争。Thread fork 在同一 SessionManager 临界区内完成 source
+checkpoint 准备、独立 child Session 创建、child App Server 启动、metadata 写入和
+binding；父子 Thread 不共享 App Server client。并发 attach 会等待 child 完整绑定后
+复用 child client；如果 child 启动失败，已持久化的 Session 仍可从 catalog 重新 attach。
 
 Thread settings 的 `state_revision` 只是 canonical App Server revision 的有界
 投影。Gateway 通过 WebSocket 原样转发 `thread/settings/updated` 以及带同一

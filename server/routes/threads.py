@@ -62,6 +62,10 @@ class ForkThreadRequest(BaseModel):
     project_id: str | None = Field(
         default=None, description="Canonical project routing context"
     )
+    context_policy: Literal["exact", "compact_if_needed"] = Field(
+        default="compact_if_needed",
+        description="Fork exact history or compact only when the context requires it",
+    )
 
 
 class UpdateThreadSummaryRequest(BaseModel):
@@ -169,6 +173,17 @@ async def list_threads(
                         ),
                     }
                 )
+            for field in (
+                "parent_session_id",
+                "parent_checkpoint_seq",
+                "session_bytes",
+                "context_before_bytes",
+                "context_after_bytes",
+                "compacted",
+                "compaction_method",
+            ):
+                if field in meta:
+                    item[field] = meta[field]
             enriched_threads.append(item)
 
         return {
@@ -303,6 +318,7 @@ async def fork_thread(req: ForkThreadRequest) -> dict[str, Any]:
             req.new_thread_id,
             req.title,
             req.project_id or req.project,
+            req.context_policy,
         )
     except RuntimeError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err

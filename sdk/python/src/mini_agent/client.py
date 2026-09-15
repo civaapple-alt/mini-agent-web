@@ -30,6 +30,7 @@ from mini_agent.types import (
     McpRetryResult,
     McpStatusResult,
     RuntimeStatus,
+    SessionForkResult,
     SessionInfo,
     ThreadCheckpoint,
     ThreadForkResult,
@@ -758,6 +759,23 @@ class MiniAgentClient:
             },
         )
         return ThreadForkResult.from_dict(res)
+
+    async def fork_session(
+        self,
+        source_thread_id: str,
+        new_thread_id: str,
+        context_policy: str = "compact_if_needed",
+    ) -> SessionForkResult:
+        """Create an independent persisted Session from a settled checkpoint."""
+        res = await self._send_request(
+            "session/fork",
+            {
+                "sourceThreadId": source_thread_id,
+                "newThreadId": new_thread_id,
+                "contextPolicy": context_policy,
+            },
+        )
+        return SessionForkResult.from_dict(res)
 
     async def resume_thread(
         self,

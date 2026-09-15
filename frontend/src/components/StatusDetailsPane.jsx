@@ -1,7 +1,22 @@
 import React from 'react';
 import { Activity, ShieldAlert, X } from 'lucide-react';
 
-export default function StatusDetailsPane({ status }) {
+function formatBytes(value) {
+  if (!Number.isFinite(value)) return '—';
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KiB`;
+  return `${(value / (1024 * 1024)).toFixed(2)} MiB`;
+}
+
+export default function StatusDetailsPane({ status, sessionMeta = null }) {
+  const hasSession = Boolean(sessionMeta?.sessionId);
+  const hasForkMetrics = hasSession && (
+    sessionMeta.parentSessionId
+    || sessionMeta.contextBeforeBytes !== null
+    || sessionMeta.contextAfterBytes !== null
+    || sessionMeta.sessionBytes !== null
+  );
+
   return (
     <div className="tab-pane status-details-pane">
       <div className="pane-section-header">
@@ -27,6 +42,56 @@ export default function StatusDetailsPane({ status }) {
               : '连接中断'}
         </span>
       </div>
+
+      {hasSession && (
+        <div className="status-detail-section">
+          <span className="card-label">Session 身份</span>
+          <div className="status-detail-grid">
+            <div className="detail-card">
+              <span className="card-label">Session ID</span>
+              <span className="card-val font-mono" title={sessionMeta.sessionId}>
+                {sessionMeta.sessionId}
+              </span>
+            </div>
+            {sessionMeta.parentSessionId && (
+              <div className="detail-card">
+                <span className="card-label">派生自</span>
+                <span className="card-val font-mono" title={sessionMeta.parentSessionId}>
+                  {sessionMeta.parentSessionId}
+                </span>
+              </div>
+            )}
+            {hasForkMetrics && (
+              <>
+                <div className="detail-card">
+                  <span className="card-label">父 checkpoint</span>
+                  <span className="card-val font-mono">
+                    {sessionMeta.parentCheckpointSeq ?? '—'}
+                  </span>
+                </div>
+                <div className="detail-card">
+                  <span className="card-label">Session 大小</span>
+                  <span className="card-val font-mono">
+                    {formatBytes(sessionMeta.sessionBytes)}
+                  </span>
+                </div>
+                <div className="detail-card">
+                  <span className="card-label">上下文</span>
+                  <span className="card-val font-mono">
+                    {formatBytes(sessionMeta.contextBeforeBytes)} → {formatBytes(sessionMeta.contextAfterBytes)}
+                  </span>
+                </div>
+                <div className="detail-card">
+                  <span className="card-label">派生处理</span>
+                  <span className="card-val">
+                    {sessionMeta.compacted ? `已压缩 · ${sessionMeta.compactionMethod || '已处理'}` : '原样 checkpoint'}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="status-detail-grid">
         <div className="detail-card">

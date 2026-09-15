@@ -32,7 +32,7 @@
 ### 2.2 工作区与会话列表
 - **会话历史检索**：会话搜索在前端进行亚毫秒级模糊过滤，历史会话加载采用异步渐进骨架屏（Skeleton Loading）；
 - **SessionStore 投影**：网关最多读取 128 个 Session；单个 `session.jsonl` 最大 32 MiB，与 App Server SessionStore 对齐，单条 Gateway 记录预览最大 64 KiB；超大 checkpoint 只保留有界投影；历史、运行中和已暂停 Session 均通过 canonical projection 展示；侧栏将 `turn_active` 与 `process_online` 分开投影，并保留 `last_turn_status` 诊断；完成 Plan Turn 后的 `plan_review_pending` 从 Session-owned `plan_mode.json` 恢复；Thread 的 `manual` / `continuous` 偏好从带 Thread ID 的 `thread_settings.json` sidecar 读取，网关不再保存第二份 continuation 状态；
-- **Session 切换**：历史或已暂停 Session 可通过 `/api/threads/{thread_id}/attach` 恢复；被其他 App Server 持有锁的运行中 Session 只读展示，锁释放后再 attach；切换、创建、Fork、关闭或项目切换会通过 request epoch/取消机制丢弃晚到响应；
+- **Session 切换**：历史或已暂停 Session 可通过 `/api/threads/{thread_id}/attach` 恢复；被其他 App Server 持有锁的运行中 Session 只读展示，锁释放后再 attach；“派生独立分支”只复制最近一次已结算 checkpoint，默认按需压缩并创建新的 SessionStore 和 App Server client，返回父子 Session lineage 与有界大小指标；切换、创建、Fork、关闭或项目切换会通过 request epoch/取消机制丢弃晚到响应；
 - **工作区项目管理**：支持多项目并行固定（Pin），系统目录选择器受限于宿主操作系统权限。
 
 ### 2.3 访问范围、批准与工作流

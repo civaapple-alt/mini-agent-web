@@ -319,7 +319,9 @@ class ClientPool:
         new_thread_id: str,
         title: str | None = None,
         project_id: str | None = None,
+        context_policy: str = "compact_if_needed",
     ) -> dict[str, Any]:
+        """Create and attach a child process backed by a new SessionStore."""
         owner = self.owner
         async with owner._lock:
             client = await self.get_client_for_thread_locked(
@@ -338,10 +340,26 @@ class ClientPool:
                     f"Thread '{new_thread_id}' is already bound to Project "
                     f"'{existing_project}'"
                 )
-            result = await client.fork_thread(
+            result = await client.fork_session(
                 source_thread_id=source_thread_id,
                 new_thread_id=new_thread_id,
+                context_policy=context_policy,
             )
+            create_client = owner.__dict__.get("_create_client")
+            if create_client is not None:
+                child_client = await create_client(
+                    new_thread_id,
+                    owner._project_for_thread(new_thread_id, source_project),
+                    "resume",
+                    result.session_id,
+                )
+            else:
+                child_client = await self.create_client(
+                    new_thread_id,
+                    owner._project_for_thread(new_thread_id, source_project),
+                    "resume",
+                    result.session_id,
+                )
             source_meta = owner.get_thread_meta(source_thread_id, source_project)
             fork_title = title or f"{source_meta.get('title', source_thread_id)} (Fork)"
             owner.set_thread_meta(
@@ -350,14 +368,30 @@ class ClientPool:
                     "title": fork_title,
                     "summary": f"Forked from {source_thread_id}",
                     "project": source_project,
+                    "session_id": result.session_id,
+                    "parent_session_id": result.parent_session_id,
+                    "parent_checkpoint_seq": result.parent_checkpoint_seq,
+                    "context_before_bytes": result.context_before_bytes,
+                    "context_after_bytes": result.context_after_bytes,
+                    "compacted": result.compacted,
+                    "compaction_method": result.method,
                 },
             )
-            self.bind_thread_client(result.thread_id, client, source_project)
+            self.bind_thread_client(result.thread_id, child_client, source_project)
             return {
                 "thread_id": result.thread_id,
                 "status": "forked",
                 "title": fork_title,
                 "project": source_project,
+                "session_id": result.session_id,
+                "parent_session_id": result.parent_session_id,
+                "parent_checkpoint_seq": result.parent_checkpoint_seq,
+                "path": result.path,
+                "session_bytes": result.session_bytes,
+                "context_before_bytes": result.context_before_bytes,
+                "context_after_bytes": result.context_after_bytes,
+                "compacted": result.compacted,
+                "method": result.method,
             }
 
     async def start_thread(

@@ -415,6 +415,44 @@ class ThreadForkResult:
 
 
 @dataclass
+class SessionForkResult:
+    """Result of creating an independent persisted Session fork."""
+
+    session_id: str
+    thread_id: str
+    path: str = ""
+    parent_session_id: str = ""
+    parent_checkpoint_seq: int = 0
+    session_bytes: int = 0
+    context_before_bytes: int = 0
+    context_after_bytes: int = 0
+    compacted: bool = False
+    method: str = "exact"
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SessionForkResult:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        return cls(
+            session_id=val.get("sessionId") or val.get("session_id", ""),
+            thread_id=val.get("threadId") or val.get("thread_id", ""),
+            path=val.get("path", ""),
+            parent_session_id=val.get("parentSessionId")
+            or val.get("parent_session_id", ""),
+            parent_checkpoint_seq=val.get("parentCheckpointSeq")
+            or val.get("parent_checkpoint_seq", 0),
+            session_bytes=val.get("sessionBytes") or val.get("session_bytes", 0),
+            context_before_bytes=val.get("contextBeforeBytes")
+            or val.get("context_before_bytes", 0),
+            context_after_bytes=val.get("contextAfterBytes")
+            or val.get("context_after_bytes", 0),
+            compacted=bool(val.get("compacted", False)),
+            method=val.get("method", "exact"),
+            raw=data,
+        )
+
+
+@dataclass
 class ThreadResumeResult:
     """Result of resuming a thread checkpoint."""
 

@@ -7,7 +7,7 @@ token streaming, tool invocations, UTF-8 output truncation, and usage metrics.
 import asyncio
 import json
 
-from mini_agent import MiniAgentClient
+from mini_agent import MiniAgentClient, ToolFinishedEvent
 
 
 async def main():
@@ -113,15 +113,28 @@ async def main():
                 if current_stream_mode is not None:
                     print("\n", flush=True)
                     current_stream_mode = None
-                status = "ERROR" if event.get("is_error") else "OK"
-                truncated = " (truncated)" if event.get("truncated") else ""
-                print(
-                    f"[Seq #{seq:02d}] [{status}] [Tool Finished]: {event.get('name')}{truncated}",
-                    flush=True,
-                )
-                preview = event.get("content", "")[:150].replace("\n", " ")
-                if preview:
-                    print(f"       Output Preview: {preview}...", flush=True)
+                typed_event = item["typed_event"]
+                if isinstance(typed_event, ToolFinishedEvent):
+                    tool_item = next(
+                        (
+                            candidate
+                            for candidate in item.get("typed_items", [])
+                            if candidate.id == typed_event.call_id
+                        ),
+                        None,
+                    )
+                    lifecycle = tool_item.status if tool_item else "unknown"
+                    outcome = typed_event.outcome or "unknown"
+                    truncated = " (truncated)" if typed_event.truncated else ""
+                    print(
+                        f"[Seq #{seq:02d}] [Tool Finished]: "
+                        f"{typed_event.name} status={lifecycle} "
+                        f"outcome={outcome}{truncated}",
+                        flush=True,
+                    )
+                    preview = typed_event.content[:150].replace("\n", " ")
+                    if preview:
+                        print(f"       Output Preview: {preview}...", flush=True)
 
             # 8. Bounded context compaction lifecycle
             elif event_type == "context_compaction_started":

@@ -7,7 +7,7 @@ and programmatically or interactively prompting the user.
 
 import asyncio
 
-from mini_agent import MiniAgentClient
+from mini_agent import MiniAgentClient, ToolFinishedEvent
 
 
 async def interactive_approval_handler(request: dict) -> dict:
@@ -66,7 +66,23 @@ async def main():
                     )
 
                 elif event_type == "tool_finished":
-                    print(f"[Tool Finished]: {event.get('name')}", flush=True)
+                    typed_event = item["typed_event"]
+                    if isinstance(typed_event, ToolFinishedEvent):
+                        tool_item = next(
+                            (
+                                candidate
+                                for candidate in item.get("typed_items", [])
+                                if candidate.id == typed_event.call_id
+                            ),
+                            None,
+                        )
+                        lifecycle = tool_item.status if tool_item else "unknown"
+                        outcome = typed_event.outcome or "unknown"
+                        print(
+                            f"[Tool Finished]: {typed_event.name} "
+                            f"status={lifecycle} outcome={outcome}",
+                            flush=True,
+                        )
 
                 elif event_type == "turn_finished":
                     print(

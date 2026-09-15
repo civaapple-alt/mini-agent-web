@@ -7,12 +7,12 @@
 
 | 脚本 | 内容 | 类型 |
 | --- | --- | --- |
-| `01_basic_turn.py` | 初始化、Thread 和基础 Turn | live |
-| `02_streaming_events.py` | 文本、思考、工具和 usage 流 | live |
-| `03_approval_handling.py` | Shell 与 `apply_patch` 审批回调 | live |
+| `01_basic_turn.py` | 初始化、Thread、Turn 和 typed tool outcome | live |
+| `02_streaming_events.py` | 文本、思考、工具、outcome 和 usage 流 | live |
+| `03_approval_handling.py` | Shell 与 `apply_patch` 审批回调及 outcome | live |
 | `04_steering_and_interrupt.py` | Steer 和协作中断 | live |
 | `05_workflows_and_inspection.py` | World、Plan、Goal 和 Checkpoint | live |
-| `06_protocol_compatibility.py` | 当前事件与 ThreadItem 类型检查 | offline |
+| `06_protocol_compatibility.py` | 事件、ThreadItem 与已知/未知 outcome 检查 | offline |
 
 ## 运行
 
@@ -38,4 +38,6 @@ uv run python cookbook/python-demo/06_protocol_compatibility.py
 - 示例应保持短小，直接展示一个 SDK 边界；
 - Live 示例不能成为默认自动化测试的隐式依赖；
 - 新增公共事件或 ThreadItem 形状时，同步扩展离线示例；
+- 使用 `status` 表示生命周期，使用 `outcome` 表示工具结果；不要从
+  `is_error`、输出文本或缺失事件推断 retry 或 approval；
 - 所有 `.py` 文件必须保持可编译。

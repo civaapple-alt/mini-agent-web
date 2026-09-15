@@ -19,6 +19,7 @@ from mini_agent import (
     SessionForkResult,
     ThreadItem,
     ThreadItemsListResult,
+    ToolFinishedEvent,
     parse_event,
 )
 
@@ -119,6 +120,14 @@ SESSION_FORK_CONFLICT_FIXTURE = {
     },
 }
 
+KNOWN_TOOL_OUTCOMES = (
+    "completed",
+    "failed",
+    "needs_approval",
+    "deferred",
+    "retryable",
+)
+
 
 def main() -> None:
     for payload in EVENT_FIXTURES:
@@ -131,6 +140,36 @@ def main() -> None:
     assert isinstance(parse_event(EVENT_FIXTURES[10]), RunFinishedEvent)
     assert isinstance(parse_event(EVENT_FIXTURES[12]), RunFailedEvent)
     assert isinstance(parse_event(EVENT_FIXTURES[13]), GenericEvent)
+
+    for outcome in KNOWN_TOOL_OUTCOMES:
+        tool_event = parse_event(
+            {
+                "type": "tool_finished",
+                "call_id": f"call-{outcome}",
+                "name": "fixture",
+                "content": "fixture",
+                "is_error": outcome in {"failed", "retryable"},
+                "truncated": False,
+                "outcome": outcome,
+            }
+        )
+        assert isinstance(tool_event, ToolFinishedEvent)
+        assert tool_event.outcome == outcome
+
+    unknown_tool_event = parse_event(
+        {
+            "type": "tool_finished",
+            "call_id": "call-future-outcome",
+            "name": "fixture",
+            "content": "fixture",
+            "is_error": True,
+            "truncated": False,
+            "outcome": "server_added_outcome",
+        }
+    )
+    assert isinstance(unknown_tool_event, ToolFinishedEvent)
+    assert unknown_tool_event.outcome == "server_added_outcome"
+
     item = ThreadItem.from_dict(THREAD_ITEM_FIXTURE)
     assert item.id == "call-compat-1"
     assert item.arguments == {"command": "pwd"}
@@ -157,6 +196,7 @@ def main() -> None:
     assert conflict.data["kind"] == "contextPolicy"
     print(
         f"Validated {len(EVENT_FIXTURES)} protocol event fixtures and "
+        f"{len(KNOWN_TOOL_OUTCOMES) + 1} known/unknown tool outcomes and "
         "3 control-plane fixtures."
     )
 

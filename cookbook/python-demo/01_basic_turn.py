@@ -5,7 +5,7 @@ Demonstrates connecting to mini-agent-app-server, initializing, and executing a 
 
 import asyncio
 
-from mini_agent import MiniAgentClient
+from mini_agent import MiniAgentClient, ToolFinishedEvent
 
 
 async def main():
@@ -64,11 +64,23 @@ async def main():
 
                 # Tool finished
                 elif event_type == "tool_finished":
-                    status = "ERROR" if event.get("is_error") else "OK"
-                    print(
-                        f" <- [Tool Finished] [{status}]: {event.get('name')}",
-                        flush=True,
-                    )
+                    typed_event = item["typed_event"]
+                    if isinstance(typed_event, ToolFinishedEvent):
+                        tool_item = next(
+                            (
+                                candidate
+                                for candidate in item.get("typed_items", [])
+                                if candidate.id == typed_event.call_id
+                            ),
+                            None,
+                        )
+                        lifecycle = tool_item.status if tool_item else "unknown"
+                        outcome = typed_event.outcome or "unknown"
+                        print(
+                            f" <- [Tool Finished] name={typed_event.name} "
+                            f"status={lifecycle} outcome={outcome}",
+                            flush=True,
+                        )
 
                 # Turn completed
                 elif event_type == "turn_finished":

@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [Cookbook tool outcome contract](implemented/architecture/2026-09-15-cookbook-tool-outcome-contract.md)
 - [Security boundaries and hard-limit evidence](implemented/architecture/2026-09-15-security-boundaries-and-hard-limits.md)
 - [Legacy tool typed migration](implemented/architecture/2026-09-15-legacy-tool-typed-migration.md)
 - [Stopping、EOF 与跨仓恢复契约](implemented/architecture/2026-09-15-stopping-eof-recovery.md)

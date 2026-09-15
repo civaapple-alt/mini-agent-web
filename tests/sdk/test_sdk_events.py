@@ -584,3 +584,31 @@ def test_thread_item_preserves_typed_tool_outcome():
     assert page.data[0].item.text == "done"
     assert page.next_cursor == "1"
     assert page.backwards_cursor == "0"
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        "completed",
+        "failed",
+        "needs_approval",
+        "deferred",
+        "retryable",
+        "server_added_outcome",
+    ],
+)
+def test_tool_finished_preserves_known_and_unknown_outcomes(outcome):
+    event = parse_event(
+        {
+            "type": "tool_finished",
+            "call_id": "call-outcome",
+            "name": "fixture",
+            "content": "fixture",
+            "is_error": True,
+            "truncated": False,
+            "outcome": outcome,
+        }
+    )
+
+    assert isinstance(event, ToolFinishedEvent)
+    assert event.outcome == outcome

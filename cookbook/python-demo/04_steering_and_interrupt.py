@@ -7,7 +7,27 @@ and cooperatively cancel/interrupt a long-running execution.
 import asyncio
 
 from mini_agent import MiniAgentClient
-from mini_agent.errors import AppServerError
+from mini_agent.errors import AppServerError, ServerProcessError
+
+
+async def report_disconnect(client: MiniAgentClient, thread_id: str) -> None:
+    """Show the authoritative reads to use after the stream reports EOF."""
+    print(
+        "[App Server EOF] Stream ended without proving that the Turn completed.",
+        flush=True,
+    )
+    try:
+        runtime = await client.get_runtime_status(thread_id=thread_id)
+        items = await client.list_thread_items(thread_id=thread_id, limit=128)
+        checkpoint = await client.read_thread(thread_id=thread_id)
+        print(
+            f"[Recovery Projection] phase={runtime.phase} "
+            f"turn={runtime.turn_id} items={len(items.data)} "
+            f"checkpoint={checkpoint.status}",
+            flush=True,
+        )
+    except (AppServerError, ServerProcessError) as recovery_error:
+        print(f"[Recovery Unavailable] {recovery_error}", flush=True)
 
 
 async def main():
@@ -40,6 +60,8 @@ async def main():
                 f"[Steer Acknowledged]: actionId={steer_resp.get('actionId')}\n",
                 flush=True,
             )
+        except ServerProcessError:
+            await report_disconnect(client, "default")
         except AppServerError as err:
             if "no active turn" not in str(err).lower():
                 raise
@@ -47,14 +69,21 @@ async def main():
 
         # Wait until turn settles and read result
         print("[Waiting for steered turn to settle...]", flush=True)
-        async for _ in stream1:
-            pass
-        result1 = await client.wait_for_turn(turn_id1)
-        print("[Turn 1 Settled]:", flush=True)
-        print(f"Status     : {result1.status}", flush=True)
-        print(f"Stop Reason: {result1.stop_reason}", flush=True)
-        if result1.final_text:
-            print(f"\n[Output Preview]:\n{result1.final_text[:300]}...\n", flush=True)
+        try:
+            async for _ in stream1:
+                pass
+            result1 = await client.wait_for_turn(turn_id1)
+        except ServerProcessError:
+            await report_disconnect(client, "default")
+        else:
+            print("[Turn 1 Settled]:", flush=True)
+            print(f"Status     : {result1.status}", flush=True)
+            print(f"Stop Reason: {result1.stop_reason}", flush=True)
+            if result1.final_text:
+                print(
+                    f"\n[Output Preview]:\n{result1.final_text[:300]}...\n",
+                    flush=True,
+                )
 
         # ---------------------------------------------------------------------
         # Part 2: Cooperative Turn Interruption (Cancel)
@@ -72,6 +101,8 @@ async def main():
         try:
             await client.interrupt_turn(turn_id2)
             print("[Interrupt Acknowledged]", flush=True)
+        except ServerProcessError:
+            await report_disconnect(client, "default")
         except AppServerError as err:
             if "no active turn" not in str(err).lower():
                 raise
@@ -80,12 +111,16 @@ async def main():
             )
 
         print("[Waiting for turn cancellation checkpoint...]", flush=True)
-        async for _ in stream2:
-            pass
-        result2 = await client.wait_for_turn(turn_id2)
-        print("[Turn 2 Settled]:", flush=True)
-        print(f"Status     : {result2.status}", flush=True)
-        print(f"Stop Reason: {result2.stop_reason}", flush=True)
+        try:
+            async for _ in stream2:
+                pass
+            result2 = await client.wait_for_turn(turn_id2)
+        except ServerProcessError:
+            await report_disconnect(client, "default")
+        else:
+            print("[Turn 2 Settled]:", flush=True)
+            print(f"Status     : {result2.status}", flush=True)
+            print(f"Stop Reason: {result2.stop_reason}", flush=True)
         print("\n=== Demo 04 Completed Successfully ===", flush=True)
 
 

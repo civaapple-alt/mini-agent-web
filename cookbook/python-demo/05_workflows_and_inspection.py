@@ -103,6 +103,24 @@ async def main():
         except AppServerError as err:
             print(f"(world/state error: {err})", flush=True)
 
+        print("\n--- 2a. Independent Execution Controls ---", flush=True)
+        try:
+            execution = await client.set_world_execution(
+                access="project", policy="interactive"
+            )
+            print(
+                f"Execution Access: project, Policy: interactive, "
+                f"Changed: {execution.changed}",
+                flush=True,
+            )
+            print(
+                "Trusted is a policy choice, not allow-all; high-risk actions "
+                "still require approval.",
+                flush=True,
+            )
+        except AppServerError as err:
+            print(f"(world/set_execution error: {err})", flush=True)
+
         # 4. Inspect MCP Servers status
         print("\n--- 3. MCP Status ---", flush=True)
         try:

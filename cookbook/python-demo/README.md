@@ -11,8 +11,9 @@
 | `02_streaming_events.py` | 文本、思考、工具、outcome 和 usage 流 | live |
 | `03_approval_handling.py` | Shell 与 `apply_patch` 审批回调及 outcome | live |
 | `04_steering_and_interrupt.py` | Steer 和协作中断 | live |
-| `05_workflows_and_inspection.py` | World、Plan、Goal 和 Checkpoint | live |
+| `05_workflows_and_inspection.py` | World、独立执行策略、Plan、Goal 和 Checkpoint | live |
 | `06_protocol_compatibility.py` | 事件、ThreadItem 与已知/未知 outcome 检查 | offline |
+| `07_recovery_and_projection.py` | EOF 恢复、Session fork 和身份投影 | offline |
 
 ## 运行
 
@@ -31,6 +32,7 @@ uv run python cookbook/python-demo/05_workflows_and_inspection.py
 
 ```bash
 uv run python cookbook/python-demo/06_protocol_compatibility.py
+uv run python cookbook/python-demo/07_recovery_and_projection.py
 ```
 
 ## 编写约定

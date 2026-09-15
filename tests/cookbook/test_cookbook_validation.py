@@ -20,3 +20,9 @@ def test_protocol_compatibility_cookbook_runs_without_provider():
     runpy.run_path(
         str(COOKBOOK_DIR / "06_protocol_compatibility.py"), run_name="__main__"
     )
+
+
+def test_recovery_and_projection_cookbook_runs_without_provider():
+    runpy.run_path(
+        str(COOKBOOK_DIR / "07_recovery_and_projection.py"), run_name="__main__"
+    )

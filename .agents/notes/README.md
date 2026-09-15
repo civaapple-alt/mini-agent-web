@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [Cookbook recovery and projection contract](implemented/architecture/2026-09-15-cookbook-recovery-and-projection.md)
 - [Cookbook tool outcome contract](implemented/architecture/2026-09-15-cookbook-tool-outcome-contract.md)
 - [Security boundaries and hard-limit evidence](implemented/architecture/2026-09-15-security-boundaries-and-hard-limits.md)
 - [Legacy tool typed migration](implemented/architecture/2026-09-15-legacy-tool-typed-migration.md)

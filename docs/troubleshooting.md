@@ -294,7 +294,8 @@ App Server 会执行计划工作区清理、清除 living plan 并恢复普通�
   writer。
 - `session/fork` 的重试应保持相同的 source Thread、child Thread ID 和 `context_policy`。
   相同请求会复用已有 child Session；如果 child 已经按另一种压缩策略创建，Gateway 返回
-  冲突，不能通过重试改变 child 的上下文。
+  HTTP 409，detail 中的 `code` 为 `-32001`、`data.kind` 为 `contextPolicy`，不能通过
+  重试改变 child 的上下文。跨进程和本地已绑定 child 的这两条路径使用同一错误契约。
 - 网关关闭时会先关闭 WebSocket、取消待审批请求和流任务，再停止各项目的 App Server
   Client。已发出的工具副作用不能被网关回滚；需要依赖工具自身的幂等性或 SessionStore
   的恢复边界。

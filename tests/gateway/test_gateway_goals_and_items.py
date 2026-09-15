@@ -428,7 +428,14 @@ async def test_thread_fork_preserves_source_project_binding(
     assert retry.json()["session_id"] == "s-forked"
     assert len(create_calls) == 1
     assert conflict.status_code == 409
-    assert "context policy" in conflict.json()["detail"]
+    conflict_detail = conflict.json()["detail"]
+    assert conflict_detail["code"] == SESSION_FORK_CONFLICT_CODE
+    assert conflict_detail["data"] == {
+        "kind": "contextPolicy",
+        "childThreadId": "forked-thread",
+        "requestedContextPolicy": "compact",
+        "existingContextPolicy": "exact",
+    }
     mock_client.fork_session.assert_awaited_once_with(
         source_thread_id="source-thread",
         new_thread_id="forked-thread",

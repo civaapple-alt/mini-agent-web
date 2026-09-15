@@ -14,6 +14,7 @@ from mini_agent.errors import (
 )
 from pydantic import BaseModel, Field
 
+from server.control.fork_errors import SessionForkConflictError
 from server.session_manager import session_manager, to_json_serializable
 
 router = APIRouter(prefix="/api/threads", tags=["Threads"])
@@ -324,6 +325,11 @@ async def fork_thread(req: ForkThreadRequest) -> dict[str, Any]:
             req.project_id or req.project,
             req.context_policy,
         )
+    except SessionForkConflictError as err:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": err.code, "message": err.message, "data": err.data},
+        ) from err
     except RuntimeError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err
     except AppServerError as err:

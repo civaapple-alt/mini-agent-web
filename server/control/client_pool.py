@@ -11,6 +11,7 @@ from uuid import uuid4
 from mini_agent import MiniAgentClient
 
 from server.config import settings
+from server.control.fork_errors import SessionForkConflictError
 
 logger = logging.getLogger("mini_agent.server")
 
@@ -350,9 +351,10 @@ class ClientPool:
                     if existing_session_id:
                         existing_policy = existing_meta.get("context_policy")
                         if existing_policy and existing_policy != context_policy:
-                            raise RuntimeError(
-                                f"Thread '{new_thread_id}' already uses fork context "
-                                f"policy '{existing_policy}'"
+                            raise SessionForkConflictError(
+                                child_thread_id=new_thread_id,
+                                requested_context_policy=context_policy,
+                                existing_context_policy=existing_policy,
                             )
                         return {
                             "thread_id": new_thread_id,

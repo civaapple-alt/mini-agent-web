@@ -41,13 +41,16 @@ ThreadGoalStatus = Literal[
 ]
 
 ItemStatus = Literal["inProgress", "completed", "failed"]
-ToolOutcome = Literal[
+KnownToolOutcome = Literal[
     "completed",
     "failed",
     "needs_approval",
     "deferred",
     "retryable",
 ]
+# The wire is forward-compatible. Keep unknown server values instead of
+# pretending they are one of the currently known outcomes.
+ToolOutcome = str
 ItemSortDirection = Literal["asc", "desc"]
 RuntimePhase = Literal[
     "idle",
@@ -105,6 +108,7 @@ class ThreadItem:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ThreadItem:
+        raw_outcome = data.get("outcome")
         return cls(
             type=str(data.get("type", "unknown")),
             id=str(data.get("id", "")),
@@ -112,7 +116,7 @@ class ThreadItem:
             name=str(data.get("name", "")),
             arguments=data.get("arguments"),
             status=data.get("status"),
-            outcome=data.get("outcome"),
+            outcome=raw_outcome if isinstance(raw_outcome, str) else None,
             output=data.get("output"),
         )
 

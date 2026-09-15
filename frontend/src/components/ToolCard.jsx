@@ -16,6 +16,29 @@ import {
 } from 'lucide-react';
 import './ToolCard.css';
 
+const KNOWN_OUTCOME_PRESENTATIONS = {
+  completed: { label: '已完成', className: 'badge completed', Icon: CheckCircle },
+  failed: { label: '失败', className: 'badge failed', Icon: AlertTriangle },
+  needs_approval: { label: '等待授权', className: 'badge-approval-pending', Icon: ShieldAlert },
+  deferred: { label: '暂缓执行', className: 'badge running', Icon: AlertTriangle },
+  retryable: { label: '可重试', className: 'badge failed', Icon: AlertTriangle },
+};
+
+function outcomePresentation(outcome) {
+  if (typeof outcome !== 'string' || outcome.length === 0) return null;
+  const normalized = outcome.toLowerCase();
+  const known = KNOWN_OUTCOME_PRESENTATIONS[normalized];
+  if (known) return known;
+  const displayValue = outcome.length > 64
+    ? `${outcome.slice(0, 61)}...`
+    : outcome;
+  return {
+    label: `未知状态 (${displayValue})`,
+    className: 'badge failed',
+    Icon: AlertTriangle,
+  };
+}
+
 export default function ToolCard({
   tool,
   pendingApproval,
@@ -23,13 +46,19 @@ export default function ToolCard({
   const [showOutput, setShowOutput] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const { status, error, id } = tool;
+  const { status, error, id, outcome } = tool;
   const name = tool.name || tool.toolName || tool.tool || tool.tool_name || '';
   const args = tool.arguments ?? tool.args;
   const output = tool.output ?? tool.result ?? tool.content ?? null;
   const normalizedStatus = status === 'inProgress' ? 'running' : status;
   const isRunning = normalizedStatus === 'running';
-  const isFailed = normalizedStatus === 'failed' || !!error;
+  const normalizedOutcome = typeof outcome === 'string' ? outcome.toLowerCase() : null;
+  const isPolicyOutcome = normalizedOutcome === 'needs_approval' || normalizedOutcome === 'deferred';
+  const isFailed = !!error
+    || normalizedOutcome === 'failed'
+    || normalizedOutcome === 'retryable'
+    || (normalizedStatus === 'failed' && !isPolicyOutcome);
+  const settledOutcome = !isRunning ? outcomePresentation(outcome) : null;
   const isReadFile = name.toLowerCase() === 'read_file';
   const hasSettledOutput = !isRunning && (error != null || output != null);
   const approvalState = tool.approval?.state || null;
@@ -154,10 +183,15 @@ export default function ToolCard({
               <ShieldAlert size={11} className="inline mr-1" />
               等待授权
             </span>
-          ) : isRunning ? (
+          ) : isRunning && !settledOutcome ? (
             <span className="badge running font-mono">
               <Loader2 size={11} className="animate-spin inline mr-1" />
               运行中
+            </span>
+          ) : settledOutcome ? (
+            <span className={`${settledOutcome.className} font-mono`}>
+              <settledOutcome.Icon size={11} className="inline mr-1" />
+              {settledOutcome.label}
             </span>
           ) : isFailed ? (
             <span className="badge failed font-mono">

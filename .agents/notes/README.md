@@ -15,6 +15,7 @@
 ## 已落地
 
 - [Tool outcome public projection and Web consumption](implemented/architecture/2026-09-15-tool-outcome-public-projection.md)
+- [Web Studio tool outcome consumption](implemented/architecture/2026-09-15-web-studio-tool-outcome-consumption.md)
 - [Typed tool outcome consumption boundary](implemented/architecture/2026-09-15-typed-tool-outcome-boundary.md)
 - [Session fork 结构化冲突契约](implemented/bug-fix/2026-09-15-session-fork-structured-conflict.md)
 - [Local Gateway Session fork conflict contract](implemented/bug-fix/2026-09-15-local-gateway-fork-conflict.md)

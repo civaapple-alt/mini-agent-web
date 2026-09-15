@@ -177,6 +177,14 @@ async for envelope in client.stream_turn("Inspect the workspace"):
                 print(item.id, item.name, item.status, item.arguments, item.output)
 ```
 
+Tool Items expose `status` and `outcome` as separate fields. `status` is the
+Item lifecycle (`inProgress`, `completed`, or `failed`). `outcome` is a string
+result from the runtime. Current known values are `completed`, `failed`,
+`needs_approval`, `deferred`, and `retryable`, but the SDK preserves future
+string values and clients should render unknown values with a generic fallback.
+Do not infer an outcome from `output` text or use it to perform local retries
+or approvals.
+
 The App Server also emits dedicated lifecycle notifications on the same stream.
 They are yielded as notification envelopes and expose a typed
 `ItemLifecycleNotification` under `typed_item_notification`:

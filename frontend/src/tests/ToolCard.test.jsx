@@ -78,6 +78,32 @@ describe('ToolCard Component Rendering & Interaction', () => {
     expect(screen.getByText('Command failed with exit code 1')).toBeDefined();
   });
 
+  it.each([
+    ['completed', '已完成'],
+    ['failed', '失败'],
+    ['needs_approval', '等待授权'],
+    ['deferred', '暂缓执行'],
+    ['retryable', '可重试'],
+  ])('renders structured %s outcome', (outcome, label) => {
+    render(
+      <ToolCard
+        tool={{ id: `outcome-${outcome}`, name: 'shell', status: 'failed', outcome }}
+      />,
+    );
+
+    expect(screen.getByText(label)).toBeDefined();
+  });
+
+  it('renders an unknown outcome without changing it to a generic failure', () => {
+    render(
+      <ToolCard
+        tool={{ id: 'outcome-unknown', name: 'shell', status: 'failed', outcome: 'server_added_state' }}
+      />,
+    );
+
+    expect(screen.getByText('未知状态 (server_added_state)')).toBeDefined();
+  });
+
   it('renders awaiting-approval state without a second approval action area', () => {
     const tool = {
       id: 'call_99',

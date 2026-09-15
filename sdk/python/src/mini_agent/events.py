@@ -140,13 +140,14 @@ class ToolFinishedEvent(EventModel):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ToolFinishedEvent:
+        raw_outcome = data.get("outcome")
         return cls(
             call_id=data.get("call_id") or data.get("callId", ""),
             name=data.get("name", ""),
             content=data.get("content", ""),
             is_error=data.get("is_error", False),
             truncated=data.get("truncated", False),
-            outcome=data.get("outcome"),
+            outcome=raw_outcome if isinstance(raw_outcome, str) else None,
         )
 
 

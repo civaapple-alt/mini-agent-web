@@ -108,9 +108,15 @@ test('message stream aggregation cleanly sequences thinking, text, and tools', (
   messages = aggregateStreamEvent(messages, {
     type: 'event',
     turnId: 'turn-1',
-    event: { type: 'tool_finished', call_id: 'call-1', output: 'file1.txt\nfile2.txt' },
+    event: {
+      type: 'tool_finished',
+      call_id: 'call-1',
+      output: 'file1.txt\nfile2.txt',
+      outcome: 'retryable',
+    },
   });
   assert.equal(messages[0].blocks[2].status, 'completed');
+  assert.equal(messages[0].blocks[2].outcome, 'retryable');
   assert.equal(messages[0].blocks[2].output, 'file1.txt\nfile2.txt');
 
   // 6. Turn finished
@@ -758,6 +764,7 @@ test('thread item history hydrates existing assistant turns and preserves item i
           name: 'shell',
           arguments: { command: 'pwd' },
           status: 'completed',
+          outcome: 'deferred',
           output: 'C:\\workspace',
         },
       },
@@ -766,6 +773,25 @@ test('thread item history hydrates existing assistant turns and preserves item i
 
   assert.equal(messages.length, 2);
   assert.equal(messages[1].blocks[1].id, 'call-history');
+  assert.equal(messages[1].blocks[1].outcome, 'deferred');
+});
+
+test('thread item history preserves unknown tool outcomes for the UI boundary', () => {
+  const messages = aggregateThreadItems(
+    [{ role: 'assistant', turnId: 'turn-unknown-outcome', blocks: [] }],
+    [{
+      turnId: 'turn-unknown-outcome',
+      item: {
+        type: 'toolCall',
+        id: 'call-unknown-outcome',
+        name: 'shell',
+        status: 'failed',
+        outcome: 'server_added_state',
+      },
+    }],
+  );
+
+  assert.equal(messages[0].blocks[0].outcome, 'server_added_state');
 });
 
 test('thread item history keeps intermediate reasoning and maps tools to each response', () => {

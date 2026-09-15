@@ -545,6 +545,21 @@ def test_thread_item_preserves_typed_tool_outcome():
     assert item.status == "failed"
     assert item.outcome == "retryable"
 
+    unknown = ThreadItem.from_dict(
+        {
+            "type": "toolCall",
+            "id": "call-future",
+            "status": "failed",
+            "outcome": "server_added_state",
+        }
+    )
+    assert unknown.outcome == "server_added_state"
+
+    malformed = ThreadItem.from_dict(
+        {"type": "toolCall", "id": "call-malformed", "outcome": {"name": "bad"}}
+    )
+    assert malformed.outcome is None
+
     from mini_agent import ThreadItemsListResult
 
     page = ThreadItemsListResult.from_dict(

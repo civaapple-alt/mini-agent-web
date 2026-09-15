@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Stopping and App Server EOF recovery:** keep transport cancellation and EOF
+  separate from Turn settlement. The Gateway no longer invents terminal
+  `turn_finished` events or marks a Turn failed on process EOF, and a persisted
+  child fork remains attachable if its client starts late. Web Studio reconnects
+  through the existing attach, runtime status, history, item, and event replay
+  reads without creating a second execution state machine.
+
 - **Session fork conflict contract**: persist fork policy and compaction metadata
   in the App Server child Session, return the durable result on an identical
   retry, and expose child-lineage or policy conflicts as structured JSON-RPC
@@ -112,6 +119,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selecting `/plan` now also leaves a trailing space for direct task entry.
 
 ### Added
+
+- **Structured tool outcomes:** expose `ToolOutcome` through the Python SDK,
+  Gateway, TUI, and Web Studio ThreadItem projections. Web Studio renders
+  `completed`, `failed`, `needs_approval`, `deferred`, and `retryable` outcomes
+  separately from lifecycle `status`, while preserving unknown future strings.
+
+- **Cookbook protocol and recovery examples:** update the live Python examples
+  to consume typed tool outcomes and add provider-free coverage for outcome
+  compatibility, EOF recovery, runtime projection, Session fork results, and
+  structured fork conflicts.
 
 - **Approval action evidence**: record request and resolution metadata in the
   per-Thread `approval-evidence.jsonl` sidecar, including a `session_item_id`

@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   aliases, and explicit-vs-on-demand activation labels. The panel now warns
   when an enabled pstack runtime returns no group catalog, and all composer
   popups close when the user clicks outside them.
+- Add a top-level `计划查看` tab next to the runtime and workspace views. The
+  plan artifact now has a full-height Markdown reader and file switcher, while
+  Plan Mode and Thread Goal controls remain in `计划与目标`; the status bar
+  opens the dedicated plan view directly.
 
 ## [0.8.0] - 2026-09-15
 

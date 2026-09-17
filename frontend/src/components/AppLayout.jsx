@@ -139,7 +139,7 @@ export default function AppLayout({
           <StatusRail
             status={statusModel}
             onOpenDetails={() => onOpenSidePanel('status')}
-            onOpenPlanDetails={() => onOpenSidePanel('plan_goal')}
+            onOpenPlanDetails={() => onOpenSidePanel('plan_view')}
             onChangeExecution={onChangeExecution}
             onChangeContinuation={onChangeContinuation}
             onEnableAutoCopilot={onEnableAutoCopilot}

@@ -106,6 +106,14 @@
   padding: 16px;
 }
 
+.sidepanel-container.plan-view-active .sidepanel-content {
+  overflow: hidden;
+}
+
+.plan-view-content {
+  min-height: 0;
+}
+
 @media (max-width: 700px) {
   .sidepanel-container {
     width: 100vw;
@@ -262,6 +270,72 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.plan-view-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 12px;
+}
+
+.plan-view-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+
+.plan-view-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.plan-view-heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.plan-view-heading strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.plan-view-heading span,
+.plan-view-meta {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.plan-view-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.plan-viewer-section {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  gap: 8px;
+}
+
+.plan-viewer-files-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  grid-template-columns: minmax(145px, 30%) minmax(0, 1fr);
 }
 
 .workspace-subtabs {
@@ -695,6 +769,11 @@
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.15s ease;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
 }
 
 .file-item:hover {
@@ -731,6 +810,22 @@
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.plan-viewer-content {
+  word-break: normal;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.plan-viewer-content .markdown-content {
+  font-size: 12px;
+}
+
+.plan-viewer-content .markdown-content h1:first-child,
+.plan-viewer-content .markdown-content h2:first-child,
+.plan-viewer-content .markdown-content h3:first-child {
+  margin-top: 0;
 }
 
 .no-content,

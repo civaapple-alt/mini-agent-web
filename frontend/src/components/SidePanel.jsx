@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   X,
   RefreshCw,
@@ -37,6 +39,7 @@ function normalizePanelTab(tab) {
   if (tab === 'mcp') return 'workspace_mcp';
   if (tab === 'git') return 'workspace_git';
   if (tab === 'skills') return 'workspace_skills';
+  if (tab === 'plan' || tab === 'plan_view') return 'plan_view';
   if (tab === 'history' || tab === 'thread_history') return 'thread_history';
   return tab || 'status';
 }
@@ -180,10 +183,11 @@ export default function SidePanel({
     try {
       if (activeTab === 'workspace_world') {
         await loadWorld(requestContext);
+      } else if (activeTab === 'plan_view') {
+        await loadWorkflowFiles(requestContext);
       } else if (activeTab === 'plan_goal') {
         await Promise.all([
           loadWorkflow(requestContext),
-          loadWorkflowFiles(requestContext),
         ]);
       } else if (activeTab === 'workspace_mcp') {
         await loadMcp(requestContext);
@@ -468,7 +472,7 @@ export default function SidePanel({
   return (
     <div className="sidepanel-overlay" onClick={onClose}>
       <div
-        className="sidepanel-container"
+        className={`sidepanel-container ${activeTab === 'plan_view' ? 'plan-view-active' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label="运行详情抽屉"
@@ -491,6 +495,14 @@ export default function SidePanel({
             >
               <Cpu size={14} />
               <span>工作区</span>
+            </button>
+
+            <button
+              className={`panel-tab-btn ${activeTab === 'plan_view' ? 'active' : ''}`}
+              onClick={() => setActiveTab('plan_view')}
+            >
+              <FileText size={14} />
+              <span>计划查看</span>
             </button>
 
             <button
@@ -517,7 +529,7 @@ export default function SidePanel({
         </div>
 
         {/* Panel Content Body */}
-        <div className="sidepanel-content custom-scrollbar">
+        <div className={`sidepanel-content custom-scrollbar ${activeTab === 'plan_view' ? 'plan-view-content' : ''}`}>
           {activeTab.startsWith('workspace_') && (
             <div className="workspace-subtabs" role="tablist" aria-label="工作区详情">
               <button
@@ -563,6 +575,71 @@ export default function SidePanel({
               focusMessageId={historyFocusMessageId}
               onAdjustPrompt={onAdjustPrompt}
             />
+          )}
+
+          {activeTab === 'plan_view' && (
+            <div className="plan-view-pane">
+              <div className="plan-view-header">
+                <div className="plan-view-heading">
+                  <FileText size={15} className="text-amber" />
+                  <div>
+                    <strong>计划查看</strong>
+                    <span>阅读当前会话生成的计划与配套文件</span>
+                  </div>
+                </div>
+                <div className="plan-view-meta">
+                  {planActive ? 'Plan Mode 已开启' : 'Plan Mode 未开启'}
+                  <span>{workflowFiles.length} 个文件</span>
+                </div>
+              </div>
+
+              <div className="workflow-files-section plan-viewer-section">
+                <div className="section-title-bar">
+                  <span>规划文件</span>
+                  <button
+                    type="button"
+                    className="btn-action-small"
+                    onClick={() => loadWorkflowFiles()}
+                    title="重新读取规划文件"
+                  >
+                    <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} />
+                    <span>刷新</span>
+                  </button>
+                </div>
+
+                <div className="files-layout plan-viewer-files-layout">
+                  <div className="files-list custom-scrollbar" aria-label="规划文件列表">
+                    {workflowFiles.length > 0 ? (
+                      workflowFiles.map((file) => (
+                        <button
+                          type="button"
+                          key={file.path}
+                          className={`file-item ${selectedFile === file.path ? 'active' : ''}`}
+                          onClick={() => handleSelectFile(file.path)}
+                        >
+                          <span className="file-name font-mono">{file.path}</span>
+                          <span className="file-size font-mono">{file.size} B</span>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="no-files font-mono">未发现 plan.md 等规划文件</div>
+                    )}
+                  </div>
+
+                  <div className="file-content-viewer plan-viewer-content custom-scrollbar">
+                    {selectedFileContent ? (
+                      <div className="markdown-content">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {selectedFileContent}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      <div className="no-content">请选择左侧文件以查看内容</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* TAB 1: WorldState */}
@@ -815,40 +892,6 @@ export default function SidePanel({
                 )}
               </div>
 
-              {/* Workflow & Plan Artifact Files */}
-              <div className="workflow-files-section">
-                <div className="section-title-bar">
-                  <FileText size={13} />
-                  <span>工作区规划与配套文件 (Plan & Goal Artifacts)</span>
-                </div>
-
-                <div className="files-layout">
-                  <div className="files-list custom-scrollbar">
-                    {workflowFiles.length > 0 ? (
-                      workflowFiles.map((file) => (
-                        <div
-                          key={file.path}
-                          className={`file-item ${selectedFile === file.path ? 'active' : ''}`}
-                          onClick={() => handleSelectFile(file.path)}
-                        >
-                          <span className="file-name font-mono">{file.path}</span>
-                          <span className="file-size font-mono">{file.size} B</span>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="no-files font-mono">未发现 plan.md 等规划文件</div>
-                    )}
-                  </div>
-
-                  <div className="file-content-viewer font-mono custom-scrollbar">
-                    {selectedFileContent ? (
-                      <pre>{selectedFileContent}</pre>
-                    ) : (
-                      <div className="no-content">请选择左侧文件以查看内容</div>
-                    )}
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 

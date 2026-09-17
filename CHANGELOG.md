@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-No changes yet.
+- Bundle the ChatGPT-compatible `pstack` skills with WebStudio and synchronize
+  them idempotently into the Mini Agent per-user builtin skill directory.
+- Add project-scoped builtin skill group settings, the `/api/skills` catalog,
+  `$skill` completion/chips, and replayable `skills_loaded`/
+  `skills_load_failed` stream events.
 
 ## [0.8.0] - 2026-09-15
 

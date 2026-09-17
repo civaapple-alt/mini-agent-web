@@ -15,6 +15,21 @@ from server.session_manager import session_manager
 
 router = APIRouter(prefix="/api", tags=["World & Workflows"])
 
+
+@router.get("/skills", summary="List effective project Skills")
+async def list_skills(project_id: str | None = None) -> dict[str, Any]:
+    """Return the bounded Skill catalog advertised by the project runtime."""
+    client = await session_manager.get_client_for_project(project_id)
+    manifest = getattr(client, "capability_manifest", {}) or {}
+    groups = manifest.get("builtinSkillGroups", []) or []
+    if not any(group.get("id") == "pstack" for group in groups if isinstance(group, dict)):
+        groups = [{"id": "pstack", "version": "0.2.0", "enabled": False}, *groups]
+    return {
+        "projectId": project_id or session_manager._current_project_id,
+        "builtinSkillGroups": groups[:8],
+        "skills": (manifest.get("availableSkills", []) or [])[:64],
+    }
+
 # -----------------------------------------------------------------------------
 # Projects & Workspace Management
 # -----------------------------------------------------------------------------
@@ -38,6 +53,8 @@ async def create_project_endpoint(req: CreateProjectRequest) -> dict[str, Any]:
         )
         await session_manager.restart_for_current_project()
         return {"project": proj, "status": "created"}
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
     except Exception as err:
         raise HTTPException(
             status_code=400, detail=f"Failed to create project: {err}"
@@ -51,13 +68,25 @@ async def update_project_endpoint(
     """Update project name, primary path, or source folders."""
     try:
         updates = {k: v for k, v in req.model_dump().items() if v is not None}
-        proj = session_manager.update_project(project_id, updates)
         if (
-            project_id == session_manager._current_project_id
-            or proj.get("id") == session_manager._current_project_id
+            req.builtin_skill_groups is not None
+            and (
+                session_manager.project_has_active_turn(project_id)
+                or session_manager.project_has_pending_approval(project_id)
+            )
         ):
+            raise RuntimeError(
+                f"Project '{project_id}' has an active Turn or pending approval; wait for it to settle before changing Skills"
+            )
+        proj = session_manager.update_project(project_id, updates)
+        resolved_project_id = str(proj.get("id") or project_id)
+        if resolved_project_id == session_manager._current_project_id:
             await session_manager.restart_for_current_project()
+        else:
+            await session_manager.restart_for_project(resolved_project_id)
         return {"project": proj, "status": "updated"}
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
     except Exception as err:
         raise HTTPException(
             status_code=400, detail=f"Failed to update project: {err}"

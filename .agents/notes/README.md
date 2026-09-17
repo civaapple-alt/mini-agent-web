@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [WebStudio 内置 pstack 技能组与显式激活](implemented/feature/2026-09-17-webstudio-builtin-pstack-skills.zh.md)
 - [Cookbook recovery and projection contract](implemented/architecture/2026-09-15-cookbook-recovery-and-projection.md)
 - [Cookbook tool outcome contract](implemented/architecture/2026-09-15-cookbook-tool-outcome-contract.md)
 - [Security boundaries and hard-limit evidence](implemented/architecture/2026-09-15-security-boundaries-and-hard-limits.md)

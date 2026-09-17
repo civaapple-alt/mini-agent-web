@@ -15,11 +15,13 @@ import {
   Wrench,
   Activity,
   History,
+  Sparkles,
 } from 'lucide-react';
 import { api } from '../api';
 import { readStateRevision, shouldApplyStateRevision } from '../utils/revisionState';
 import StatusDetailsPane from './StatusDetailsPane';
 import ThreadHistoryPane from './ThreadHistoryPane';
+import SkillPanel from './SkillPanel';
 import './SidePanel.css';
 
 const BUILTIN_TOOL_INFO = {
@@ -34,6 +36,7 @@ function normalizePanelTab(tab) {
   if (tab === 'world' || tab === 'workspace') return 'workspace_world';
   if (tab === 'mcp') return 'workspace_mcp';
   if (tab === 'git') return 'workspace_git';
+  if (tab === 'skills') return 'workspace_skills';
   if (tab === 'history' || tab === 'thread_history') return 'thread_history';
   return tab || 'status';
 }
@@ -54,6 +57,12 @@ export default function SidePanel({
   messages = [],
   onAdjustPrompt,
   historyFocusMessageId = null,
+  availableSkills = [],
+  skillGroups = [],
+  skillsLoading = false,
+  skillsError = null,
+  onToggleSkillGroup,
+  onInsertSkill,
 }) {
   const [activeTab, setActiveTab] = useState(() => normalizePanelTab(initialTab));
   const [worldData, setWorldData] = useState(null);
@@ -532,6 +541,13 @@ export default function SidePanel({
               >
                 文件与 Git
               </button>
+              <button
+                type="button"
+                className={activeTab === 'workspace_skills' ? 'active' : ''}
+                onClick={() => setActiveTab('workspace_skills')}
+              >
+                <Sparkles size={12} /> 技能
+              </button>
             </div>
           )}
 
@@ -623,6 +639,17 @@ export default function SidePanel({
                 <div className="loading-placeholder font-mono">加载环境探测数据中...</div>
               )}
             </div>
+          )}
+
+          {activeTab === 'workspace_skills' && (
+            <SkillPanel
+              skills={availableSkills}
+              groups={skillGroups}
+              loading={skillsLoading}
+              error={skillsError}
+              onToggleGroup={onToggleSkillGroup}
+              onInsertSkill={onInsertSkill}
+            />
           )}
 
           {/* TAB 2: Plan & Goal Workflows */}

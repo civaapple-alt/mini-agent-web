@@ -79,6 +79,14 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     mode = "start"
                 images = data.get("images")
                 referenced_files = data.get("referencedFiles")
+                selected_skills = data.get("selectedSkills") or data.get("selected_skills") or []
+                if not isinstance(selected_skills, list):
+                    selected_skills = []
+                selected_skills = [
+                    str(skill).strip()
+                    for skill in selected_skills[:8]
+                    if str(skill).strip()
+                ]
 
                 enriched_prompt = _process_attachments(
                     prompt, images, referenced_files, thread_id, project_id
@@ -87,7 +95,12 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 # Background task to stream turn events back over WebSocket
                 spawn_background(
                     _stream_turn_to_ws(
-                        websocket, enriched_prompt, mode, thread_id, project_id
+                        websocket,
+                        enriched_prompt,
+                        mode,
+                        thread_id,
+                        project_id,
+                        selected_skills,
                     )
                 )
 
@@ -329,6 +342,7 @@ async def _stream_turn_to_ws(
     mode: str,
     thread_id: str | None,
     requested_project_id: str | None = None,
+    selected_skills: list[str] | None = None,
 ) -> None:
     """Stream events from MiniAgentClient directly to the initiating WebSocket."""
     target_thread = thread_id or "default"
@@ -345,12 +359,15 @@ async def _stream_turn_to_ws(
         project_id = requested_project_id or session_manager._client_projects.get(
             target_thread
         )
-        async for item in client.stream_turn(
-            prompt=prompt,
-            mode=mode,
-            thread_id=target_thread,
-            effort=effort,
-        ):
+        stream_kwargs = {
+            "prompt": prompt,
+            "mode": mode,
+            "thread_id": target_thread,
+            "effort": effort,
+        }
+        if selected_skills:
+            stream_kwargs["selected_skills"] = selected_skills
+        async for item in client.stream_turn(**stream_kwargs):
             # Capture active turn id from submission or event
             if item.get("type") == "_turn_submission":
                 turn_id = item.get("data", {}).get("turn_id") or getattr(

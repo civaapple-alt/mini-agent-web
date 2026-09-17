@@ -253,6 +253,9 @@ export default function MessageItem({
                   prompt: text,
                   images,
                   referencedFiles,
+                  selectedSkills: Array.isArray(message.selectedSkills)
+                    ? message.selectedSkills
+                    : [],
                 })}
                 title="重新发送此提示词"
               >
@@ -310,6 +313,16 @@ export default function MessageItem({
             if (block.type === 'compactionGroup') {
               return (
                 <ContextCompactionGroup key={block.id || `compaction_${idx}`} items={block.items} />
+              );
+            }
+            if (block.type === 'skills') {
+              return (
+                <div key={block.id || `skills_${idx}`} className="skills-loaded-event" role="status">
+                  <Sparkles size={12} />
+                  {block.skills?.length > 0
+                    ? `已加载技能：${block.skills.join('、')}`
+                    : `技能加载失败（${block.reasonCode || 'unknown'}）`}
+                </div>
               );
             }
             if (block.type === 'text') {

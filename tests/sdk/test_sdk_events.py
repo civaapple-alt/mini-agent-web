@@ -17,6 +17,8 @@ from mini_agent import (
     RunFailure,
     RunFinishedEvent,
     ServerProcessError,
+    SkillsLoadedEvent,
+    SkillsLoadFailedEvent,
     ThreadItem,
     ToolFinishedEvent,
     TurnFinishedEvent,
@@ -60,6 +62,21 @@ from mini_agent.client import APP_SERVER_STDIO_LINE_LIMIT
         ),
         (
             {
+                "type": "skills_loaded",
+                "skills": [{"name": "architect", "source": "builtin", "group": "pstack"}],
+            },
+            SkillsLoadedEvent,
+        ),
+        (
+            {
+                "type": "skills_load_failed",
+                "skills": ["architect"],
+                "reason_code": "body_read_failed",
+            },
+            SkillsLoadFailedEvent,
+        ),
+        (
+            {
                 "type": "tool_finished",
                 "call_id": "call-1",
                 "name": "shell",
@@ -86,6 +103,37 @@ def test_parse_event_matches_protocol_event_surface(payload, event_class):
         )
     if isinstance(event, RunFailedEvent):
         assert event.reason == RunFailure(type="limit_exceeded", detail={"actual": 9})
+
+
+@pytest.mark.asyncio
+async def test_sdk_start_turn_deduplicates_and_bounds_selected_skills():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {"status": "started", "turnId": "turn-1"}
+
+    client._send_request = fake_send
+    result = await client.start_turn(
+        "重构",
+        selected_skills=["architect", "architect", "why"],
+    )
+
+    assert result.turn_id == "turn-1"
+    assert calls == [
+        (
+            "turn/start",
+            {
+                "threadId": "default",
+                "input": {
+                    "mode": "start",
+                    "text": "重构",
+                    "selectedSkills": ["architect", "why"],
+                },
+            },
+        )
+    ]
 
 
 @pytest.mark.asyncio

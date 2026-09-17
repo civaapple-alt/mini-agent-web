@@ -48,6 +48,44 @@ async def test_gateway_lists_catalog_when_runtime_is_read_only(test_app):
 
 
 @pytest.mark.asyncio
+async def test_gateway_skill_catalog_is_bounded_and_skill_toggle_rejects_active_turn(
+    test_app, monkeypatch
+):
+    client_mock = SimpleNamespace(
+        capability_manifest={
+            "builtinSkillGroups": [
+                {"id": "pstack", "version": "0.2.0", "enabled": True}
+            ],
+            "availableSkills": [
+                {
+                    "name": "architect",
+                    "description": "Design types.",
+                    "source": "builtin",
+                    "group": "pstack",
+                    "enabled": True,
+                }
+            ],
+        }
+    )
+    monkeypatch.setattr(
+        session_manager, "get_client_for_project", AsyncMock(return_value=client_mock)
+    )
+    monkeypatch.setattr(session_manager, "project_has_active_turn", lambda _id: True)
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        catalog = await client.get("/api/skills", params={"project_id": "project-1"})
+        conflict = await client.patch(
+            "/api/projects/project-1",
+            json={"builtin_skill_groups": []},
+        )
+
+    assert catalog.status_code == 200
+    assert catalog.json()["skills"] == client_mock.capability_manifest["availableSkills"]
+    assert conflict.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_gateway_threads_and_workflows(test_app):
     # Initialize background session manager for testing
     await session_manager.start()

@@ -254,6 +254,7 @@ class MiniAgentClient:
         self._pending_requests: dict[int, asyncio.Future[Any]] = {}
         self._event_queues: list[asyncio.Queue[dict[str, Any]]] = []
         self._active_thread_id: str = "default"
+        self.capability_manifest: dict[str, Any] = {}
         self._thread_settings: dict[str, ThreadSettingsResult] = {}
         if request_timeout <= 0:
             raise ValueError("request_timeout must be positive")
@@ -656,6 +657,7 @@ class MiniAgentClient:
             raise ProtocolVersionMismatchError(
                 f"Unsupported protocol version {res.get('protocolVersion')}"
             )
+        self.capability_manifest = res.get("capabilityManifest") or {}
         return res
 
     # -------------------------------------------------------------------------
@@ -805,6 +807,7 @@ class MiniAgentClient:
         mode: str = "start",
         thread_id: str | None = None,
         effort: str | None = None,
+        selected_skills: list[str] | None = None,
     ) -> TurnSubmissionResult:
         """Submit a turn prompt to the App Server with optional reasoning effort ('low', 'medium', 'high')."""
         payload: dict[str, Any] = {
@@ -814,6 +817,8 @@ class MiniAgentClient:
                 "text": prompt,
             },
         }
+        if selected_skills:
+            payload["input"]["selectedSkills"] = list(dict.fromkeys(selected_skills[:8]))
         if effort is not None:
             payload["effort"] = effort
         res = await self._send_request("turn/start", payload)
@@ -887,6 +892,7 @@ class MiniAgentClient:
         mode: str = "start",
         thread_id: str | None = None,
         effort: str | None = None,
+        selected_skills: list[str] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """
         Convenience generator that starts a turn and yields event payloads in real-time
@@ -902,14 +908,15 @@ class MiniAgentClient:
         self._event_queues.append(queue)
 
         try:
+            start_kwargs: dict[str, Any] = {
+                "mode": mode,
+                "thread_id": target_thread,
+            }
             if effort is not None:
-                start_resp = await self.start_turn(
-                    prompt, mode=mode, thread_id=target_thread, effort=effort
-                )
-            else:
-                start_resp = await self.start_turn(
-                    prompt, mode=mode, thread_id=target_thread
-                )
+                start_kwargs["effort"] = effort
+            if selected_skills:
+                start_kwargs["selected_skills"] = selected_skills
+            start_resp = await self.start_turn(prompt, **start_kwargs)
             yield {
                 "type": "_turn_submission",
                 "data": {

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 import { getSlashCommandDraft, parseAndExecuteSlashCommand } from '../utils/slashCommands';
+import { filterSkills, findSkillTrigger, parseSkillPrompt } from '../utils/skillTokens';
 import PendingMessageDock from './PendingMessageDock';
 import ApprovalDock from './input/ApprovalDock';
 import './InputBar.css';
@@ -44,10 +45,19 @@ export default function InputBar({
   onClearChat,
   onTogglePlanMode,
   onToast,
+  availableSkills = [],
+  skillsLoading = false,
+  skillsError = null,
+  skillInsertion = null,
+  onSkillInsertionApplied,
 }) {
   const [prompt, setPrompt] = useState('');
   const [showSlashPopup, setShowSlashPopup] = useState(false);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
+  const [showSkillPopup, setShowSkillPopup] = useState(false);
+  const [selectedSkillIndex, setSelectedSkillIndex] = useState(0);
+  const [skillCursor, setSkillCursor] = useState(null);
+  const [skillQuery, setSkillQuery] = useState('');
 
   // Image & File Attachments
   const [attachedImages, setAttachedImages] = useState([]);
@@ -89,7 +99,14 @@ export default function InputBar({
 
   useEffect(() => {
     if (!composerDraft) return;
-    setPrompt(composerDraft.prompt || '');
+    const draftSkills = Array.isArray(composerDraft.selectedSkills)
+      ? composerDraft.selectedSkills
+      : [];
+    const draftPrompt = [
+      composerDraft.prompt || '',
+      ...draftSkills.map((name) => `$${name}`),
+    ].filter(Boolean).join(' ');
+    setPrompt(draftPrompt);
     setAttachedImages(
       (composerDraft.images || []).map((dataUrl, index) => ({
         id: `restored_${Date.now()}_${index}`,
@@ -102,6 +119,19 @@ export default function InputBar({
     onComposerDraftApplied?.();
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, [composerDraft, onComposerDraftApplied]);
+
+  const removeSelectedSkill = (name) => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const token = new RegExp(`(^|\\s)\\$${escaped}(?=$|\\s|[.,!?;:)])`, 'gi');
+    setPrompt((current) => current.replace(token, '$1').replace(/[ \\t]{2,}/g, ' ').trimStart());
+  };
+
+  useEffect(() => {
+    if (!skillInsertion?.name) return;
+    setPrompt((current) => `${current}${current && !/\s$/.test(current) ? ' ' : ''}$${skillInsertion.name} `);
+    onSkillInsertionApplied?.();
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [skillInsertion, onSkillInsertionApplied]);
 
   // Close popup menus when clicking outside
   useEffect(() => {
@@ -153,6 +183,18 @@ export default function InputBar({
     setShowMentionPopup(false);
   };
 
+  const checkSkillTrigger = (text, cursorPos) => {
+    const trigger = findSkillTrigger(text, cursorPos);
+    if (!trigger || sessionReadOnly) {
+      setShowSkillPopup(false);
+      return;
+    }
+    setSkillCursor(trigger.start);
+    setSkillQuery(trigger.query);
+    setSelectedSkillIndex(0);
+    setShowSkillPopup(true);
+  };
+
   const handleInputChange = (e) => {
     const val = e.target.value;
     const pos = e.target.selectionStart;
@@ -166,6 +208,20 @@ export default function InputBar({
     }
 
     checkMentionTrigger(val, pos);
+    checkSkillTrigger(val, pos);
+  };
+
+  const handleSelectSkill = (skill) => {
+    if (skillCursor === null) return;
+    const end = textareaRef.current?.selectionEnd || prompt.length;
+    const newText = `${prompt.slice(0, skillCursor)}$${skill.name} ${prompt.slice(end)}`;
+    const newPos = skillCursor + skill.name.length + 2;
+    setPrompt(newText);
+    setShowSkillPopup(false);
+    setTimeout(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(newPos, newPos);
+    }, 10);
   };
 
   const handleSelectMentionFile = (file) => {
@@ -277,6 +333,16 @@ export default function InputBar({
     const text = prompt.trim();
     if (!text && attachedImages.length === 0) return;
 
+    const parsedSkills = parseSkillPrompt(text, availableSkills);
+    if (parsedSkills.unknownSkills.length > 0) {
+      onToast?.(`未知或已禁用技能: ${parsedSkills.unknownSkills.map((name) => `$${name}`).join('、')}`, 'warning');
+      return;
+    }
+    if (parsedSkills.selectedSkills.length > 8) {
+      onToast?.('每个 Turn 最多加载 8 个技能', 'warning');
+      return;
+    }
+
     if (text.startsWith('/')) {
       const handled = executeSlashCommand(text);
       if (handled) {
@@ -288,9 +354,10 @@ export default function InputBar({
     }
 
     const payload = {
-      prompt: text,
+      prompt: parsedSkills.prompt,
       images: attachedImages.map((img) => img.dataUrl),
       referencedFiles,
+      selectedSkills: parsedSkills.selectedSkills,
     };
 
     if (isGenerating) {
@@ -304,6 +371,7 @@ export default function InputBar({
     setReferencedFiles([]);
     setShowSlashPopup(false);
     setShowMentionPopup(false);
+    setShowSkillPopup(false);
   };
 
   const handleKeyDown = (e) => {
@@ -330,6 +398,29 @@ export default function InputBar({
       }
       if (e.key === 'Escape') {
         setShowMentionPopup(false);
+        return;
+      }
+    }
+
+    if (showSkillPopup) {
+      const skills = filterSkills(availableSkills, skillQuery);
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedSkillIndex((prev) => (prev + 1) % Math.max(skills.length, 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedSkillIndex((prev) => (prev - 1 + Math.max(skills.length, 1)) % Math.max(skills.length, 1));
+        return;
+      }
+      if ((e.key === 'Enter' || e.key === 'Tab') && skills[selectedSkillIndex]) {
+        e.preventDefault();
+        handleSelectSkill(skills[selectedSkillIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setShowSkillPopup(false);
         return;
       }
     }
@@ -401,6 +492,31 @@ export default function InputBar({
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {showSkillPopup && (
+        <div className="skill-popup-menu custom-scrollbar" onClick={(e) => e.stopPropagation()}>
+          <div className="skill-popup-header">
+            <span>加载技能 ($)</span>
+            <span className="mention-popup-count font-mono">Enter / Tab 确认</span>
+          </div>
+          {skillsLoading && <div className="composer-popup-note">技能目录加载中...</div>}
+          {skillsError && <div className="composer-popup-note skill-error">{skillsError}</div>}
+          {!skillsLoading && !skillsError && filterSkills(availableSkills, skillQuery).map((skill, idx) => (
+            <div
+              key={skill.name}
+              className={`skill-item ${idx === selectedSkillIndex ? 'active' : ''}`}
+              onClick={() => handleSelectSkill(skill)}
+            >
+              <Sparkles size={13} />
+              <span className="skill-name font-mono">${skill.name}</span>
+              <span className="skill-desc">{skill.description}</span>
+            </div>
+          ))}
+          {!skillsLoading && !skillsError && filterSkills(availableSkills, skillQuery).length === 0 && (
+            <div className="composer-popup-note">没有匹配的可用技能</div>
+          )}
         </div>
       )}
 
@@ -478,6 +594,24 @@ export default function InputBar({
           </div>
         )}
 
+        {parseSkillPrompt(prompt, availableSkills).selectedSkills.length > 0 && (
+          <div className="selected-skills-bar">
+            {parseSkillPrompt(prompt, availableSkills).selectedSkills.map((name) => (
+              <span key={name} className="selected-skill-chip font-mono">
+                <Sparkles size={10} /> ${name}
+                <button
+                  type="button"
+                  onClick={() => removeSelectedSkill(name)}
+                  title={`移除技能 ${name}`}
+                  aria-label={`移除技能 ${name}`}
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Textarea Input: Direct, Spacious & Uncluttered */}
         <div className="textarea-wrapper">
           <textarea
@@ -495,7 +629,7 @@ export default function InputBar({
                 ? '⚠️ 等待上方安全权限审批确认后继续...'
                 : isGenerating
                 ? 'Agent 执行中... 按回车排队；本轮结束后可继续发送指令'
-                : '输入任务、指令或问题... (支持 Ctrl+V 粘贴截图、输入 @ 引用文件、输入 / 查看快捷命令)'
+                : '输入任务、指令或问题... (支持 $ 加载技能、@ 引用文件、/ 快捷命令)'
             }
             className="chat-textarea"
           />

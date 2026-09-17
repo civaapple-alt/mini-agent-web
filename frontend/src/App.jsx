@@ -36,6 +36,7 @@ import {
   scopedThreadKey,
 } from './utils/sessionState.js';
 import { getStatusViewModel, normalizeTheme } from './utils/statusModel.js';
+import { parseSkillPrompt } from './utils/skillTokens.js';
 import { createInputTrace } from './utils/inputTrace.js';
 import './App.css';
 
@@ -76,6 +77,11 @@ export default function App() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [currentSessionReadOnly, setCurrentSessionReadOnly] = useState(false);
   const [toasts, setToasts] = useState([]);
+  const [skillCatalog, setSkillCatalog] = useState([]);
+  const [skillGroups, setSkillGroups] = useState([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [skillsError, setSkillsError] = useState(null);
+  const [skillInsertion, setSkillInsertion] = useState(null);
 
   // Workflow & Environment
   const [planActive, setPlanActive] = useState(false);
@@ -374,6 +380,53 @@ export default function App() {
       });
     }
   }, [currentThreadProject]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setSkillsLoading(true);
+    setSkillsError(null);
+    api.listSkills({ projectId: currentThreadProject, signal: controller.signal })
+      .then((data) => {
+        setSkillCatalog(Array.isArray(data?.skills) ? data.skills : []);
+        setSkillGroups(Array.isArray(data?.builtinSkillGroups) ? data.builtinSkillGroups : []);
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        setSkillCatalog([]);
+        setSkillGroups([]);
+        setSkillsError(err.message || '技能目录加载失败');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setSkillsLoading(false);
+      });
+    return () => controller.abort();
+  }, [currentThreadProject]);
+
+  const handleInsertSkill = (name) => {
+    setSkillInsertion({ name, nonce: Date.now() });
+  };
+
+  const handleToggleSkillGroup = async (groupId, enabled) => {
+    const projectId = currentThreadProjectRef.current;
+    if (!projectId) return;
+    try {
+      const enabledGroups = skillGroups
+        .filter((group) => group.id !== groupId && group.enabled)
+        .map((group) => group.id);
+      if (enabled) enabledGroups.push(groupId);
+      await api.updateProject(
+        projectId,
+        { builtin_skill_groups: [...new Set(enabledGroups)] },
+        { projectId },
+      );
+      showToast(enabled ? `已启用技能组: ${groupId}` : `已关闭技能组: ${groupId}`, 'success');
+      const data = await api.listSkills({ projectId });
+      setSkillCatalog(Array.isArray(data?.skills) ? data.skills : []);
+      setSkillGroups(Array.isArray(data?.builtinSkillGroups) ? data.builtinSkillGroups : []);
+    } catch (err) {
+      showToast(`更新技能组失败: ${err.message}`, 'error');
+    }
+  };
 
   const loadSettings = async (context = null) => {
     try {
@@ -1343,9 +1396,14 @@ export default function App() {
   // ---------------------------------------------------------------------------
 
   const handleSendMessage = (inputPayload) => {
-    const { prompt: promptText, images, referencedFiles } = normalizeInputPayload(inputPayload);
+    const {
+      prompt: promptText,
+      images,
+      referencedFiles,
+      selectedSkills = [],
+    } = normalizeInputPayload(inputPayload);
 
-    if (!promptText.trim() && images.length === 0) return false;
+    if (!promptText.trim() && images.length === 0 && selectedSkills.length === 0) return false;
     if (isInterrupting || interruptPendingRef.current || pendingApproval) {
       showToast('当前轮次正在停止，请等待结算后再发送。', 'info', 2500);
       return false;
@@ -1367,6 +1425,7 @@ export default function App() {
       prompt: promptText,
       images,
       referencedFiles,
+      selectedSkills,
       threadId: currentThread,
       project_id: currentThreadProject,
     };
@@ -1402,6 +1461,7 @@ export default function App() {
         text: promptText,
         images,
         referencedFiles,
+        selectedSkills,
         thinking: '',
         tools: [],
         inputTrace,
@@ -1413,7 +1473,11 @@ export default function App() {
 
   const handleQueueMessage = (inputPayload) => {
     const normalized = normalizeInputPayload(inputPayload);
-    if (!normalized.prompt.trim() && normalized.images.length === 0) return;
+    if (
+      !normalized.prompt.trim()
+      && normalized.images.length === 0
+      && !normalized.selectedSkills?.length
+    ) return;
     if (currentSessionReadOnly) {
       showToast('当前会话由其他进程运行，只能查看，暂不能排队消息。', 'info', 3000);
       return;
@@ -1441,8 +1505,22 @@ export default function App() {
   };
 
   const handleUpdateQueuedMessage = (messageId, prompt) => {
+    const parsed = parseSkillPrompt(prompt, skillCatalog);
+    if (parsed.unknownSkills.length > 0) {
+      showToast(
+        `未知或已禁用技能: ${parsed.unknownSkills.map((name) => `$${name}`).join('、')}`,
+        'warning',
+      );
+      return;
+    }
+    if (parsed.selectedSkills.length > 8) {
+      showToast('每个 Turn 最多加载 8 个技能', 'warning');
+      return;
+    }
     setPendingMessages((prev) => prev.map((item) => (
-      item.id === messageId ? { ...item, prompt } : item
+      item.id === messageId
+        ? { ...item, prompt: parsed.prompt, selectedSkills: parsed.selectedSkills }
+        : item
     )));
   };
 
@@ -1961,7 +2039,7 @@ export default function App() {
       const enabled = await handleSetPlanMode(true, 'slash');
       if (!enabled) return;
     }
-    handleSendMessage({ prompt, images, referencedFiles });
+    handleSendMessage({ prompt, images, referencedFiles, selectedSkills: [] });
   };
 
   const handleContinuePlanning = () => {
@@ -2002,6 +2080,9 @@ export default function App() {
       images: Array.isArray(message.images) ? message.images : [],
       referencedFiles: Array.isArray(message.referencedFiles)
         ? message.referencedFiles
+        : [],
+      selectedSkills: Array.isArray(message.selectedSkills)
+        ? message.selectedSkills
         : [],
       editToken: Date.now(),
     });
@@ -2181,6 +2262,14 @@ export default function App() {
       }}
       toasts={toasts}
       onDismissToast={dismissToast}
+      skillCatalog={skillCatalog}
+      skillGroups={skillGroups}
+      skillsLoading={skillsLoading}
+      skillsError={skillsError}
+      onToggleSkillGroup={handleToggleSkillGroup}
+      onInsertSkill={handleInsertSkill}
+      skillInsertion={skillInsertion}
+      onSkillInsertionApplied={() => setSkillInsertion(null)}
     />
   );
 }

@@ -67,6 +67,7 @@ class ProjectRegistry:
                 for pid, project in loaded_projects.items():
                     project.pop("approval", None)
                     project.setdefault("policy", "interactive")
+                    project.setdefault("builtin_skill_groups", ["pstack"])
                     project_path = project.get("primary_path", "")
                     if (
                         "pytest" in project_path.lower()
@@ -144,6 +145,7 @@ class ProjectRegistry:
                 ],
                 "access": "project",
                 "policy": "interactive",
+                "builtin_skill_groups": ["pstack"],
             }
 
         if owner._current_project_id not in owner._projects_registry:
@@ -357,6 +359,12 @@ class ProjectRegistry:
             project["access"] = updates["access"]
         if updates.get("policy") in ("interactive", "automatic", "trusted"):
             project["policy"] = updates["policy"]
+        if "builtin_skill_groups" in updates:
+            groups = updates["builtin_skill_groups"]
+            if isinstance(groups, list) and all(
+                isinstance(group, str) and group.strip() for group in groups
+            ):
+                project["builtin_skill_groups"] = list(dict.fromkeys(groups))
         if isinstance(updates.get("source_folders"), list):
             project["source_folders"] = updates["source_folders"]
             primary = next(
@@ -459,6 +467,7 @@ class ProjectRegistry:
             ],
             "access": "project",
             "policy": "interactive",
+            "builtin_skill_groups": ["pstack"],
         }
         owner._projects_registry[project_id] = project
         owner._current_project_id = project_id
@@ -507,6 +516,9 @@ class ProjectRegistry:
                 write_roots.append(path_text)
         env = {
             "MINI_AGENT_PROJECT_ID": str(project.get("id", owner._current_project_id)),
+            "MINI_AGENT_BUILTIN_SKILL_GROUPS": ",".join(
+                project.get("builtin_skill_groups", ["pstack"])
+            ),
             "MINI_AGENT_EXTRA_READ_ROOTS": os.pathsep.join(read_roots),
             "MINI_AGENT_EXTRA_WRITE_ROOTS": os.pathsep.join(write_roots),
         }

@@ -132,6 +132,20 @@
   margin-top: 2px;
 }
 
+.skills-loaded-event {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 5px 8px;
+  border: 1px solid var(--accent-purple);
+  border-radius: 6px;
+  background: var(--accent-purple-soft);
+  color: var(--accent-purple);
+  font-family: monospace;
+  font-size: 10.5px;
+}
+
 .message-row {
   display: flex;
   gap: 12px;

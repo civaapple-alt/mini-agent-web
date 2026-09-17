@@ -32,6 +32,7 @@ uv run mini-agent-server-dev
 | `/api/threads/{thread_id}/settings` | Thread collaboration mode、Builtin tools、显式推进方式和 App Server `state_revision` |
 | `/api/threads/{thread_id}/goal` | Thread Goal 的读取、设置和清除 |
 | `/api/agent/*` | Turn、Steer、Interrupt 和审批 HTTP 操作 |
+| `/api/skills` | 当前 Project 的有界有效 Skill 目录 |
 | `/api/world/*` | World、MCP、Git 和本地工作区探测 |
 | `/api/projects/*` | 本地项目元数据管理 |
 | `/api/settings` | 网关偏好设置 |

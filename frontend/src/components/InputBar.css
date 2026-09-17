@@ -5,6 +5,53 @@
   position: relative;
 }
 
+.skill-popup-menu {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: calc(100% - 4px);
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-focus);
+  border-radius: 8px;
+  box-shadow: var(--shadow-popover);
+  z-index: 20;
+}
+
+.skill-popup-header,
+.skill-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.skill-popup-header {
+  justify-content: space-between;
+  padding: 8px 10px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.skill-item {
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.skill-item.active,
+.skill-item:hover {
+  background: var(--accent-purple-soft);
+}
+
+.skill-name { color: var(--accent-purple); }
+.skill-desc { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skill-error { color: var(--status-failed); }
+.selected-skills-bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 7px 10px 0; }
+.selected-skill-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; border-radius: 999px; background: var(--accent-purple-soft); color: var(--accent-purple); font-size: 10px; }
+.selected-skill-chip button { display: inline-flex; align-items: center; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
+
 /* Attached Composer Approval Dock */
 .composer-approval-dock {
   background-color: var(--status-approval-soft);

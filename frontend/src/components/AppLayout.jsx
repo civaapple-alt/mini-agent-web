@@ -77,6 +77,14 @@ export default function AppLayout({
   onSettingsSaved,
   toasts,
   onDismissToast,
+  skillCatalog = [],
+  skillGroups = [],
+  skillsLoading = false,
+  skillsError = null,
+  onToggleSkillGroup,
+  onInsertSkill,
+  skillInsertion,
+  onSkillInsertionApplied,
 }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
@@ -184,6 +192,11 @@ export default function AppLayout({
             onClearChat={onClearChat}
             onTogglePlanMode={onTogglePlanMode}
             onToast={onToast}
+            availableSkills={skillCatalog}
+            skillsLoading={skillsLoading}
+            skillsError={skillsError}
+            skillInsertion={skillInsertion}
+            onSkillInsertionApplied={onSkillInsertionApplied}
           />
         </main>
       </div>
@@ -205,6 +218,12 @@ export default function AppLayout({
           messages={messages}
           onAdjustPrompt={onAdjustPrompt}
           historyFocusMessageId={historyFocusMessageId}
+          availableSkills={skillCatalog}
+          skillGroups={skillGroups}
+          skillsLoading={skillsLoading}
+          skillsError={skillsError}
+          onToggleSkillGroup={onToggleSkillGroup}
+          onInsertSkill={onInsertSkill}
         />
       </ErrorBoundary>
 

@@ -39,11 +39,14 @@ export function normalizeInputPayload(inputPayload) {
     return { prompt: inputPayload, images: [], referencedFiles: [] };
   }
   if (typeof inputPayload === 'object' && inputPayload !== null) {
-    return {
+    const normalized = {
       prompt: inputPayload.prompt || '',
       images: inputPayload.images || [],
       referencedFiles: inputPayload.referencedFiles || [],
     };
+    const selectedSkills = inputPayload.selectedSkills || inputPayload.selected_skills;
+    if (selectedSkills) normalized.selectedSkills = selectedSkills;
+    return normalized;
   }
   return { prompt: '', images: [], referencedFiles: [] };
 }

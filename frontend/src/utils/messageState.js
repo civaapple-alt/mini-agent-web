@@ -682,6 +682,7 @@ export function filterEmptyMessages(messages) {
         message.text?.trim?.() ||
           message.images?.length ||
           message.referencedFiles?.length ||
+          message.selectedSkills?.length ||
           message.isGoal ||
           message.isSteer,
       );
@@ -692,7 +693,7 @@ export function filterEmptyMessages(messages) {
       if (block.type === 'text' || block.type === 'thinking') {
         return Boolean(block.content?.trim?.());
       }
-      return block.type === 'tool' || block.type === 'compaction';
+      return block.type === 'tool' || block.type === 'compaction' || block.type === 'skills';
     });
     return Boolean(
       message.text?.trim?.() ||
@@ -741,6 +742,26 @@ export function aggregateStreamEvent(messages, data) {
       targetIndex = findTurnAssistantIndex(messages, data.turnId);
     }
     if (messages.length === 0 || targetIndex === -1) return messages;
+
+    if (type === 'skills_loaded' || type === 'skills_load_failed') {
+      const copy = [...messages];
+      const last = { ...copy[targetIndex] };
+      const blocks = [...(last.blocks || [])];
+      const blockId = `skills_${data.turnId || 'event'}`;
+      if (!blocks.some((block) => block.type === 'skills' && block.id === blockId)) {
+        blocks.push({
+          type: 'skills',
+          id: blockId,
+          skills: type === 'skills_loaded'
+            ? (evt.skills || []).map((skill) => skill.name).filter(Boolean)
+            : [],
+          reasonCode: evt.reasonCode || evt.reason_code || null,
+        });
+      }
+      last.blocks = blocks;
+      copy[targetIndex] = last;
+      return copy;
+    }
 
     const projectedTools = (data.items || []).filter(
       (item) => item.type === 'toolCall' || item.type === 'tool_call'

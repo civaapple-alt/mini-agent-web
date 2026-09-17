@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from server.builtin_skills import sync_builtin_skills
 from server.config import settings
 from server.routes import agent, threads, world
 from server.routes import settings as settings_route
@@ -28,6 +29,7 @@ async def lifespan(app: FastAPI):
     logger.info(
         "Starting Mini Agent Web Gateway on %s:%d...", settings.host, settings.port
     )
+    sync_builtin_skills()
     await session_manager.start()
     try:
         yield

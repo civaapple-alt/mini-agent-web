@@ -27,10 +27,14 @@ class ClientPool:
     ) -> None:
         owner = self.owner
         owner._project_clients[(project_id, thread_id)] = client
-        owner._clients[thread_id] = client
-        owner._client_projects[thread_id] = project_id
-        owner._active_thread_projects[thread_id] = project_id
-        if thread_id == "default":
+        # The unqualified compatibility maps cannot represent two projects'
+        # same-named default Threads. Keep them pointed at the current Project;
+        # project-qualified lookups use _project_clients as the authority.
+        if thread_id != "default" or project_id == owner._current_project_id:
+            owner._clients[thread_id] = client
+            owner._client_projects[thread_id] = project_id
+            owner._active_thread_projects[thread_id] = project_id
+        if thread_id == "default" and project_id == owner._current_project_id:
             owner._client = client
 
     def all_clients(self) -> list[MiniAgentClient]:

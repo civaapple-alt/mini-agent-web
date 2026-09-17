@@ -72,6 +72,11 @@ class UpdateProjectRequest(BaseModel):
     policy: Literal["interactive", "automatic", "trusted"] | None = Field(
         default=None, description="Project execution policy"
     )
+    builtin_skill_groups: list[str] | None = Field(
+        default=None,
+        max_length=8,
+        description="Enabled built-in Skill groups for this project",
+    )
 
 
 class SwitchProjectRequest(BaseModel):

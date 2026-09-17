@@ -5,6 +5,7 @@ import { workflowApi } from './api/workflows.js';
 import { projectApi } from './api/projects.js';
 import { settingsApi } from './api/settings.js';
 import { approvalApi } from './api/approvals.js';
+import { skillsApi } from './api/skills.js';
 
 export { setActiveProjectId } from './api/request.js';
 export { createAgentWebSocket } from './api/websocket.js';
@@ -16,4 +17,5 @@ export const api = {
   ...projectApi,
   ...settingsApi,
   ...approvalApi,
+  ...skillsApi,
 };

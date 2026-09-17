@@ -102,11 +102,14 @@ async def execute_turn(req: StartTurnRequest) -> dict[str, Any]:
         client = await session_manager.get_client_for_thread(
             req.thread_id, req.project_id
         )
-        sub = await client.start_turn(
-            prompt=enriched_prompt,
-            mode=req.mode,
-            thread_id=req.thread_id,
-        )
+        start_kwargs = {
+            "prompt": enriched_prompt,
+            "mode": req.mode,
+            "thread_id": req.thread_id,
+        }
+        if req.selected_skills:
+            start_kwargs["selected_skills"] = req.selected_skills
+        sub = await client.start_turn(**start_kwargs)
         if not sub.turn_id:
             return {"status": sub.status, "reason": sub.reason}
 
@@ -132,17 +135,17 @@ async def stream_turn(
     mode: str = Query("start", description="Execution mode"),
     thread_id: str | None = Query(None, description="Thread ID"),
     project_id: str | None = Query(None, description="Project ID"),
+    selected_skills: list[str] | None = None,
 ) -> StreamingResponse:
     """Stream token deltas, tool executions, and turn events via Server-Sent Events (SSE)."""
 
     async def event_generator():
         try:
             client = await session_manager.get_client_for_thread(thread_id, project_id)
-            async for item in client.stream_turn(
-                prompt=prompt,
-                mode=mode,
-                thread_id=thread_id,
-            ):
+            stream_kwargs = {"prompt": prompt, "mode": mode, "thread_id": thread_id}
+            if selected_skills:
+                stream_kwargs["selected_skills"] = selected_skills[:8]
+            async for item in client.stream_turn(**stream_kwargs):
                 safe_item = to_json_serializable(item)
                 payload = json.dumps(safe_item, ensure_ascii=False)
                 yield f"data: {payload}\n\n"

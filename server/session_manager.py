@@ -343,13 +343,16 @@ class SessionManager:
             self._initialized = True
 
     async def restart_for_current_project(self) -> None:
-        """Restart only the current Project runtime without touching other Projects."""
+        """Restart the current Project runtime without touching other Projects."""
+        await self.restart_for_project(self._current_project_id)
+
+    async def restart_for_project(self, project_id: str) -> None:
+        """Restart one Project runtime without touching other Projects."""
         await self.cancel_pending_approvals(
-            project_id=self._current_project_id,
+            project_id=project_id,
             reason="项目运行时即将重启，审批已失效",
         )
         async with self._lock:
-            project_id = self._current_project_id
             active_keys = {
                 *(key for key in self._active_turns_by_project if key[0] == project_id),
                 *(key for key in self._active_tasks_by_project if key[0] == project_id),
@@ -411,17 +414,20 @@ class SessionManager:
 
             if current_default_project == project_id:
                 self._client = None
-            self._initialized = False
+                self._initialized = False
         for client in set(clients):
             await client.stop()
-        await self.start()
+        if project_id == self._current_project_id:
+            await self.start()
+        else:
+            await self._client_pool.get_client_for_project(project_id)
         self._runtime_generation += 1
         await self.broadcast_ws(
             {
                 "type": "notification",
                 "method": "gateway/runtime/restarted",
                 "data": {
-                    "projectId": self._current_project_id,
+                    "projectId": project_id,
                     "runtimeGeneration": self._runtime_generation,
                 },
             }
@@ -603,6 +609,19 @@ class SessionManager:
         return (
             str(project.get("access", "project")),
             str(project.get("policy", "interactive")),
+        )
+
+    def project_has_active_turn(self, project_id: str) -> bool:
+        """Return whether a project currently owns a running turn/task."""
+        return any(key[0] == project_id for key in self._active_turns_by_project) or any(
+            key[0] == project_id for key in self._active_tasks_by_project
+        )
+
+    def project_has_pending_approval(self, project_id: str) -> bool:
+        """Return whether a project has an approval wait that must not be orphaned."""
+        return any(
+            details.get("projectId") == project_id
+            for details in self._pending_approval_details.values()
         )
 
     def set_project_execution(

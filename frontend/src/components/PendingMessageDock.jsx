@@ -6,6 +6,7 @@ import './InputBar.css';
 function messagePreview(item) {
   const text = (item.prompt || '').trim();
   if (text) return text;
+  if (item.selectedSkills?.length) return item.selectedSkills.map((name) => `$${name}`).join(' ');
   if (item.images?.length) return '图片消息';
   return '空消息';
 }

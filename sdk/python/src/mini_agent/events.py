@@ -46,6 +46,34 @@ class TurnStartedEvent(EventModel):
 
 
 @dataclass
+class SkillsLoadedEvent(EventModel):
+    """Explicit user-selected Skills loaded for the current Turn."""
+
+    skills: list[dict[str, Any]] = field(default_factory=list)
+    type: str = "skills_loaded"
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SkillsLoadedEvent:
+        return cls(skills=data.get("skills", []))
+
+
+@dataclass
+class SkillsLoadFailedEvent(EventModel):
+    """Bounded failure metadata for explicit Skill activation."""
+
+    skills: list[str] = field(default_factory=list)
+    reason_code: str = "unknown"
+    type: str = "skills_load_failed"
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SkillsLoadFailedEvent:
+        return cls(
+            skills=data.get("skills", []),
+            reason_code=data.get("reason_code") or data.get("reasonCode", "unknown"),
+        )
+
+
+@dataclass
 class RunStartedEvent(EventModel):
     """Emitted when an agent harness run loop starts."""
 
@@ -238,6 +266,8 @@ class GenericEvent(EventModel):
 
 AgentEvent = (
     TurnStartedEvent
+    | SkillsLoadedEvent
+    | SkillsLoadFailedEvent
     | RunStartedEvent
     | ModelStartedEvent
     | AssistantReasoningDeltaEvent
@@ -255,6 +285,8 @@ AgentEvent = (
 
 _EVENT_TYPE_MAP = {
     "turn_started": TurnStartedEvent,
+    "skills_loaded": SkillsLoadedEvent,
+    "skills_load_failed": SkillsLoadFailedEvent,
     "run_started": RunStartedEvent,
     "model_started": ModelStartedEvent,
     "assistant_reasoning_delta": AssistantReasoningDeltaEvent,

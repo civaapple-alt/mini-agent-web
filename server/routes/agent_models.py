@@ -20,6 +20,11 @@ class StartTurnRequest(BaseModel):
     project_id: str | None = Field(
         default=None, description="Canonical project routing context"
     )
+    selected_skills: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+        description="Explicit Skill names to activate for this turn",
+    )
 
 
 class SteerTurnRequest(BaseModel):

@@ -80,7 +80,25 @@ client = MiniAgentClient(
 ### 3.2 Automated `.env` Discovery
 `MiniAgentClient` automatically locates and parses `.env` files, providing credentials (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, etc.) directly to the backend process environment without modifying global state. Set `MINI_AGENT_APP_SERVER_PATH` to select an explicit 0.8.0 App Server binary.
 
-### 3.3 Dynamic File-Based Logging
+### 3.3 Explicit skill activation
+
+The capability manifest returned by `initialize` contains bounded skill-group
+and skill metadata. A turn may explicitly activate up to eight known skills by
+passing their names; the App Server revalidates the names and loads their
+bodies for that turn only:
+
+```python
+await client.start_turn(
+    "重构这个模块",
+    selected_skills=["architect", "typescript-best-practices"],
+)
+```
+
+Skill bodies are not copied into the client payload or persisted as global
+prompt state. `skills_loaded` and `skills_load_failed` events report the
+bounded outcome without exposing paths or body contents.
+
+### 3.4 Dynamic File-Based Logging
 Passing `log_dir="logs"` automatically creates script-isolated logs (e.g. `logs/02_streaming_events.log`).
 ```python
 # Enable SDK debug logging with script-name auto-detection

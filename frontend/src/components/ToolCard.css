@@ -79,6 +79,37 @@
   max-width: 480px;
 }
 
+.command-preview-trigger {
+  cursor: help;
+  outline: none;
+}
+
+.command-preview-trigger:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.command-preview-popover {
+  position: fixed;
+  z-index: 2000;
+  padding: 9px 10px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: var(--shadow-popover);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.command-preview-popover pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .tool-right-badge {
   flex-shrink: 0;
 }

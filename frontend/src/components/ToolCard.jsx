@@ -1,4 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
+import { createPortal } from 'react-dom';
 import {
   Terminal,
   FileText,
@@ -37,6 +45,134 @@ function outcomePresentation(outcome) {
     className: 'badge failed',
     Icon: AlertTriangle,
   };
+}
+
+function CommandPreview({ value }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [position, setPosition] = useState(null);
+  const triggerRef = useRef(null);
+  const popupRef = useRef(null);
+  const closeTimerRef = useRef(null);
+  const tooltipId = `command-preview-${useId().replace(/:/g, '')}`;
+
+  const cancelClose = useCallback(() => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
+
+  const openPreview = useCallback(() => {
+    cancelClose();
+    setIsOpen(true);
+  }, [cancelClose]);
+
+  const closePreview = useCallback(() => {
+    cancelClose();
+    setIsOpen(false);
+  }, [cancelClose]);
+
+  const scheduleClose = useCallback(() => {
+    cancelClose();
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      setIsOpen(false);
+    }, 120);
+  }, [cancelClose]);
+
+  useEffect(() => () => cancelClose(), [cancelClose]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') closePreview();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [closePreview, isOpen]);
+
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      setPosition(null);
+      return undefined;
+    }
+
+    const updatePosition = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const viewportWidth = window.innerWidth || 1024;
+      const viewportHeight = window.innerHeight || 768;
+      const padding = 12;
+      const width = Math.min(720, Math.max(0, viewportWidth - padding * 2));
+      const belowSpace = viewportHeight - rect.bottom - padding;
+      const aboveSpace = rect.top - padding;
+      const showAbove = belowSpace < 180 && aboveSpace > belowSpace;
+      const availableHeight = Math.max(80, showAbove ? aboveSpace : belowSpace);
+      const maxHeight = Math.min(360, availableHeight);
+      const left = Math.min(
+        Math.max(padding, rect.left),
+        Math.max(padding, viewportWidth - width - padding),
+      );
+      const top = showAbove
+        ? Math.max(padding, rect.top - maxHeight - 8)
+        : Math.min(viewportHeight - maxHeight - padding, rect.bottom + 8);
+      setPosition({ left, top, width, maxHeight });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isOpen]);
+
+  const handleBlur = (event) => {
+    if (!popupRef.current?.contains(event.relatedTarget)) scheduleClose();
+  };
+
+  const popup = isOpen && position && typeof document !== 'undefined'
+    ? createPortal(
+      <div
+        ref={popupRef}
+        id={tooltipId}
+        className="command-preview-popover custom-scrollbar"
+        role="tooltip"
+        aria-label="完整命令"
+        style={{
+          left: `${position.left}px`,
+          top: `${position.top}px`,
+          width: `${position.width}px`,
+          maxHeight: `${position.maxHeight}px`,
+        }}
+        onMouseEnter={cancelClose}
+        onMouseLeave={scheduleClose}
+      >
+        <pre>{value}</pre>
+      </div>,
+      document.body,
+    )
+    : null;
+
+  return (
+    <>
+      <span
+        ref={triggerRef}
+        className="tool-args-snippet font-mono command-preview-trigger"
+        tabIndex={0}
+        aria-describedby={isOpen ? tooltipId : undefined}
+        onMouseEnter={openPreview}
+        onMouseLeave={scheduleClose}
+        onFocus={openPreview}
+        onBlur={handleBlur}
+      >
+        {value}
+      </span>
+      {popup}
+    </>
+  );
 }
 
 export default function ToolCard({
@@ -171,9 +307,7 @@ export default function ToolCard({
           {getToolIcon(name)}
           <span className="tool-tag font-mono">{name || 'tool'}</span>
           {argsSummary && (
-            <span className="tool-args-snippet font-mono" title={argsSummary}>
-              {argsSummary}
-            </span>
+            <CommandPreview value={argsSummary} />
           )}
         </div>
 

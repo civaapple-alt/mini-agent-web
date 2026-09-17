@@ -59,6 +59,35 @@ describe('ToolCard Component Rendering & Interaction', () => {
     expect(screen.getByText(/next_offset=52/)).toBeDefined();
   });
 
+  it('shows the complete long command in an overflow-safe hover preview', () => {
+    const command = 'Add-Type -AssemblyName System.Drawing\n$source = \'D:/workspace/assets/reference-image.jpg\'\n$image = [System.Drawing.Image]::FromFile($source)';
+    render(
+      <ToolCard
+        tool={{
+          id: 'long-command',
+          name: 'shell',
+          arguments: { command },
+          status: 'completed',
+          output: 'done',
+        }}
+      />,
+    );
+
+    const trigger = document.querySelector('.command-preview-trigger');
+    expect(trigger).not.toBeNull();
+    expect(trigger.getAttribute('title')).toBeNull();
+    expect(screen.queryByRole('tooltip')).toBeNull();
+
+    fireEvent.mouseEnter(trigger);
+
+    const preview = screen.getByRole('tooltip');
+    expect(preview.textContent).toBe(command);
+    expect(preview.querySelector('pre')?.textContent).toBe(command);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
   it('renders failed tool state with error message', () => {
     const tool = {
       id: 'tool_3',

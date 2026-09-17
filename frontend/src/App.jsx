@@ -37,7 +37,7 @@ import {
 } from './utils/sessionState.js';
 import { getStatusViewModel, normalizeTheme } from './utils/statusModel.js';
 import { parseSkillPrompt, parseWorkflowPrompt } from './utils/skillTokens.js';
-import { createInputTrace } from './utils/inputTrace.js';
+import { cleanInputText, createInputTrace } from './utils/inputTrace.js';
 import { startImplementationTurn } from './utils/planWorkflow.js';
 import './App.css';
 
@@ -57,6 +57,31 @@ function readThreadMeta(thread, fallbackTitle = null) {
   };
 }
 
+const MAX_HISTORY_ITEMS = 256;
+const HISTORY_PAGE_SIZE = 128;
+
+async function listThreadItemsForHistory(threadId, projectId, options = {}) {
+  const entries = [];
+  let cursor = null;
+  const seenCursors = new Set();
+
+  while (entries.length < MAX_HISTORY_ITEMS) {
+    const page = await api.listThreadItems(threadId, {
+      limit: HISTORY_PAGE_SIZE,
+      cursor,
+      projectId,
+      signal: options.signal,
+    });
+    const data = Array.isArray(page.data) ? page.data : [];
+    entries.push(...data);
+    const nextCursor = page.next_cursor || page.nextCursor || null;
+    if (!nextCursor || data.length === 0 || seenCursors.has(nextCursor)) break;
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+  return entries.slice(0, MAX_HISTORY_ITEMS);
+}
+
 export default function App() {
   const [threads, setThreads] = useState([]);
   const [currentThread, setCurrentThread] = useState(
@@ -67,6 +92,7 @@ export default function App() {
   );
   const [currentThreadMeta, setCurrentThreadMeta] = useState(() => readThreadMeta());
   const [messages, setMessages] = useState([]);
+  const [threadItems, setThreadItems] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isInterrupting, setIsInterrupting] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState(null);
@@ -291,6 +317,7 @@ export default function App() {
     setRuntimeStatus(null);
     setLastWorkflowEvent(null);
     setMessages([]);
+    setThreadItems([]);
     setIsLoadingHistory(loadingHistory);
   };
 
@@ -758,15 +785,12 @@ export default function App() {
     const requestContext = context || currentSessionRequest();
     setIsLoadingHistory(true);
     try {
-      const [cp, itemPage] = await Promise.all([
+      const [cp, itemEntries] = await Promise.all([
         api.readThread(threadId, { projectId, signal: requestContext.signal }),
-        api.listThreadItems(threadId, {
-          limit: 128,
-          projectId,
-          signal: requestContext.signal,
-        }),
+        listThreadItemsForHistory(threadId, projectId, requestContext),
       ]);
       if (!isCurrentSessionRequest(requestContext)) return;
+      setThreadItems(itemEntries);
       const sessionSnapshot = cp.session || {};
       setCurrentThreadMeta((previous) => ({
         title: cp.metadata?.title || previous.title || threadId,
@@ -807,7 +831,6 @@ export default function App() {
       } else {
         setLastTurnResult(null);
       }
-      const itemEntries = itemPage.data || [];
       const rawMessages = assignHistoryTurnIds(cp.messages || [], itemEntries);
       const persistedGoalObjective = cp.session?.goal?.objective?.trim() || '';
       let historyGoalObjective = persistedGoalObjective;
@@ -839,11 +862,12 @@ export default function App() {
             ? m.toolCalls
             : [];
         const isUserMessage = m.role === 'user';
+        const displayText = isUserMessage ? cleanInputText(m.text) : m.text;
         result.push({
           id: messageId,
           role: m.role,
           turnId: m.turnId || null,
-          text: m.text || '',
+          text: displayText || '',
           thinking: reasoning,
           tools: [],
           ...(isUserMessage
@@ -853,8 +877,10 @@ export default function App() {
                 projectId,
                 turnId: m.turnId || null,
                 source: 'user',
+                capturedAt: m.capturedAt || m.createdAt || m.created_at || null,
                 images: m.images,
                 referencedFiles: m.referencedFiles,
+                attachmentText: m.text,
                 historical: true,
                 attachmentsKnown: Object.prototype.hasOwnProperty.call(m, 'images')
                   || Object.prototype.hasOwnProperty.call(m, 'referencedFiles'),
@@ -866,8 +892,8 @@ export default function App() {
             ...(reasoning
               ? [{ type: 'thinking', id: `${messageId}:reasoning`, content: reasoning }]
               : []),
-            ...(m.text
-              ? [{ type: 'text', id: `${messageId}:text`, content: m.text }]
+            ...(displayText
+              ? [{ type: 'text', id: `${messageId}:text`, content: displayText }]
               : []),
           ],
         });
@@ -2278,6 +2304,7 @@ export default function App() {
       onClosePlan={() => handleSetPlanMode(false)}
       goalState={goalState}
       messages={messages}
+      threadItems={threadItems}
       lastTurnResult={lastTurnResult}
       policy={policy}
       onSendMessage={handleSendMessage}

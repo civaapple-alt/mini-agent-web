@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Activity, Edit3, History, Image, Paperclip } from 'lucide-react';
+import { Edit3, History, Image, Paperclip } from 'lucide-react';
 import {
   collectInputMessages,
+  cleanInputText,
   getInputTrace,
   getInputTraceSourceLabel,
   INPUT_TRACE_ACCESS_LABELS,
@@ -11,9 +12,9 @@ import {
 import './ThreadHistoryPane.css';
 
 function formatTimestamp(value) {
-  if (!value) return '历史时间未记录';
+  if (!value) return '';
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '时间未记录';
+  if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleString('zh-CN', {
     year: 'numeric',
     month: '2-digit',
@@ -35,13 +36,17 @@ function executionLabel(execution) {
 
 export default function ThreadHistoryPane({
   messages = [],
+  itemEntries = [],
   threadId = 'default',
   projectId = null,
   focusMessageId = null,
   onAdjustPrompt,
 }) {
   const itemRefs = useRef(new Map());
-  const inputMessages = useMemo(() => collectInputMessages(messages), [messages]);
+  const inputMessages = useMemo(
+    () => collectInputMessages(messages, itemEntries, { threadId, projectId }),
+    [messages, itemEntries, threadId, projectId],
+  );
 
   useEffect(() => {
     if (!focusMessageId) return;
@@ -61,7 +66,6 @@ export default function ThreadHistoryPane({
           </div>
           <p>当前已加载 {inputMessages.length} 条用户输入；内容来自当前 Thread 的历史投影。</p>
         </div>
-        <Activity size={16} className="thread-history-heading-icon" aria-hidden="true" />
       </div>
 
       <div className="thread-history-scope font-mono">
@@ -79,6 +83,8 @@ export default function ThreadHistoryPane({
             const trace = getInputTrace(message, { threadId, projectId });
             const imageCount = trace.attachments?.imageCount || 0;
             const fileCount = trace.attachments?.referencedFiles?.length || 0;
+            const displayText = cleanInputText(message.text);
+            const capturedAt = formatTimestamp(trace.capturedAt);
             const isFocused = message.id === focusMessageId;
             return (
               <article
@@ -94,16 +100,20 @@ export default function ThreadHistoryPane({
                   <span className="thread-history-source">
                     {getInputTraceSourceLabel(trace.source)}
                   </span>
-                  <span className="thread-history-time">{formatTimestamp(trace.capturedAt)}</span>
+                  {capturedAt && (
+                    <span className="thread-history-time">{capturedAt}</span>
+                  )}
                 </div>
                 <div className="thread-history-prompt">
-                  {message.text || (imageCount > 0 ? '（图片输入）' : '（空输入）')}
+                  {displayText || (imageCount > 0 ? '（图片输入）' : '（空输入）')}
                 </div>
                 <div className="thread-history-meta">
                   <span className="font-mono">Turn: {trace.scope?.turnId || '未分配'}</span>
-                  <span title={executionLabel(trace.execution)}>
-                    执行：{executionLabel(trace.execution)}
-                  </span>
+                  {trace.execution && (
+                    <span title={executionLabel(trace.execution)}>
+                      执行：{executionLabel(trace.execution)}
+                    </span>
+                  )}
                   {trace.attachments?.known === false ? (
                     <span>附件：历史投影未提供明细</span>
                   ) : (
@@ -115,9 +125,6 @@ export default function ThreadHistoryPane({
                   )}
                 </div>
                 <div className="thread-history-entry-footer">
-                  <span className="thread-history-entry-scope font-mono">
-                    {trace.scope?.projectId || projectId || '未绑定项目'} / {trace.scope?.threadId || threadId}
-                  </span>
                   {onAdjustPrompt && !message.isGoal && (
                     <button
                       type="button"

@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import MessageItem from '../components/MessageItem';
 import ThreadHistoryPane from '../components/ThreadHistoryPane';
-import { createInputTrace, getInputTrace } from '../utils/inputTrace';
+import {
+  collectInputMessages,
+  cleanInputText,
+  createInputTrace,
+  getInputTrace,
+} from '../utils/inputTrace';
 
 describe('input trace presentation', () => {
   it('captures bounded live scope and execution settings', () => {
@@ -48,6 +53,39 @@ describe('input trace presentation', () => {
       threadId: 't-history',
     });
     expect(trace.attachments.known).toBe(false);
+  });
+
+  it('merges durable user items missing from a compacted checkpoint', () => {
+    const messages = collectInputMessages(
+      [{ role: 'user', id: 'current', text: '当前输入', turnId: 'turn-2' }],
+      [
+        {
+          turnId: 'turn-1',
+          capturedAt: '2026-09-17T10:00:00.000Z',
+          item: { type: 'userMessage', id: 'old', text: '较早输入' },
+        },
+        {
+          turnId: 'turn-2',
+          capturedAt: '2026-09-17T10:01:00.000Z',
+          item: { type: 'userMessage', id: 'current-item', text: '当前输入' },
+        },
+      ],
+      { threadId: 't-history', projectId: 'project-a' },
+    );
+
+    expect(messages.map((message) => message.text)).toEqual(['较早输入', '当前输入']);
+    expect(getInputTrace(messages[0]).capturedAt).toBe('2026-09-17T10:00:00.000Z');
+  });
+
+  it('keeps a safe image count when history only has gateway context', () => {
+    const message = {
+      role: 'user',
+      text: '分析这张图\n\n[User Attached Image: C:\\private\\clipboard.png (Gateway session attachment)]',
+    };
+    const trace = getInputTrace(message);
+
+    expect(trace.attachments).toMatchObject({ imageCount: 1, known: true });
+    expect(cleanInputText(message.text)).toBe('分析这张图');
   });
 
   it('opens the hover trace and supports adjusting the original input', () => {
@@ -111,7 +149,7 @@ describe('input trace presentation', () => {
     );
 
     expect(screen.getByText('查看历史输入')).toBeDefined();
-    expect(screen.getByText(/历史设置未记录/)).toBeDefined();
+    expect(screen.queryByText(/历史时间未记录/)).toBeNull();
     expect(screen.getByText(/Turn: turn-7/)).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: '调整输入' }));
     expect(onAdjustPrompt).toHaveBeenCalledWith(message);

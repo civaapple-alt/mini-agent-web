@@ -41,6 +41,7 @@ export default function AppLayout({
   onClosePlan,
   goalState,
   messages,
+  threadItems,
   lastTurnResult,
   policy,
   onSendMessage,
@@ -217,6 +218,7 @@ export default function AppLayout({
           onTogglePlan={onTogglePlan}
           onToast={onToast}
           messages={messages}
+          threadItems={threadItems}
           onAdjustPrompt={onAdjustPrompt}
           historyFocusMessageId={historyFocusMessageId}
           availableSkills={skillCatalog}

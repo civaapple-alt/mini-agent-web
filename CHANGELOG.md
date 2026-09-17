@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   artifacts from the plan file reader.
 - Fix the Plan review `开始实施` action so it disables Plan Mode and immediately
   submits the next implementation Turn using the current plan.
+- Fix Thread input history to merge bounded durable user-item projections with
+  checkpoint messages, follow history cursors, and preserve persisted input
+  timestamps. Simplify the history rows, hide Gateway attachment context from
+  displayed prompts, and show safe image-count metadata without exposing raw
+  image bytes or filesystem paths.
 
 ## [0.8.0] - 2026-09-15
 

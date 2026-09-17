@@ -513,6 +513,7 @@ export function assignHistoryTurnIds(messages = [], entries = []) {
     .map((entry, index) => ({
       index,
       turnId: entry.turnId || entry.turn_id || null,
+      capturedAt: entry.capturedAt || entry.captured_at || null,
       item: entry.item || {},
       used: false,
     }))
@@ -552,7 +553,11 @@ export function assignHistoryTurnIds(messages = [], entries = []) {
     const candidate = findCandidate(message);
     if (!candidate) return message;
     candidate.used = true;
-    return { ...message, turnId: candidate.turnId };
+    return {
+      ...message,
+      turnId: candidate.turnId,
+      capturedAt: message.capturedAt || candidate.capturedAt || null,
+    };
   });
 }
 

@@ -31,6 +31,20 @@ function normalizeFiles(files) {
     .map((file) => file.trim().slice(0, MAX_FILE_PATH_LENGTH));
 }
 
+function summarizeAttachmentText(text) {
+  const value = String(text || '');
+  return {
+    imageCount: (value.match(/\[User Attached Image:/g) || []).length,
+  };
+}
+
+export function cleanInputText(text) {
+  return String(text || '')
+    .replace(/\s*\[User Attached Image:[^\]]+\]/g, '')
+    .replace(/\s*\[User Referenced Files:[^\]]+\]/g, '')
+    .trim();
+}
+
 function sourceForMessage(message) {
   if (message?.isSteer || message?.messageKind === 'steer') return 'steer';
   if (message?.isGoal || message?.messageKind === 'goal') return 'goal';
@@ -56,11 +70,16 @@ export function createInputTrace({
   continuationMode = null,
   planActive = false,
   goalActive = false,
-  images = [],
+  images = null,
   referencedFiles = [],
+  attachmentText = '',
   historical = false,
   attachmentsKnown = true,
 } = {}) {
+  const attachmentSummary = summarizeAttachmentText(attachmentText);
+  const imageCount = Array.isArray(images)
+    ? images.length
+    : attachmentSummary.imageCount;
   return {
     scope: {
       projectId: projectId || null,
@@ -80,8 +99,8 @@ export function createInputTrace({
         goalActive: Boolean(goalActive),
       },
     attachments: {
-      known: Boolean(attachmentsKnown),
-      imageCount: Array.isArray(images) ? images.length : 0,
+      known: Boolean(attachmentsKnown || imageCount > 0),
+      imageCount,
       referencedFiles: normalizeFiles(referencedFiles),
     },
   };
@@ -104,8 +123,10 @@ export function getInputTrace(message, scope = {}) {
     source: sourceForMessage(message),
     images: message?.images,
     referencedFiles: message?.referencedFiles,
+    attachmentText: message?.text,
     historical: true,
-    attachmentsKnown: hasAttachmentFields,
+    attachmentsKnown: hasAttachmentFields
+      || summarizeAttachmentText(message?.text).imageCount > 0,
   });
 }
 
@@ -113,6 +134,64 @@ export function getInputTraceSourceLabel(source) {
   return INPUT_TRACE_SOURCE_LABELS[source] || '输入';
 }
 
-export function collectInputMessages(messages = []) {
-  return messages.filter((message) => message?.role === 'user');
+function entryTurnId(entry) {
+  return entry?.turnId || entry?.turn_id || null;
+}
+
+function entryInputMessage(entry, index, scope) {
+  const item = entry?.item || {};
+  const turnId = entryTurnId(entry);
+  return {
+    id: item.id || `history_item_${index}`,
+    role: 'user',
+    text: cleanInputText(item.text),
+    turnId,
+    inputTrace: createInputTrace({
+      threadId: scope.threadId || null,
+      projectId: scope.projectId || null,
+      turnId,
+      source: 'user',
+      capturedAt: entry.capturedAt || entry.captured_at || null,
+      attachmentText: item.text,
+      historical: true,
+      attachmentsKnown: summarizeAttachmentText(item.text).imageCount > 0,
+    }),
+  };
+}
+
+/**
+ * Merge checkpoint messages with the durable item projection.
+ *
+ * Checkpoints can be compacted or bounded, while item projections retain the
+ * user-message history. Existing messages win so live attachment metadata is
+ * not replaced by the deliberately smaller historical projection.
+ */
+export function collectInputMessages(messages = [], entries = [], scope = {}) {
+  const existing = messages.filter((message) => message?.role === 'user');
+  const used = new Set();
+  const result = [];
+  const inputEntries = (entries || []).filter((entry) => (
+    entry?.item?.type === 'userMessage' || entry?.item?.type === 'user_message'
+  ));
+
+  for (const [index, entry] of inputEntries.entries()) {
+    const turnId = entryTurnId(entry);
+    const itemText = cleanInputText(entry.item?.text);
+    const matchIndex = existing.findIndex((message, messageIndex) => {
+      if (used.has(messageIndex)) return false;
+      if (turnId && message.turnId) return turnId === message.turnId;
+      return itemText && String(message.text || '').trim() === itemText;
+    });
+    if (matchIndex >= 0) {
+      used.add(matchIndex);
+      result.push(existing[matchIndex]);
+    } else {
+      result.push(entryInputMessage(entry, index, scope));
+    }
+  }
+
+  existing.forEach((message, index) => {
+    if (!used.has(index)) result.push(message);
+  });
+  return result;
 }

@@ -66,6 +66,13 @@ Turn 请求通过 `selectedSkills` 和可选 `workflow` 传递到 SDK：
 状态事件，关联资源读取不重复产生事件。Skill 目录的读取合计受每个 Turn
 64 KiB 的 `read_file` 输出限制，写入和脚本执行继续走 Host 现有的审批与沙箱路径。
 
+输入历史由 `GET /api/threads/{thread_id}` 的 checkpoint 与
+`GET /api/threads/{thread_id}/items` 的 bounded item projection 合并展示；
+WebStudio 会跟随 `next_cursor` 加载最多最近 256 个 item，避免压缩后的
+checkpoint 让较早用户输入消失。历史 item 的持久化时间以 `capturedAt` 投影，
+旧记录没有有效时间时省略时间字段。附件原始字节不进入历史 JSON 或 item
+projection；当前输入/队列保留图片数据，历史回放只显示已经持久化的有限附件摘要。
+
 同一 Thread 的 Gateway attach/start 请求在客户端创建与 canonical Session 检查
 期间串行化；并发请求会复用同一个已建立的 App Server client，不会制造重复的
 workspace 绑定竞争。Thread fork 在同一 SessionManager 临界区内完成 source

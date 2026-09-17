@@ -19,6 +19,7 @@
 - [WebStudio 顶层计划查看入口](implemented/feature/2026-09-17-plan-viewer-tab.zh.md)
 - [侧栏计划、目标与工作区信息架构](implemented/feature/2026-09-17-sidepanel-plan-goal-workspace-information-architecture.zh.md)
 - [Plan 审查后直接启动实施 Turn](implemented/bug-fix/2026-09-17-plan-review-start-implementation-turn.zh.md)
+- [Thread 输入历史投影与时间显示修复](implemented/bug-fix/2026-09-17-thread-input-history-projection.zh.md)
 - [Cookbook recovery and projection contract](implemented/architecture/2026-09-15-cookbook-recovery-and-projection.md)
 - [Cookbook tool outcome contract](implemented/architecture/2026-09-15-cookbook-tool-outcome-contract.md)
 - [Security boundaries and hard-limit evidence](implemented/architecture/2026-09-15-security-boundaries-and-hard-limits.md)

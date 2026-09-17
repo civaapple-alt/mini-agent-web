@@ -212,17 +212,23 @@ def _item_projection(record: dict[str, Any]) -> dict[str, Any] | None:
     item_id = str(record.get("item_id") or "")
     role = message.get("role")
     if role == "user":
-        return {
-            "type": "userMessage",
-            "id": item_id,
-            "text": _bounded_text(message.get("text"), 16 * 1024) or "",
-        }
+        return _with_item_timestamp(
+            record,
+            {
+                "type": "userMessage",
+                "id": item_id,
+                "text": _bounded_text(message.get("text"), 16 * 1024) or "",
+            },
+        )
     if role == "assistant":
-        return {
-            "type": "agentMessage",
-            "id": item_id,
-            "text": _bounded_text(message.get("text"), 16 * 1024) or "",
-        }
+        return _with_item_timestamp(
+            record,
+            {
+                "type": "agentMessage",
+                "id": item_id,
+                "text": _bounded_text(message.get("text"), 16 * 1024) or "",
+            },
+        )
     if role == "tool":
         outcome = message.get("outcome")
         output = (
@@ -264,7 +270,7 @@ def _item_projection(record: dict[str, Any]) -> dict[str, Any] | None:
         }
         if known_outcome is not None:
             projected["outcome"] = known_outcome
-        return projected
+        return _with_item_timestamp(record, projected)
     if role == "context":
         # Context updates used to be stored without a Turn (for example the
         # initial world-state snapshot). They are not compactions and must not
@@ -274,8 +280,25 @@ def _item_projection(record: dict[str, Any]) -> dict[str, Any] | None:
             "turn_id"
         ):
             return None
-        return {"type": "contextCompaction", "id": item_id, "status": "completed"}
+        return _with_item_timestamp(
+            record,
+            {
+                "type": "contextCompaction",
+                "id": item_id,
+                "status": "completed",
+            },
+        )
     return None
+
+
+def _with_item_timestamp(
+    record: dict[str, Any], projection: dict[str, Any]
+) -> dict[str, Any]:
+    """Expose the bounded persistence timestamp without exposing raw records."""
+    captured_at = _timestamp(record.get("timestamp_ms"))
+    if captured_at:
+        projection["capturedAt"] = captured_at
+    return projection
 
 
 def _item_projections(record: dict[str, Any]) -> list[dict[str, Any]]:
@@ -307,6 +330,10 @@ def _item_projections(record: dict[str, Any]) -> list[dict[str, Any]]:
                 "text": text,
             }
         )
+    captured_at = _timestamp(record.get("timestamp_ms"))
+    if captured_at:
+        for projection in projections:
+            projection["capturedAt"] = captured_at
     return projections
 
 

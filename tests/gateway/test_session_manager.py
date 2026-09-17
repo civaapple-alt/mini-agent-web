@@ -760,6 +760,7 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
             "item_id": "item-1",
             "thread_id": "t-1",
             "turn_id": "turn-1",
+            "timestamp_ms": 1500,
             "message": {"role": "user", "text": "inspect project"},
         },
         {
@@ -833,6 +834,9 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     history = catalog.read_thread(workspace, "project-1", "t-1")
     assert history["messages"][0]["text"] == "inspect project"
     assert history["items"][0]["item"]["type"] == "userMessage"
+    assert (
+        history["items"][0]["item"]["capturedAt"] == "1970-01-01T00:00:01.500000+00:00"
+    )
     assert history["last_turn_status"] == "step_limit"
     assert history["last_turn_error"] == "model request failed: transport error"
     assert history["last_turn_id"] == "turn-1"

@@ -120,6 +120,24 @@ failure event and prevents model execution.
 64 KiB，仍受分页、UTF-8 和路径边界限制。该授权仅用于读取，不会自动执行脚本，
 也不会允许修改 Skill 文件；Shell 执行和文件写入继续使用 Host 的审批与沙箱规则。
 
+## Input history
+
+The WebStudio input-history tab joins the current checkpoint with the bounded
+ThreadItem projection. This keeps older user inputs visible after checkpoint
+compaction or projection limits while retaining the live message object when it
+contains image or file attachment metadata. The UI reads at most the recent
+256 projected items and follows the App Server cursor when more than one page
+is available.
+
+Persisted item timestamps are projected as `capturedAt` and are shown when the
+Session record contains a valid timestamp. Legacy records without one simply
+omit the time; they do not display a misleading "history time not recorded"
+warning. Gateway-generated attachment context is removed from the displayed
+prompt, and image markers are shown as a bounded image count. Raw image bytes
+are not copied into the history projection. Live and queued inputs retain their
+image data, while a historical reload only exposes attachment metadata that
+was persisted by the runtime.
+
 ## Events and replay
 
 For explicit `selectedSkills`, the App Server emits `skills_loaded` with

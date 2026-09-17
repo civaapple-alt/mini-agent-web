@@ -246,6 +246,7 @@ export default function SidePanel({
   onGoalChanged,
   onToast,
   messages = [],
+  threadItems = [],
   onAdjustPrompt,
   historyFocusMessageId = null,
   availableSkills = [],
@@ -765,6 +766,7 @@ export default function SidePanel({
           {activeTab === 'thread_history' && (
             <ThreadHistoryPane
               messages={messages}
+              itemEntries={threadItems}
               threadId={threadId}
               projectId={projectId}
               focusMessageId={historyFocusMessageId}

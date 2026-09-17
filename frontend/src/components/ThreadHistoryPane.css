@@ -1,14 +1,13 @@
 .thread-history-pane {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .thread-history-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
 }
 
 .thread-history-title {
@@ -27,39 +26,28 @@
   line-height: 1.45;
 }
 
-.thread-history-heading-icon {
-  flex: 0 0 auto;
-  color: var(--accent-sky);
-}
-
 .thread-history-scope {
   overflow-wrap: anywhere;
-  padding: 8px 9px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: var(--bg-app);
-  color: var(--text-secondary);
-  font-size: 10px;
+  color: var(--text-muted);
+  font-size: 9px;
 }
 
 .thread-history-list {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .thread-history-entry {
-  padding: 10px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-card);
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--border-subtle);
   scroll-margin: 12px;
 }
 
 .thread-history-entry.is-focused {
-  border-color: var(--accent-sky);
-  box-shadow: var(--focus-ring);
+  padding-left: 7px;
+  border-left: 2px solid var(--accent-sky);
+  background: var(--bg-app);
 }
 
 .thread-history-entry-header,
@@ -77,11 +65,9 @@
 }
 
 .thread-history-source {
-  padding: 2px 6px;
-  border: 1px solid var(--status-running-soft);
-  border-radius: 999px;
-  color: var(--status-running);
+  color: var(--text-secondary);
   font-size: 10px;
+  font-weight: 600;
 }
 
 .thread-history-time {
@@ -90,23 +76,23 @@
 }
 
 .thread-history-prompt {
-  max-height: 150px;
-  margin-top: 8px;
+  max-height: 96px;
+  margin-top: 5px;
   overflow: auto;
   color: var(--text-primary);
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .thread-history-meta {
   flex-wrap: wrap;
-  gap: 6px 10px;
-  margin-top: 9px;
+  gap: 4px 10px;
+  margin-top: 5px;
   color: var(--text-muted);
   font-size: 10px;
-  line-height: 1.4;
+  line-height: 1.35;
 }
 
 .thread-history-attachments {
@@ -114,36 +100,24 @@
 }
 
 .thread-history-entry-footer {
-  margin-top: 9px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.thread-history-entry-scope {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin-top: 6px;
+  justify-content: flex-end;
 }
 
 .thread-history-entry-footer button {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
-  padding: 4px 7px;
-  border: 1px solid var(--border-color);
-  border-radius: 5px;
-  background: var(--bg-card);
-  color: var(--text-secondary);
+  gap: 4px;
+  padding: 3px 5px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
   cursor: pointer;
   font-size: 10px;
 }
 
 .thread-history-entry-footer button:hover {
-  border-color: var(--border-focus);
   background: var(--bg-card-hover);
   color: var(--text-primary);
 }
@@ -153,10 +127,10 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 120px;
+  min-height: 100px;
   padding: 20px;
   border: 1px dashed var(--border-color);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--text-muted);
   font-size: 11px;
 }

@@ -25,11 +25,16 @@ test('history messages join their durable Turn by item content and call id', () 
     [
       { turnId: 'turn-2', item: { type: 'toolCall', id: 'call-2' } },
       { turnId: 'turn-1', item: { type: 'agentMessage', text: 'second answer' } },
-      { turnId: 'turn-1', item: { type: 'userMessage', text: 'first' } },
+      {
+        turnId: 'turn-1',
+        capturedAt: '2026-09-17T10:00:00.000Z',
+        item: { type: 'userMessage', text: 'first' },
+      },
     ],
   );
 
   assert.equal(assigned[0].turnId, 'turn-1');
+  assert.equal(assigned[0].capturedAt, '2026-09-17T10:00:00.000Z');
   assert.equal(assigned[1].turnId, 'turn-2');
   assert.equal(assigned[2].turnId, 'turn-1');
 });

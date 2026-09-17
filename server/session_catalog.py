@@ -567,9 +567,14 @@ class SessionCatalog:
         latest_turn_settled = False
         latest_turn_timestamp = 0
         turn_count = 0
+        forked_from: dict[str, Any] | None = None
         for record in records:
             kind = record.get("kind")
-            if kind == "thread_started":
+            if kind == "session_created":
+                lineage = record.get("forked_from")
+                if isinstance(lineage, dict):
+                    forked_from = lineage
+            elif kind == "thread_started":
                 thread_id = str(record.get("thread_id") or thread_id)
             elif kind == "turn_started":
                 turn_count += 1
@@ -688,6 +693,25 @@ class SessionCatalog:
             "resumable": bool(latest_checkpoint) and not lock_active,
             "history_truncated": skipped_oversized_records,
         }
+        if forked_from:
+            parent_session_id = forked_from.get("parent_session_id")
+            if isinstance(parent_session_id, str) and parent_session_id:
+                entry["parent_session_id"] = parent_session_id
+            parent_checkpoint_seq = forked_from.get("parent_checkpoint_seq")
+            if isinstance(parent_checkpoint_seq, (int, float)) and not isinstance(
+                parent_checkpoint_seq, bool
+            ):
+                entry["parent_checkpoint_seq"] = max(0, int(parent_checkpoint_seq))
+            for source_key, target_key in (
+                ("context_policy", "context_policy"),
+                ("context_before_bytes", "context_before_bytes"),
+                ("context_after_bytes", "context_after_bytes"),
+                ("compacted", "compacted"),
+                ("method", "compaction_method"),
+            ):
+                value = forked_from.get(source_key)
+                if value is not None:
+                    entry[target_key] = value
         if include_history:
             entry["messages"] = (
                 latest_checkpoint.get("messages", []) if latest_checkpoint else []

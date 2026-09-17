@@ -15,7 +15,11 @@ from mini_agent.errors import (
 from pydantic import BaseModel, Field
 
 from server.control.fork_errors import SessionForkConflictError
-from server.session_manager import session_manager, to_json_serializable
+from server.session_manager import (
+    MAX_CHILD_TASK_PROMPT_BYTES,
+    session_manager,
+    to_json_serializable,
+)
 
 router = APIRouter(prefix="/api/threads", tags=["Threads"])
 
@@ -70,6 +74,29 @@ class ForkThreadRequest(BaseModel):
     context_policy: Literal["exact", "compact"] = Field(
         default="exact",
         description="Fork the latest checkpoint exactly, or explicitly compact it",
+    )
+
+
+class ChildTaskRequest(BaseModel):
+    """Bounded prompt for one independent child Session/runtime."""
+
+    new_thread_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]+$",
+        description="New child Thread identity",
+    )
+    prompt: str = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_CHILD_TASK_PROMPT_BYTES,
+        description="Bounded child task prompt",
+    )
+    title: str | None = Field(default=None, max_length=160)
+    project: str | None = Field(default=None, description="Optional source Project")
+    project_id: str | None = Field(
+        default=None, description="Canonical project routing context"
     )
 
 
@@ -338,6 +365,52 @@ async def fork_thread(req: ForkThreadRequest) -> dict[str, Any]:
                 status_code=409,
                 detail={"code": err.code, "message": err.message, "data": err.data},
             ) from err
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.get("/{thread_id}/children", summary="List child task Sessions")
+async def list_child_tasks(
+    thread_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
+    """List child Sessions derived from a parent Thread."""
+    try:
+        children = await session_manager.list_child_tasks(thread_id, project_id)
+        return {
+            "parent_thread_id": thread_id,
+            "project": session_manager.resolve_thread_project(thread_id, project_id),
+            "children": children,
+        }
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+
+
+@router.post("/{thread_id}/children", summary="Start a child task")
+async def start_child_task(
+    thread_id: str, req: ChildTaskRequest
+) -> dict[str, Any]:
+    """Create an exact child Session and start one independent child Turn."""
+    try:
+        return await session_manager.start_child_task(
+            source_thread_id=thread_id,
+            new_thread_id=req.new_thread_id,
+            prompt=req.prompt,
+            title=req.title,
+            project_id=req.project_id or req.project,
+        )
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except (RuntimeError, ValueError) as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except SessionForkConflictError as err:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": err.code, "message": err.message, "data": err.data},
+        ) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 

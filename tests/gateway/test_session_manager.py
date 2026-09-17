@@ -842,6 +842,52 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     assert history["last_turn_id"] == "turn-1"
 
 
+def test_session_catalog_projects_fork_lineage(tmp_path, monkeypatch):
+    """Child discovery can use SessionStore lineage without Gateway metadata."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    session_dir = session_base / "s-child"
+    session_dir.mkdir(parents=True)
+    records = [
+        {
+            "seq": 1,
+            "kind": "session_created",
+            "schema_version": 1,
+            "session_id": "s-child",
+            "timestamp_ms": 1000,
+            "forked_from": {
+                "parent_session_id": "s-parent",
+                "parent_checkpoint_seq": 7,
+                "context_policy": "exact",
+                "context_before_bytes": 512,
+                "context_after_bytes": 512,
+                "compacted": False,
+                "method": "exact",
+            },
+        },
+        {"seq": 2, "kind": "thread_started", "thread_id": "t-child"},
+        {"seq": 3, "kind": "checkpoint", "thread_id": "t-child", "messages": []},
+    ]
+    (session_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_dir / "summary.json").write_text(
+        json.dumps({"created_at_ms": 1000, "updated_at_ms": 1000}), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    monkeypatch.setattr("server.session_catalog._process_alive", lambda _pid: False)
+
+    entry = SessionCatalog().list_sessions(workspace, "project-1")["data"][0]
+    assert entry["thread_id"] == "t-child"
+    assert entry["parent_session_id"] == "s-parent"
+    assert entry["parent_checkpoint_seq"] == 7
+    assert entry["context_policy"] == "exact"
+    assert entry["compaction_method"] == "exact"
+
+
 def test_session_catalog_does_not_mark_dead_unsettled_turn_as_active(
     tmp_path, monkeypatch
 ):
@@ -1607,6 +1653,85 @@ async def test_fork_and_concurrent_attach_share_the_forked_binding(
     assert attached["attached"] is True
     assert mock_session_manager._clients["forked-thread"] is child_client
     create_client.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_start_child_task_runs_on_an_independent_client(
+    mock_session_manager, monkeypatch
+):
+    """A child task forks exact context and keeps its own Turn registration."""
+    source_client = AsyncMock()
+    child_client = AsyncMock()
+    release_child = asyncio.Event()
+    child_client.start_turn = AsyncMock(
+        return_value=SimpleNamespace(turn_id="child-turn-1", status="started")
+    )
+
+    async def wait_for_child(_turn_id):
+        await release_child.wait()
+
+    child_client.wait_for_turn = wait_for_child
+    mock_session_manager._clients["parent"] = source_client
+    mock_session_manager._client_projects["parent"] = "default"
+    mock_session_manager._active_thread_projects["parent"] = "default"
+    # The parent is already executing; child creation must not reuse its
+    # client or wait for this Turn to settle.
+    mock_session_manager._active_turns_by_project[("default", "parent")] = (
+        "parent-turn-1"
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "resolve_thread_project",
+        lambda _thread_id, _project_id=None: "default",
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_canonical_thread",
+        lambda thread_id, _project_id=None: (
+            {"session": {"session_id": "s-parent"}}
+            if thread_id == "parent"
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "list_project_sessions",
+        lambda _project_id, limit=128: {"data": []},
+    )
+    fork = {
+        "thread_id": "child",
+        "session_id": "s-child",
+        "parent_session_id": "s-parent",
+        "parent_checkpoint_seq": 3,
+    }
+    fork_thread = AsyncMock(return_value=fork)
+    get_client = AsyncMock(return_value=child_client)
+    monkeypatch.setattr(mock_session_manager, "fork_thread", fork_thread)
+    monkeypatch.setattr(mock_session_manager, "get_client_for_thread", get_client)
+
+    result = await mock_session_manager.start_child_task(
+        "parent", "child", "inspect the boundary"
+    )
+
+    assert result["parent_thread_id"] == "parent"
+    assert result["child_thread_id"] == "child"
+    assert result["turn_id"] == "child-turn-1"
+    assert result["operation_id"] == "turn:child-turn-1"
+    fork_thread.assert_awaited_once_with("parent", "child", None, "default", "exact")
+    child_client.start_turn.assert_awaited_once_with(
+        prompt="inspect the boundary",
+        mode="start",
+        thread_id="child",
+        effort="high",
+    )
+    assert mock_session_manager.get_active_turn("child", "default") == (
+        "child-turn-1"
+    )
+
+    release_child.set()
+    task = mock_session_manager._active_tasks_by_project[("default", "child")]
+    await task
+    assert mock_session_manager.get_active_turn("child", "default") is None
 
 
 @pytest.mark.asyncio

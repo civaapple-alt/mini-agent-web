@@ -57,6 +57,38 @@ export const threadApi = {
     return res.json();
   },
 
+  async startChildTask(sourceThreadId, newThreadId, prompt, options = {}) {
+    const projectId = options.projectId || null;
+    const res = await request(
+      `/api/threads/${encodeURIComponent(sourceThreadId || 'default')}/children`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          new_thread_id: newThreadId,
+          prompt,
+          title: options.title || null,
+          project_id: projectId,
+        }),
+        ...requestSignal(options),
+      },
+      projectId,
+    );
+    if (!res.ok) throw new Error('Failed to start child task');
+    return res.json();
+  },
+
+  async listChildTasks(sourceThreadId = 'default', options = {}) {
+    const threadId = sourceThreadId || 'default';
+    const res = await request(
+      `/api/threads/${encodeURIComponent(threadId)}/children`,
+      requestSignal(options),
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to list child tasks for ${threadId}`);
+    return res.json();
+  },
+
   async readThread(threadId, options = {}) {
     const res = await request(
       `/api/threads/${encodeURIComponent(threadId)}`,

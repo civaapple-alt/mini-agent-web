@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read-only path references instead of being copied or expanded into relative
   paths. Goal and Plan chips activate only when their task is submitted or
   dequeued, and file/path metadata remains attached to the queued message.
+- Add the first explicit child-runtime control seam. Web Studio can derive an
+  exact child Session from the parent's latest settled checkpoint while the
+  parent Turn is active, start one Turn in an independent App Server client,
+  and list child lineage/status without introducing a Core scheduler.
 
 ## [0.8.0] - 2026-09-15
 

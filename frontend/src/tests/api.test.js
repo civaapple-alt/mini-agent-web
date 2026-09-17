@@ -62,6 +62,25 @@ test('api client methods construct expected fetch endpoints and payloads', async
     'compact',
   );
 
+  await api.startChildTask('t-123', 't-child', 'inspect the risky boundary', {
+    projectId: 'project-1',
+    title: 'Boundary review',
+  });
+  const childCall = calls[calls.length - 1];
+  assert.equal(childCall.url, '/api/threads/t-123/children?project_id=project-1');
+  assert.deepEqual(JSON.parse(childCall.options.body), {
+    new_thread_id: 't-child',
+    prompt: 'inspect the risky boundary',
+    title: 'Boundary review',
+    project_id: 'project-1',
+  });
+
+  await api.listChildTasks('t-123', { projectId: 'project-1' });
+  assert.equal(
+    calls[calls.length - 1].url,
+    '/api/threads/t-123/children?project_id=project-1',
+  );
+
   // 2. Settings APIs
   const setRes = await api.updateSettings({ reasoning_effort: 'high' });
   assert.equal(setRes.settings.access, 'project');

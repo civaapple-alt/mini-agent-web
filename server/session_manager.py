@@ -29,6 +29,8 @@ from server.persistence import to_json_serializable
 logger = logging.getLogger("mini_agent.server")
 
 MAX_INTERRUPTED_TURNS = 256
+MAX_CHILD_TASKS_PER_PARENT = 2
+MAX_CHILD_TASK_PROMPT_BYTES = 32 * 1024
 __all__ = ["SessionManager", "session_manager", "to_json_serializable"]
 
 
@@ -88,6 +90,10 @@ class SessionManager:
         self._active_tasks: dict[str, asyncio.Task[Any]] = {}
         self._active_turns_by_project: dict[tuple[str, str], str] = {}
         self._active_tasks_by_project: dict[tuple[str, str], asyncio.Task[Any]] = {}
+        # Serializes child creation admission without serializing the child
+        # runtimes themselves. Each child still owns an independent client and
+        # App Server process after this short control-plane critical section.
+        self._child_task_lock = asyncio.Lock()
         self._thread_builtin_tools: dict[str, list[str]] = {}
         self._thread_builtin_tools_by_project: dict[tuple[str, str], list[str]] = {}
         self._turn_registry = TurnRegistry(self)
@@ -293,6 +299,197 @@ class SessionManager:
         return await self._client_pool.fork_thread(
             source_thread_id, new_thread_id, title, project_id, context_policy
         )
+
+    async def start_child_task(
+        self,
+        source_thread_id: str,
+        new_thread_id: str,
+        prompt: str,
+        title: str | None = None,
+        project_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create an exact child Session and run one detached child Turn.
+
+        This is the first explicit child-runtime control seam. It keeps the
+        Gateway responsible for orchestration only: SessionStore persists the
+        child lineage, the child App Server owns execution, and the existing
+        runtime notification/replay path remains the source of child events.
+        """
+        source_thread_id = source_thread_id or "default"
+        new_thread_id = new_thread_id.strip()
+        prompt = prompt.strip()
+        if not new_thread_id:
+            raise ValueError("child thread id is required")
+        if not prompt:
+            raise ValueError("child task prompt is required")
+        if len(prompt.encode("utf-8")) > MAX_CHILD_TASK_PROMPT_BYTES:
+            raise ValueError(
+                f"child task prompt exceeds {MAX_CHILD_TASK_PROMPT_BYTES} bytes"
+            )
+
+        resolved_project_id = self.resolve_thread_project(
+            source_thread_id, project_id
+        )
+        async with self._child_task_lock:
+            parent = self._canonical_thread(source_thread_id, resolved_project_id)
+            if not parent:
+                raise KeyError(f"Thread '{source_thread_id}' not found")
+            parent_session_id = str(parent.get("session", {}).get("session_id") or "")
+            if not parent_session_id:
+                raise RuntimeError("parent Session persistence is unavailable")
+
+            children = self.list_project_sessions(resolved_project_id, limit=128)[
+                "data"
+            ]
+            active_children = sum(
+                1
+                for child in children
+                if child.get("parent_session_id") == parent_session_id
+                and (
+                    child.get("turn_active")
+                    or (
+                        resolved_project_id,
+                        str(child.get("thread_id") or ""),
+                    )
+                    in self._active_turns_by_project
+                )
+            )
+            if active_children >= MAX_CHILD_TASKS_PER_PARENT:
+                raise RuntimeError(
+                    f"parent Thread already has {MAX_CHILD_TASKS_PER_PARENT} active children"
+                )
+            if self._canonical_thread(new_thread_id, resolved_project_id):
+                raise RuntimeError(
+                    f"child Thread '{new_thread_id}' already exists"
+                )
+
+            fork = await self.fork_thread(
+                source_thread_id,
+                new_thread_id,
+                title,
+                resolved_project_id,
+                "exact",
+            )
+            child_client = await self.get_client_for_thread(
+                new_thread_id, resolved_project_id
+            )
+            submission = await child_client.start_turn(
+                prompt=prompt,
+                mode="start",
+                thread_id=new_thread_id,
+                effort=self.get_settings(resolved_project_id).get(
+                    "reasoning_effort", "high"
+                ),
+            )
+            turn_id = str(getattr(submission, "turn_id", None) or "")
+            result: dict[str, Any] = {
+                "parent_thread_id": source_thread_id,
+                "child_thread_id": new_thread_id,
+                "project": resolved_project_id,
+                "session": fork,
+                "turn_id": turn_id or None,
+                "operation_id": f"turn:{turn_id}" if turn_id else None,
+                "status": "running"
+                if turn_id
+                else str(getattr(submission, "status", "not_started")),
+            }
+            if not turn_id:
+                return result
+
+            task = asyncio.create_task(
+                self._wait_for_child_turn(
+                    child_client,
+                    new_thread_id,
+                    resolved_project_id,
+                    turn_id,
+                )
+            )
+            self.set_active_turn(new_thread_id, turn_id, task, resolved_project_id)
+            return result
+
+    async def _wait_for_child_turn(
+        self,
+        client: MiniAgentClient,
+        thread_id: str,
+        project_id: str,
+        turn_id: str,
+    ) -> None:
+        """Keep the child turn registered until its canonical result settles."""
+        task = asyncio.current_task()
+        try:
+            await client.wait_for_turn(turn_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Child Turn %s failed while settling", turn_id)
+        finally:
+            self.clear_active_turn(thread_id, project_id, turn_id, task)
+
+    async def list_child_tasks(
+        self, source_thread_id: str, project_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Project child Sessions and live runtime status for one parent."""
+        source_thread_id = source_thread_id or "default"
+        resolved_project_id = self.resolve_thread_project(
+            source_thread_id, project_id
+        )
+        parent = self._canonical_thread(source_thread_id, resolved_project_id)
+        if not parent:
+            raise KeyError(f"Thread '{source_thread_id}' not found")
+        parent_session_id = str(parent.get("session", {}).get("session_id") or "")
+        if not parent_session_id:
+            return []
+
+        children: list[dict[str, Any]] = []
+        for session in self.list_project_sessions(resolved_project_id, limit=128)[
+            "data"
+        ]:
+            if session.get("parent_session_id") != parent_session_id:
+                continue
+            child_thread_id = str(session.get("thread_id") or "")
+            if not child_thread_id:
+                continue
+            active_turn_id = session.get("active_turn_id")
+            status = "running" if session.get("turn_active") else (
+                session.get("last_turn_status") or "idle"
+            )
+            operation_id = None
+            phase = None
+            client = self._project_clients.get(
+                (resolved_project_id, child_thread_id)
+            )
+            if client is not None:
+                try:
+                    runtime = await client.get_runtime_status(child_thread_id)
+                    active_turn_id = runtime.turn_id or active_turn_id
+                    operation_id = runtime.operation_id
+                    phase = runtime.phase
+                    if runtime.phase not in (None, "idle"):
+                        status = "running"
+                except Exception:
+                    logger.debug(
+                        "Unable to read child runtime %s", child_thread_id, exc_info=True
+                    )
+            children.append(
+                {
+                    "parent_thread_id": source_thread_id,
+                    "child_thread_id": child_thread_id,
+                    "project": resolved_project_id,
+                    "session_id": session.get("session_id"),
+                    "parent_session_id": parent_session_id,
+                    "parent_checkpoint_seq": session.get("parent_checkpoint_seq"),
+                    "title": self.get_thread_meta(
+                        child_thread_id, resolved_project_id
+                    ).get("title"),
+                    "status": status,
+                    "phase": phase,
+                    "turn_id": active_turn_id,
+                    "operation_id": operation_id,
+                    "last_turn_status": session.get("last_turn_status"),
+                    "last_turn_error": session.get("last_turn_error"),
+                }
+            )
+        return children
 
     async def start_thread(
         self, thread_id: str = "default", project_id: str | None = None

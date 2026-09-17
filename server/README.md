@@ -29,6 +29,7 @@ uv run mini-agent-server-dev
 | `/api/threads/{thread_id}/items` | 有界 ThreadItem 历史投影 |
 | `/api/threads/{thread_id}/events` | App Server `turn/event` 的有界 cursor 重放；发生 gap 时回退到 canonical history |
 | `/api/threads/{thread_id}/runtime/status` | 非阻塞 runtime phase、Turn/operation/checkpoint 和错误快照 |
+| `/api/threads/{thread_id}/children` | 创建或读取由该 Thread 派生的独立 child Session/runtime |
 | `/api/threads/{thread_id}/settings` | Thread collaboration mode、Builtin tools、显式推进方式和 App Server `state_revision` |
 | `/api/threads/{thread_id}/goal` | Thread Goal 的读取、设置和清除 |
 | `/api/agent/*` | Turn、Steer、Interrupt 和审批 HTTP 操作 |
@@ -40,6 +41,15 @@ uv run mini-agent-server-dev
 
 Thread、Turn、Goal 和 ThreadItem 的运行时语义来自 App Server；网关不创建
 第二套运行时状态机。
+
+Child task 是 Host/Gateway 的控制面接缝，不是 Core 的调度器：`POST
+/api/threads/{thread_id}/children` 先通过 App Server `session/fork` 从最近一次
+已提交 checkpoint 创建 exact child Session，再在独立的 Mini Agent App Server
+client 中启动一个 Turn。父 Turn 可以继续运行；child 的历史、工具审批、runtime
+status 和 `turn/event` 都保持自己的 Thread/Session 身份。`GET` 同一路径从
+SessionStore 的 `forked_from` lineage 和 live runtime projection 组合读取 child，
+而不是维护第二份 child history。第一版限制每个父 Thread 同时最多两个 active
+children、只允许 exact context；compact fork 仍要求父 Thread idle。
 
 技能目录来自当前 Project App Server 的 `initialize.capabilityManifest`，
 不是 Gateway 扫描文件系统的结果。Runtime 会发现项目

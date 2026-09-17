@@ -55,6 +55,11 @@ Turn 请求通过 `selectedSkills` 和可选 `workflow` 传递到 SDK：
 正文限制。结构化 `skill_group_activated`、`skills_loaded` 和
 `skills_load_failed` 事件沿 SSE/WebSocket/replay 原样转发。
 
+运行时还会把每个已启用 Skill 的根目录作为受信任的只读根传给 Host。模型可以
+通过现有 `read_file` 按需查看 `SKILL.md`、参考文档、脚本源码、assets 和其他
+文本文件。Gateway 不扫描或预加载这些文件；Skill 目录的读取合计受每个 Turn
+64 KiB 的 `read_file` 输出限制，写入和脚本执行继续走 Host 现有的审批与沙箱路径。
+
 同一 Thread 的 Gateway attach/start 请求在客户端创建与 canonical Session 检查
 期间串行化；并发请求会复用同一个已建立的 App Server client，不会制造重复的
 workspace 绑定竞争。Thread fork 在同一 SessionManager 临界区内完成 source

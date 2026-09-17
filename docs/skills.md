@@ -114,6 +114,12 @@ trusted effective directory, applies the existing per-file bound, and limits
 the combined activated body to 32 KiB. A failed read or validation emits a
 failure event and prevents model execution.
 
+每个已启用 Skill 的根目录也是受信任的只读目录。模型可以在当前 Turn 中通过
+现有 `read_file` 按需查看该目录下的 `references/`、`scripts/`、`assets/` 和其他
+说明文件；发现阶段不会递归加载它们。Skill 目录的 `read_file` 输出合计最多
+64 KiB，仍受分页、UTF-8 和路径边界限制。该授权仅用于读取，不会自动执行脚本，
+也不会允许修改 Skill 文件；Shell 执行和文件写入继续使用 Host 的审批与沙箱规则。
+
 ## Events and replay
 
 For explicit `selectedSkills`, the App Server emits one structured event after

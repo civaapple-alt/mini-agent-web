@@ -925,6 +925,9 @@
   flex-direction: column;
   gap: 3px;
   user-select: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
 }
 
 .builtin-tool-chip:hover {

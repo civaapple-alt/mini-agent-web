@@ -38,9 +38,9 @@ Thread、Workflow、Runtime 和文件请求都绑定当前 `project_id` 与 Sess
 当前页面显示，不删除 Session history。
 
 页面使用统一状态栏显示当前生命周期、Project/Session/Turn 作用域、连接状态和执行设置；
-运行详情抽屉提供 phase、operation、checkpoint、审批、错误和最近工作流事件。计划查看、计划与目标
-以及 World/MCP/Git 详情均从抽屉顶部 Tab 进入；“计划查看”使用独立的全高 Markdown 阅读区，
-计划控制项仍保留在“计划与目标”中。WebSocket 重连后，页面
+运行详情抽屉提供 phase、operation、checkpoint、审批、错误和最近工作流事件。计划、目标以及
+World/MCP/Git 详情均从抽屉顶部 Tab 进入；内置工具权限属于工作区，“计划”使用独立的全高
+Markdown 阅读区，不把 README.md 作为计划文件展示。WebSocket 重连后，页面
 用有界 `turn/event` cursor 重放短暂断线期间的事件，遇到 `has_gap` 则重新读取
 canonical Thread/Item projection。
 

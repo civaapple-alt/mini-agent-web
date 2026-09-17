@@ -8,6 +8,7 @@ vi.mock('../api', () => ({
   api: {
     getWorkflowFiles: vi.fn(),
     getWorkflowFileContent: vi.fn(),
+    getWorkflowState: vi.fn(),
   },
 }));
 
@@ -17,11 +18,17 @@ describe('SidePanel plan viewer', () => {
     api.getWorkflowFiles.mockResolvedValue({
       files: [
         { path: 'plan/plan.md', size: 42 },
-        { path: 'README.md', size: 18 },
+        { path: 'goal/plan.md', size: 18 },
+        { path: 'README.md', size: 12 },
       ],
     });
     api.getWorkflowFileContent.mockResolvedValue({
       content: '# Implementation plan\n\n- [ ] Keep the plan readable',
+    });
+    api.getWorkflowState.mockResolvedValue({
+      builtin_tools: ['read_file', 'apply_patch', 'shell', 'read_image'],
+      available_builtin_tools: ['read_file', 'apply_patch', 'shell', 'read_image'],
+      goal: null,
     });
   });
 
@@ -36,7 +43,7 @@ describe('SidePanel plan viewer', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: '计划查看' })).toBeDefined();
+    expect(screen.getByRole('button', { name: '计划' })).toBeDefined();
     expect(screen.getByText('阅读当前会话生成的计划与配套文件')).toBeDefined();
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Implementation plan' })).toBeDefined());
@@ -48,11 +55,30 @@ describe('SidePanel plan viewer', () => {
       expect.objectContaining({ projectId: null }),
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /README\.md/ }));
+    expect(screen.queryByRole('button', { name: /README\.md/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /goal\/plan\.md/ }));
     await waitFor(() => expect(api.getWorkflowFileContent).toHaveBeenCalledWith(
-      'README.md',
+      'goal/plan.md',
       'thread-1',
       expect.objectContaining({ projectId: null }),
     ));
+  });
+
+  it('keeps builtin tools in the workspace and gives goals their own tab', async () => {
+    render(
+      <SidePanel
+        isOpen
+        initialTab="tools"
+        threadId="thread-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: '工具' })).toBeDefined();
+    expect(screen.getByText('内置工具权限控制 (Builtin Tools)')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: '目标' }));
+    await waitFor(() => expect(screen.getByText('线程目标 (Thread Goal)')).toBeDefined());
+    expect(screen.queryByText('内置工具权限控制 (Builtin Tools)')).toBeNull();
   });
 });

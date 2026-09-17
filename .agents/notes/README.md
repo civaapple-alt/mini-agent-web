@@ -17,6 +17,7 @@
 - [全局 Skill 发现、按需加载与阶段状态](implemented/feature/2026-09-17-global-skill-discovery-and-observability.zh.md)
 - [WebStudio 内置 pstack 技能组与显式激活](implemented/feature/2026-09-17-webstudio-builtin-pstack-skills.zh.md)
 - [WebStudio 顶层计划查看入口](implemented/feature/2026-09-17-plan-viewer-tab.zh.md)
+- [侧栏计划、目标与工作区信息架构](implemented/feature/2026-09-17-sidepanel-plan-goal-workspace-information-architecture.zh.md)
 - [Cookbook recovery and projection contract](implemented/architecture/2026-09-15-cookbook-recovery-and-projection.md)
 - [Cookbook tool outcome contract](implemented/architecture/2026-09-15-cookbook-tool-outcome-contract.md)
 - [Security boundaries and hard-limit evidence](implemented/architecture/2026-09-15-security-boundaries-and-hard-limits.md)

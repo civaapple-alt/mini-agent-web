@@ -34,14 +34,202 @@ const BUILTIN_TOOL_INFO = {
   read_image: { name: 'read_image', label: '图像读取', desc: '读取并解析视觉/图像资源' },
 };
 
+function PlanModeCard({ planActive, onTogglePlan }) {
+  return (
+    <div className="workflow-card">
+      <div className="workflow-card-header">
+        <div className="workflow-title-wrap">
+          <Compass size={15} className="text-amber" />
+          <div>
+            <span className="workflow-title">规划模式 (Plan Mode)</span>
+            <p className="workflow-sub">
+              源码与项目文件保持只读；Shell 按当前审批策略执行，plan.md 可持续更新
+            </p>
+          </div>
+        </div>
+        <div className="plan-mode-controls">
+          <span className={`plan-mode-badge ${planActive ? 'on' : 'off'}`}>
+            {planActive ? '规划阶段' : '默认模式'}
+          </span>
+          <button
+            type="button"
+            className={`btn-toggle-switch ${planActive ? 'on' : 'off'}`}
+            onClick={onTogglePlan}
+            aria-pressed={planActive}
+            title={planActive ? '关闭 Plan Mode，进入默认实施模式' : '开启 Plan Mode，进入只读规划阶段'}
+          >
+            <span>{planActive ? '关闭 Plan Mode' : '开启 Plan Mode'}</span>
+          </button>
+        </div>
+      </div>
+      <div className={`plan-mode-state ${planActive ? 'active' : 'inactive'}`} role="status">
+        <span className="plan-mode-state-dot" aria-hidden="true" />
+        <div>
+          <strong>{planActive ? 'Plan Mode 已开启' : 'Plan Mode 已关闭'}</strong>
+          <span>
+            {planActive
+              ? '本轮规划完成后可确认“开始实施”，系统会自动关闭 Plan Mode。'
+              : '开启后先进行只读规划，确认实施时再切回默认模式。'}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BuiltinToolsCard({ availableBuiltinTools, selectedBuiltinTools, onToggle }) {
+  return (
+    <div className="workflow-card">
+      <div className="workflow-card-header">
+        <div className="workflow-title-wrap">
+          <Wrench size={15} className="text-sky" />
+          <div>
+            <span className="workflow-title">内置工具权限控制 (Builtin Tools)</span>
+            <p className="workflow-sub">
+              当前 Thread 可受控暴露的 5 种工具；默认仅启用 4 个核心工具，反选即可剥离调用能力
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="builtin-tools-grid">
+        {availableBuiltinTools.map((toolName) => {
+          const info = BUILTIN_TOOL_INFO[toolName] || {
+            name: toolName,
+            label: toolName,
+            desc: '',
+          };
+          const isChecked = selectedBuiltinTools.includes(toolName);
+          return (
+            <button
+              type="button"
+              key={toolName}
+              className={`builtin-tool-chip ${isChecked ? 'active' : 'inactive'}`}
+              onClick={() => onToggle(toolName)}
+              title={info.desc}
+            >
+              <div className="chip-header">
+                <span className="chip-name font-mono">{info.name}</span>
+                <span className={`chip-badge ${isChecked ? 'enabled' : 'disabled'}`}>
+                  {isChecked ? '已启用' : '已禁用'}
+                </span>
+              </div>
+              <div className="chip-label">{info.label}</div>
+              <div className="chip-desc">{info.desc}</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function GoalWorkflowCard({
+  goal,
+  goalObjectiveInput,
+  onGoalObjectiveInputChange,
+  onStartGoal,
+  onPauseGoal,
+  onResumeGoal,
+  onUpdateGoal,
+  onClearGoal,
+}) {
+  const isGoalRunning = Boolean(goal);
+
+  return (
+    <div className="workflow-card">
+      <div className="workflow-card-header">
+        <div className="workflow-title-wrap">
+          <Target size={15} className="text-green" />
+          <div>
+            <span className="workflow-title">线程目标 (Thread Goal)</span>
+            <p className="workflow-sub">由 Goal Runtime 按预算自动推进，并实时报告状态</p>
+          </div>
+        </div>
+      </div>
+
+      {isGoalRunning ? (
+        <div className="goal-status-box">
+          <div className="goal-meta-row font-mono">
+            <span>Thread: <strong>{goal.thread_id}</strong></span>
+            <span className={`goal-badge ${goal.status}`}>
+              {goal.status}
+            </span>
+          </div>
+          <div className="goal-objective">{goal.objective}</div>
+          <div className="milestone-text font-mono">
+            Milestone: {goal.current_milestone || 0} / {goal.total_milestones || 0}
+            {' · '}Loops: {goal.loop_count || 0}
+            {' · '}
+            Tokens: {goal.tokens_used} / {goal.token_budget ?? '∞'}
+            {' · '}Time: {goal.time_used_seconds}s
+          </div>
+          <div className={`goal-verification-status ${goal.verification_status || 'idle'}`}>
+            <strong>Verify</strong>
+            <span>{goal.verification_status || 'idle'}</span>
+          </div>
+          {goal.last_error && (
+            <div className="goal-error-detail" title={goal.last_error}>
+              {goal.last_error}
+            </div>
+          )}
+          <div className="goal-actions">
+            {goal.status === 'paused' ? (
+              <button className="btn-action-small" onClick={onResumeGoal}>
+                <Play size={12} />
+                <span>恢复</span>
+              </button>
+            ) : goal.status === 'active' ? (
+              <button className="btn-action-small" onClick={onPauseGoal}>
+                <Pause size={12} />
+                <span>暂停</span>
+              </button>
+            ) : null}
+            <button className="btn-action-small" onClick={onUpdateGoal}>
+              <FileText size={12} />
+              <span>更新</span>
+            </button>
+            <button className="btn-action-small" onClick={onClearGoal}>
+              <RotateCcw size={12} />
+              <span>删除</span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="goal-input-box">
+          <input
+            type="text"
+            className="goal-input font-mono"
+            placeholder="输入 Thread Goal，例如: 完成前端重构并通过测试"
+            value={goalObjectiveInput}
+            onChange={(e) => onGoalObjectiveInputChange(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && onStartGoal()}
+          />
+          <button className="btn-start-goal" onClick={onStartGoal}>
+            <Play size={12} />
+            <span>设置目标</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function normalizePanelTab(tab) {
   if (tab === 'world' || tab === 'workspace') return 'workspace_world';
   if (tab === 'mcp') return 'workspace_mcp';
   if (tab === 'git') return 'workspace_git';
   if (tab === 'skills') return 'workspace_skills';
+  if (tab === 'tools' || tab === 'builtin_tools') return 'workspace_tools';
   if (tab === 'plan' || tab === 'plan_view') return 'plan_view';
+  if (tab === 'plan_goal' || tab === 'goal') return 'goal';
   if (tab === 'history' || tab === 'thread_history') return 'thread_history';
   return tab || 'status';
+}
+
+function isPlanArtifact(file) {
+  const path = typeof file?.path === 'string' ? file.path.toLowerCase() : '';
+  return path === 'plan.md' || path.endsWith('/plan.md') || path.endsWith('\\plan.md');
 }
 
 export default function SidePanel({
@@ -185,10 +373,8 @@ export default function SidePanel({
         await loadWorld(requestContext);
       } else if (activeTab === 'plan_view') {
         await loadWorkflowFiles(requestContext);
-      } else if (activeTab === 'plan_goal') {
-        await Promise.all([
-          loadWorkflow(requestContext),
-        ]);
+      } else if (activeTab === 'workspace_tools' || activeTab === 'goal') {
+        await loadWorkflow(requestContext);
       } else if (activeTab === 'workspace_mcp') {
         await loadMcp(requestContext);
       } else if (activeTab === 'workspace_git') {
@@ -291,7 +477,7 @@ export default function SidePanel({
         signal: requestContext.signal,
       });
       if (!isCurrentRequest(requestContext)) return;
-      const files = res.files || [];
+      const files = (res.files || []).filter(isPlanArtifact);
       setWorkflowFiles(files);
       if (
         files.length > 0
@@ -301,6 +487,10 @@ export default function SidePanel({
         )
       ) {
         handleSelectFile(files[0].path, requestContext);
+      } else if (!files.some((file) => file.path === selectedFileRef.current)) {
+        selectedFileRef.current = null;
+        setSelectedFile(null);
+        setSelectedFileContent('');
       }
     } catch (err) {
       if (isAbortError(err) || !isCurrentRequest(requestContext)) return;
@@ -465,8 +655,6 @@ export default function SidePanel({
     }
   };
 
-  const isGoalRunning = Boolean(workflowState?.goal);
-
   if (!isOpen) return null;
 
   return (
@@ -502,15 +690,15 @@ export default function SidePanel({
               onClick={() => setActiveTab('plan_view')}
             >
               <FileText size={14} />
-              <span>计划查看</span>
+              <span>计划</span>
             </button>
 
             <button
-              className={`panel-tab-btn ${activeTab === 'plan_goal' ? 'active' : ''}`}
-              onClick={() => setActiveTab('plan_goal')}
+              className={`panel-tab-btn ${activeTab === 'goal' ? 'active' : ''}`}
+              onClick={() => setActiveTab('goal')}
             >
               <Target size={14} />
-              <span>计划与目标</span>
+              <span>目标</span>
             </button>
 
             <button
@@ -560,6 +748,13 @@ export default function SidePanel({
               >
                 <Sparkles size={12} /> 技能
               </button>
+              <button
+                type="button"
+                className={activeTab === 'workspace_tools' ? 'active' : ''}
+                onClick={() => setActiveTab('workspace_tools')}
+              >
+                <Wrench size={12} /> 工具
+              </button>
             </div>
           )}
 
@@ -579,6 +774,7 @@ export default function SidePanel({
 
           {activeTab === 'plan_view' && (
             <div className="plan-view-pane">
+              <PlanModeCard planActive={planActive} onTogglePlan={onTogglePlan} />
               <div className="plan-view-header">
                 <div className="plan-view-heading">
                   <FileText size={15} className="text-amber" />
@@ -729,169 +925,28 @@ export default function SidePanel({
             />
           )}
 
-          {/* TAB 2: Plan & Goal Workflows */}
-          {activeTab === 'plan_goal' && (
+          {activeTab === 'workspace_tools' && (
             <div className="tab-pane">
-              {/* Plan Mode Control */}
-              <div className="workflow-card">
-                <div className="workflow-card-header">
-                  <div className="workflow-title-wrap">
-                    <Compass size={15} className="text-amber" />
-                    <div>
-                      <span className="workflow-title">规划模式 (Plan Mode)</span>
-                      <p className="workflow-sub">
-                        源码与项目文件保持只读；Shell 按当前审批策略执行，plan.md 可持续更新
-                      </p>
-                    </div>
-                  </div>
-                  <div className="plan-mode-controls">
-                    <span className={`plan-mode-badge ${planActive ? 'on' : 'off'}`}>
-                      {planActive ? '规划阶段' : '默认模式'}
-                    </span>
-                    <button
-                      type="button"
-                      className={`btn-toggle-switch ${planActive ? 'on' : 'off'}`}
-                      onClick={onTogglePlan}
-                      aria-pressed={planActive}
-                      title={planActive ? '关闭 Plan Mode，进入默认实施模式' : '开启 Plan Mode，进入只读规划阶段'}
-                    >
-                      <span>{planActive ? '关闭 Plan Mode' : '开启 Plan Mode'}</span>
-                    </button>
-                  </div>
-                </div>
-                <div className={`plan-mode-state ${planActive ? 'active' : 'inactive'}`} role="status">
-                  <span className="plan-mode-state-dot" aria-hidden="true" />
-                  <div>
-                    <strong>{planActive ? 'Plan Mode 已开启' : 'Plan Mode 已关闭'}</strong>
-                    <span>
-                      {planActive
-                        ? '本轮规划完成后可确认“开始实施”，系统会自动关闭 Plan Mode。'
-                        : '开启后先进行只读规划，确认实施时再切回默认模式。'}
-                    </span>
-                  </div>
-                </div>
-              </div>
+              <BuiltinToolsCard
+                availableBuiltinTools={availableBuiltinTools}
+                selectedBuiltinTools={selectedBuiltinTools}
+                onToggle={handleToggleBuiltinTool}
+              />
+            </div>
+          )}
 
-              {/* Builtin Tools Selection */}
-              <div className="workflow-card">
-                <div className="workflow-card-header">
-                  <div className="workflow-title-wrap">
-                    <Wrench size={15} className="text-sky" />
-                    <div>
-                      <span className="workflow-title">内置工具权限控制 (Builtin Tools)</span>
-                      <p className="workflow-sub">
-                        当前 Thread 可受控暴露的 5 种工具；默认仅启用 4 个核心工具，反选即可剥离调用能力
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="builtin-tools-grid">
-                  {availableBuiltinTools.map((toolName) => {
-                    const info = BUILTIN_TOOL_INFO[toolName] || {
-                      name: toolName,
-                      label: toolName,
-                      desc: '',
-                    };
-                    const isChecked = selectedBuiltinTools.includes(toolName);
-                    return (
-                      <div
-                        key={toolName}
-                        className={`builtin-tool-chip ${isChecked ? 'active' : 'inactive'}`}
-                        onClick={() => handleToggleBuiltinTool(toolName)}
-                        title={info.desc}
-                      >
-                        <div className="chip-header">
-                          <span className="chip-name font-mono">{info.name}</span>
-                          <span className={`chip-badge ${isChecked ? 'enabled' : 'disabled'}`}>
-                            {isChecked ? '已启用' : '已禁用'}
-                          </span>
-                        </div>
-                        <div className="chip-label">{info.label}</div>
-                        <div className="chip-desc">{info.desc}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Goal Workflow */}
-              <div className="workflow-card">
-                <div className="workflow-card-header">
-                  <div className="workflow-title-wrap">
-                    <Target size={15} className="text-green" />
-                    <div>
-                      <span className="workflow-title">线程目标 (Thread Goal)</span>
-                      <p className="workflow-sub">由 Goal Runtime 按预算自动推进，并实时报告状态</p>
-                    </div>
-                  </div>
-                </div>
-
-                {isGoalRunning ? (
-                  <div className="goal-status-box">
-                    <div className="goal-meta-row font-mono">
-                      <span>Thread: <strong>{workflowState.goal.thread_id}</strong></span>
-                      <span className={`goal-badge ${workflowState.goal.status}`}>
-                        {workflowState.goal.status}
-                      </span>
-                    </div>
-                    <div className="goal-objective">{workflowState.goal.objective}</div>
-                     <div className="milestone-text font-mono">
-                       Milestone: {workflowState.goal.current_milestone || 0} / {workflowState.goal.total_milestones || 0}
-                       {' · '}Loops: {workflowState.goal.loop_count || 0}
-                       {' · '}
-                       Tokens: {workflowState.goal.tokens_used} / {workflowState.goal.token_budget ?? '∞'}
-                       {' · '}Time: {workflowState.goal.time_used_seconds}s
-                     </div>
-                     <div className={`goal-verification-status ${workflowState.goal.verification_status || 'idle'}`}>
-                       <strong>Verify</strong>
-                       <span>{workflowState.goal.verification_status || 'idle'}</span>
-                     </div>
-                     {workflowState.goal.last_error && (
-                       <div className="goal-error-detail" title={workflowState.goal.last_error}>
-                         {workflowState.goal.last_error}
-                       </div>
-                     )}
-                    <div className="goal-actions">
-                      {workflowState.goal.status === 'paused' ? (
-                        <button className="btn-action-small" onClick={handleResumeGoal}>
-                          <Play size={12} />
-                          <span>恢复</span>
-                        </button>
-                      ) : workflowState.goal.status === 'active' ? (
-                        <button className="btn-action-small" onClick={handlePauseGoal}>
-                          <Pause size={12} />
-                          <span>暂停</span>
-                        </button>
-                      ) : null}
-                      <button className="btn-action-small" onClick={handleUpdateGoal}>
-                        <FileText size={12} />
-                        <span>更新</span>
-                      </button>
-                      <button className="btn-action-small" onClick={handleClearGoal}>
-                        <RotateCcw size={12} />
-                        <span>删除</span>
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="goal-input-box">
-                    <input
-                      type="text"
-                      className="goal-input font-mono"
-                      placeholder="输入 Thread Goal，例如: 完成前端重构并通过测试"
-                      value={goalObjectiveInput}
-                      onChange={(e) => setGoalObjectiveInput(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleStartGoal()}
-                    />
-                    <button className="btn-start-goal" onClick={handleStartGoal}>
-                      <Play size={12} />
-                      <span>设置目标</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-
+          {activeTab === 'goal' && (
+            <div className="tab-pane">
+              <GoalWorkflowCard
+                goal={workflowState?.goal}
+                goalObjectiveInput={goalObjectiveInput}
+                onGoalObjectiveInputChange={setGoalObjectiveInput}
+                onStartGoal={handleStartGoal}
+                onPauseGoal={handlePauseGoal}
+                onResumeGoal={handleResumeGoal}
+                onUpdateGoal={handleUpdateGoal}
+                onClearGoal={handleClearGoal}
+              />
             </div>
           )}
 

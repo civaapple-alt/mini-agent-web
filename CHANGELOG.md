@@ -21,8 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   popups close when the user clicks outside them.
 - Add a top-level `计划查看` tab next to the runtime and workspace views. The
   plan artifact now has a full-height Markdown reader and file switcher, while
-  Plan Mode and Thread Goal controls remain in `计划与目标`; the status bar
-  opens the dedicated plan view directly.
+  Plan Mode controls remain in the plan surface and Thread Goal controls are
+  kept separate; the status bar opens the dedicated plan view directly.
+- Split the drawer's plan controls into focused top-level `计划` and `目标` tabs,
+  move Builtin Tools permissions into the Workspace subtabs, and hide README
+  artifacts from the plan file reader.
 
 ## [0.8.0] - 2026-09-15
 

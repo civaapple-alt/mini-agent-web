@@ -50,6 +50,8 @@ The response is derived from the selected runtime's latest `initialize` result:
   "skills": [
     {
       "name": "architect",
+      "qualifiedName": "pstack:architect",
+      "aliases": ["pstack-plugin:architect", "architect"],
       "description": "Design types, interfaces, and module boundaries.",
       "source": "builtin",
       "group": "pstack",
@@ -64,14 +66,16 @@ skill bodies. The Gateway does not scan skill directories for the frontend.
 
 ## Explicit activation
 
-The input parser recognizes `$skill-name` at the start of a token. It removes
-recognized tokens from the user prompt and sends their names in
+The input parser recognizes `$skill-name`, `$pstack:skill-name`, and the
+Codex compatibility form `$pstack-plugin:skill-name` at the start of a token.
+It removes recognized tokens from the user prompt and sends their canonical
+names in
 `selectedSkills`:
 
 ```json
 {
   "prompt": "重构这个模块",
-  "selectedSkills": ["architect", "typescript-best-practices"]
+  "selectedSkills": ["pstack:architect", "pstack:typescript-best-practices"]
 }
 ```
 
@@ -87,8 +91,8 @@ failure event and prevents model execution.
 
 ## Events and replay
 
-The App Server emits one structured event after `turn_started` and before
-`run_started`:
+For explicit `selectedSkills`, the App Server emits one structured event after
+`turn_started` and before `run_started`:
 
 ```json
 {
@@ -105,5 +109,25 @@ Gateway forwards them through REST, SSE, and WebSocket event streams, and the
 event replay path retains them. Web Studio renders a successful event as
 `已加载技能：architect` and a failed event as a compact error block.
 
-Normal metadata-first skill discovery does not emit `skills_loaded`. That event
-means that the user explicitly activated a skill for the current Turn.
+Normal metadata-first skill discovery does not emit `skills_loaded`. With
+`+ pstack`, `skill_group_activated` is emitted before execution and successful
+on-demand reads are aggregated into a later `skills_loaded` event.
+
+## Plugin workflow activation
+
+The plus menu and `+ pstack task` shorthand set a turn-local workflow without
+changing Project settings:
+
+```json
+{
+  "prompt": "重构这个模块",
+  "selectedSkills": ["pstack:architect"],
+  "workflow": {"kind": "skill_group", "id": "pstack", "mode": "auto"}
+}
+```
+
+`+ pstack` adds group metadata and lets the model choose relevant Skill bodies
+through `read_file`; it does not pre-load all 26 files or call a routing model.
+The event stream shows `skill_group_activated`, then aggregates successful
+on-demand reads into `skills_loaded` with `activation: "group_auto"`.
+Disabling pstack in the panel disables both entry points for the Project.

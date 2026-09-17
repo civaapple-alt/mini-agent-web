@@ -7,6 +7,12 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class SkillGroupWorkflow(BaseModel):
+    kind: Literal["skill_group"]
+    id: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    mode: Literal["auto"] = "auto"
+
+
 class StartTurnRequest(BaseModel):
     prompt: str = Field(..., description="Prompt or instruction for the agent")
     mode: str = Field(default="start", description="Input mode: start or start_if_idle")
@@ -24,6 +30,10 @@ class StartTurnRequest(BaseModel):
         default_factory=list,
         max_length=8,
         description="Explicit Skill names to activate for this turn",
+    )
+    workflow: SkillGroupWorkflow | None = Field(
+        default=None,
+        description="Optional turn-level workflow activation",
     )
 
 

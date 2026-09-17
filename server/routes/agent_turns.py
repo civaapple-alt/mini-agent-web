@@ -109,6 +109,8 @@ async def execute_turn(req: StartTurnRequest) -> dict[str, Any]:
         }
         if req.selected_skills:
             start_kwargs["selected_skills"] = req.selected_skills
+        if req.workflow:
+            start_kwargs["workflow"] = req.workflow.model_dump()
         sub = await client.start_turn(**start_kwargs)
         if not sub.turn_id:
             return {"status": sub.status, "reason": sub.reason}
@@ -136,6 +138,7 @@ async def stream_turn(
     thread_id: str | None = Query(None, description="Thread ID"),
     project_id: str | None = Query(None, description="Project ID"),
     selected_skills: list[str] | None = None,
+    workflow_id: str | None = Query(None, description="Optional Skill Group ID"),
 ) -> StreamingResponse:
     """Stream token deltas, tool executions, and turn events via Server-Sent Events (SSE)."""
 
@@ -145,6 +148,12 @@ async def stream_turn(
             stream_kwargs = {"prompt": prompt, "mode": mode, "thread_id": thread_id}
             if selected_skills:
                 stream_kwargs["selected_skills"] = selected_skills[:8]
+            if workflow_id:
+                stream_kwargs["workflow"] = {
+                    "kind": "skill_group",
+                    "id": workflow_id,
+                    "mode": "auto",
+                }
             async for item in client.stream_turn(**stream_kwargs):
                 safe_item = to_json_serializable(item)
                 payload = json.dumps(safe_item, ensure_ascii=False)

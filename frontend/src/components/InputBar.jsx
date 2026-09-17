@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Send,
+  Plus,
   Square,
   Compass,
   Target,
@@ -11,7 +12,13 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 import { getSlashCommandDraft, parseAndExecuteSlashCommand } from '../utils/slashCommands';
-import { filterSkills, findSkillTrigger, parseSkillPrompt } from '../utils/skillTokens';
+import {
+  filterSkills,
+  findSkillTrigger,
+  parseSkillPrompt,
+  parseWorkflowPrompt,
+  skillDisplayName,
+} from '../utils/skillTokens';
 import PendingMessageDock from './PendingMessageDock';
 import ApprovalDock from './input/ApprovalDock';
 import './InputBar.css';
@@ -46,6 +53,7 @@ export default function InputBar({
   onTogglePlanMode,
   onToast,
   availableSkills = [],
+  skillGroups = [],
   skillsLoading = false,
   skillsError = null,
   skillInsertion = null,
@@ -58,6 +66,8 @@ export default function InputBar({
   const [selectedSkillIndex, setSelectedSkillIndex] = useState(0);
   const [skillCursor, setSkillCursor] = useState(null);
   const [skillQuery, setSkillQuery] = useState('');
+  const [workflowSelection, setWorkflowSelection] = useState(null);
+  const [showPluginPopup, setShowPluginPopup] = useState(false);
 
   // Image & File Attachments
   const [attachedImages, setAttachedImages] = useState([]);
@@ -107,6 +117,7 @@ export default function InputBar({
       ...draftSkills.map((name) => `$${name}`),
     ].filter(Boolean).join(' ');
     setPrompt(draftPrompt);
+    setWorkflowSelection(composerDraft.workflow || null);
     setAttachedImages(
       (composerDraft.images || []).map((dataUrl, index) => ({
         id: `restored_${Date.now()}_${index}`,
@@ -214,8 +225,9 @@ export default function InputBar({
   const handleSelectSkill = (skill) => {
     if (skillCursor === null) return;
     const end = textareaRef.current?.selectionEnd || prompt.length;
-    const newText = `${prompt.slice(0, skillCursor)}$${skill.name} ${prompt.slice(end)}`;
-    const newPos = skillCursor + skill.name.length + 2;
+    const name = skillDisplayName(skill);
+    const newText = prompt.slice(0, skillCursor) + '$' + name + ' ' + prompt.slice(end);
+    const newPos = skillCursor + name.length + 2;
     setPrompt(newText);
     setShowSkillPopup(false);
     setTimeout(() => {
@@ -331,9 +343,19 @@ export default function InputBar({
     if (e) e.preventDefault();
     if (sessionReadOnly) return;
     const text = prompt.trim();
-    if (!text && attachedImages.length === 0) return;
+    const parsedWorkflow = parseWorkflowPrompt(text, skillGroups);
+    if (parsedWorkflow.unknownWorkflows.length > 0) {
+      onToast?.(
+        '未知或已关闭插件技能组: '
+          + parsedWorkflow.unknownWorkflows.map((name) => '+ ' + name).join('、'),
+        'warning',
+      );
+      return;
+    }
+    const workflow = parsedWorkflow.workflow || workflowSelection;
+    if (!parsedWorkflow.prompt && attachedImages.length === 0 && !workflow) return;
 
-    const parsedSkills = parseSkillPrompt(text, availableSkills);
+    const parsedSkills = parseSkillPrompt(parsedWorkflow.prompt, availableSkills);
     if (parsedSkills.unknownSkills.length > 0) {
       onToast?.(`未知或已禁用技能: ${parsedSkills.unknownSkills.map((name) => `$${name}`).join('、')}`, 'warning');
       return;
@@ -358,6 +380,7 @@ export default function InputBar({
       images: attachedImages.map((img) => img.dataUrl),
       referencedFiles,
       selectedSkills: parsedSkills.selectedSkills,
+      workflow,
     };
 
     if (isGenerating) {
@@ -369,6 +392,7 @@ export default function InputBar({
     setPrompt('');
     setAttachedImages([]);
     setReferencedFiles([]);
+    setWorkflowSelection(null);
     setShowSlashPopup(false);
     setShowMentionPopup(false);
     setShowSkillPopup(false);
@@ -465,6 +489,36 @@ export default function InputBar({
         />
       )}
 
+      {showPluginPopup && (
+        <div className="plugin-popup-menu custom-scrollbar" onClick={(e) => e.stopPropagation()}>
+          <div className="skill-popup-header">
+            <span>插件工作流 (+)</span>
+            <span className="mention-popup-count font-mono">仅当前 Turn</span>
+          </div>
+          {skillGroups.map((group) => (
+            <button
+              type="button"
+              key={group.id}
+              className={'plugin-item ' + (group.enabled === false ? 'disabled' : '')}
+              disabled={group.enabled === false}
+              onClick={() => {
+                setWorkflowSelection({ kind: 'skill_group', id: group.id, mode: 'auto' });
+                setShowPluginPopup(false);
+                textareaRef.current?.focus();
+              }}
+            >
+              <Sparkles size={13} />
+              <span className="font-mono">+ {group.id}</span>
+              <span className="skill-desc">
+                {'v' + (group.version || 'unknown') + ' · '
+                  + (group.enabled === false ? '已关闭' : 'Engineering agent workflows')}
+              </span>
+            </button>
+          ))}
+          {skillGroups.length === 0 && <div className="composer-popup-note">没有可用插件技能组</div>}
+        </div>
+      )}
+
       <ApprovalDock
         pendingApproval={pendingApproval}
         pendingApprovalCount={pendingApprovalCount}
@@ -510,7 +564,7 @@ export default function InputBar({
               onClick={() => handleSelectSkill(skill)}
             >
               <Sparkles size={13} />
-              <span className="skill-name font-mono">${skill.name}</span>
+              <span className="skill-name font-mono">${skillDisplayName(skill)}</span>
               <span className="skill-desc">{skill.description}</span>
             </div>
           ))}
@@ -611,6 +665,21 @@ export default function InputBar({
             ))}
           </div>
         )}
+        {workflowSelection && (
+          <div className="selected-skills-bar">
+            <span className="selected-skill-chip font-mono">
+              <Sparkles size={10} /> + {workflowSelection.id}
+              <button
+                type="button"
+                onClick={() => setWorkflowSelection(null)}
+                title={'移除工作流 ' + workflowSelection.id}
+                aria-label={'移除工作流 ' + workflowSelection.id}
+              >
+                <X size={10} />
+              </button>
+            </span>
+          </div>
+        )}
 
         {/* Textarea Input: Direct, Spacious & Uncluttered */}
         <div className="textarea-wrapper">
@@ -639,6 +708,15 @@ export default function InputBar({
         <div className="input-footer-bar">
           {/* Bottom-Left Controls: attachments and keyboard hint */}
           <div className="input-hints">
+            <button
+              type="button"
+              className="composer-icon-btn"
+              onClick={() => setShowPluginPopup((visible) => !visible)}
+              disabled={sessionReadOnly || skillGroups.length === 0}
+              title="选择当前 Turn 的插件工作流"
+            >
+              <Plus size={15} />
+            </button>
             {/* Image Upload Button */}
             <button
               type="button"
@@ -680,7 +758,7 @@ export default function InputBar({
               <button
                 type="submit"
                 className="btn-action send"
-                disabled={!prompt.trim() || !!pendingApproval}
+                disabled={(!prompt.trim() && !workflowSelection && attachedImages.length === 0) || !!pendingApproval}
                 title="发送"
               >
                 <Send size={13} />

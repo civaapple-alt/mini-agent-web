@@ -683,6 +683,7 @@ export function filterEmptyMessages(messages) {
           message.images?.length ||
           message.referencedFiles?.length ||
           message.selectedSkills?.length ||
+          message.workflow?.id ||
           message.isGoal ||
           message.isSteer,
       );
@@ -743,17 +744,24 @@ export function aggregateStreamEvent(messages, data) {
     }
     if (messages.length === 0 || targetIndex === -1) return messages;
 
-    if (type === 'skills_loaded' || type === 'skills_load_failed') {
+    if (
+      type === 'skills_loaded'
+      || type === 'skills_load_failed'
+      || type === 'skill_group_activated'
+    ) {
       const copy = [...messages];
       const last = { ...copy[targetIndex] };
       const blocks = [...(last.blocks || [])];
-      const blockId = `skills_${data.turnId || 'event'}`;
+      const blockId = type === 'skill_group_activated'
+        ? `workflow_${data.turnId || 'event'}`
+        : `skills_${data.turnId || 'event'}`;
       if (!blocks.some((block) => block.type === 'skills' && block.id === blockId)) {
         blocks.push({
           type: 'skills',
           id: blockId,
+          workflow: type === 'skill_group_activated' ? evt.group : null,
           skills: type === 'skills_loaded'
-            ? (evt.skills || []).map((skill) => skill.name).filter(Boolean)
+            ? (evt.skills || []).map((skill) => skill.qualifiedName || skill.name).filter(Boolean)
             : [],
           reasonCode: evt.reasonCode || evt.reason_code || null,
         });

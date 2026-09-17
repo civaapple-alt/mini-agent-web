@@ -41,6 +41,20 @@ uv run mini-agent-server-dev
 Thread、Turn、Goal 和 ThreadItem 的运行时语义来自 App Server；网关不创建
 第二套运行时状态机。
 
+技能目录来自当前 Project App Server 的 `initialize.capabilityManifest`，
+不是 Gateway 扫描文件系统的结果。响应包含最多 64 个 Skill 的
+`name`、`qualifiedName`、兼容 `aliases`、描述、来源、分组和启用状态，
+以及最多 8 个 builtin group。WebStudio 默认把 `pstack` 写入新 Project
+的 `builtin_skill_groups`；面板关闭它会在无活动 Turn/审批时重启该 Project
+runtime，并让 `+ pstack` 与 `$pstack:skill` 入口 fail closed。
+
+Turn 请求通过 `selectedSkills` 和可选 `workflow` 传递到 SDK：
+`$pstack:architect` 是 Skill 级显式正文加载，`+ pstack` 是当前 Turn
+的 metadata-first Skill Group 激活。Gateway 只转发清理后的 prompt 和结构化
+名称，不接受或转发 Skill 路径/正文；Host 负责最终校验、8 个 Skill 和 32 KiB
+正文限制。结构化 `skill_group_activated`、`skills_loaded` 和
+`skills_load_failed` 事件沿 SSE/WebSocket/replay 原样转发。
+
 同一 Thread 的 Gateway attach/start 请求在客户端创建与 canonical Session 检查
 期间串行化；并发请求会复用同一个已建立的 App Server client，不会制造重复的
 workspace 绑定竞争。Thread fork 在同一 SessionManager 临界区内完成 source

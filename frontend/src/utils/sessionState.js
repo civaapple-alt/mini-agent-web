@@ -46,6 +46,7 @@ export function normalizeInputPayload(inputPayload) {
     };
     const selectedSkills = inputPayload.selectedSkills || inputPayload.selected_skills;
     if (selectedSkills) normalized.selectedSkills = selectedSkills;
+    if (inputPayload.workflow) normalized.workflow = inputPayload.workflow;
     return normalized;
   }
   return { prompt: '', images: [], referencedFiles: [] };

@@ -152,8 +152,15 @@ export default function MessageItem({
               <span>已设置</span>
             </div>
           )}
+          {message.workflow?.id && (
+            <div className="selected-skill-chip font-mono">+ {message.workflow.id}</div>
+          )}
           <div className={`user-bubble ${message.isSteer ? 'steer-bubble' : ''} ${message.isGoal ? 'goal-bubble' : ''}`}>
-            <span className={message.isSteer ? 'steer-text' : message.isGoal ? 'goal-text' : ''}>{text}</span>
+            <span className={message.isSteer ? 'steer-text' : message.isGoal ? 'goal-text' : ''}>
+              {text || (message.selectedSkills?.length
+                ? message.selectedSkills.map((name) => '$' + name).join(' ')
+                : '')}
+            </span>
           </div>
           <div className="user-actions">
             <div className={`user-trace-wrapper ${traceOpen ? 'trace-open' : ''}`}>
@@ -319,7 +326,9 @@ export default function MessageItem({
               return (
                 <div key={block.id || `skills_${idx}`} className="skills-loaded-event" role="status">
                   <Sparkles size={12} />
-                  {block.skills?.length > 0
+                  {block.workflow
+                    ? `已启用工作流：${block.workflow}`
+                    : block.skills?.length > 0
                     ? `已加载技能：${block.skills.join('、')}`
                     : `技能加载失败（${block.reasonCode || 'unknown'}）`}
                 </div>

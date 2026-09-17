@@ -117,6 +117,58 @@ async def test_agent_turn_execution_success_and_error(agent_test_app):
 
 
 @pytest.mark.asyncio
+async def test_agent_turn_forwards_skill_selection_and_workflow(agent_test_app):
+    mock_client = AsyncMock()
+    mock_client.start_turn = AsyncMock(
+        return_value=TurnSubmissionResult(
+            turn_id="turn-pstack-1", status="started", reason=None
+        )
+    )
+    mock_client.wait_for_turn = AsyncMock(
+        return_value=type(
+            "TurnResult",
+            (),
+            {
+                "turn_id": "turn-pstack-1",
+                "status": "completed",
+                "stop_reason": "completed",
+                "final_text": "ok",
+                "steps": 1,
+                "messages": [],
+                "items": [],
+                "error": None,
+            },
+        )()
+    )
+    session_manager._client = mock_client
+    session_manager._clients["default"] = mock_client
+
+    transport = ASGITransport(app=agent_test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/agent/turn",
+            json={
+                "prompt": "重构",
+                "selected_skills": ["pstack:architect"],
+                "workflow": {
+                    "kind": "skill_group",
+                    "id": "pstack",
+                    "mode": "auto",
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    kwargs = mock_client.start_turn.await_args.kwargs
+    assert kwargs["selected_skills"] == ["pstack:architect"]
+    assert kwargs["workflow"] == {
+        "kind": "skill_group",
+        "id": "pstack",
+        "mode": "auto",
+    }
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_sse(agent_test_app):
     """Test GET /api/agent/stream Server-Sent Events (SSE) streaming."""
 

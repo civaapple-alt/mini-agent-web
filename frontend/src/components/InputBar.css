@@ -19,6 +19,37 @@
   z-index: 20;
 }
 
+.plugin-popup-menu {
+  position: absolute;
+  left: 20px;
+  bottom: 58px;
+  width: min(520px, calc(100% - 40px));
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-focus);
+  border-radius: 8px;
+  box-shadow: var(--shadow-popover);
+  z-index: 21;
+}
+
+.plugin-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  font-size: 11px;
+}
+
+.plugin-item:hover { background: var(--accent-purple-soft); }
+.plugin-item.disabled { opacity: 0.48; cursor: not-allowed; }
+
 .skill-popup-header,
 .skill-item {
   display: flex;

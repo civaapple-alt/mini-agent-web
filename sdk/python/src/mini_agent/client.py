@@ -808,6 +808,7 @@ class MiniAgentClient:
         thread_id: str | None = None,
         effort: str | None = None,
         selected_skills: list[str] | None = None,
+        workflow: dict[str, Any] | None = None,
     ) -> TurnSubmissionResult:
         """Submit a turn prompt to the App Server with optional reasoning effort ('low', 'medium', 'high')."""
         payload: dict[str, Any] = {
@@ -818,7 +819,11 @@ class MiniAgentClient:
             },
         }
         if selected_skills:
-            payload["input"]["selectedSkills"] = list(dict.fromkeys(selected_skills[:8]))
+            payload["input"]["selectedSkills"] = list(
+                dict.fromkeys(selected_skills[:8])
+            )
+        if workflow:
+            payload["input"]["workflow"] = dict(workflow)
         if effort is not None:
             payload["effort"] = effort
         res = await self._send_request("turn/start", payload)
@@ -893,6 +898,7 @@ class MiniAgentClient:
         thread_id: str | None = None,
         effort: str | None = None,
         selected_skills: list[str] | None = None,
+        workflow: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """
         Convenience generator that starts a turn and yields event payloads in real-time
@@ -916,6 +922,8 @@ class MiniAgentClient:
                 start_kwargs["effort"] = effort
             if selected_skills:
                 start_kwargs["selected_skills"] = selected_skills
+            if workflow:
+                start_kwargs["workflow"] = workflow
             start_resp = await self.start_turn(prompt, **start_kwargs)
             yield {
                 "type": "_turn_submission",

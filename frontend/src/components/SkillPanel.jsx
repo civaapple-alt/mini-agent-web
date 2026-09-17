@@ -13,6 +13,8 @@ export default function SkillPanel({
   const visibleSkills = useMemo(() => skills.filter((skill) => (
     !query
       || skill.name?.toLowerCase().includes(query.toLowerCase())
+      || skill.qualifiedName?.toLowerCase().includes(query.toLowerCase())
+      || skill.aliases?.some((alias) => alias.toLowerCase().includes(query.toLowerCase()))
       || skill.description?.toLowerCase().includes(query.toLowerCase())
   )), [skills, query]);
   const groupedSkills = useMemo(() => {
@@ -65,10 +67,10 @@ export default function SkillPanel({
                   key={`${skill.source}-${skill.name}`}
                   className={`skill-card ${skill.enabled === false ? 'disabled' : ''}`}
                   disabled={skill.enabled === false}
-                  onClick={() => onInsertSkill?.(skill.name)}
-                  title={skill.enabled === false ? '技能组已关闭' : `插入 $${skill.name}`}
+                  onClick={() => onInsertSkill?.(skill.qualifiedName || skill.name)}
+                  title={skill.enabled === false ? '技能组已关闭' : `插入 $${skill.qualifiedName || skill.name}`}
                 >
-                  <div className="skill-card-title"><span className="font-mono">${skill.name}</span><span>{skill.source}</span></div>
+                  <div className="skill-card-title"><span className="font-mono">${skill.qualifiedName || skill.name}</span><span>{skill.source}</span></div>
                   <div className="skill-card-description">{skill.description}</div>
                 </button>
               ))}

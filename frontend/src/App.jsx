@@ -36,7 +36,7 @@ import {
   scopedThreadKey,
 } from './utils/sessionState.js';
 import { getStatusViewModel, normalizeTheme } from './utils/statusModel.js';
-import { parseSkillPrompt } from './utils/skillTokens.js';
+import { parseSkillPrompt, parseWorkflowPrompt } from './utils/skillTokens.js';
 import { createInputTrace } from './utils/inputTrace.js';
 import './App.css';
 
@@ -1401,9 +1401,47 @@ export default function App() {
       images,
       referencedFiles,
       selectedSkills = [],
+      workflow: requestedWorkflow = null,
     } = normalizeInputPayload(inputPayload);
 
-    if (!promptText.trim() && images.length === 0 && selectedSkills.length === 0) return false;
+    const parsedWorkflow = parseWorkflowPrompt(promptText, skillGroups);
+    if (parsedWorkflow.unknownWorkflows.length > 0) {
+      showToast(
+        '未知或已关闭插件技能组: '
+          + parsedWorkflow.unknownWorkflows.map((name) => '+ ' + name).join('、'),
+        'warning',
+      );
+      return false;
+    }
+    const parsedSkills = parseSkillPrompt(parsedWorkflow.prompt, skillCatalog);
+    if (parsedSkills.unknownSkills.length > 0) {
+      showToast(
+        '未知或已禁用技能: '
+          + parsedSkills.unknownSkills.map((name) => '$' + name).join('、'),
+        'warning',
+      );
+      return false;
+    }
+    const normalizedSkills = [...new Set([
+      ...selectedSkills,
+      ...parsedSkills.selectedSkills,
+    ])].slice(0, 8);
+    const workflow = requestedWorkflow || parsedWorkflow.workflow;
+    if (
+      workflow
+      && !skillGroups.some(
+        (group) => group.id === workflow.id && group.enabled !== false,
+      )
+    ) {
+      showToast('插件技能组已关闭或不可用: + ' + workflow.id, 'warning');
+      return false;
+    }
+    if (
+      !parsedWorkflow.prompt.trim()
+      && images.length === 0
+      && normalizedSkills.length === 0
+      && !workflow
+    ) return false;
     if (isInterrupting || interruptPendingRef.current || pendingApproval) {
       showToast('当前轮次正在停止，请等待结算后再发送。', 'info', 2500);
       return false;
@@ -1422,10 +1460,11 @@ export default function App() {
     // R1: Do not send 'mode: chat' or 'effort' (preserve standard turn contract)
     const payload = {
       action: 'turn',
-      prompt: promptText,
+      prompt: parsedWorkflow.prompt,
       images,
       referencedFiles,
-      selectedSkills,
+      selectedSkills: normalizedSkills,
+      workflow,
       threadId: currentThread,
       project_id: currentThreadProject,
     };
@@ -1458,10 +1497,11 @@ export default function App() {
       {
         id: messageId,
         role: 'user',
-        text: promptText,
+        text: parsedWorkflow.prompt,
         images,
         referencedFiles,
-        selectedSkills,
+        selectedSkills: normalizedSkills,
+        workflow,
         thinking: '',
         tools: [],
         inputTrace,
@@ -1477,6 +1517,7 @@ export default function App() {
       !normalized.prompt.trim()
       && normalized.images.length === 0
       && !normalized.selectedSkills?.length
+      && !normalized.workflow
     ) return;
     if (currentSessionReadOnly) {
       showToast('当前会话由其他进程运行，只能查看，暂不能排队消息。', 'info', 3000);
@@ -1505,7 +1546,16 @@ export default function App() {
   };
 
   const handleUpdateQueuedMessage = (messageId, prompt) => {
-    const parsed = parseSkillPrompt(prompt, skillCatalog);
+    const parsedWorkflow = parseWorkflowPrompt(prompt, skillGroups);
+    if (parsedWorkflow.unknownWorkflows.length > 0) {
+      showToast(
+        '未知或已关闭插件技能组: '
+          + parsedWorkflow.unknownWorkflows.map((name) => '+ ' + name).join('、'),
+        'warning',
+      );
+      return;
+    }
+    const parsed = parseSkillPrompt(parsedWorkflow.prompt, skillCatalog);
     if (parsed.unknownSkills.length > 0) {
       showToast(
         `未知或已禁用技能: ${parsed.unknownSkills.map((name) => `$${name}`).join('、')}`,
@@ -1519,7 +1569,12 @@ export default function App() {
     }
     setPendingMessages((prev) => prev.map((item) => (
       item.id === messageId
-        ? { ...item, prompt: parsed.prompt, selectedSkills: parsed.selectedSkills }
+        ? {
+          ...item,
+          prompt: parsed.prompt,
+          selectedSkills: parsed.selectedSkills,
+          workflow: parsedWorkflow.workflow || item.workflow || null,
+        }
         : item
     )));
   };
@@ -2084,6 +2139,7 @@ export default function App() {
       selectedSkills: Array.isArray(message.selectedSkills)
         ? message.selectedSkills
         : [],
+      workflow: message.workflow || null,
       editToken: Date.now(),
     });
     setSidePanelOpen(false);

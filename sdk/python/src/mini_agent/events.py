@@ -50,11 +50,12 @@ class SkillsLoadedEvent(EventModel):
     """Explicit user-selected Skills loaded for the current Turn."""
 
     skills: list[dict[str, Any]] = field(default_factory=list)
+    activation: str | None = None
     type: str = "skills_loaded"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SkillsLoadedEvent:
-        return cls(skills=data.get("skills", []))
+        return cls(skills=data.get("skills", []), activation=data.get("activation"))
 
 
 @dataclass
@@ -63,6 +64,7 @@ class SkillsLoadFailedEvent(EventModel):
 
     skills: list[str] = field(default_factory=list)
     reason_code: str = "unknown"
+    activation: str | None = None
     type: str = "skills_load_failed"
 
     @classmethod
@@ -70,7 +72,21 @@ class SkillsLoadFailedEvent(EventModel):
         return cls(
             skills=data.get("skills", []),
             reason_code=data.get("reason_code") or data.get("reasonCode", "unknown"),
+            activation=data.get("activation"),
         )
+
+
+@dataclass
+class SkillGroupActivatedEvent(EventModel):
+    """A workflow Skill Group activated for the current Turn."""
+
+    group: str = ""
+    source: str = ""
+    type: str = "skill_group_activated"
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SkillGroupActivatedEvent:
+        return cls(group=data.get("group", ""), source=data.get("source", ""))
 
 
 @dataclass
@@ -268,6 +284,7 @@ AgentEvent = (
     TurnStartedEvent
     | SkillsLoadedEvent
     | SkillsLoadFailedEvent
+    | SkillGroupActivatedEvent
     | RunStartedEvent
     | ModelStartedEvent
     | AssistantReasoningDeltaEvent
@@ -287,6 +304,7 @@ _EVENT_TYPE_MAP = {
     "turn_started": TurnStartedEvent,
     "skills_loaded": SkillsLoadedEvent,
     "skills_load_failed": SkillsLoadFailedEvent,
+    "skill_group_activated": SkillGroupActivatedEvent,
     "run_started": RunStartedEvent,
     "model_started": ModelStartedEvent,
     "assistant_reasoning_delta": AssistantReasoningDeltaEvent,

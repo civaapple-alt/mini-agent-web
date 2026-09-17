@@ -30,16 +30,23 @@ Turn 或待审批操作，Gateway 返回 409；成功后只重启目标 Project 
 中移除。前端处理搜索、键盘选择、技能 chips、转义 `$`、重复和最多 8 个技能。
 真正的技能读取仍由 Host 完成。前端只负责选择，不在用户提交前加载正文。
 
+除了 Skill 级入口，本次也固定了插件级入口：`+ pstack` 或加号菜单只在
+当前 Turn 设置 `workflow: {kind: "skill_group", id: "pstack", mode: "auto"}`，
+不改变 Project 开关。规范名为 `pstack:skill`，`pstack-plugin:skill` 是
+Codex 兼容别名，短名只在无冲突时可用。两种入口可以组合，Host 去重并执行
+八个 Skill 和 32 KiB 正文上限。
+
 REST、SSE、WebSocket 和 Python SDK 共用同一组字段。SDK 对旧的无技能调用
 省略空字段，保留旧客户端的请求形状。
 
 ## Observable behavior
 
-App Server 在 `turn_started` 之后、`run_started` 之前发送一次
-`skills_loaded` 或 `skills_load_failed`。Gateway 原样保留事件的 Thread、Turn、
-sequence 和 item identity。Web Studio 在信息流中把成功事件显示为
-`已加载技能：a、b、c`，失败事件显示为紧凑错误块。事件进入 replay，因此刷新
-页面后仍可看到。
+App Server 对 `+` 发送 `skill_group_activated`。显式 `$` 在
+`turn_started` 后、`run_started` 前发送一次 `skills_loaded` 或
+`skills_load_failed`；`+` 的成功按需读取会由 Host 在 Turn 结束前聚合为
+`skills_loaded`。Gateway 原样保留事件的 Thread、Turn、sequence 和 item
+identity。Web Studio 在信息流中显示“已启用工作流：pstack”和“已加载技能：
+a、b、c”，失败事件显示为紧凑错误块。事件进入 replay，因此刷新页面后仍可看到。
 
 普通 metadata-first Discovery 不显示技能加载事件。该事件只说明用户通过
 `$skill` 在当前 Turn 显式激活了技能。
@@ -56,7 +63,7 @@ sequence 和 item identity。Web Studio 在信息流中把成功事件显示为
 - 26 个 pstack 技能目录与 front matter 名称已校验；
 - Gateway 启动同步、重复启动、版本变化和异常恢复测试通过；
 - `/api/skills`、Project 409 冲突、SDK 事件解析和队列消息测试通过；
-- Python 测试 150 项通过，前端 Node 测试 57 项、Vitest 36 项通过；
+- Python 相关测试通过，前端 Node 测试 59 项、Vitest 36 项通过；
 - Vite production build 通过，Rust 跨仓受影响包测试和边界检查通过。
 
 ## Consequence

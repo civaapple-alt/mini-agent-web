@@ -79,7 +79,9 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     mode = "start"
                 images = data.get("images")
                 referenced_files = data.get("referencedFiles")
-                selected_skills = data.get("selectedSkills") or data.get("selected_skills") or []
+                selected_skills = (
+                    data.get("selectedSkills") or data.get("selected_skills") or []
+                )
                 if not isinstance(selected_skills, list):
                     selected_skills = []
                 selected_skills = [
@@ -87,6 +89,22 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     for skill in selected_skills[:8]
                     if str(skill).strip()
                 ]
+                workflow = data.get("workflow")
+                if workflow is not None:
+                    if not isinstance(workflow, dict):
+                        workflow = None
+                    else:
+                        workflow = {
+                            "kind": workflow.get("kind"),
+                            "id": str(workflow.get("id", "")).strip(),
+                            "mode": workflow.get("mode", "auto"),
+                        }
+                        if (
+                            workflow["kind"] != "skill_group"
+                            or not workflow["id"]
+                            or workflow["mode"] != "auto"
+                        ):
+                            workflow = None
 
                 enriched_prompt = _process_attachments(
                     prompt, images, referenced_files, thread_id, project_id
@@ -101,6 +119,7 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                         thread_id,
                         project_id,
                         selected_skills,
+                        workflow,
                     )
                 )
 
@@ -343,6 +362,7 @@ async def _stream_turn_to_ws(
     thread_id: str | None,
     requested_project_id: str | None = None,
     selected_skills: list[str] | None = None,
+    workflow: dict[str, Any] | None = None,
 ) -> None:
     """Stream events from MiniAgentClient directly to the initiating WebSocket."""
     target_thread = thread_id or "default"
@@ -367,6 +387,8 @@ async def _stream_turn_to_ws(
         }
         if selected_skills:
             stream_kwargs["selected_skills"] = selected_skills
+        if workflow:
+            stream_kwargs["workflow"] = workflow
         async for item in client.stream_turn(**stream_kwargs):
             # Capture active turn id from submission or event
             if item.get("type") == "_turn_submission":

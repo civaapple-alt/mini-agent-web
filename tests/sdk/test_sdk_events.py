@@ -17,6 +17,7 @@ from mini_agent import (
     RunFailure,
     RunFinishedEvent,
     ServerProcessError,
+    SkillGroupActivatedEvent,
     SkillsLoadedEvent,
     SkillsLoadFailedEvent,
     ThreadItem,
@@ -63,7 +64,9 @@ from mini_agent.client import APP_SERVER_STDIO_LINE_LIMIT
         (
             {
                 "type": "skills_loaded",
-                "skills": [{"name": "architect", "source": "builtin", "group": "pstack"}],
+                "skills": [
+                    {"name": "architect", "source": "builtin", "group": "pstack"}
+                ],
             },
             SkillsLoadedEvent,
         ),
@@ -74,6 +77,14 @@ from mini_agent.client import APP_SERVER_STDIO_LINE_LIMIT
                 "reason_code": "body_read_failed",
             },
             SkillsLoadFailedEvent,
+        ),
+        (
+            {
+                "type": "skill_group_activated",
+                "group": "pstack",
+                "source": "builtin",
+            },
+            SkillGroupActivatedEvent,
         ),
         (
             {
@@ -134,6 +145,30 @@ async def test_sdk_start_turn_deduplicates_and_bounds_selected_skills():
             },
         )
     ]
+
+
+@pytest.mark.asyncio
+async def test_sdk_start_turn_preserves_workflow_and_namespaced_skills():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {"status": "started", "turnId": "turn-2"}
+
+    client._send_request = fake_send
+    await client.start_turn(
+        "重构",
+        selected_skills=["pstack:architect"],
+        workflow={"kind": "skill_group", "id": "pstack", "mode": "auto"},
+    )
+
+    assert calls[0][1]["input"]["selectedSkills"] == ["pstack:architect"]
+    assert calls[0][1]["input"]["workflow"] == {
+        "kind": "skill_group",
+        "id": "pstack",
+        "mode": "auto",
+    }
 
 
 @pytest.mark.asyncio

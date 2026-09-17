@@ -193,6 +193,7 @@ export default function AppLayout({
             onTogglePlanMode={onTogglePlanMode}
             onToast={onToast}
             availableSkills={skillCatalog}
+            skillGroups={skillGroups}
             skillsLoading={skillsLoading}
             skillsError={skillsError}
             skillInsertion={skillInsertion}

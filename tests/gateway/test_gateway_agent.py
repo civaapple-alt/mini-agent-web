@@ -27,6 +27,7 @@ from server.routes.agent import (
     _process_attachments,
     _stream_turn_to_ws,
 )
+from server.routes.agent_models import TextAttachment
 from server.session_manager import session_manager
 
 
@@ -361,7 +362,7 @@ async def test_agent_steer_and_interrupt_endpoints(agent_test_app):
 
 
 def test_process_attachments_pipeline(tmp_path, monkeypatch):
-    """Test _process_attachments Base64 image decoding, file saving, and prompt enrichment."""
+    """Test image and pasted text attachments stay in Gateway state."""
     session_manager._current_project_path = tmp_path
 
     # Create a 1x1 transparent PNG Base64 data URL
@@ -380,17 +381,27 @@ def test_process_attachments_pipeline(tmp_path, monkeypatch):
         referenced_files=["src/main.py", "README.md"],
         thread_id="thread-attachment-test",
         project_id="project-attachment-test",
+        text_attachments=[
+            TextAttachment(
+                name="pasted-text.txt", content="INFO: shutdown\nERROR: failed"
+            )
+        ],
     )
 
     assert f"[User Attached Image: {attachment_dir}" in enriched
     assert ".mini-agent/attachments" not in enriched
     assert "[User Referenced Files: src/main.py, README.md]" in enriched
+    assert "[User Attached Text:" in enriched
+    assert "name: pasted-text.txt" in enriched
 
     # Verify image file was created in attachments directory
     assert attachment_dir.is_dir()
     saved_files = list(attachment_dir.glob("*.png"))
     assert len(saved_files) == 1
     assert saved_files[0].stat().st_size > 0
+    text_files = list(attachment_dir.glob("pasted_*.txt"))
+    assert len(text_files) == 1
+    assert text_files[0].read_text(encoding="utf-8") == "INFO: shutdown\nERROR: failed"
     assert not (tmp_path / ".mini-agent").exists()
 
 

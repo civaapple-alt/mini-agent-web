@@ -14,7 +14,15 @@ test('session state helpers preserve scoped identities and bounded projections',
     prompt: 'hello',
     images: [],
     referencedFiles: [],
+    textAttachments: [],
   });
+  assert.equal(
+    normalizeInputPayload({
+      prompt: 'inspect',
+      textAttachments: [{ name: 'pasted-text.txt', content: 'INFO: failed' }],
+    }).textAttachments[0].name,
+    'pasted-text.txt',
+  );
   assert.equal(formatRunFailure({ type: 'limit_exceeded', detail: { kind: 'turns' } }), '达到运行限制（turns）');
   assert.deepEqual(normalizeGoal({ threadId: 't-1', tokenBudget: 12 }).thread_id, 't-1');
 });

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Clock3, FileCode, Image as ImageIcon, ListOrdered, Navigation, Pencil, Trash2, X } from 'lucide-react';
+import { Check, Clock3, FileCode, FileText, Image as ImageIcon, ListOrdered, Navigation, Pencil, Trash2, X } from 'lucide-react';
 
 import './InputBar.css';
 
@@ -9,6 +9,7 @@ function messagePreview(item) {
   if (item.workflow?.id) return '+ ' + item.workflow.id;
   if (item.selectedSkills?.length) return item.selectedSkills.map((name) => `$${name}`).join(' ');
   if (item.images?.length) return '图片消息';
+  if (item.textAttachments?.length) return '文本附件消息';
   return '空消息';
 }
 
@@ -42,7 +43,7 @@ export default function PendingMessageDock({
 
   const saveEditing = (item) => {
     const nextText = editingText.trim();
-    if (!nextText && !item.images?.length) return;
+    if (!nextText && !item.images?.length && !item.textAttachments?.length) return;
     onUpdate(item.id, nextText);
     setEditingId(null);
     setEditingText('');
@@ -113,6 +114,9 @@ export default function PendingMessageDock({
                       )}
                       {item.referencedFiles?.length > 0 && (
                         <span><FileCode size={11} /> {item.referencedFiles.length} 个文件引用</span>
+                      )}
+                      {item.textAttachments?.length > 0 && (
+                        <span><FileText size={11} /> {item.textAttachments.length} 个文本附件</span>
                       )}
                     </div>
                     <div className="queue-item-actions">

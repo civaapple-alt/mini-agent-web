@@ -13,10 +13,12 @@ from fastapi.responses import StreamingResponse
 from mini_agent.errors import AppServerError
 
 from server.routes.agent_models import (
+    MAX_TEXT_ATTACHMENT_BYTES,
     ApprovalResponseRequest,
     InterruptTurnRequest,
     StartTurnRequest,
     SteerTurnRequest,
+    TextAttachment,
 )
 from server.session_manager import session_manager, to_json_serializable
 
@@ -30,23 +32,31 @@ def _process_attachments(
     referenced_files: list[str] | None = None,
     thread_id: str | None = None,
     project_id: str | None = None,
+    text_attachments: list[TextAttachment] | None = None,
     attachment_dir: Path | None = None,
 ) -> str:
-    """Save image attachments to Gateway state and enrich prompt context.
+    """Save session attachments to Gateway state and enrich prompt context.
 
     ``attachment_dir`` is an internal test seam. Production callers use the
     SessionManager-owned per-Project/per-Thread directory and never write to a
     Project workspace.
     """
     extra_context_parts = []
+    attach_dir: Path | None = None
+
+    def ensure_attachment_dir() -> Path:
+        nonlocal attach_dir
+        if attach_dir is None:
+            attach_dir = attachment_dir or session_manager.attachments_path_for_thread(
+                thread_id, project_id
+            )
+            attach_dir.mkdir(parents=True, exist_ok=True)
+        return attach_dir
 
     if images:
         import base64
 
-        attach_dir = attachment_dir or session_manager.attachments_path_for_thread(
-            thread_id, project_id
-        )
-        attach_dir.mkdir(parents=True, exist_ok=True)
+        image_dir = ensure_attachment_dir()
 
         for idx, img_data in enumerate(images):
             try:
@@ -63,13 +73,32 @@ def _process_attachments(
 
                 img_bytes = base64.b64decode(b64_str)
                 fname = f"clipboard_{uuid4().hex}_{idx + 1}.{ext}"
-                file_path = attach_dir / fname
+                file_path = image_dir / fname
                 file_path.write_bytes(img_bytes)
                 extra_context_parts.append(
                     f"[User Attached Image: {file_path} (Gateway session attachment)]"
                 )
             except Exception as err:  # noqa: BLE001
                 logger.warning("Failed to save attached image: %s", err)
+
+    if text_attachments:
+        for idx, attachment in enumerate(text_attachments):
+            content = attachment.content
+            if len(content.encode("utf-8")) > MAX_TEXT_ATTACHMENT_BYTES:
+                raise ValueError("text attachment exceeds 128 KiB")
+            display_name = (
+                attachment.name.replace("\\", "/")
+                .split("/")[-1]
+                .replace("[", "(")
+                .replace("]", ")")
+                .strip()[:120]
+                or "pasted-text.txt"
+            )
+            file_path = ensure_attachment_dir() / f"pasted_{uuid4().hex}_{idx + 1}.txt"
+            file_path.write_bytes(content.encode("utf-8"))
+            extra_context_parts.append(
+                f"[User Attached Text: {file_path} (name: {display_name}; Gateway session attachment)]"
+            )
 
     if referenced_files:
         clean_refs = [f.strip() for f in referenced_files if f.strip()]
@@ -91,14 +120,15 @@ def _process_attachments(
 @router.post("/agent/turn", summary="Start and execute a turn synchronously")
 async def execute_turn(req: StartTurnRequest) -> dict[str, Any]:
     """Submit a prompt and wait for turn completion."""
-    enriched_prompt = _process_attachments(
-        req.prompt,
-        req.images,
-        req.referenced_files,
-        req.thread_id,
-        req.project_id,
-    )
     try:
+        enriched_prompt = _process_attachments(
+            req.prompt,
+            req.images,
+            req.referenced_files,
+            req.thread_id,
+            req.project_id,
+            text_attachments=req.text_attachments,
+        )
         client = await session_manager.get_client_for_thread(
             req.thread_id, req.project_id
         )
@@ -127,6 +157,8 @@ async def execute_turn(req: StartTurnRequest) -> dict[str, Any]:
             "error": result.error,
         }
     except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
@@ -191,13 +223,21 @@ async def steer_turn(req: SteerTurnRequest) -> dict[str, Any]:
         client = await session_manager.get_client_for_thread(
             req.thread_id, req.project_id
         )
+        enriched_text = _process_attachments(
+            req.text,
+            thread_id=req.thread_id,
+            project_id=req.project_id,
+            text_attachments=req.text_attachments,
+        )
         res = await client.steer_turn(
             turn_id=req.turn_id,
-            text=req.text,
+            text=enriched_text,
             thread_id=req.thread_id,
         )
         return {"status": "steered", "action_id": res.get("actionId")}
     except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 

@@ -33,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   timestamps. Simplify the history rows, hide Gateway attachment context from
   displayed prompts, and show safe image-count metadata without exposing raw
   image bytes or filesystem paths.
+- Add bounded pasted-text attachments for long diagnostics and logs. Web Studio
+  keeps short pastes in the composer, stages large/log-shaped pastes as
+  removable `pasted-text.txt` attachments, and lets the Gateway store them in
+  the isolated Project/Thread attachment directory for on-demand `read_file`
+  access without expanding the message bubble.
 
 ## [0.8.0] - 2026-09-15
 

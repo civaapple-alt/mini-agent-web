@@ -11,6 +11,11 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from mini_agent.errors import ServerProcessError
 
+from server.routes.agent_models import (
+    MAX_TEXT_ATTACHMENT_BYTES,
+    MAX_TEXT_ATTACHMENTS,
+    TextAttachment,
+)
 from server.routes.agent_turns import _process_attachments
 from server.session_manager import session_manager, to_json_serializable
 
@@ -23,6 +28,27 @@ ws_router = APIRouter(tags=["WebSocket"])
 # -----------------------------------------------------------------------------
 
 ws_router = APIRouter(tags=["WebSocket"])
+
+
+def _parse_text_attachments(raw_value: Any) -> list[TextAttachment]:
+    """Validate the bounded text attachment shape shared by turn and steer."""
+    if raw_value is None:
+        return []
+    if not isinstance(raw_value, list):
+        raise TypeError("text attachments must be a list")
+    if len(raw_value) > MAX_TEXT_ATTACHMENTS:
+        raise ValueError(f"at most {MAX_TEXT_ATTACHMENTS} text attachments are allowed")
+
+    try:
+        attachments = [TextAttachment.model_validate(value) for value in raw_value]
+    except Exception as err:
+        raise ValueError("invalid text attachment") from err
+    total_bytes = sum(
+        len(attachment.content.encode("utf-8")) for attachment in attachments
+    )
+    if total_bytes > MAX_TEXT_ATTACHMENTS * MAX_TEXT_ATTACHMENT_BYTES:
+        raise ValueError("text attachments exceed the total size limit")
+    return attachments
 
 
 @ws_router.websocket("/ws/agent")
@@ -79,6 +105,23 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     mode = "start"
                 images = data.get("images")
                 referenced_files = data.get("referencedFiles")
+                raw_text_attachments = data.get("textAttachments")
+                if raw_text_attachments is None:
+                    raw_text_attachments = data.get("text_attachments")
+                try:
+                    text_attachments = _parse_text_attachments(raw_text_attachments)
+                except (TypeError, ValueError) as err:
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "scope": "input",
+                            "terminal": False,
+                            "threadId": thread_id or "default",
+                            "projectId": project_id,
+                            "message": f"文本附件无效: {err}",
+                        }
+                    )
+                    continue
                 selected_skills = (
                     data.get("selectedSkills") or data.get("selected_skills") or []
                 )
@@ -107,7 +150,12 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                             workflow = None
 
                 enriched_prompt = _process_attachments(
-                    prompt, images, referenced_files, thread_id, project_id
+                    prompt,
+                    images,
+                    referenced_files,
+                    thread_id,
+                    project_id,
+                    text_attachments=text_attachments,
                 )
 
                 # Background task to stream turn events back over WebSocket
@@ -132,6 +180,9 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     thread_id, project_id
                 )
                 text = data.get("text", "")
+                raw_text_attachments = data.get("textAttachments")
+                if raw_text_attachments is None:
+                    raw_text_attachments = data.get("text_attachments")
                 source = data.get("source") or "unknown"
                 logger.info(
                     "Steer requested for thread %s, turn %s source=%s",
@@ -140,12 +191,33 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     source,
                 )
                 if turn_id:
+                    try:
+                        text_attachments = _parse_text_attachments(raw_text_attachments)
+                        enriched_text = _process_attachments(
+                            text,
+                            thread_id=thread_id,
+                            project_id=project_id,
+                            text_attachments=text_attachments,
+                        )
+                    except (TypeError, ValueError) as err:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "scope": "input",
+                                "terminal": False,
+                                "threadId": thread_id,
+                                "turnId": turn_id,
+                                "projectId": project_id,
+                                "message": f"文本附件无效: {err}",
+                            }
+                        )
+                        continue
                     # Steering can wait for the App Server to accept the
                     # action. Keep it off the receive loop so an approval
                     # response can still be read from this same WebSocket.
                     spawn_background(
                         _steer_turn_to_ws(
-                            websocket, thread_id, turn_id, text, project_id
+                            websocket, thread_id, turn_id, enriched_text, project_id
                         )
                     )
                 else:

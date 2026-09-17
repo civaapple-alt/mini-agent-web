@@ -73,6 +73,13 @@ checkpoint 让较早用户输入消失。历史 item 的持久化时间以 `capt
 旧记录没有有效时间时省略时间字段。附件原始字节不进入历史 JSON 或 item
 projection；当前输入/队列保留图片数据，历史回放只显示已经持久化的有限附件摘要。
 
+Web Studio 对剪贴板文本采用有界的临时附件体验：多行、较长或明显日志格式的粘贴内容
+不会直接写入 composer，而是在提交前显示为 `pasted-text.txt` 附件。每个文本附件最多
+128 KiB，每条消息最多 4 个；Gateway 将正文写入当前 Project/Thread 的隔离附件目录，
+只把受控文件引用加入 Turn prompt，运行时可通过现有 `read_file` 按需读取。短句粘贴仍
+直接进入输入框。文本附件不自动执行、不写入 Project 工作区，历史消息只显示有限文件名
+摘要，不回显正文。
+
 同一 Thread 的 Gateway attach/start 请求在客户端创建与 canonical Session 检查
 期间串行化；并发请求会复用同一个已建立的 App Server client，不会制造重复的
 workspace 绑定竞争。Thread fork 在同一 SessionManager 临界区内完成 source

@@ -37,7 +37,11 @@ import {
 } from './utils/sessionState.js';
 import { getStatusViewModel, normalizeTheme } from './utils/statusModel.js';
 import { parseSkillPrompt, parseWorkflowPrompt } from './utils/skillTokens.js';
-import { cleanInputText, createInputTrace } from './utils/inputTrace.js';
+import {
+  cleanInputText,
+  createInputTrace,
+  extractTextAttachmentNames,
+} from './utils/inputTrace.js';
 import { startImplementationTurn } from './utils/planWorkflow.js';
 import './App.css';
 
@@ -863,11 +867,17 @@ export default function App() {
             : [];
         const isUserMessage = m.role === 'user';
         const displayText = isUserMessage ? cleanInputText(m.text) : m.text;
+        const textAttachmentNames = isUserMessage
+          ? extractTextAttachmentNames(m.text)
+          : [];
         result.push({
           id: messageId,
           role: m.role,
           turnId: m.turnId || null,
           text: displayText || '',
+          ...(isUserMessage && textAttachmentNames.length > 0
+            ? { textAttachments: textAttachmentNames.map((name) => ({ name })) }
+            : {}),
           thinking: reasoning,
           tools: [],
           ...(isUserMessage
@@ -879,6 +889,7 @@ export default function App() {
                 source: 'user',
                 capturedAt: m.capturedAt || m.createdAt || m.created_at || null,
                 images: m.images,
+                textAttachments: textAttachmentNames,
                 referencedFiles: m.referencedFiles,
                 attachmentText: m.text,
                 historical: true,
@@ -1426,6 +1437,7 @@ export default function App() {
     const {
       prompt: promptText,
       images,
+      textAttachments,
       referencedFiles,
       selectedSkills = [],
       workflow: requestedWorkflow = null,
@@ -1466,6 +1478,7 @@ export default function App() {
     if (
       !parsedWorkflow.prompt.trim()
       && images.length === 0
+      && textAttachments.length === 0
       && normalizedSkills.length === 0
       && !workflow
     ) return false;
@@ -1489,6 +1502,7 @@ export default function App() {
       action: 'turn',
       prompt: parsedWorkflow.prompt,
       images,
+      textAttachments,
       referencedFiles,
       selectedSkills: normalizedSkills,
       workflow,
@@ -1507,6 +1521,7 @@ export default function App() {
       planActive,
       goalActive: goalState?.status === 'active',
       images,
+      textAttachments,
       referencedFiles,
     });
 
@@ -1526,6 +1541,7 @@ export default function App() {
         role: 'user',
         text: parsedWorkflow.prompt,
         images,
+        textAttachments,
         referencedFiles,
         selectedSkills: normalizedSkills,
         workflow,
@@ -1543,6 +1559,7 @@ export default function App() {
     if (
       !normalized.prompt.trim()
       && normalized.images.length === 0
+      && !normalized.textAttachments?.length
       && !normalized.selectedSkills?.length
       && !normalized.workflow
     ) return;
@@ -1633,8 +1650,13 @@ export default function App() {
   };
 
   const handleSteerMessage = (text, source = 'direct-steer') => {
-    const { prompt: promptText, images, referencedFiles } = normalizeInputPayload(text);
-    if (!promptText.trim() && images.length === 0) return;
+    const {
+      prompt: promptText,
+      images,
+      textAttachments,
+      referencedFiles,
+    } = normalizeInputPayload(text);
+    if (!promptText.trim() && images.length === 0 && !textAttachments.length) return;
     if (currentSessionReadOnly) {
       showToast('当前会话由其他进程运行，只能查看，暂不能纠偏。', 'info', 3000);
       return;
@@ -1652,6 +1674,7 @@ export default function App() {
       planActive,
       goalActive: goalState?.status === 'active',
       images,
+      textAttachments,
       referencedFiles,
     });
 
@@ -1666,6 +1689,7 @@ export default function App() {
         messageKind: 'steer',
         steerTurnId: activeTurnId,
         images,
+        textAttachments,
         referencedFiles,
         thinking: '',
         tools: [],
@@ -1680,6 +1704,7 @@ export default function App() {
         action: 'steer',
         turnId: activeTurnId,
         text: promptText,
+        textAttachments,
         threadId: currentThread,
         project_id: currentThreadProject,
         source,
@@ -1691,7 +1716,7 @@ export default function App() {
         threadId: currentThread,
         turnId: activeTurnId,
         sent,
-        hasAttachments: images.length > 0,
+        hasAttachments: images.length > 0 || textAttachments.length > 0,
       });
       showToast('已发送实时纠偏指令 (Steer)', 'info', 2000);
     }
@@ -2104,7 +2129,12 @@ export default function App() {
 
   const handleTogglePlan = async () => handleSetPlanMode(!planActive);
 
-  const handleStartPlanTask = async ({ prompt, images = [], referencedFiles = [] }) => {
+  const handleStartPlanTask = async ({
+    prompt,
+    images = [],
+    textAttachments = [],
+    referencedFiles = [],
+  }) => {
     if (
       isGenerating
       || activeTurnIdRef.current
@@ -2119,7 +2149,13 @@ export default function App() {
       const enabled = await handleSetPlanMode(true);
       if (!enabled) return;
     }
-    handleSendMessage({ prompt, images, referencedFiles, selectedSkills: [] });
+    handleSendMessage({
+      prompt,
+      images,
+      textAttachments,
+      referencedFiles,
+      selectedSkills: [],
+    });
   };
 
   const handleContinuePlanning = () => {
@@ -2165,6 +2201,9 @@ export default function App() {
     setComposerDraft({
       prompt: message.text || '',
       images: Array.isArray(message.images) ? message.images : [],
+      textAttachments: Array.isArray(message.textAttachments)
+        ? message.textAttachments
+        : [],
       referencedFiles: Array.isArray(message.referencedFiles)
         ? message.referencedFiles
         : [],

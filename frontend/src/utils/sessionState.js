@@ -1,3 +1,5 @@
+import { normalizeTextAttachments } from './pasteAttachments.js';
+
 export const RUNTIME_PHASE_LABELS = {
   idle: '空闲',
   starting_turn: '启动 Turn',
@@ -36,20 +38,23 @@ export function scopedThreadKey(threadId, projectId) {
 
 export function normalizeInputPayload(inputPayload) {
   if (typeof inputPayload === 'string') {
-    return { prompt: inputPayload, images: [], referencedFiles: [] };
+    return { prompt: inputPayload, images: [], referencedFiles: [], textAttachments: [] };
   }
   if (typeof inputPayload === 'object' && inputPayload !== null) {
     const normalized = {
       prompt: inputPayload.prompt || '',
       images: inputPayload.images || [],
       referencedFiles: inputPayload.referencedFiles || [],
+      textAttachments: normalizeTextAttachments(
+        inputPayload.textAttachments || inputPayload.text_attachments,
+      ),
     };
     const selectedSkills = inputPayload.selectedSkills || inputPayload.selected_skills;
     if (selectedSkills) normalized.selectedSkills = selectedSkills;
     if (inputPayload.workflow) normalized.workflow = inputPayload.workflow;
     return normalized;
   }
-  return { prompt: '', images: [], referencedFiles: [] };
+  return { prompt: '', images: [], referencedFiles: [], textAttachments: [] };
 }
 
 export function formatRunFailure(reason) {

@@ -686,6 +686,7 @@ export function filterEmptyMessages(messages) {
       return Boolean(
         message.text?.trim?.() ||
           message.images?.length ||
+          message.textAttachments?.length ||
           message.referencedFiles?.length ||
           message.selectedSkills?.length ||
           message.workflow?.id ||

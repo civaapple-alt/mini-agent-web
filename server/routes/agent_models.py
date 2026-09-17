@@ -6,11 +6,21 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+MAX_TEXT_ATTACHMENT_BYTES = 128 * 1024
+MAX_TEXT_ATTACHMENTS = 4
+
 
 class SkillGroupWorkflow(BaseModel):
     kind: Literal["skill_group"]
     id: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9-]*$")
     mode: Literal["auto"] = "auto"
+
+
+class TextAttachment(BaseModel):
+    """A bounded text payload that the Gateway stores as a session attachment."""
+
+    name: str = Field(default="pasted-text.txt", min_length=1, max_length=120)
+    content: str = Field(..., min_length=1, max_length=MAX_TEXT_ATTACHMENT_BYTES)
 
 
 class StartTurnRequest(BaseModel):
@@ -22,6 +32,11 @@ class StartTurnRequest(BaseModel):
     )
     referenced_files: list[str] | None = Field(
         default=None, description="Optional relative file paths referenced in prompt"
+    )
+    text_attachments: list[TextAttachment] = Field(
+        default_factory=list,
+        max_length=MAX_TEXT_ATTACHMENTS,
+        description="Optional bounded text attachments from the composer",
     )
     project_id: str | None = Field(
         default=None, description="Canonical project routing context"
@@ -40,6 +55,11 @@ class StartTurnRequest(BaseModel):
 class SteerTurnRequest(BaseModel):
     turn_id: str = Field(..., description="Active turn ID to steer")
     text: str = Field(..., description="Corrective steering instruction")
+    text_attachments: list[TextAttachment] = Field(
+        default_factory=list,
+        max_length=MAX_TEXT_ATTACHMENTS,
+        description="Optional bounded text attachments from the composer",
+    )
     thread_id: str | None = Field(default=None, description="Target thread ID")
     project_id: str | None = Field(
         default=None, description="Canonical project routing context"

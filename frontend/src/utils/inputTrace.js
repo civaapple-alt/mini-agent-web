@@ -35,12 +35,26 @@ function summarizeAttachmentText(text) {
   const value = String(text || '');
   return {
     imageCount: (value.match(/\[User Attached Image:/g) || []).length,
+    textCount: (value.match(/\[User Attached Text:/g) || []).length,
   };
+}
+
+export function extractTextAttachmentNames(text) {
+  const value = String(text || '');
+  return [...value.matchAll(/\[User Attached Text:\s*([^\]]+)\]/g)]
+    .map((match) => {
+      const named = match[1].match(/\(name:\s*([^;)]+)(?:;|\))/);
+      if (named?.[1]) return named[1].trim();
+      const path = match[1].split(' (')[0].trim();
+      return path.split(/[\\/]/).pop() || 'pasted-text.txt';
+    })
+    .filter(Boolean);
 }
 
 export function cleanInputText(text) {
   return String(text || '')
     .replace(/\s*\[User Attached Image:[^\]]+\]/g, '')
+    .replace(/\s*\[User Attached Text:[^\]]+\]/g, '')
     .replace(/\s*\[User Referenced Files:[^\]]+\]/g, '')
     .trim();
 }
@@ -71,6 +85,7 @@ export function createInputTrace({
   planActive = false,
   goalActive = false,
   images = null,
+  textAttachments = null,
   referencedFiles = [],
   attachmentText = '',
   historical = false,
@@ -80,6 +95,9 @@ export function createInputTrace({
   const imageCount = Array.isArray(images)
     ? images.length
     : attachmentSummary.imageCount;
+  const textCount = Array.isArray(textAttachments)
+    ? textAttachments.length
+    : attachmentSummary.textCount;
   return {
     scope: {
       projectId: projectId || null,
@@ -99,8 +117,9 @@ export function createInputTrace({
         goalActive: Boolean(goalActive),
       },
     attachments: {
-      known: Boolean(attachmentsKnown || imageCount > 0),
+      known: Boolean(attachmentsKnown || imageCount > 0 || textCount > 0),
       imageCount,
+      textCount,
       referencedFiles: normalizeFiles(referencedFiles),
     },
   };
@@ -114,7 +133,8 @@ export function getInputTrace(message, scope = {}) {
 
   const hasAttachmentFields = Boolean(
     message && (Object.prototype.hasOwnProperty.call(message, 'images')
-      || Object.prototype.hasOwnProperty.call(message, 'referencedFiles')),
+      || Object.prototype.hasOwnProperty.call(message, 'referencedFiles')
+      || Object.prototype.hasOwnProperty.call(message, 'textAttachments')),
   );
   return createInputTrace({
     threadId: scope.threadId || null,
@@ -122,11 +142,13 @@ export function getInputTrace(message, scope = {}) {
     turnId: message?.turnId || null,
     source: sourceForMessage(message),
     images: message?.images,
+    textAttachments: message?.textAttachments,
     referencedFiles: message?.referencedFiles,
     attachmentText: message?.text,
     historical: true,
     attachmentsKnown: hasAttachmentFields
-      || summarizeAttachmentText(message?.text).imageCount > 0,
+      || summarizeAttachmentText(message?.text).imageCount > 0
+      || summarizeAttachmentText(message?.text).textCount > 0,
   });
 }
 
@@ -145,6 +167,7 @@ function entryInputMessage(entry, index, scope) {
     id: item.id || `history_item_${index}`,
     role: 'user',
     text: cleanInputText(item.text),
+    textAttachments: extractTextAttachmentNames(item.text).map((name) => ({ name })),
     turnId,
     inputTrace: createInputTrace({
       threadId: scope.threadId || null,
@@ -154,7 +177,8 @@ function entryInputMessage(entry, index, scope) {
       capturedAt: entry.capturedAt || entry.captured_at || null,
       attachmentText: item.text,
       historical: true,
-      attachmentsKnown: summarizeAttachmentText(item.text).imageCount > 0,
+      attachmentsKnown: summarizeAttachmentText(item.text).imageCount > 0
+        || summarizeAttachmentText(item.text).textCount > 0,
     }),
   };
 }

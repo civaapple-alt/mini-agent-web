@@ -8,6 +8,7 @@ import {
   cleanInputText,
   createInputTrace,
   getInputTrace,
+  extractTextAttachmentNames,
 } from '../utils/inputTrace';
 
 describe('input trace presentation', () => {
@@ -86,6 +87,17 @@ describe('input trace presentation', () => {
 
     expect(trace.attachments).toMatchObject({ imageCount: 1, known: true });
     expect(cleanInputText(message.text)).toBe('分析这张图');
+  });
+
+  it('keeps pasted text out of the displayed prompt and exposes its name', () => {
+    const message = {
+      role: 'user',
+      text: '分析这个错误\n\n[User Attached Text: C:\\private\\pasted_123.txt (name: pasted-text.txt; Gateway session attachment)]',
+    };
+
+    expect(cleanInputText(message.text)).toBe('分析这个错误');
+    expect(extractTextAttachmentNames(message.text)).toEqual(['pasted-text.txt']);
+    expect(getInputTrace(message).attachments).toMatchObject({ textCount: 1, known: true });
   });
 
   it('opens the hover trace and supports adjusting the original input', () => {

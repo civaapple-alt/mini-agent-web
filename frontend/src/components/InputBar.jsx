@@ -9,6 +9,7 @@ import {
   X,
   Image as ImageIcon,
   FileCode,
+  FileText,
 } from 'lucide-react';
 import { api } from '../api';
 import { getSlashCommandDraft, parseAndExecuteSlashCommand } from '../utils/slashCommands';
@@ -21,6 +22,14 @@ import {
 } from '../utils/skillTokens';
 import PendingMessageDock from './PendingMessageDock';
 import ApprovalDock from './input/ApprovalDock';
+import {
+  createPastedTextAttachment,
+  MAX_PASTED_TEXT_ATTACHMENT_BYTES,
+  MAX_PASTED_TEXT_ATTACHMENTS,
+  normalizeTextAttachments,
+  shouldCapturePastedText,
+  utf8ByteLength,
+} from '../utils/pasteAttachments.js';
 import './InputBar.css';
 
 const SLASH_COMMANDS = [
@@ -71,6 +80,7 @@ export default function InputBar({
 
   // Image & File Attachments
   const [attachedImages, setAttachedImages] = useState([]);
+  const [attachedTextAttachments, setAttachedTextAttachments] = useState([]);
   const [referencedFiles, setReferencedFiles] = useState([]);
   const fileInputRef = useRef(null);
 
@@ -126,6 +136,7 @@ export default function InputBar({
         size: 0,
       })),
     );
+    setAttachedTextAttachments(normalizeTextAttachments(composerDraft.textAttachments));
     setReferencedFiles(composerDraft.referencedFiles || []);
     onComposerDraftApplied?.();
     requestAnimationFrame(() => textareaRef.current?.focus());
@@ -283,6 +294,7 @@ export default function InputBar({
       onStartPlanTask: (task) => onStartPlanTask?.({
         prompt: task,
         images: attachedImages.map((img) => img.dataUrl),
+        textAttachments: attachedTextAttachments,
         referencedFiles,
       }),
       onStartGoal,
@@ -310,8 +322,7 @@ export default function InputBar({
 
   const handlePaste = (e) => {
     const items = e.clipboardData?.items;
-    if (!items) return;
-    for (let i = 0; i < items.length; i++) {
+    if (items) for (let i = 0; i < items.length; i++) {
       const item = items[i];
       if (item.type.startsWith('image/')) {
         e.preventDefault();
@@ -332,8 +343,27 @@ export default function InputBar({
           };
           reader.readAsDataURL(file);
         }
+        return;
       }
     }
+
+    const pastedText = e.clipboardData?.getData('text/plain') || '';
+    if (!shouldCapturePastedText(pastedText)) return;
+    e.preventDefault();
+    const size = utf8ByteLength(pastedText);
+    if (size > MAX_PASTED_TEXT_ATTACHMENT_BYTES) {
+      onToast?.('粘贴内容超过 128 KiB，无法作为临时文本附件。', 'warning');
+      return;
+    }
+    if (attachedTextAttachments.length >= MAX_PASTED_TEXT_ATTACHMENTS) {
+      onToast?.(`最多暂存 ${MAX_PASTED_TEXT_ATTACHMENTS} 个文本附件。`, 'warning');
+      return;
+    }
+    setAttachedTextAttachments((previous) => [
+      ...previous,
+      createPastedTextAttachment(pastedText, previous.length),
+    ]);
+    onToast?.('大段粘贴内容已暂存为文本附件，发送时随当前消息提交。', 'info', 2600);
   };
 
   const handleFileInputChange = (e) => {
@@ -373,7 +403,12 @@ export default function InputBar({
       return;
     }
     const workflow = parsedWorkflow.workflow || workflowSelection;
-    if (!parsedWorkflow.prompt && attachedImages.length === 0 && !workflow) return;
+    if (
+      !parsedWorkflow.prompt
+      && attachedImages.length === 0
+      && attachedTextAttachments.length === 0
+      && !workflow
+    ) return;
 
     const parsedSkills = parseSkillPrompt(parsedWorkflow.prompt, availableSkills);
     if (parsedSkills.unknownSkills.length > 0) {
@@ -390,6 +425,7 @@ export default function InputBar({
       if (handled) {
         setShowSlashPopup(false);
         setAttachedImages([]);
+        setAttachedTextAttachments([]);
         setReferencedFiles([]);
         return;
       }
@@ -398,6 +434,7 @@ export default function InputBar({
     const payload = {
       prompt: parsedSkills.prompt,
       images: attachedImages.map((img) => img.dataUrl),
+      textAttachments: attachedTextAttachments.map(({ name, content }) => ({ name, content })),
       referencedFiles,
       selectedSkills: parsedSkills.selectedSkills,
       workflow,
@@ -411,6 +448,7 @@ export default function InputBar({
 
     setPrompt('');
     setAttachedImages([]);
+    setAttachedTextAttachments([]);
     setReferencedFiles([]);
     setWorkflowSelection(null);
     setShowSlashPopup(false);
@@ -648,6 +686,35 @@ export default function InputBar({
           </div>
         )}
 
+        {attachedTextAttachments.length > 0 && (
+          <div className="attached-text-bar" aria-label="暂存文本附件">
+            {attachedTextAttachments.map((attachment, index) => (
+              <div
+                className="attached-text-card"
+                key={attachment.id || `${attachment.name}_${index}`}
+                title={attachment.content.slice(0, 240)}
+              >
+                <FileText size={15} className="attached-text-icon" />
+                <div className="attached-image-meta">
+                  <span className="attached-image-name">{attachment.name}</span>
+                  <span className="attached-image-size font-mono">
+                    文本附件 · {(attachment.size / 1024).toFixed(1)} KB
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="btn-remove-attached-image"
+                  onClick={() => setAttachedTextAttachments((previous) => previous.filter((_, i) => i !== index))}
+                  title="移除文本附件"
+                  aria-label={`移除文本附件 ${attachment.name}`}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Referenced Files Chips */}
         {referencedFiles.length > 0 && (
           <div className="referenced-files-bar">
@@ -783,7 +850,12 @@ export default function InputBar({
               <button
                 type="submit"
                 className="btn-action send"
-                disabled={(!prompt.trim() && !workflowSelection && attachedImages.length === 0) || !!pendingApproval}
+                disabled={(
+                  !prompt.trim()
+                  && !workflowSelection
+                  && attachedImages.length === 0
+                  && attachedTextAttachments.length === 0
+                ) || !!pendingApproval}
                 title="发送"
               >
                 <Send size={13} />

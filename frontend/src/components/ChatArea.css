@@ -218,6 +218,33 @@
   margin-bottom: 4px;
 }
 
+.user-text-attachments-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.user-text-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 240px;
+  padding: 4px 7px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--status-running);
+  font-size: 11px;
+}
+
+.user-text-attachment-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .user-ref-file-chip {
   background-color: var(--bg-surface);
   border: 1px solid var(--border-color);

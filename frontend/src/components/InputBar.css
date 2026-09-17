@@ -750,6 +750,32 @@ body.theme-dark .btn-dock-deny {
   color: var(--text-muted);
 }
 
+.attached-text-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: var(--bg-app);
+}
+
+.attached-text-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 190px;
+  max-width: 300px;
+  padding: 6px 8px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.attached-text-icon {
+  flex-shrink: 0;
+  color: var(--status-running);
+}
+
 .btn-remove-attached-image {
   background: transparent;
   border: none;

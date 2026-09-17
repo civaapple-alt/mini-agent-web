@@ -144,16 +144,28 @@ export default function InputBar({
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, [skillInsertion, onSkillInsertionApplied]);
 
-  // Close popup menus when clicking outside
+  // Close every composer popup when the pointer leaves its surface. Checking
+  // the nearest popup keeps clicks on rows and buttons from dismissing before
+  // their selection handlers run.
   useEffect(() => {
-    const handleDocumentClick = () => setShowMentionPopup(false);
-    if (showMentionPopup) {
-      window.addEventListener('click', handleDocumentClick);
+    if (!showMentionPopup && !showSkillPopup && !showPluginPopup && !showSlashPopup) {
+      return undefined;
     }
-    return () => {
-      window.removeEventListener('click', handleDocumentClick);
+    const handleDocumentPointerDown = (event) => {
+      const target = event.target;
+      if (target?.closest?.(
+        '.mention-popup-menu, .skill-popup-menu, .plugin-popup-menu, .slash-popup-menu',
+      )) return;
+      setShowSlashPopup(false);
+      setShowMentionPopup(false);
+      setShowSkillPopup(false);
+      setShowPluginPopup(false);
     };
-  }, [showMentionPopup]);
+    document.addEventListener('pointerdown', handleDocumentPointerDown);
+    return () => {
+      document.removeEventListener('pointerdown', handleDocumentPointerDown);
+    };
+  }, [showMentionPopup, showSkillPopup, showPluginPopup, showSlashPopup]);
 
   const loadWorkspaceFiles = async (q) => {
     mentionRequestControllerRef.current?.abort();
@@ -185,6 +197,8 @@ export default function InputBar({
         if (!query.includes(' ') && !query.includes('\n')) {
           setMentionCursorPos(lastAtIdx);
           setShowMentionPopup(true);
+          setShowSkillPopup(false);
+          setShowPluginPopup(false);
           setSelectedMentionIndex(0);
           loadWorkspaceFiles(query);
           return;
@@ -204,6 +218,8 @@ export default function InputBar({
     setSkillQuery(trigger.query);
     setSelectedSkillIndex(0);
     setShowSkillPopup(true);
+    setShowMentionPopup(false);
+    setShowPluginPopup(false);
   };
 
   const handleInputChange = (e) => {
@@ -230,6 +246,8 @@ export default function InputBar({
     const newPos = skillCursor + name.length + 2;
     setPrompt(newText);
     setShowSkillPopup(false);
+    setShowMentionPopup(false);
+    setShowPluginPopup(false);
     setTimeout(() => {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(newPos, newPos);
@@ -246,6 +264,8 @@ export default function InputBar({
       setReferencedFiles((prev) => [...prev, file.path]);
     }
     setShowMentionPopup(false);
+    setShowSkillPopup(false);
+    setShowPluginPopup(false);
     setTimeout(() => {
       if (textareaRef.current) {
         textareaRef.current.focus();
@@ -711,7 +731,12 @@ export default function InputBar({
             <button
               type="button"
               className="composer-icon-btn"
-              onClick={() => setShowPluginPopup((visible) => !visible)}
+              onClick={() => {
+                setShowPluginPopup((visible) => !visible);
+                setShowSlashPopup(false);
+                setShowMentionPopup(false);
+                setShowSkillPopup(false);
+              }}
               disabled={sessionReadOnly || skillGroups.length === 0}
               title="选择当前 Turn 的插件工作流"
             >

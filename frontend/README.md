@@ -44,6 +44,9 @@ Markdown 阅读区，不把 README.md 作为计划文件展示。WebSocket 重�
 用有界 `turn/event` cursor 重放短暂断线期间的事件，遇到 `has_gap` 则重新读取
 canonical Thread/Item projection。
 
+Plan Turn 完成进入待确认状态后，状态栏或 Plan 页面中的“开始实施”会先关闭 Plan Mode，
+再自动提交实施 Turn；用户无需再次手动输入“实现计划”。
+
 同一 Gateway 下的多个浏览器可以同时观察同一 Session。工具审批会在同 Project 的
 客户端间同步；首个有效响应生效，其他浏览器收到权威结算后关闭本地审批卡片，过期
 或冲突响应会提示“可能已由其他浏览器处理或已失效”。

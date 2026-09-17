@@ -38,6 +38,7 @@ import {
 import { getStatusViewModel, normalizeTheme } from './utils/statusModel.js';
 import { parseSkillPrompt, parseWorkflowPrompt } from './utils/skillTokens.js';
 import { createInputTrace } from './utils/inputTrace.js';
+import { startImplementationTurn } from './utils/planWorkflow.js';
 import './App.css';
 
 function readThreadMeta(thread, fallbackTitle = null) {
@@ -2040,7 +2041,7 @@ export default function App() {
     }
   };
 
-  const handleSetPlanMode = async (active, reason = 'toggle') => {
+  const handleSetPlanMode = async (active) => {
     if (
       isGenerating
       || activeTurnIdRef.current
@@ -2064,9 +2065,7 @@ export default function App() {
       showToast(
         confirmedActive
           ? 'Plan Mode 已开启（源码只读规划）'
-          : reason === 'implementation'
-            ? '已开始实施：Plan Mode 自动关闭'
-            : 'Plan Mode 已关闭',
+          : 'Plan Mode 已关闭',
         'info',
       );
       return confirmedActive === active;
@@ -2091,7 +2090,7 @@ export default function App() {
       return;
     }
     if (!planActive) {
-      const enabled = await handleSetPlanMode(true, 'slash');
+      const enabled = await handleSetPlanMode(true);
       if (!enabled) return;
     }
     handleSendMessage({ prompt, images, referencedFiles, selectedSkills: [] });
@@ -2103,7 +2102,14 @@ export default function App() {
   };
 
   const handleStartImplementation = async () => {
-    await handleSetPlanMode(false, 'implementation');
+    const started = await startImplementationTurn({
+      disablePlanMode: () => handleSetPlanMode(false),
+      sendTurn: handleSendMessage,
+    });
+    if (started) {
+      showToast('已根据当前计划开始实施', 'success', 2500);
+    }
+    return started;
   };
 
   const handleStartGoal = async (objective) => {

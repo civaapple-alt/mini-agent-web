@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Split the drawer's plan controls into focused top-level `计划` and `目标` tabs,
   move Builtin Tools permissions into the Workspace subtabs, and hide README
   artifacts from the plan file reader.
+- Fix the Plan review `开始实施` action so it disables Plan Mode and immediately
+  submits the next implementation Turn using the current plan.
 
 ## [0.8.0] - 2026-09-15
 

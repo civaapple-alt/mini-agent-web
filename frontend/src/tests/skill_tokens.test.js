@@ -76,6 +76,23 @@ test('supports pstack qualified names and the plus workflow shorthand', () => {
   );
 });
 
+test('rejects an ambiguous short Skill name while keeping qualified names', () => {
+  const available = [
+    {
+      name: 'how',
+      qualifiedName: 'pstack:how',
+      aliases: ['pstack-plugin:how', 'how'],
+      enabled: true,
+    },
+    { name: 'how', qualifiedName: 'how', enabled: true },
+  ];
+  assert.deepEqual(parseSkillPrompt('$how $pstack:how', available), {
+    prompt: '$how',
+    selectedSkills: ['pstack:how'],
+    unknownSkills: ['how'],
+  });
+});
+
 test('disabled workflow shorthand stays visible and is rejected by the caller', () => {
   assert.deepEqual(
     parseWorkflowPrompt('+ pstack task', [{ id: 'pstack', enabled: false }]),

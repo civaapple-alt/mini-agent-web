@@ -42,7 +42,11 @@ Thread、Turn、Goal 和 ThreadItem 的运行时语义来自 App Server；网关
 第二套运行时状态机。
 
 技能目录来自当前 Project App Server 的 `initialize.capabilityManifest`，
-不是 Gateway 扫描文件系统的结果。响应包含最多 64 个 Skill 的
+不是 Gateway 扫描文件系统的结果。Runtime 会发现项目
+`.agents/skills`、用户 `%USERPROFILE%/.agents/skills`、用户
+`%USERPROFILE%/.mini-agent/skills` 和同步的 builtin group；直接子目录按
+project > Agent Skills user > Mini Agent user > builtin > plugin 的优先级合并。
+响应包含最多 64 个 Skill 的
 `name`、`qualifiedName`、兼容 `aliases`、描述、来源、分组和启用状态，
 以及最多 8 个 builtin group。WebStudio 默认把 `pstack` 写入新 Project
 的 `builtin_skill_groups`；面板关闭它会在无活动 Turn/审批时重启该 Project
@@ -53,11 +57,13 @@ Turn 请求通过 `selectedSkills` 和可选 `workflow` 传递到 SDK：
 的 metadata-first Skill Group 激活。Gateway 只转发清理后的 prompt 和结构化
 名称，不接受或转发 Skill 路径/正文；Host 负责最终校验、8 个 Skill 和 32 KiB
 正文限制。结构化 `skill_group_activated`、`skills_loaded` 和
-`skills_load_failed` 事件沿 SSE/WebSocket/replay 原样转发。
+`skills_load_failed` 事件沿 SSE/WebSocket/replay 原样转发。`skills_loaded` 的
+`phase` 为 `started` 或 `loaded`；旧事件缺少该字段时按 `loaded` 处理。
 
 运行时还会把每个已启用 Skill 的根目录作为受信任的只读根传给 Host。模型可以
 通过现有 `read_file` 按需查看 `SKILL.md`、参考文档、脚本源码、assets 和其他
-文本文件。Gateway 不扫描或预加载这些文件；Skill 目录的读取合计受每个 Turn
+文本文件。Gateway 不扫描或预加载这些文件；首次读取 `SKILL.md` 才产生按需技能
+状态事件，关联资源读取不重复产生事件。Skill 目录的读取合计受每个 Turn
 64 KiB 的 `read_file` 输出限制，写入和脚本执行继续走 Host 现有的审批与沙箱路径。
 
 同一 Thread 的 Gateway attach/start 请求在客户端创建与 canonical Session 检查

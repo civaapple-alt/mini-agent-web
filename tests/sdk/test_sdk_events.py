@@ -64,6 +64,7 @@ from mini_agent.client import APP_SERVER_STDIO_LINE_LIMIT
         (
             {
                 "type": "skills_loaded",
+                "phase": "started",
                 "skills": [
                     {"name": "architect", "source": "builtin", "group": "pstack"}
                 ],
@@ -114,6 +115,15 @@ def test_parse_event_matches_protocol_event_surface(payload, event_class):
         )
     if isinstance(event, RunFailedEvent):
         assert event.reason == RunFailure(type="limit_exceeded", detail={"actual": 9})
+    if isinstance(event, SkillsLoadedEvent):
+        assert event.phase == "started"
+
+
+def test_legacy_skills_loaded_event_defaults_to_loaded_phase():
+    event = parse_event({"type": "skills_loaded", "skills": []})
+
+    assert isinstance(event, SkillsLoadedEvent)
+    assert event.phase == "loaded"
 
 
 @pytest.mark.asyncio

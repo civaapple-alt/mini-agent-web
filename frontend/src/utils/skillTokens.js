@@ -19,9 +19,16 @@ function skillReferences(skill) {
 
 function skillLookup(availableSkills) {
   const lookup = new Map();
+  const ambiguous = new Set();
   for (const skill of enabledSkills(availableSkills)) {
-    for (const reference of skillReferences(skill)) {
-      if (!lookup.has(reference)) lookup.set(reference, skill);
+    for (const reference of new Set(skillReferences(skill))) {
+      if (ambiguous.has(reference)) continue;
+      if (lookup.has(reference)) {
+        lookup.delete(reference);
+        ambiguous.add(reference);
+      } else {
+        lookup.set(reference, skill);
+      }
     }
   }
   return lookup;

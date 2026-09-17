@@ -133,17 +133,31 @@
 }
 
 .skills-loaded-event {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 6px;
-  width: fit-content;
-  padding: 5px 8px;
-  border: 1px solid var(--accent-purple);
-  border-radius: 6px;
-  background: var(--accent-purple-soft);
+  min-height: 22px;
+  padding: 1px 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.skills-loaded-event svg {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.skills-loaded-event.loading svg {
   color: var(--accent-purple);
-  font-family: monospace;
-  font-size: 10.5px;
+}
+
+.skills-loaded-event.failed {
+  color: var(--accent-rose);
+}
+
+.skills-loaded-event.failed svg {
+  color: var(--accent-rose);
 }
 
 .message-row {

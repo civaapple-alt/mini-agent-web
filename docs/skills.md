@@ -122,14 +122,16 @@ failure event and prevents model execution.
 
 ## Events and replay
 
-For explicit `selectedSkills`, the App Server emits one structured event after
-`turn_started` and before `run_started`:
+For explicit `selectedSkills`, the App Server emits `skills_loaded` with
+`phase: "started"` and then `phase: "loaded"` after `turn_started` and before
+`run_started`:
 
 ```json
 {
   "type": "skills_loaded",
+  "phase": "loaded",
   "skills": [
-    {"name": "architect", "source": "builtin", "group": "pstack"}
+    {"name": "architect", "qualifiedName": "pstack:architect", "source": "builtin", "group": "pstack"}
   ]
 }
 ```
@@ -140,9 +142,22 @@ Gateway forwards them through REST, SSE, and WebSocket event streams, and the
 event replay path retains them. Web Studio renders a successful event as
 `已加载技能：architect` and a failed event as a compact error block.
 
-Normal metadata-first skill discovery does not emit `skills_loaded`. With
-`+ pstack`, `skill_group_activated` is emitted before execution and successful
-on-demand reads are aggregated into a later `skills_loaded` event.
+Normal metadata-first discovery does not preload or emit an event. When the
+model first reads an enabled Skill's `SKILL.md`, the App Server emits
+`skills_loaded(phase: "started", activation: "on_demand")` before the read and
+`skills_loaded(phase: "loaded")` after success. With `+ pstack`,
+`skill_group_activated` is emitted before execution and the same on-demand
+events identify the concrete Skills selected by the model. Reads of
+`references/`, `scripts/`, `assets/`, and other files below an already loaded
+Skill do not create additional Skill events. Legacy `skills_loaded` events
+without `phase` are treated as `loaded`.
+
+The runtime catalog also discovers direct user Skills from
+`%USERPROFILE%/.mini-agent/skills` and `%USERPROFILE%/.agents/skills`, in
+addition to project Skills and synchronized builtin groups. The fixed priority
+is project, Agent Skills user, Mini Agent user, builtin, then plugin. Higher
+priority unqualified entries shadow lower-priority entries; grouped pstack
+entries retain names such as `pstack:how`.
 
 ## Plugin workflow activation
 
@@ -159,6 +174,7 @@ changing Project settings:
 
 `+ pstack` adds group metadata and lets the model choose relevant Skill bodies
 through `read_file`; it does not pre-load all 26 files or call a routing model.
-The event stream shows `skill_group_activated`, then aggregates successful
-on-demand reads into `skills_loaded` with `activation: "group_auto"`.
+The event stream shows `skill_group_activated`, then emits the same started and
+loaded on-demand events for each first `SKILL.md` read with
+`activation: "on_demand"`.
 Disabling pstack in the panel disables both entry points for the Project.

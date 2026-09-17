@@ -47,20 +47,25 @@ class TurnStartedEvent(EventModel):
 
 @dataclass
 class SkillsLoadedEvent(EventModel):
-    """Explicit user-selected Skills loaded for the current Turn."""
+    """A Skill body started or finished loading for the current Turn."""
 
     skills: list[dict[str, Any]] = field(default_factory=list)
+    phase: str = "loaded"
     activation: str | None = None
     type: str = "skills_loaded"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SkillsLoadedEvent:
-        return cls(skills=data.get("skills", []), activation=data.get("activation"))
+        return cls(
+            skills=data.get("skills", []),
+            phase=data.get("phase", "loaded"),
+            activation=data.get("activation"),
+        )
 
 
 @dataclass
 class SkillsLoadFailedEvent(EventModel):
-    """Bounded failure metadata for explicit Skill activation."""
+    """Bounded failure metadata for Skill activation or on-demand reads."""
 
     skills: list[str] = field(default_factory=list)
     reason_code: str = "unknown"

@@ -323,14 +323,27 @@ export default function MessageItem({
               );
             }
             if (block.type === 'skills') {
+              const loading = block.loading || [];
+              const loaded = block.loaded || block.skills || [];
+              const failed = block.failed || [];
+              const statusClass = loading.length > 0
+                ? 'loading'
+                : failed.length > 0
+                ? 'failed'
+                : 'loaded';
+              const label = block.workflow
+                ? `已启用工作流：${block.workflow}`
+                : loading.length > 0
+                ? `正在加载技能：${loading.join('、')}`
+                : failed.length > 0
+                ? `技能加载失败：${failed.join('、')}（${block.reasonCode || 'unknown'}）`
+                : loaded.length > 0
+                ? `已加载技能：${loaded.join('、')}`
+                : `技能加载失败（${block.reasonCode || 'unknown'}）`;
               return (
-                <div key={block.id || `skills_${idx}`} className="skills-loaded-event" role="status">
+                <div key={block.id || `skills_${idx}`} className={`skills-loaded-event ${statusClass}`} role="status">
                   <Sparkles size={12} />
-                  {block.workflow
-                    ? `已启用工作流：${block.workflow}`
-                    : block.skills?.length > 0
-                    ? `已加载技能：${block.skills.join('、')}`
-                    : `技能加载失败（${block.reasonCode || 'unknown'}）`}
+                  {label}
                 </div>
               );
             }

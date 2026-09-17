@@ -744,27 +744,86 @@ export function aggregateStreamEvent(messages, data) {
     }
     if (messages.length === 0 || targetIndex === -1) return messages;
 
-    if (
-      type === 'skills_loaded'
-      || type === 'skills_load_failed'
-      || type === 'skill_group_activated'
-    ) {
+    if (type === 'skill_group_activated') {
       const copy = [...messages];
       const last = { ...copy[targetIndex] };
       const blocks = [...(last.blocks || [])];
-      const blockId = type === 'skill_group_activated'
-        ? `workflow_${data.turnId || 'event'}`
-        : `skills_${data.turnId || 'event'}`;
-      if (!blocks.some((block) => block.type === 'skills' && block.id === blockId)) {
-        blocks.push({
-          type: 'skills',
-          id: blockId,
-          workflow: type === 'skill_group_activated' ? evt.group : null,
-          skills: type === 'skills_loaded'
-            ? (evt.skills || []).map((skill) => skill.qualifiedName || skill.name).filter(Boolean)
-            : [],
-          reasonCode: evt.reasonCode || evt.reason_code || null,
+      const blockId = `workflow_${data.turnId || 'event'}`;
+      const existingIndex = blocks.findIndex(
+        (block) => block.type === 'skills' && block.id === blockId,
+      );
+      const workflowBlock = {
+        type: 'skills',
+        id: blockId,
+        workflow: evt.group || null,
+        skills: [],
+        loading: [],
+        loaded: [],
+        failed: [],
+        reasonCode: null,
+      };
+      if (existingIndex === -1) {
+        blocks.push(workflowBlock);
+      } else {
+        blocks[existingIndex] = { ...blocks[existingIndex], ...workflowBlock };
+      }
+      last.blocks = blocks;
+      copy[targetIndex] = last;
+      return copy;
+    }
+
+    if (type === 'skills_loaded' || type === 'skills_load_failed') {
+      const copy = [...messages];
+      const last = { ...copy[targetIndex] };
+      const blocks = [...(last.blocks || [])];
+      const blockId = `skills_${data.turnId || 'event'}`;
+      const existingIndex = blocks.findIndex(
+        (block) => block.type === 'skills' && block.id === blockId,
+      );
+      const existing = existingIndex === -1 ? {} : blocks[existingIndex];
+      const loading = new Set(existing.loading || []);
+      const loaded = new Set(existing.loaded || existing.skills || []);
+      const failed = new Set(existing.failed || []);
+      const names = (evt.skills || [])
+        .map((skill) => typeof skill === 'string'
+          ? skill
+          : (skill.qualifiedName || skill.qualified_name || skill.name))
+        .filter(Boolean);
+
+      if (type === 'skills_load_failed') {
+        names.forEach((name) => {
+          loading.delete(name);
+          failed.add(name);
         });
+      } else if ((evt.phase || 'loaded') === 'started') {
+        names.forEach((name) => {
+          if (!loaded.has(name)) loading.add(name);
+          failed.delete(name);
+        });
+      } else {
+        names.forEach((name) => {
+          loading.delete(name);
+          failed.delete(name);
+          loaded.add(name);
+        });
+      }
+
+      const skillBlock = {
+        ...existing,
+        type: 'skills',
+        id: blockId,
+        workflow: null,
+        activation: evt.activation || existing.activation || 'on_demand',
+        loading: [...loading],
+        loaded: [...loaded],
+        failed: [...failed],
+        skills: [...loaded],
+        reasonCode: evt.reasonCode || evt.reason_code || existing.reasonCode || null,
+      };
+      if (existingIndex === -1) {
+        blocks.push(skillBlock);
+      } else {
+        blocks[existingIndex] = skillBlock;
       }
       last.blocks = blocks;
       copy[targetIndex] = last;

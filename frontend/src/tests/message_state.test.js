@@ -128,6 +128,51 @@ test('message stream aggregation cleanly sequences thinking, text, and tools', (
   assert.equal(messages[0].blocks.every((b) => !b.isStreaming), true);
 });
 
+test('skill loading phases merge into one compact Turn status block', () => {
+  let messages = aggregateStreamEvent([], {
+    type: 'event',
+    turnId: 'turn-skills',
+    event: { type: 'turn_started' },
+  });
+
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-skills',
+    event: {
+      type: 'skills_loaded',
+      phase: 'started',
+      activation: 'on_demand',
+      skills: [{ qualifiedName: 'pstack:architect' }],
+    },
+  });
+  assert.deepEqual(messages[0].blocks[0].loading, ['pstack:architect']);
+  assert.deepEqual(messages[0].blocks[0].loaded, []);
+
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-skills',
+    event: {
+      type: 'skills_loaded',
+      skills: [{ qualifiedName: 'pstack:architect' }],
+    },
+  });
+  assert.deepEqual(messages[0].blocks[0].loading, []);
+  assert.deepEqual(messages[0].blocks[0].loaded, ['pstack:architect']);
+  assert.deepEqual(messages[0].blocks[0].skills, ['pstack:architect']);
+
+  messages = aggregateStreamEvent(messages, {
+    type: 'event',
+    turnId: 'turn-skills',
+    event: {
+      type: 'skills_load_failed',
+      skills: ['blender-procedural-modeling'],
+      reason_code: 'body_read_failed',
+    },
+  });
+  assert.deepEqual(messages[0].blocks[0].failed, ['blender-procedural-modeling']);
+  assert.equal(messages[0].blocks[0].reasonCode, 'body_read_failed');
+});
+
 test('legacy tool_finished content is preserved as the read_file output', () => {
   let messages = aggregateStreamEvent([], {
     type: 'event',

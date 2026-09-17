@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `+` workflow activation, namespaced `$skill` completion/chips, and
   replayable `skill_group_activated`, `skills_loaded`/
   `skills_load_failed` stream events.
+- Expand the Skill panel with pstack's per-Skill descriptions, canonical names,
+  aliases, and explicit-vs-on-demand activation labels. The panel now warns
+  when an enabled pstack runtime returns no group catalog, and all composer
+  popups close when the user clicks outside them.
 
 ## [0.8.0] - 2026-09-15
 

@@ -30,6 +30,13 @@ Turn 或待审批操作，Gateway 返回 409；成功后只重启目标 Project 
 中移除。前端处理搜索、键盘选择、技能 chips、转义 `$`、重复和最多 8 个技能。
 真正的技能读取仍由 Host 完成。前端只负责选择，不在用户提交前加载正文。
 
+技能面板直接展示 runtime capability manifest 返回的有界 catalog。pstack 展开为
+组内每个 Skill 的规范名、简介、来源和兼容别名；每项同时标注 `$` 直接调用和
+`+ pstack` 组内按需选中的能力。`+` 只启用当前 Turn 的候选组，不预加载 26 个
+Skill 正文；`$pstack:skill` 才是指定某一个 Skill 的正文加载入口。如果 pstack
+状态已启用但 catalog 没有返回组内项，面板显示 runtime catalog 警告，不在前端
+重复扫描或硬编码技能目录。
+
 除了 Skill 级入口，本次也固定了插件级入口：`+ pstack` 或加号菜单只在
 当前 Turn 设置 `workflow: {kind: "skill_group", id: "pstack", mode: "auto"}`，
 不改变 Project 开关。规范名为 `pstack:skill`，`pstack-plugin:skill` 是
@@ -63,7 +70,7 @@ a、b、c”，失败事件显示为紧凑错误块。事件进入 replay，因�
 - 26 个 pstack 技能目录与 front matter 名称已校验；
 - Gateway 启动同步、重复启动、版本变化和异常恢复测试通过；
 - `/api/skills`、Project 409 冲突、SDK 事件解析和队列消息测试通过；
-- Python 相关测试通过，前端 Node 测试 59 项、Vitest 36 项通过；
+- Python 相关测试通过，前端 Node 测试 59 项、Vitest 40 项通过；
 - Vite production build 通过，Rust 跨仓受影响包测试和边界检查通过。
 
 ## Consequence

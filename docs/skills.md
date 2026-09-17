@@ -64,6 +64,31 @@ The response is derived from the selected runtime's latest `initialize` result:
 The endpoint returns at most 64 skills and does not expose physical paths or
 skill bodies. The Gateway does not scan skill directories for the frontend.
 
+## Skill panel
+
+The WebStudio Skill tab renders the complete bounded catalog returned by the
+runtime. It does not use a second hardcoded pstack list. The pstack section
+shows each returned Skill's canonical name, description, source, and compatible
+aliases, so the panel remains accurate when the builtin resource changes.
+
+The panel distinguishes the two pstack entry points:
+
+| Panel label | Meaning | Body loading |
+| --- | --- | --- |
+| `+ pstack · 组内按需` | Turn-level workflow activation; pstack becomes the candidate group and the model selects relevant Skills from metadata. | No bulk preload; relevant bodies are read on demand. |
+| `$ 直接调用` | Skill-level activation; the user names one Skill such as `$pstack:architect`. | Host loads the selected body before model execution. |
+
+All enabled pstack Skills can use both entry points. `+ pstack` is not a
+shortcut for loading all 26 bodies, and `$pstack:skill` is not a request to
+activate the whole group. The panel's `$` insertion always uses the canonical
+qualified name; `pstack-plugin:skill` and the short name remain visible as
+compatibility aliases when provided by the manifest.
+
+If the group status is enabled but the catalog contains no pstack Skill entry,
+the panel shows a runtime-catalog warning and asks the user to refresh or
+restart the Project runtime. It does not scan the builtin directory or invent
+metadata in the browser.
+
 ## Explicit activation
 
 The input parser recognizes `$skill-name`, `$pstack:skill-name`, and the

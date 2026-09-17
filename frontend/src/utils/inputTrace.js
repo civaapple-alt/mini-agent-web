@@ -36,6 +36,7 @@ function summarizeAttachmentText(text) {
   return {
     imageCount: (value.match(/\[User Attached Image:/g) || []).length,
     textCount: (value.match(/\[User Attached Text:/g) || []).length,
+    fileCount: (value.match(/\[User Attached (?:File|Path):/g) || []).length,
   };
 }
 
@@ -51,10 +52,23 @@ export function extractTextAttachmentNames(text) {
     .filter(Boolean);
 }
 
+export function extractFileAttachmentNames(text) {
+  const value = String(text || '');
+  return [...value.matchAll(/\[User Attached (?:File|Path):\s*([^\]]+)\]/g)]
+    .map((match) => {
+      const named = match[1].match(/\(name:\s*([^;)]+)(?:;|\))/);
+      if (named?.[1]) return named[1].trim();
+      const path = match[1].split(' (')[0].trim();
+      return path.split(/[\\/]/).pop() || 'attachment';
+    })
+    .filter(Boolean);
+}
+
 export function cleanInputText(text) {
   return String(text || '')
     .replace(/\s*\[User Attached Image:[^\]]+\]/g, '')
     .replace(/\s*\[User Attached Text:[^\]]+\]/g, '')
+    .replace(/\s*\[User Attached (?:File|Path):[^\]]+\]/g, '')
     .replace(/\s*\[User Referenced Files:[^\]]+\]/g, '')
     .trim();
 }
@@ -86,6 +100,7 @@ export function createInputTrace({
   goalActive = false,
   images = null,
   textAttachments = null,
+  fileAttachments = null,
   referencedFiles = [],
   attachmentText = '',
   historical = false,
@@ -98,6 +113,9 @@ export function createInputTrace({
   const textCount = Array.isArray(textAttachments)
     ? textAttachments.length
     : attachmentSummary.textCount;
+  const fileCount = Array.isArray(fileAttachments)
+    ? fileAttachments.length
+    : attachmentSummary.fileCount;
   return {
     scope: {
       projectId: projectId || null,
@@ -117,9 +135,10 @@ export function createInputTrace({
         goalActive: Boolean(goalActive),
       },
     attachments: {
-      known: Boolean(attachmentsKnown || imageCount > 0 || textCount > 0),
+      known: Boolean(attachmentsKnown || imageCount > 0 || textCount > 0 || fileCount > 0),
       imageCount,
       textCount,
+      fileCount,
       referencedFiles: normalizeFiles(referencedFiles),
     },
   };
@@ -134,7 +153,8 @@ export function getInputTrace(message, scope = {}) {
   const hasAttachmentFields = Boolean(
     message && (Object.prototype.hasOwnProperty.call(message, 'images')
       || Object.prototype.hasOwnProperty.call(message, 'referencedFiles')
-      || Object.prototype.hasOwnProperty.call(message, 'textAttachments')),
+      || Object.prototype.hasOwnProperty.call(message, 'textAttachments')
+      || Object.prototype.hasOwnProperty.call(message, 'fileAttachments')),
   );
   return createInputTrace({
     threadId: scope.threadId || null,
@@ -143,12 +163,14 @@ export function getInputTrace(message, scope = {}) {
     source: sourceForMessage(message),
     images: message?.images,
     textAttachments: message?.textAttachments,
+    fileAttachments: message?.fileAttachments,
     referencedFiles: message?.referencedFiles,
     attachmentText: message?.text,
     historical: true,
     attachmentsKnown: hasAttachmentFields
       || summarizeAttachmentText(message?.text).imageCount > 0
-      || summarizeAttachmentText(message?.text).textCount > 0,
+      || summarizeAttachmentText(message?.text).textCount > 0
+      || summarizeAttachmentText(message?.text).fileCount > 0,
   });
 }
 
@@ -168,6 +190,7 @@ function entryInputMessage(entry, index, scope) {
     role: 'user',
     text: cleanInputText(item.text),
     textAttachments: extractTextAttachmentNames(item.text).map((name) => ({ name })),
+    fileAttachments: extractFileAttachmentNames(item.text).map((name) => ({ name })),
     turnId,
     inputTrace: createInputTrace({
       threadId: scope.threadId || null,
@@ -178,7 +201,8 @@ function entryInputMessage(entry, index, scope) {
       attachmentText: item.text,
       historical: true,
       attachmentsKnown: summarizeAttachmentText(item.text).imageCount > 0
-        || summarizeAttachmentText(item.text).textCount > 0,
+        || summarizeAttachmentText(item.text).textCount > 0
+        || summarizeAttachmentText(item.text).fileCount > 0,
     }),
   };
 }

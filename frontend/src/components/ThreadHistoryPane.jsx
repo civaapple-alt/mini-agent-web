@@ -82,7 +82,8 @@ export default function ThreadHistoryPane({
           {inputMessages.map((message, index) => {
             const trace = getInputTrace(message, { threadId, projectId });
             const imageCount = trace.attachments?.imageCount || 0;
-            const fileCount = trace.attachments?.referencedFiles?.length || 0;
+            const attachmentFileCount = trace.attachments?.fileCount || 0;
+            const referencedFileCount = trace.attachments?.referencedFiles?.length || 0;
             const displayText = cleanInputText(message.text);
             const capturedAt = formatTimestamp(trace.capturedAt);
             const isFocused = message.id === focusMessageId;
@@ -105,7 +106,9 @@ export default function ThreadHistoryPane({
                   )}
                 </div>
                 <div className="thread-history-prompt">
-                  {displayText || (imageCount > 0 ? '（图片输入）' : '（空输入）')}
+                  {displayText || (imageCount > 0
+                    ? '（图片输入）'
+                    : attachmentFileCount > 0 ? '（文件附件）' : '（空输入）')}
                 </div>
                 <div className="thread-history-meta">
                   <span className="font-mono">Turn: {trace.scope?.turnId || '未分配'}</span>
@@ -119,8 +122,9 @@ export default function ThreadHistoryPane({
                   ) : (
                     <span className="thread-history-attachments">
                       {imageCount > 0 && <><Image size={11} /> {imageCount}</>}
-                      {fileCount > 0 && <><Paperclip size={11} /> {fileCount}</>}
-                      {imageCount === 0 && fileCount === 0 && '无附件'}
+                      {attachmentFileCount > 0 && <><Paperclip size={11} /> {attachmentFileCount}</>}
+                      {referencedFileCount > 0 && <><Paperclip size={11} /> {referencedFileCount} 个引用</>}
+                      {imageCount === 0 && attachmentFileCount === 0 && referencedFileCount === 0 && '无附件'}
                     </span>
                   )}
                 </div>

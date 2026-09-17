@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 MAX_TEXT_ATTACHMENT_BYTES = 128 * 1024
 MAX_TEXT_ATTACHMENTS = 4
+MAX_FILE_ATTACHMENT_BYTES = 8 * 1024 * 1024
+MAX_FILE_ATTACHMENTS = 16
 
 
 class SkillGroupWorkflow(BaseModel):
@@ -21,6 +23,23 @@ class TextAttachment(BaseModel):
 
     name: str = Field(default="pasted-text.txt", min_length=1, max_length=120)
     content: str = Field(..., min_length=1, max_length=MAX_TEXT_ATTACHMENT_BYTES)
+
+
+class FileAttachment(BaseModel):
+    """A user-selected file or path reference for the current Session."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str | None = Field(default=None, max_length=120)
+    name: str = Field(default="attachment", min_length=1, max_length=120)
+    path: str | None = Field(default=None, max_length=4096)
+    content_base64: str | None = Field(
+        default=None,
+        alias="contentBase64",
+        max_length=MAX_FILE_ATTACHMENT_BYTES * 2,
+    )
+    mime_type: str | None = Field(default=None, alias="mimeType", max_length=120)
+    source: Literal["path", "content"] | None = None
 
 
 class StartTurnRequest(BaseModel):
@@ -37,6 +56,11 @@ class StartTurnRequest(BaseModel):
         default_factory=list,
         max_length=MAX_TEXT_ATTACHMENTS,
         description="Optional bounded text attachments from the composer",
+    )
+    file_attachments: list[FileAttachment] = Field(
+        default_factory=list,
+        max_length=MAX_FILE_ATTACHMENTS,
+        description="Optional selected files or physical path references",
     )
     project_id: str | None = Field(
         default=None, description="Canonical project routing context"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from pathlib import Path
@@ -13,8 +14,11 @@ from fastapi.responses import StreamingResponse
 from mini_agent.errors import AppServerError
 
 from server.routes.agent_models import (
+    MAX_FILE_ATTACHMENT_BYTES,
+    MAX_FILE_ATTACHMENTS,
     MAX_TEXT_ATTACHMENT_BYTES,
     ApprovalResponseRequest,
+    FileAttachment,
     InterruptTurnRequest,
     StartTurnRequest,
     SteerTurnRequest,
@@ -33,6 +37,7 @@ def _process_attachments(
     thread_id: str | None = None,
     project_id: str | None = None,
     text_attachments: list[TextAttachment] | None = None,
+    file_attachments: list[FileAttachment] | None = None,
     attachment_dir: Path | None = None,
 ) -> str:
     """Save session attachments to Gateway state and enrich prompt context.
@@ -54,8 +59,6 @@ def _process_attachments(
         return attach_dir
 
     if images:
-        import base64
-
         image_dir = ensure_attachment_dir()
 
         for idx, img_data in enumerate(images):
@@ -100,6 +103,52 @@ def _process_attachments(
                 f"[User Attached Text: {file_path} (name: {display_name}; Gateway session attachment)]"
             )
 
+    if file_attachments:
+        if len(file_attachments) > MAX_FILE_ATTACHMENTS:
+            raise ValueError(f"at most {MAX_FILE_ATTACHMENTS} file attachments are allowed")
+        for idx, attachment in enumerate(file_attachments):
+            display_name = (
+                attachment.name.replace("\\", "/")
+                .split("/")[-1]
+                .replace("[", "(")
+                .replace("]", ")")
+                .strip()[:120]
+                or "attachment"
+            )
+            source = attachment.source
+            if source == "path" or (attachment.path and not attachment.content_base64):
+                if not attachment.path:
+                    raise ValueError(f"路径附件缺少 path: {display_name}")
+                selected = Path(attachment.path).expanduser()
+                try:
+                    resolved = selected.resolve(strict=True)
+                except OSError as err:
+                    raise ValueError(f"无法解析路径附件: {display_name}") from err
+                if ".git" in {part.lower() for part in resolved.parts}:
+                    raise ValueError("路径附件不能指向 .git")
+                if not resolved.is_file() and not resolved.is_dir():
+                    raise ValueError(f"路径附件不是文件或文件夹: {display_name}")
+                kind = "folder" if resolved.is_dir() else "file"
+                extra_context_parts.append(
+                    f"[User Attached Path: {resolved} (name: {display_name}; {kind}; read-only path reference)]"
+                )
+                continue
+
+            if not attachment.content_base64:
+                raise ValueError(f"文件附件缺少 contentBase64: {display_name}")
+            try:
+                content = base64.b64decode(attachment.content_base64, validate=True)
+            except (ValueError, TypeError) as err:
+                raise ValueError(f"文件附件编码无效: {display_name}") from err
+            if len(content) > MAX_FILE_ATTACHMENT_BYTES:
+                raise ValueError(f"文件附件超过 {MAX_FILE_ATTACHMENT_BYTES} bytes: {display_name}")
+            suffix = Path(display_name).suffix[:16]
+            file_path = ensure_attachment_dir() / f"file_{uuid4().hex}_{idx + 1}{suffix}"
+            file_path.write_bytes(content)
+            extra_context_parts.append(
+                f"[User Attached File: {file_path} (name: {display_name}; Gateway session attachment)]"
+            )
+
     if referenced_files:
         clean_refs = [f.strip() for f in referenced_files if f.strip()]
         if clean_refs:
@@ -128,6 +177,7 @@ async def execute_turn(req: StartTurnRequest) -> dict[str, Any]:
             req.thread_id,
             req.project_id,
             text_attachments=req.text_attachments,
+            file_attachments=req.file_attachments,
         )
         client = await session_manager.get_client_for_thread(
             req.thread_id, req.project_id

@@ -12,8 +12,10 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from mini_agent.errors import ServerProcessError
 
 from server.routes.agent_models import (
+    MAX_FILE_ATTACHMENTS,
     MAX_TEXT_ATTACHMENT_BYTES,
     MAX_TEXT_ATTACHMENTS,
+    FileAttachment,
     TextAttachment,
 )
 from server.routes.agent_turns import _process_attachments
@@ -49,6 +51,20 @@ def _parse_text_attachments(raw_value: Any) -> list[TextAttachment]:
     if total_bytes > MAX_TEXT_ATTACHMENTS * MAX_TEXT_ATTACHMENT_BYTES:
         raise ValueError("text attachments exceed the total size limit")
     return attachments
+
+
+def _parse_file_attachments(raw_value: Any) -> list[FileAttachment]:
+    """Validate selected files and path references at the Gateway boundary."""
+    if raw_value is None:
+        return []
+    if not isinstance(raw_value, list):
+        raise TypeError("file attachments must be a list")
+    if len(raw_value) > MAX_FILE_ATTACHMENTS:
+        raise ValueError(f"at most {MAX_FILE_ATTACHMENTS} file attachments are allowed")
+    try:
+        return [FileAttachment.model_validate(value) for value in raw_value]
+    except Exception as err:
+        raise ValueError("invalid file attachment") from err
 
 
 @ws_router.websocket("/ws/agent")
@@ -105,6 +121,9 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     mode = "start"
                 images = data.get("images")
                 referenced_files = data.get("referencedFiles")
+                raw_file_attachments = data.get("fileAttachments")
+                if raw_file_attachments is None:
+                    raw_file_attachments = data.get("file_attachments")
                 raw_text_attachments = data.get("textAttachments")
                 if raw_text_attachments is None:
                     raw_text_attachments = data.get("text_attachments")
@@ -119,6 +138,20 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                             "threadId": thread_id or "default",
                             "projectId": project_id,
                             "message": f"文本附件无效: {err}",
+                        }
+                    )
+                    continue
+                try:
+                    file_attachments = _parse_file_attachments(raw_file_attachments)
+                except (TypeError, ValueError) as err:
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "scope": "input",
+                            "terminal": False,
+                            "threadId": thread_id or "default",
+                            "projectId": project_id,
+                            "message": f"文件附件无效: {err}",
                         }
                     )
                     continue
@@ -156,6 +189,7 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     thread_id,
                     project_id,
                     text_attachments=text_attachments,
+                    file_attachments=file_attachments,
                 )
 
                 # Background task to stream turn events back over WebSocket

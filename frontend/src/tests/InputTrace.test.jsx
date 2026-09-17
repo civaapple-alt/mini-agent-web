@@ -7,6 +7,7 @@ import {
   collectInputMessages,
   cleanInputText,
   createInputTrace,
+  extractFileAttachmentNames,
   getInputTrace,
   extractTextAttachmentNames,
 } from '../utils/inputTrace';
@@ -98,6 +99,17 @@ describe('input trace presentation', () => {
     expect(cleanInputText(message.text)).toBe('分析这个错误');
     expect(extractTextAttachmentNames(message.text)).toEqual(['pasted-text.txt']);
     expect(getInputTrace(message).attachments).toMatchObject({ textCount: 1, known: true });
+  });
+
+  it('keeps file and path attachment paths out of history text', () => {
+    const message = {
+      role: 'user',
+      text: '检查附件\n\n[User Attached Path: C:\\private\\how (name: how; folder; read-only path reference)]',
+    };
+
+    expect(cleanInputText(message.text)).toBe('检查附件');
+    expect(extractFileAttachmentNames(message.text)).toEqual(['how']);
+    expect(getInputTrace(message).attachments).toMatchObject({ fileCount: 1, known: true });
   });
 
   it('opens the hover trace and supports adjusting the original input', () => {

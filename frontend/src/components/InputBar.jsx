@@ -7,7 +7,7 @@ import {
   Target,
   Sparkles,
   X,
-  Image as ImageIcon,
+  Folder,
   FileCode,
   FileText,
 } from 'lucide-react';
@@ -30,6 +30,18 @@ import {
   shouldCapturePastedText,
   utf8ByteLength,
 } from '../utils/pasteAttachments.js';
+import {
+  MAX_FILE_ATTACHMENT_BYTES,
+  MAX_FILE_ATTACHMENTS,
+  createFileAttachment,
+  createPathAttachment,
+  dataTransferContainsDirectory,
+  isImageFile,
+  nativePathFromFile,
+  nativePathsFromDataTransfer,
+  normalizeFileAttachments,
+  readFileAsDataUrl,
+} from '../utils/fileAttachments.js';
 import './InputBar.css';
 
 const SLASH_COMMANDS = [
@@ -76,11 +88,13 @@ export default function InputBar({
   const [skillCursor, setSkillCursor] = useState(null);
   const [skillQuery, setSkillQuery] = useState('');
   const [workflowSelection, setWorkflowSelection] = useState(null);
+  const [composerDirective, setComposerDirective] = useState(null);
   const [showPluginPopup, setShowPluginPopup] = useState(false);
 
   // Image & File Attachments
   const [attachedImages, setAttachedImages] = useState([]);
   const [attachedTextAttachments, setAttachedTextAttachments] = useState([]);
+  const [attachedFileAttachments, setAttachedFileAttachments] = useState([]);
   const [referencedFiles, setReferencedFiles] = useState([]);
   const fileInputRef = useRef(null);
 
@@ -128,6 +142,7 @@ export default function InputBar({
     ].filter(Boolean).join(' ');
     setPrompt(draftPrompt);
     setWorkflowSelection(composerDraft.workflow || null);
+    setComposerDirective(composerDraft.directive || null);
     setAttachedImages(
       (composerDraft.images || []).map((dataUrl, index) => ({
         id: `restored_${Date.now()}_${index}`,
@@ -137,6 +152,7 @@ export default function InputBar({
       })),
     );
     setAttachedTextAttachments(normalizeTextAttachments(composerDraft.textAttachments));
+    setAttachedFileAttachments(normalizeFileAttachments(composerDraft.fileAttachments));
     setReferencedFiles(composerDraft.referencedFiles || []);
     onComposerDraftApplied?.();
     requestAnimationFrame(() => textareaRef.current?.focus());
@@ -295,6 +311,7 @@ export default function InputBar({
         prompt: task,
         images: attachedImages.map((img) => img.dataUrl),
         textAttachments: attachedTextAttachments,
+        fileAttachments: attachedFileAttachments,
         referencedFiles,
       }),
       onStartGoal,
@@ -318,6 +335,65 @@ export default function InputBar({
     }
     setShowSlashPopup(false);
     if (textareaRef.current) textareaRef.current.focus();
+  };
+
+  const addPathAttachments = (paths) => {
+    const next = paths
+      .map((path, index) => createPathAttachment(path, index))
+      .filter(Boolean);
+    if (next.length === 0) return;
+    setAttachedFileAttachments((previous) => {
+      const known = new Set(previous.map((attachment) => attachment.path));
+      return [
+        ...previous,
+        ...next.filter((attachment) => !known.has(attachment.path)),
+      ];
+    });
+    onToast?.('已记录本地路径，发送后当前 Session 可按需读取。', 'info', 2400);
+  };
+
+  const addFileObjects = async (files) => {
+    const candidates = Array.from(files || []);
+    if (candidates.length === 0) return;
+    if (candidates.some((file) => Number(file.size) > MAX_FILE_ATTACHMENT_BYTES)) {
+      onToast?.('单个文件超过 8 MiB，无法添加。', 'warning');
+    }
+    const accepted = candidates.filter((file) => Number(file.size) <= MAX_FILE_ATTACHMENT_BYTES);
+    const remaining = Math.max(
+      0,
+      MAX_FILE_ATTACHMENTS - attachedFileAttachments.length - attachedImages.length,
+    );
+    if (accepted.length > remaining) {
+      onToast?.('当前消息最多添加 16 个文件。', 'warning');
+    }
+    for (const [index, file] of accepted.slice(0, remaining).entries()) {
+      const nativePath = nativePathFromFile(file);
+      if (nativePath) {
+        addPathAttachments([nativePath]);
+        continue;
+      }
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        if (isImageFile(file)) {
+          setAttachedImages((previous) => [
+            ...previous,
+            {
+              id: 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+              name: file.name,
+              dataUrl,
+              size: file.size,
+            },
+          ]);
+        } else {
+          setAttachedFileAttachments((previous) => [
+            ...previous,
+            createFileAttachment(file, dataUrl.split(',', 2)[1] || '', index),
+          ]);
+        }
+      } catch {
+        onToast?.(`读取文件失败：${file.name || '未命名文件'}`, 'warning');
+      }
+    }
   };
 
   const handlePaste = (e) => {
@@ -347,6 +423,25 @@ export default function InputBar({
       }
     }
 
+    const nativePaths = nativePathsFromDataTransfer(e.clipboardData);
+    if (nativePaths.length > 0) {
+      e.preventDefault();
+      addPathAttachments(nativePaths);
+      return;
+    }
+
+    const clipboardFiles = Array.from(e.clipboardData?.files || []);
+    if (dataTransferContainsDirectory(e.clipboardData)) {
+      e.preventDefault();
+      onToast?.('当前浏览器未提供文件夹物理路径，请使用支持本地路径桥接的窗口拖入。', 'warning');
+      return;
+    }
+    if (clipboardFiles.length > 0) {
+      e.preventDefault();
+      void addFileObjects(clipboardFiles);
+      return;
+    }
+
     const pastedText = e.clipboardData?.getData('text/plain') || '';
     if (!shouldCapturePastedText(pastedText)) return;
     e.preventDefault();
@@ -369,27 +464,26 @@ export default function InputBar({
   const handleFileInputChange = (e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    Array.from(files).forEach((file) => {
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (uploadEvent) => {
-          setAttachedImages((prev) => [
-            ...prev,
-            {
-              id: 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-              name: file.name,
-              dataUrl: uploadEvent.target.result,
-              size: file.size,
-            },
-          ]);
-        };
-        reader.readAsDataURL(file);
-      }
-    });
+    void addFileObjects(files);
     e.target.value = '';
   };
 
-  const handleSubmit = (e) => {
+  const handleDrop = (e) => {
+    e.preventDefault();
+    if (sessionReadOnly) return;
+    const nativePaths = nativePathsFromDataTransfer(e.dataTransfer);
+    if (nativePaths.length > 0) {
+      addPathAttachments(nativePaths);
+      return;
+    }
+    if (dataTransferContainsDirectory(e.dataTransfer)) {
+      onToast?.('当前浏览器未提供文件夹物理路径，请使用支持本地路径桥接的窗口拖入。', 'warning');
+      return;
+    }
+    void addFileObjects(e.dataTransfer?.files);
+  };
+
+  const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     if (sessionReadOnly) return;
     const text = prompt.trim();
@@ -403,10 +497,15 @@ export default function InputBar({
       return;
     }
     const workflow = parsedWorkflow.workflow || workflowSelection;
+    if (composerDirective && !parsedWorkflow.prompt.trim()) {
+      onToast?.('请先输入目标或任务内容，再启用计划/目标。', 'warning');
+      return;
+    }
     if (
       !parsedWorkflow.prompt
       && attachedImages.length === 0
       && attachedTextAttachments.length === 0
+      && attachedFileAttachments.length === 0
       && !workflow
     ) return;
 
@@ -426,6 +525,7 @@ export default function InputBar({
         setShowSlashPopup(false);
         setAttachedImages([]);
         setAttachedTextAttachments([]);
+        setAttachedFileAttachments([]);
         setReferencedFiles([]);
         return;
       }
@@ -435,22 +535,33 @@ export default function InputBar({
       prompt: parsedSkills.prompt,
       images: attachedImages.map((img) => img.dataUrl),
       textAttachments: attachedTextAttachments.map(({ name, content }) => ({ name, content })),
+      fileAttachments: attachedFileAttachments,
       referencedFiles,
       selectedSkills: parsedSkills.selectedSkills,
       workflow,
+      directive: composerDirective,
     };
 
+    let accepted = true;
     if (isGenerating) {
       onQueueMessage?.(payload);
+    } else if (composerDirective?.kind === 'plan') {
+      accepted = onStartPlanTask ? await onStartPlanTask(payload) : false;
+    } else if (composerDirective?.kind === 'goal') {
+      accepted = onStartGoal ? await onStartGoal(payload) : false;
     } else {
-      onSendMessage(payload);
+      accepted = onSendMessage ? onSendMessage(payload) !== false : false;
     }
+
+    if (accepted === false) return;
 
     setPrompt('');
     setAttachedImages([]);
     setAttachedTextAttachments([]);
+    setAttachedFileAttachments([]);
     setReferencedFiles([]);
     setWorkflowSelection(null);
+    setComposerDirective(null);
     setShowSlashPopup(false);
     setShowMentionPopup(false);
     setShowSkillPopup(false);
@@ -531,7 +642,7 @@ export default function InputBar({
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit();
+      void handleSubmit();
     }
   };
 
@@ -550,9 +661,51 @@ export default function InputBar({
       {showPluginPopup && (
         <div className="plugin-popup-menu custom-scrollbar" onClick={(e) => e.stopPropagation()}>
           <div className="skill-popup-header">
-            <span>插件工作流 (+)</span>
+            <span>添加 (+)</span>
             <span className="mention-popup-count font-mono">仅当前 Turn</span>
           </div>
+          <button
+            type="button"
+            className="plugin-item composer-add-item"
+            onClick={() => {
+              fileInputRef.current?.click();
+              setShowPluginPopup(false);
+            }}
+            disabled={sessionReadOnly}
+          >
+            <FileCode size={13} />
+            <span>文件</span>
+            <span className="skill-desc">选择文件；文件夹请直接复制或拖入</span>
+          </button>
+          <button
+            type="button"
+            className={'plugin-item composer-add-item ' + (composerDirective?.kind === 'goal' ? 'selected' : '')}
+            onClick={() => {
+              setComposerDirective({ kind: 'goal' });
+              setShowPluginPopup(false);
+              textareaRef.current?.focus();
+            }}
+            disabled={sessionReadOnly}
+          >
+            <Target size={13} className="text-green" />
+            <span>目标</span>
+            <span className="skill-desc">提交后设置 Goal 并发送当前任务</span>
+          </button>
+          <button
+            type="button"
+            className={'plugin-item composer-add-item ' + (composerDirective?.kind === 'plan' ? 'selected' : '')}
+            onClick={() => {
+              setComposerDirective({ kind: 'plan' });
+              setShowPluginPopup(false);
+              textareaRef.current?.focus();
+            }}
+            disabled={sessionReadOnly}
+          >
+            <Compass size={13} className="text-amber" />
+            <span>计划模式</span>
+            <span className="skill-desc">提交后进入 Plan Mode 并发送当前任务</span>
+          </button>
+          <div className="composer-popup-section-label">插件工作流</div>
           {skillGroups.map((group) => (
             <button
               type="button"
@@ -651,13 +804,21 @@ export default function InputBar({
       )}
 
       {/* Main Composer Box */}
-      <form className="input-form" onSubmit={handleSubmit}>
-        {/* Hidden Image File Input */}
+      <form
+        className="input-form"
+        onSubmit={handleSubmit}
+        onDragOver={(e) => {
+          const types = Array.from(e.dataTransfer?.types || []);
+          if (!sessionReadOnly && types.includes('Files')) e.preventDefault();
+        }}
+        onDrop={handleDrop}
+      >
+        {/* Hidden file input; folders use path-aware drag/paste instead. */}
         <input
           type="file"
           ref={fileInputRef}
           style={{ display: 'none' }}
-          accept="image/*"
+          accept="*/*"
           multiple
           disabled={sessionReadOnly}
           onChange={handleFileInputChange}
@@ -671,7 +832,9 @@ export default function InputBar({
                 <img src={img.dataUrl} alt={img.name} className="attached-image-thumb" />
                 <div className="attached-image-meta">
                   <span className="attached-image-name" title={img.name}>{img.name}</span>
-                  <span className="attached-image-size font-mono">{(img.size / 1024).toFixed(1)} KB</span>
+                  <span className="attached-image-size font-mono">
+                    图片 · {(img.size / 1024).toFixed(1)} KB
+                  </span>
                 </div>
                 <button
                   type="button"
@@ -712,6 +875,38 @@ export default function InputBar({
                 </button>
               </div>
             ))}
+          </div>
+        )}
+
+        {attachedFileAttachments.length > 0 && (
+          <div className="attached-files-bar" aria-label="文件附件">
+            {attachedFileAttachments.map((attachment, index) => {
+              const isPath = Boolean(attachment.path);
+              return (
+                <div
+                  className="attached-file-card"
+                  key={attachment.id || `${attachment.name}_${index}`}
+                  title={isPath ? attachment.path : attachment.name}
+                >
+                  {isPath ? <Folder size={15} /> : <FileCode size={15} />}
+                  <div className="attached-image-meta">
+                    <span className="attached-image-name">{attachment.name}</span>
+                    <span className="attached-image-size font-mono">
+                      {isPath ? '本地路径 · 当前 Session 可读' : '文件附件'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-remove-attached-image"
+                    onClick={() => setAttachedFileAttachments((previous) => previous.filter((_, i) => i !== index))}
+                    title="移除文件附件"
+                    aria-label={`移除文件附件 ${attachment.name}`}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -767,6 +962,24 @@ export default function InputBar({
             </span>
           </div>
         )}
+        {composerDirective && (
+          <div className="selected-skills-bar">
+            <span className="selected-skill-chip composer-directive-chip font-mono">
+              {composerDirective.kind === 'goal'
+                ? <Target size={10} className="text-green" />
+                : <Compass size={10} className="text-amber" />}
+              {composerDirective.kind === 'goal' ? '目标' : '计划'}
+              <button
+                type="button"
+                onClick={() => setComposerDirective(null)}
+                title="取消临时任务模式"
+                aria-label="取消临时任务模式"
+              >
+                <X size={10} />
+              </button>
+            </span>
+          </div>
+        )}
 
         {/* Textarea Input: Direct, Spacious & Uncluttered */}
         <div className="textarea-wrapper">
@@ -804,20 +1017,10 @@ export default function InputBar({
                 setShowMentionPopup(false);
                 setShowSkillPopup(false);
               }}
-              disabled={sessionReadOnly || skillGroups.length === 0}
-              title="选择当前 Turn 的插件工作流"
+              disabled={sessionReadOnly}
+              title="添加文件、目标、计划或当前 Turn 的插件工作流"
             >
               <Plus size={15} />
-            </button>
-            {/* Image Upload Button */}
-            <button
-              type="button"
-              className="composer-icon-btn"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={sessionReadOnly}
-              title="上传图片或截图 (支持直接在输入框按 Ctrl+V 粘贴截图)"
-            >
-              <ImageIcon size={14} />
             </button>
             <span className="hint-kbd font-mono">Enter 发送</span>
           </div>
@@ -852,10 +1055,11 @@ export default function InputBar({
                 className="btn-action send"
                 disabled={(
                   !prompt.trim()
-                  && !workflowSelection
-                  && attachedImages.length === 0
-                  && attachedTextAttachments.length === 0
-                ) || !!pendingApproval}
+                   && !workflowSelection
+                   && attachedImages.length === 0
+                   && attachedTextAttachments.length === 0
+                   && attachedFileAttachments.length === 0
+                 ) || !!pendingApproval}
                 title="发送"
               >
                 <Send size={13} />

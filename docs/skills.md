@@ -196,3 +196,31 @@ The event stream shows `skill_group_activated`, then emits the same started and
 loaded on-demand events for each first `SKILL.md` read with
 `activation: "on_demand"`.
 Disabling pstack in the panel disables both entry points for the Project.
+
+## Composer files and local paths
+
+The plus menu has one `文件` entry. It opens a regular file picker and accepts
+ordinary files, including images. Images selected there use the same image
+input path as clipboard images, so the model can use `read_image` when the
+runtime permits it. The composer does not provide a directory picker.
+
+Folders can be copied or dragged into the composer. When the desktop bridge or
+the operating system provides a physical path, WebStudio records that path as
+a read-only reference for the current Turn; it does not copy the folder or
+invent a relative-path tree. A browser that exposes a directory but no physical
+path shows a warning and asks the user to use a path-aware desktop window.
+
+Regular files without a usable native path are sent as bounded content
+attachments. The Gateway validates the path or content, rejects `.git` path
+references, and adds only a controlled attachment reference to the prompt.
+Path references are read-only; file writes and script execution still use the
+Host approval and sandbox rules. Attachment metadata is preserved for the live
+message and queue, while historical projections strip physical paths and keep
+only safe names/counts.
+
+Selecting `目标` or `计划模式` from the same plus menu only adds a composer
+chip. It does not change the runtime immediately. The directive is activated
+when the message is submitted (or later dequeued): Goal sets the current
+Thread Goal and sends the task, while Plan Mode enables planning and sends the
+task. If the current Turn is running, the complete directive and attachment
+payload stay together in the queue.

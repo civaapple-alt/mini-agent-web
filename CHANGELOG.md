@@ -38,6 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removable `pasted-text.txt` attachments, and lets the Gateway store them in
   the isolated Project/Thread attachment directory for on-demand `read_file`
   access without expanding the message bubble.
+- Unify the composer plus menu around file selection, Goal, and Plan Mode. Images
+  use the file entry, while copied or dropped folders are recorded as physical
+  read-only path references instead of being copied or expanded into relative
+  paths. Goal and Plan chips activate only when their task is submitted or
+  dequeued, and file/path metadata remains attached to the queued message.
 
 ## [0.8.0] - 2026-09-15
 

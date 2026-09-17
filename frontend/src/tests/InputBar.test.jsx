@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import InputBar from '../components/InputBar';
 
@@ -88,11 +88,61 @@ describe('InputBar composer popups', () => {
   it('closes the plugin popup when clicking outside it', () => {
     render(<InputBar {...props} />);
 
-    fireEvent.click(screen.getByTitle('选择当前 Turn 的插件工作流'));
-    expect(screen.getByText('插件工作流 (+)')).toBeDefined();
+    fireEvent.click(screen.getByTitle('添加文件、目标、计划或当前 Turn 的插件工作流'));
+    expect(screen.getByText('添加 (+)')).toBeDefined();
 
     fireEvent.pointerDown(document.body);
 
-    expect(screen.queryByText('插件工作流 (+)')).toBeNull();
+    expect(screen.queryByText('添加 (+)')).toBeNull();
+  });
+
+  it('shows a Target chip without activating Goal before submit', () => {
+    const onStartGoal = vi.fn();
+    render(<InputBar {...props} onStartGoal={onStartGoal} />);
+
+    fireEvent.click(screen.getByTitle('添加文件、目标、计划或当前 Turn 的插件工作流'));
+    fireEvent.click(screen.getByRole('button', { name: /目标 提交后设置 Goal/ }));
+
+    expect(screen.getByText('目标')).toBeDefined();
+    expect(onStartGoal).not.toHaveBeenCalled();
+  });
+
+  it('submits a selected file through the unified plus menu', async () => {
+    const onSendMessage = vi.fn();
+    render(<InputBar {...props} onSendMessage={onSendMessage} />);
+    const input = document.querySelector('input[type="file"]');
+    const file = new File(['hello'], 'notes.md', { type: 'text/markdown' });
+
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText('notes.md')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    expect(onSendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      fileAttachments: [expect.objectContaining({ name: 'notes.md' })],
+    }));
+  });
+
+  it('records a dropped folder as a physical path reference', () => {
+    const onSendMessage = vi.fn();
+    const previousBridge = globalThis.__MINI_AGENT_FILE_BRIDGE__;
+    globalThis.__MINI_AGENT_FILE_BRIDGE__ = {
+      pathsFromDataTransfer: () => ['C:\\workspace\\how'],
+    };
+    try {
+      render(<InputBar {...props} onSendMessage={onSendMessage} />);
+      const form = screen.getByRole('textbox').closest('form');
+      fireEvent.drop(form, { dataTransfer: { types: ['Files'] } });
+      expect(screen.getByText('how')).toBeDefined();
+      fireEvent.click(screen.getByRole('button', { name: '发送' }));
+      expect(onSendMessage).toHaveBeenCalledWith(expect.objectContaining({
+        fileAttachments: [expect.objectContaining({
+          name: 'how',
+          path: 'C:\\workspace\\how',
+          source: 'path',
+        })],
+      }));
+    } finally {
+      if (previousBridge === undefined) delete globalThis.__MINI_AGENT_FILE_BRIDGE__;
+      else globalThis.__MINI_AGENT_FILE_BRIDGE__ = previousBridge;
+    }
   });
 });

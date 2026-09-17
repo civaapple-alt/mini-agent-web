@@ -19,6 +19,7 @@ import ContextCompactionGroup from './ContextCompactionGroup';
 import ErrorBoundary from './ErrorBoundary';
 import { groupCompactionBlocks, normalizeAssistantBlocks } from '../utils/messageState';
 import {
+  extractFileAttachmentNames,
   extractTextAttachmentNames,
   getInputTrace,
   getInputTraceSourceLabel,
@@ -73,10 +74,18 @@ export default function MessageItem({
   }
 
   if (role === 'user') {
-    const { images = [], referencedFiles = [], textAttachments = [] } = message;
+    const {
+      images = [],
+      referencedFiles = [],
+      textAttachments = [],
+      fileAttachments = [],
+    } = message;
     const displayedTextAttachments = textAttachments.length > 0
       ? textAttachments
       : extractTextAttachmentNames(message.text).map((name) => ({ name }));
+    const displayedFileAttachments = fileAttachments.length > 0
+      ? fileAttachments
+      : extractFileAttachmentNames(message.text).map((name) => ({ name }));
     return (
       <div className={`message-row user ${message.isSteer ? 'steer-message-row' : ''} ${message.isGoal ? 'goal-message-row' : ''}`}>
         <div className="user-bubble-container">
@@ -156,6 +165,21 @@ export default function MessageItem({
             </div>
           )}
 
+          {displayedFileAttachments.length > 0 && (
+            <div className="user-text-attachments-row">
+              {displayedFileAttachments.map((attachment, index) => (
+                <span
+                  key={`${attachment.name}_${index}`}
+                  className="user-text-attachment-chip font-mono"
+                  title="本地路径或文件附件"
+                >
+                  <FileText size={11} />
+                  <span>{attachment.name}</span>
+                </span>
+              ))}
+            </div>
+          )}
+
           {message.isSteer && (
             <div className="steer-message-label font-mono">
               <Navigation size={11} />
@@ -179,7 +203,9 @@ export default function MessageItem({
             <span className={message.isSteer ? 'steer-text' : message.isGoal ? 'goal-text' : ''}>
               {text || (message.selectedSkills?.length
                 ? message.selectedSkills.map((name) => '$' + name).join(' ')
-                : displayedTextAttachments.length > 0 ? '（文本附件）' : '')}
+                : displayedTextAttachments.length > 0
+                ? '（文本附件）'
+                : displayedFileAttachments.length > 0 ? '（文件附件）' : '')}
             </span>
           </div>
           <div className="user-actions">
@@ -208,7 +234,9 @@ export default function MessageItem({
                 <div className="user-trace-prompt" title={text}>
                   {text || (images.length > 0
                     ? '（图片输入）'
-                    : displayedTextAttachments.length > 0 ? '（文本附件）' : '（空输入）')}
+                    : displayedTextAttachments.length > 0
+                    ? '（文本附件）'
+                    : displayedFileAttachments.length > 0 ? '（文件附件）' : '（空输入）')}
                 </div>
                 <dl className="user-trace-details">
                   <div>
@@ -243,7 +271,7 @@ export default function MessageItem({
                     <dd>
                       {inputTrace.attachments?.known === false
                         ? '历史投影未提供附件明细'
-                        : `${inputTrace.attachments?.imageCount || 0} 张图片 · ${inputTrace.attachments?.textCount || 0} 个文本附件 · ${inputTrace.attachments?.referencedFiles?.length || 0} 个文件引用`}
+                        : `${inputTrace.attachments?.imageCount || 0} 张图片 · ${inputTrace.attachments?.textCount || 0} 个文本附件 · ${inputTrace.attachments?.fileCount || 0} 个文件/路径 · ${inputTrace.attachments?.referencedFiles?.length || 0} 个文件引用`}
                     </dd>
                   </div>
                 </dl>

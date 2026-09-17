@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Clock3, FileCode, FileText, Image as ImageIcon, ListOrdered, Navigation, Pencil, Trash2, X } from 'lucide-react';
+import { Check, Clock3, FileCode, FileText, Folder, Image as ImageIcon, ListOrdered, Navigation, Pencil, Trash2, X } from 'lucide-react';
 
 import './InputBar.css';
 
 function messagePreview(item) {
   const text = (item.prompt || '').trim();
   if (text) return text;
+  if (item.directive?.kind === 'goal') return '目标消息';
+  if (item.directive?.kind === 'plan') return '计划消息';
   if (item.workflow?.id) return '+ ' + item.workflow.id;
   if (item.selectedSkills?.length) return item.selectedSkills.map((name) => `$${name}`).join(' ');
   if (item.images?.length) return '图片消息';
@@ -43,7 +45,7 @@ export default function PendingMessageDock({
 
   const saveEditing = (item) => {
     const nextText = editingText.trim();
-    if (!nextText && !item.images?.length && !item.textAttachments?.length) return;
+    if (!nextText && !item.images?.length && !item.textAttachments?.length && !item.fileAttachments?.length) return;
     onUpdate(item.id, nextText);
     setEditingId(null);
     setEditingText('');
@@ -118,6 +120,11 @@ export default function PendingMessageDock({
                       {item.textAttachments?.length > 0 && (
                         <span><FileText size={11} /> {item.textAttachments.length} 个文本附件</span>
                       )}
+                      {item.fileAttachments?.length > 0 && (
+                        <span><Folder size={11} /> {item.fileAttachments.length} 个文件/路径</span>
+                      )}
+                      {item.directive?.kind === 'plan' && <span>计划模式</span>}
+                      {item.directive?.kind === 'goal' && <span>目标</span>}
                     </div>
                     <div className="queue-item-actions">
                       <button

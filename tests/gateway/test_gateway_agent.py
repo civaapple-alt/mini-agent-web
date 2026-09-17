@@ -12,6 +12,7 @@ Unit and integration tests for Gateway Agent interaction endpoints:
 from __future__ import annotations
 
 import asyncio
+import base64
 import threading
 from dataclasses import dataclass, field
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -27,7 +28,7 @@ from server.routes.agent import (
     _process_attachments,
     _stream_turn_to_ws,
 )
-from server.routes.agent_models import TextAttachment
+from server.routes.agent_models import FileAttachment, TextAttachment
 from server.session_manager import session_manager
 
 
@@ -403,6 +404,72 @@ def test_process_attachments_pipeline(tmp_path, monkeypatch):
     assert len(text_files) == 1
     assert text_files[0].read_text(encoding="utf-8") == "INFO: shutdown\nERROR: failed"
     assert not (tmp_path / ".mini-agent").exists()
+
+
+def test_process_file_attachments_preserves_path_and_stages_file_content(tmp_path, monkeypatch):
+    """Path drops stay references while ordinary files remain isolated copies."""
+    attachment_dir = tmp_path / "gateway-state" / "attachments"
+    monkeypatch.setattr(
+        session_manager,
+        "attachments_path_for_thread",
+        lambda thread_id, project_id: attachment_dir,
+    )
+    selected_file = tmp_path / "notes.md"
+    selected_file.write_text("# Notes\n", encoding="utf-8")
+    selected_folder = tmp_path / "how"
+    selected_folder.mkdir()
+
+    enriched = _process_attachments(
+        "Review the attached context",
+        thread_id="thread-file-test",
+        project_id="project-file-test",
+        file_attachments=[
+            FileAttachment(
+                name="notes.md",
+                path=str(selected_file),
+                source="path",
+            ),
+            FileAttachment(
+                name="how",
+                path=str(selected_folder),
+                source="path",
+            ),
+            FileAttachment(
+                name="copied.txt",
+                source="content",
+                contentBase64=base64.b64encode(b"copied content").decode("ascii"),
+            ),
+        ],
+    )
+
+    assert f"[User Attached Path: {selected_file.resolve()}" in enriched
+    assert f"[User Attached Path: {selected_folder.resolve()}" in enriched
+    assert "read-only path reference" in enriched
+    assert "[User Attached File:" in enriched
+    staged = list(attachment_dir.glob("file_*"))
+    assert len(staged) == 1
+    assert staged[0].read_bytes() == b"copied content"
+
+
+def test_process_file_path_attachment_rejects_missing_or_git_paths(tmp_path):
+    """Path references are validated before they enter the model prompt."""
+    with pytest.raises(ValueError, match="无法解析路径附件"):
+        _process_attachments(
+            "inspect",
+            file_attachments=[
+                FileAttachment(name="missing", path=str(tmp_path / "missing"), source="path")
+            ],
+        )
+
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    with pytest.raises(ValueError, match=r"不能指向 \.git"):
+        _process_attachments(
+            "inspect",
+            file_attachments=[
+                FileAttachment(name="git", path=str(git_dir), source="path")
+            ],
+        )
 
 
 @pytest.mark.asyncio

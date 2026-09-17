@@ -15,6 +15,7 @@ test('session state helpers preserve scoped identities and bounded projections',
     images: [],
     referencedFiles: [],
     textAttachments: [],
+    fileAttachments: [],
   });
   assert.equal(
     normalizeInputPayload({

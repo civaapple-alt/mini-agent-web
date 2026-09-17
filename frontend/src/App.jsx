@@ -1438,6 +1438,7 @@ export default function App() {
       prompt: promptText,
       images,
       textAttachments,
+      fileAttachments,
       referencedFiles,
       selectedSkills = [],
       workflow: requestedWorkflow = null,
@@ -1479,6 +1480,7 @@ export default function App() {
       !parsedWorkflow.prompt.trim()
       && images.length === 0
       && textAttachments.length === 0
+      && fileAttachments.length === 0
       && normalizedSkills.length === 0
       && !workflow
     ) return false;
@@ -1503,6 +1505,7 @@ export default function App() {
       prompt: parsedWorkflow.prompt,
       images,
       textAttachments,
+      fileAttachments,
       referencedFiles,
       selectedSkills: normalizedSkills,
       workflow,
@@ -1522,6 +1525,7 @@ export default function App() {
       goalActive: goalState?.status === 'active',
       images,
       textAttachments,
+      fileAttachments,
       referencedFiles,
     });
 
@@ -1542,6 +1546,7 @@ export default function App() {
         text: parsedWorkflow.prompt,
         images,
         textAttachments,
+        fileAttachments,
         referencedFiles,
         selectedSkills: normalizedSkills,
         workflow,
@@ -1560,6 +1565,7 @@ export default function App() {
       !normalized.prompt.trim()
       && normalized.images.length === 0
       && !normalized.textAttachments?.length
+      && !normalized.fileAttachments?.length
       && !normalized.selectedSkills?.length
       && !normalized.workflow
     ) return;
@@ -1635,10 +1641,18 @@ export default function App() {
 
     queueDispatchingRef.current = true;
     setPendingMessages((prev) => prev.filter((item) => item.id !== nextMessage.id));
-    if (!handleSendMessage(nextMessage)) {
+    void (async () => {
+      let sent;
+      if (nextMessage.directive?.kind === 'plan') {
+        sent = await handleStartPlanTask(nextMessage);
+      } else if (nextMessage.directive?.kind === 'goal') {
+        sent = await handleStartGoal(nextMessage);
+      } else {
+        sent = handleSendMessage(nextMessage);
+      }
       queueDispatchingRef.current = false;
-      setPendingMessages((prev) => [nextMessage, ...prev]);
-    }
+      if (!sent) setPendingMessages((prev) => [nextMessage, ...prev]);
+    })();
   }, [isGenerating, pendingMessages]);
 
   const handleClearChat = () => {
@@ -2133,7 +2147,10 @@ export default function App() {
     prompt,
     images = [],
     textAttachments = [],
+    fileAttachments = [],
     referencedFiles = [],
+    selectedSkills = [],
+    workflow = null,
   }) => {
     if (
       isGenerating
@@ -2143,18 +2160,20 @@ export default function App() {
       || pendingApproval
     ) {
       showToast('当前轮次正在执行，Plan 任务请在本轮结束后发送。', 'info', 3000);
-      return;
+      return false;
     }
     if (!planActive) {
       const enabled = await handleSetPlanMode(true);
-      if (!enabled) return;
+      if (!enabled) return false;
     }
-    handleSendMessage({
+    return handleSendMessage({
       prompt,
       images,
       textAttachments,
+      fileAttachments,
       referencedFiles,
-      selectedSkills: [],
+      selectedSkills,
+      workflow,
     });
   };
 
@@ -2174,7 +2193,10 @@ export default function App() {
     return started;
   };
 
-  const handleStartGoal = async (objective) => {
+  const handleStartGoal = async (objectiveOrPayload) => {
+    const isPayload = objectiveOrPayload && typeof objectiveOrPayload === 'object';
+    const objective = isPayload ? objectiveOrPayload.prompt : objectiveOrPayload;
+    if (!String(objective || '').trim()) return false;
     try {
       const result = await api.setGoal(
         objective,
@@ -2185,9 +2207,16 @@ export default function App() {
       );
       const goal = result.goal || result;
       applyGoalState(currentThread, goal, result, currentThreadProject);
+      if (isPayload) {
+        const sent = handleSendMessage(objectiveOrPayload);
+        if (sent) showToast('Goal 已启动，并已发送当前任务', 'success');
+        return sent;
+      }
       showToast('Goal 已启动，并会在状态栏与详情抽屉中显示', 'success');
+      return true;
     } catch (err) {
       showToast(`启动 Goal 失败: ${err.message}`, 'error');
+      return false;
     }
   };
 
@@ -2204,6 +2233,9 @@ export default function App() {
       textAttachments: Array.isArray(message.textAttachments)
         ? message.textAttachments
         : [],
+      fileAttachments: Array.isArray(message.fileAttachments)
+        ? message.fileAttachments
+        : [],
       referencedFiles: Array.isArray(message.referencedFiles)
         ? message.referencedFiles
         : [],
@@ -2211,6 +2243,7 @@ export default function App() {
         ? message.selectedSkills
         : [],
       workflow: message.workflow || null,
+      directive: message.directive || null,
       editToken: Date.now(),
     });
     setSidePanelOpen(false);

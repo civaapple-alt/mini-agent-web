@@ -1,4 +1,5 @@
 import { normalizeTextAttachments } from './pasteAttachments.js';
+import { normalizeFileAttachments } from './fileAttachments.js';
 
 export const RUNTIME_PHASE_LABELS = {
   idle: '空闲',
@@ -38,7 +39,13 @@ export function scopedThreadKey(threadId, projectId) {
 
 export function normalizeInputPayload(inputPayload) {
   if (typeof inputPayload === 'string') {
-    return { prompt: inputPayload, images: [], referencedFiles: [], textAttachments: [] };
+    return {
+      prompt: inputPayload,
+      images: [],
+      referencedFiles: [],
+      textAttachments: [],
+      fileAttachments: [],
+    };
   }
   if (typeof inputPayload === 'object' && inputPayload !== null) {
     const normalized = {
@@ -48,13 +55,19 @@ export function normalizeInputPayload(inputPayload) {
       textAttachments: normalizeTextAttachments(
         inputPayload.textAttachments || inputPayload.text_attachments,
       ),
+      fileAttachments: normalizeFileAttachments(
+        inputPayload.fileAttachments || inputPayload.file_attachments,
+      ),
     };
     const selectedSkills = inputPayload.selectedSkills || inputPayload.selected_skills;
     if (selectedSkills) normalized.selectedSkills = selectedSkills;
     if (inputPayload.workflow) normalized.workflow = inputPayload.workflow;
+    if (inputPayload.directive) normalized.directive = inputPayload.directive;
     return normalized;
   }
-  return { prompt: '', images: [], referencedFiles: [], textAttachments: [] };
+  return {
+    prompt: '', images: [], referencedFiles: [], textAttachments: [], fileAttachments: [],
+  };
 }
 
 export function formatRunFailure(reason) {

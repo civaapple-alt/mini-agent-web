@@ -26,6 +26,8 @@ MAX_RECORD_BYTES = 64 * 1024
 MAX_ERROR_CHARS = 2048
 MAX_CHECKPOINT_MESSAGES = 64
 MAX_CHECKPOINT_MESSAGE_CHARS = 16 * 1024
+MAX_NOTEBOOK_ENTRIES = 32
+MAX_NOTEBOOK_CONTENT_CHARS = 4096
 THREAD_INDEX_FILE_NAME = "thread_index.json"
 THREAD_SETTINGS_FILE_NAME = "thread_settings.json"
 
@@ -530,6 +532,44 @@ class SessionCatalog:
             "session": entry,
         }
 
+    def read_notebook(
+        self, workspace: Path, project_id: str, thread_id: str
+    ) -> dict[str, Any] | None:
+        """Read the bounded Session-owned notebook without exposing its path."""
+        entry = self.find_by_thread(workspace, project_id, thread_id)
+        if not entry:
+            return None
+        base = _session_base(workspace)
+        session_path = self._valid_session_path(base, str(entry.get("session_id") or ""))
+        if not session_path:
+            return None
+        notebook = _read_json(session_path / "notebook.json")
+        raw_entries = notebook.get("entries")
+        entries = []
+        if isinstance(raw_entries, list):
+            for raw_entry in raw_entries[:MAX_NOTEBOOK_ENTRIES]:
+                if not isinstance(raw_entry, dict):
+                    continue
+                key = _bounded_text(raw_entry.get("key"), 96)
+                content = _bounded_text(
+                    raw_entry.get("content"), MAX_NOTEBOOK_CONTENT_CHARS
+                )
+                if key and content is not None:
+                    entries.append(
+                        {
+                            "key": key,
+                            "content": content,
+                            "updated_at": _timestamp(raw_entry.get("updated_at_ms")),
+                        }
+                    )
+        return {
+            "thread_id": thread_id,
+            "version": _bounded_int(notebook.get("version")) or 1,
+            "revision": _bounded_int(notebook.get("revision")),
+            "updated_at": _timestamp(notebook.get("updated_at_ms")),
+            "entries": entries,
+        }
+
     def _read_session(
         self, path: Path, project_id: str, include_history: bool
     ) -> dict[str, Any] | None:
@@ -568,6 +608,7 @@ class SessionCatalog:
         latest_turn_timestamp = 0
         turn_count = 0
         forked_from: dict[str, Any] | None = None
+        latest_operation: dict[str, Any] | None = None
         for record in records:
             kind = record.get("kind")
             if kind == "session_created":
@@ -596,6 +637,28 @@ class SessionCatalog:
                     latest_turn_timestamp = _bounded_int(record.get("timestamp_ms"))
             elif kind == "checkpoint":
                 latest_checkpoint = record
+            elif kind == "operation":
+                operation_id = _bounded_text(record.get("operation_id"), 128)
+                operation_kind = _bounded_text(record.get("operation_kind"), 64)
+                operation_status = _bounded_text(record.get("status"), 32)
+                if operation_id and operation_kind and operation_status:
+                    latest_operation = {
+                        "operation_id": operation_id,
+                        "operation_kind": operation_kind,
+                        "operation_status": operation_status,
+                        "operation_parent_thread_id": _bounded_text(
+                            record.get("parent_thread_id"), 128
+                        ),
+                        "operation_turn_id": _bounded_text(record.get("turn_id"), 128),
+                        "operation_attempt": _bounded_int(record.get("attempt")),
+                        "operation_result": _bounded_text(
+                            record.get("result"), 16 * 1024
+                        ),
+                        "operation_error": _bounded_text(record.get("error")),
+                        "operation_updated_at": _timestamp(
+                            record.get("timestamp_ms")
+                        ),
+                    }
         if not thread_id:
             return None
 
@@ -693,6 +756,8 @@ class SessionCatalog:
             "resumable": bool(latest_checkpoint) and not lock_active,
             "history_truncated": skipped_oversized_records,
         }
+        if latest_operation:
+            entry.update(latest_operation)
         if forked_from:
             parent_session_id = forked_from.get("parent_session_id")
             if isinstance(parent_session_id, str) and parent_session_id:

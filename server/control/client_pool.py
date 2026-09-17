@@ -325,6 +325,8 @@ class ClientPool:
         title: str | None = None,
         project_id: str | None = None,
         context_policy: str = "exact",
+        operation_id: str | None = None,
+        operation_attempt: int | None = None,
     ) -> dict[str, Any]:
         """Create and attach a child process backed by a new SessionStore."""
         owner = self.owner
@@ -385,11 +387,15 @@ class ClientPool:
                             "compacted": existing_meta.get("compacted", False),
                             "method": existing_meta.get("compaction_method", "exact"),
                         }
-            result = await client.fork_session(
-                source_thread_id=source_thread_id,
-                new_thread_id=new_thread_id,
-                context_policy=context_policy,
-            )
+            fork_kwargs: dict[str, Any] = {
+                "source_thread_id": source_thread_id,
+                "new_thread_id": new_thread_id,
+                "context_policy": context_policy,
+            }
+            if operation_id is not None:
+                fork_kwargs["operation_id"] = operation_id
+                fork_kwargs["operation_attempt"] = operation_attempt
+            result = await client.fork_session(**fork_kwargs)
             source_meta = owner.get_thread_meta(source_thread_id, source_project)
             fork_title = title or f"{source_meta.get('title', source_thread_id)} (Fork)"
             # SessionStore has already committed the child before this point.

@@ -1716,13 +1716,18 @@ async def test_start_child_task_runs_on_an_independent_client(
     assert result["parent_thread_id"] == "parent"
     assert result["child_thread_id"] == "child"
     assert result["turn_id"] == "child-turn-1"
-    assert result["operation_id"] == "turn:child-turn-1"
-    fork_thread.assert_awaited_once_with("parent", "child", None, "default", "exact")
+    assert result["operation_id"] == "child:child"
+    assert result["operation_attempt"] == 1
+    fork_thread.assert_awaited_once_with(
+        "parent", "child", None, "default", "exact", "child:child", 1
+    )
     child_client.start_turn.assert_awaited_once_with(
         prompt="inspect the boundary",
         mode="start",
         thread_id="child",
         effort="high",
+        operation_id="child:child",
+        operation_attempt=1,
     )
     assert mock_session_manager.get_active_turn("child", "default") == (
         "child-turn-1"

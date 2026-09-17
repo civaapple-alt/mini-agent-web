@@ -89,6 +89,39 @@ export const threadApi = {
     return res.json();
   },
 
+  async cancelChildTask(sourceThreadId, childThreadId, options = {}) {
+    const parent = sourceThreadId || 'default';
+    const res = await request(
+      `/api/threads/${encodeURIComponent(parent)}/children/${encodeURIComponent(childThreadId)}/cancel`,
+      { method: 'POST', ...requestSignal(options) },
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to cancel child task ${childThreadId}`);
+    return res.json();
+  },
+
+  async retryChildTask(sourceThreadId, childThreadId, options = {}) {
+    const parent = sourceThreadId || 'default';
+    const res = await request(
+      `/api/threads/${encodeURIComponent(parent)}/children/${encodeURIComponent(childThreadId)}/retry`,
+      { method: 'POST', ...requestSignal(options) },
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to retry child task ${childThreadId}`);
+    return res.json();
+  },
+
+  async readNotebook(threadId = 'default', options = {}) {
+    const targetThread = threadId || 'default';
+    const res = await request(
+      `/api/threads/${encodeURIComponent(targetThread)}/notebook`,
+      requestSignal(options),
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to read notebook for ${targetThread}`);
+    return res.json();
+  },
+
   async readThread(threadId, options = {}) {
     const res = await request(
       `/api/threads/${encodeURIComponent(threadId)}`,

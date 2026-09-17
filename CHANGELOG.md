@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   timestamps. Simplify the history rows, hide Gateway attachment context from
   displayed prompts, and show safe image-count metadata without exposing raw
   image bytes or filesystem paths.
+- Add independent Child Session lifecycle projection with persisted operation
+  status, cooperative cancel, bounded retry, delegated child observation, and a
+  Session notebook read endpoint. Gateway remains an orchestration layer and
+  does not create a second history or scheduler authority.
 - Add bounded pasted-text attachments for long diagnostics and logs. Web Studio
   keeps short pastes in the composer, stages large/log-shaped pastes as
   removable `pasted-text.txt` attachments, and lets the Gateway store them in

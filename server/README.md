@@ -30,6 +30,9 @@ uv run mini-agent-server-dev
 | `/api/threads/{thread_id}/events` | App Server `turn/event` 的有界 cursor 重放；发生 gap 时回退到 canonical history |
 | `/api/threads/{thread_id}/runtime/status` | 非阻塞 runtime phase、Turn/operation/checkpoint 和错误快照 |
 | `/api/threads/{thread_id}/children` | 创建或读取由该 Thread 派生的独立 child Session/runtime |
+| `/api/threads/{thread_id}/children/{child_thread_id}/cancel` | 通过 child App Server 请求 cooperative interrupt |
+| `/api/threads/{thread_id}/children/{child_thread_id}/retry` | 为已结束的失败/取消 child 启动有界的新 attempt |
+| `/api/threads/{thread_id}/notebook` | 读取 SessionStore 所有的有界 notebook 投影 |
 | `/api/threads/{thread_id}/settings` | Thread collaboration mode、Builtin tools、显式推进方式和 App Server `state_revision` |
 | `/api/threads/{thread_id}/goal` | Thread Goal 的读取、设置和清除 |
 | `/api/agent/*` | Turn、Steer、Interrupt 和审批 HTTP 操作 |
@@ -51,6 +54,17 @@ SessionStore 的 `forked_from` lineage 和 live runtime projection 组合读取 
 而不是维护第二份 child history。第一版限制每个父 Thread 同时最多两个 active
 children、只允许 exact context；compact fork 仍要求父 Thread idle。
 
+Child 的 `operation_id`、attempt 和 `queued`/`running`/`awaiting_approval`/
+`completed`/`failed`/`cancelled` 状态来自 SessionStore 的 append-only
+`operation` 记录。Gateway 重启后从 catalog 重建投影；`cancel` 只发出标准
+`turn/interrupt`，不会删除 Session，`retry` 创建新的 child Turn 并递增
+attempt。没有在线进程时，Gateway 返回需要恢复/重新 attach 的状态，不伪造
+成功结果。Child 最多一层、每个父 Thread 最多两个 active children。
+
+Session notebook 通过 `/notebook` 读取，Gateway 不保存第二份内容缓存。运行时
+恢复时只向模型注入有界摘要；完整条目由 Host/Capabilities 的
+`notebook_read`/`notebook_write` 工具按需处理。
+
 技能目录来自当前 Project App Server 的 `initialize.capabilityManifest`，
 不是 Gateway 扫描文件系统的结果。Runtime 会发现项目
 `.agents/skills`、用户 `%USERPROFILE%/.agents/skills`、用户
@@ -69,6 +83,10 @@ Turn 请求通过 `selectedSkills` 和可选 `workflow` 传递到 SDK：
 正文限制。结构化 `skill_group_activated`、`skills_loaded` 和
 `skills_load_failed` 事件沿 SSE/WebSocket/replay 原样转发。`skills_loaded` 的
 `phase` 为 `started` 或 `loaded`；旧事件缺少该字段时按 `loaded` 处理。
+
+父模型发出 `delegate_task` 的真实 `tool_started` 事件后，Gateway 仅作为观察者
+触发既有 child control seam；child 的 Session operation 与 runtime projection
+仍是状态权威，Gateway 的 client/task map 不承担第二套调度或历史职责。
 
 运行时还会把每个已启用 Skill 的根目录作为受信任的只读根传给 Host。模型可以
 通过现有 `read_file` 按需查看 `SKILL.md`、参考文档、脚本源码、assets 和其他

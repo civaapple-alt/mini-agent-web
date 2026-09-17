@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [Child Session operation、恢复与 Session notebook](implemented/architecture/2026-09-17-child-operation-recovery-and-notebook.zh.md)
 - [全局 Skill 发现、按需加载与阶段状态](implemented/feature/2026-09-17-global-skill-discovery-and-observability.zh.md)
 - [WebStudio 内置 pstack 技能组与显式激活](implemented/feature/2026-09-17-webstudio-builtin-pstack-skills.zh.md)
 - [统一加号入口、文件路径引用与 Goal/Plan 延迟激活](implemented/feature/2026-09-17-unified-plus-file-path-and-task-directives.zh.md)

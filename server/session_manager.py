@@ -25,6 +25,7 @@ from server.control.thread_registry import ThreadRegistry
 from server.control.turn_registry import TurnRegistry
 from server.control.ws_broker import WebSocketBroker
 from server.persistence import to_json_serializable
+from server.session_catalog import session_catalog
 
 logger = logging.getLogger("mini_agent.server")
 
@@ -295,9 +296,17 @@ class SessionManager:
         title: str | None = None,
         project_id: str | None = None,
         context_policy: str = "exact",
+        operation_id: str | None = None,
+        operation_attempt: int | None = None,
     ) -> dict[str, Any]:
         return await self._client_pool.fork_thread(
-            source_thread_id, new_thread_id, title, project_id, context_policy
+            source_thread_id,
+            new_thread_id,
+            title,
+            project_id,
+            context_policy,
+            operation_id,
+            operation_attempt,
         )
 
     async def start_child_task(
@@ -337,6 +346,8 @@ class SessionManager:
             parent_session_id = str(parent.get("session", {}).get("session_id") or "")
             if not parent_session_id:
                 raise RuntimeError("parent Session persistence is unavailable")
+            if parent.get("session", {}).get("parent_session_id"):
+                raise RuntimeError("child task depth is limited to one level")
 
             children = self.list_project_sessions(resolved_project_id, limit=128)[
                 "data"
@@ -347,6 +358,8 @@ class SessionManager:
                 if child.get("parent_session_id") == parent_session_id
                 and (
                     child.get("turn_active")
+                    or child.get("operation_status")
+                    in {"queued", "running", "awaiting_approval"}
                     or (
                         resolved_project_id,
                         str(child.get("thread_id") or ""),
@@ -363,12 +376,17 @@ class SessionManager:
                     f"child Thread '{new_thread_id}' already exists"
                 )
 
+            operation_id = f"child:{new_thread_id}"
+            operation_attempt = 1
+
             fork = await self.fork_thread(
                 source_thread_id,
                 new_thread_id,
                 title,
                 resolved_project_id,
                 "exact",
+                operation_id,
+                operation_attempt,
             )
             child_client = await self.get_client_for_thread(
                 new_thread_id, resolved_project_id
@@ -380,6 +398,8 @@ class SessionManager:
                 effort=self.get_settings(resolved_project_id).get(
                     "reasoning_effort", "high"
                 ),
+                operation_id=operation_id,
+                operation_attempt=operation_attempt,
             )
             turn_id = str(getattr(submission, "turn_id", None) or "")
             result: dict[str, Any] = {
@@ -388,7 +408,8 @@ class SessionManager:
                 "project": resolved_project_id,
                 "session": fork,
                 "turn_id": turn_id or None,
-                "operation_id": f"turn:{turn_id}" if turn_id else None,
+                "operation_id": operation_id,
+                "operation_attempt": operation_attempt,
                 "status": "running"
                 if turn_id
                 else str(getattr(submission, "status", "not_started")),
@@ -425,6 +446,92 @@ class SessionManager:
         finally:
             self.clear_active_turn(thread_id, project_id, turn_id, task)
 
+    async def cancel_child_task(
+        self, source_thread_id: str, child_thread_id: str, project_id: str | None = None
+    ) -> dict[str, Any]:
+        """Request cooperative cancellation through the child App Server."""
+        resolved_project_id = self.resolve_thread_project(
+            source_thread_id or "default", project_id
+        )
+        child = next(
+            (
+                item
+                for item in await self.list_child_tasks(source_thread_id, project_id)
+                if item.get("child_thread_id") == child_thread_id
+            ),
+            None,
+        )
+        if child is None:
+            raise KeyError(f"Child Thread '{child_thread_id}' not found")
+        turn_id = str(child.get("turn_id") or "")
+        if not turn_id or child.get("status") not in {
+            "queued",
+            "running",
+            "awaiting_approval",
+            "in_progress",
+        }:
+            raise ValueError("child task is not active")
+        client = await self.get_client_for_thread(child_thread_id, resolved_project_id)
+        await client.interrupt_turn(turn_id, child_thread_id)
+        return {
+            **child,
+            "status": "cancelling",
+            "turn_id": turn_id,
+        }
+
+    async def retry_child_task(
+        self, source_thread_id: str, child_thread_id: str, project_id: str | None = None
+    ) -> dict[str, Any]:
+        """Resume a failed/cancelled child Session with a bounded new attempt."""
+        source_thread_id = source_thread_id or "default"
+        resolved_project_id = self.resolve_thread_project(source_thread_id, project_id)
+        async with self._child_task_lock:
+            child = next(
+                (
+                    item
+                    for item in await self.list_child_tasks(source_thread_id, project_id)
+                    if item.get("child_thread_id") == child_thread_id
+                ),
+                None,
+            )
+            if child is None:
+                raise KeyError(f"Child Thread '{child_thread_id}' not found")
+            if child.get("status") not in {"failed", "cancelled", "step_limit"}:
+                raise ValueError("only a settled failed child task can be retried")
+            prompt = str(child.get("last_turn_prompt") or "").strip()
+            if not prompt:
+                raise ValueError("child task prompt is unavailable for retry")
+            operation_id = str(
+                child.get("operation_id") or f"child:{child_thread_id}"
+            )
+            attempt = int(child.get("operation_attempt") or 1) + 1
+            client = await self.get_client_for_thread(child_thread_id, resolved_project_id)
+            submission = await client.start_turn(
+                prompt=prompt,
+                mode="start",
+                thread_id=child_thread_id,
+                effort=self.get_settings(resolved_project_id).get(
+                    "reasoning_effort", "high"
+                ),
+                operation_id=operation_id,
+                operation_attempt=attempt,
+            )
+            turn_id = str(getattr(submission, "turn_id", None) or "")
+            if turn_id:
+                task = asyncio.create_task(
+                    self._wait_for_child_turn(
+                        client, child_thread_id, resolved_project_id, turn_id
+                    )
+                )
+                self.set_active_turn(child_thread_id, turn_id, task, resolved_project_id)
+            return {
+                **child,
+                "operation_id": operation_id,
+                "operation_attempt": attempt,
+                "turn_id": turn_id or None,
+                "status": "running" if turn_id else "not_started",
+            }
+
     async def list_child_tasks(
         self, source_thread_id: str, project_id: str | None = None
     ) -> list[dict[str, Any]]:
@@ -450,10 +557,13 @@ class SessionManager:
             if not child_thread_id:
                 continue
             active_turn_id = session.get("active_turn_id")
-            status = "running" if session.get("turn_active") else (
-                session.get("last_turn_status") or "idle"
+            persisted_status = session.get("operation_status")
+            status = persisted_status or (
+                "running" if session.get("turn_active") else (
+                    session.get("last_turn_status") or "idle"
+                )
             )
-            operation_id = None
+            operation_id = session.get("operation_id")
             phase = None
             client = self._project_clients.get(
                 (resolved_project_id, child_thread_id)
@@ -462,9 +572,15 @@ class SessionManager:
                 try:
                     runtime = await client.get_runtime_status(child_thread_id)
                     active_turn_id = runtime.turn_id or active_turn_id
-                    operation_id = runtime.operation_id
+                    operation_id = operation_id or runtime.operation_id
                     phase = runtime.phase
-                    if runtime.phase not in (None, "idle"):
+                    if runtime.phase == "waiting_approval":
+                        status = "awaiting_approval"
+                    elif runtime.phase not in (None, "idle") and status not in {
+                        "completed",
+                        "failed",
+                        "cancelled",
+                    }:
                         status = "running"
                 except Exception:
                     logger.debug(
@@ -485,8 +601,16 @@ class SessionManager:
                     "phase": phase,
                     "turn_id": active_turn_id,
                     "operation_id": operation_id,
+                    "operation_attempt": session.get("operation_attempt") or 1,
+                    "operation_result": session.get("operation_result"),
+                    "operation_error": session.get("operation_error"),
+                    "recovery_required": status
+                    in {"queued", "running", "awaiting_approval"}
+                    and not session.get("process_online", False)
+                    and client is None,
                     "last_turn_status": session.get("last_turn_status"),
                     "last_turn_error": session.get("last_turn_error"),
+                    "last_turn_prompt": session.get("summary"),
                 }
             )
         return children
@@ -736,6 +860,17 @@ class SessionManager:
     ) -> dict[str, Any] | None:
         """Find one canonical SessionStore thread without changing the active Project."""
         return self._thread_registry.read_any_project_thread(thread_id, project_id)
+
+    def read_thread_notebook(
+        self, thread_id: str, project_id: str | None = None
+    ) -> dict[str, Any] | None:
+        resolved_project_id = self.resolve_thread_project(thread_id, project_id)
+        project = self._projects_registry.get(resolved_project_id)
+        if not project:
+            return None
+        return session_catalog.read_notebook(
+            Path(project["primary_path"]), resolved_project_id, thread_id
+        )
 
     def session_path_for_thread(
         self, thread_id: str, project_id: str | None = None
@@ -1033,6 +1168,8 @@ class SessionManager:
                 reason="运行时连接已断开",
             )
             return
+        if payload.get("type") == "event":
+            self._schedule_delegated_child(payload, project_id)
         await self.broadcast_ws(payload)
         if payload.get("type") == "event":
             return
@@ -1057,6 +1194,58 @@ class SessionManager:
                 "Failed to restore continuation after Goal settlement for %s: %s",
                 thread_id,
                 err,
+            )
+
+    def _schedule_delegated_child(
+        self, payload: dict[str, Any], project_id: str | None
+    ) -> None:
+        event = payload.get("event")
+        if not isinstance(event, dict) or event.get("type") != "tool_started":
+            return
+        call = event.get("call")
+        if not isinstance(call, dict) or call.get("name") != "delegate_task":
+            return
+        arguments = call.get("arguments")
+        if not isinstance(arguments, dict):
+            return
+        parent_thread_id = str(payload.get("threadId") or "")
+        child_thread_id = arguments.get("child_thread_id")
+        prompt = arguments.get("prompt")
+        if not parent_thread_id or not isinstance(child_thread_id, str) or not isinstance(
+            prompt, str
+        ):
+            return
+        asyncio.create_task(
+            self._start_delegated_child(
+                parent_thread_id,
+                child_thread_id,
+                prompt,
+                arguments.get("title"),
+                project_id,
+            )
+        )
+
+    async def _start_delegated_child(
+        self,
+        parent_thread_id: str,
+        child_thread_id: str,
+        prompt: str,
+        title: Any,
+        project_id: str | None,
+    ) -> None:
+        try:
+            await self.start_child_task(
+                parent_thread_id,
+                child_thread_id,
+                prompt,
+                title if isinstance(title, str) else None,
+                project_id,
+            )
+        except Exception:
+            logger.exception(
+                "Unable to start delegated child %s from %s",
+                child_thread_id,
+                parent_thread_id,
             )
 
     def resolve_approval(

@@ -414,6 +414,55 @@ async def start_child_task(
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
+@router.post("/{thread_id}/children/{child_thread_id}/cancel", summary="Cancel a child task")
+async def cancel_child_task(
+    thread_id: str,
+    child_thread_id: str,
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    try:
+        return await session_manager.cancel_child_task(
+            thread_id, child_thread_id, project_id
+        )
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except ValueError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except (ServerProcessError, AppServerError) as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+
+
+@router.post("/{thread_id}/children/{child_thread_id}/retry", summary="Retry a child task")
+async def retry_child_task(
+    thread_id: str,
+    child_thread_id: str,
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    try:
+        return await session_manager.retry_child_task(
+            thread_id, child_thread_id, project_id
+        )
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except ValueError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except (ServerProcessError, AppServerError) as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+
+
+@router.get("/{thread_id}/notebook", summary="Read the Session notebook")
+async def read_thread_notebook(
+    thread_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
+    try:
+        notebook = session_manager.read_thread_notebook(thread_id, project_id)
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    if notebook is None:
+        raise HTTPException(status_code=404, detail=f"Thread '{thread_id}' not found")
+    return notebook
+
+
 @router.get("/{thread_id}", summary="Read canonical thread history")
 async def read_thread(
     thread_id: str, project_id: str | None = Query(default=None)

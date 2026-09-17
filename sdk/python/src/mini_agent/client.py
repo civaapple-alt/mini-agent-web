@@ -767,15 +767,22 @@ class MiniAgentClient:
         source_thread_id: str,
         new_thread_id: str,
         context_policy: str = "exact",
+        operation_id: str | None = None,
+        operation_attempt: int | None = None,
     ) -> SessionForkResult:
         """Create an independent persisted Session from a settled checkpoint."""
+        params: dict[str, Any] = {
+            "sourceThreadId": source_thread_id,
+            "newThreadId": new_thread_id,
+            "contextPolicy": context_policy,
+        }
+        if operation_id:
+            params["operationId"] = operation_id
+        if operation_attempt is not None:
+            params["operationAttempt"] = operation_attempt
         res = await self._send_request(
             "session/fork",
-            {
-                "sourceThreadId": source_thread_id,
-                "newThreadId": new_thread_id,
-                "contextPolicy": context_policy,
-            },
+            params,
         )
         return SessionForkResult.from_dict(res)
 
@@ -809,6 +816,8 @@ class MiniAgentClient:
         effort: str | None = None,
         selected_skills: list[str] | None = None,
         workflow: dict[str, Any] | None = None,
+        operation_id: str | None = None,
+        operation_attempt: int | None = None,
     ) -> TurnSubmissionResult:
         """Submit a turn prompt to the App Server with optional reasoning effort ('low', 'medium', 'high')."""
         payload: dict[str, Any] = {
@@ -824,6 +833,10 @@ class MiniAgentClient:
             )
         if workflow:
             payload["input"]["workflow"] = dict(workflow)
+        if operation_id:
+            payload["operationId"] = operation_id
+        if operation_attempt is not None:
+            payload["operationAttempt"] = operation_attempt
         if effort is not None:
             payload["effort"] = effort
         res = await self._send_request("turn/start", payload)

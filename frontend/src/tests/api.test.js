@@ -81,6 +81,22 @@ test('api client methods construct expected fetch endpoints and payloads', async
     '/api/threads/t-123/children?project_id=project-1',
   );
 
+  await api.cancelChildTask('t-123', 't-child', { projectId: 'project-1' });
+  assert.equal(
+    calls[calls.length - 1].url,
+    '/api/threads/t-123/children/t-child/cancel?project_id=project-1',
+  );
+  await api.retryChildTask('t-123', 't-child', { projectId: 'project-1' });
+  assert.equal(
+    calls[calls.length - 1].url,
+    '/api/threads/t-123/children/t-child/retry?project_id=project-1',
+  );
+  await api.readNotebook('t-123', { projectId: 'project-1' });
+  assert.equal(
+    calls[calls.length - 1].url,
+    '/api/threads/t-123/notebook?project_id=project-1',
+  );
+
   // 2. Settings APIs
   const setRes = await api.updateSettings({ reasoning_effort: 'high' });
   assert.equal(setRes.settings.access, 'project');

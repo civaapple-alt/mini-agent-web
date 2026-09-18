@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Split the drawer's plan controls into focused top-level `计划` and `目标` tabs,
   move Builtin Tools permissions into the Workspace subtabs, and hide README
   artifacts from the plan file reader.
+- Simplify the Plan tab to a mode status/toggle plus a full-width `plan.md`
+  reader, and add a stacked goal-file selector with a full-width reader below
+  the Thread Goal controls.
 - Fix the Plan review `开始实施` action so it disables Plan Mode and immediately
   submits the next implementation Turn using the current plan.
 - Fix Thread input history to merge bounded durable user-item projections with

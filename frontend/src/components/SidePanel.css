@@ -356,13 +356,6 @@
   gap: 8px;
 }
 
-.plan-viewer-files-layout {
-  flex: 1 1 auto;
-  min-height: 0;
-  height: auto;
-  grid-template-columns: minmax(145px, 30%) minmax(0, 1fr);
-}
-
 .workspace-subtabs {
   display: flex;
   gap: 4px;
@@ -753,54 +746,6 @@
   border: 1px solid var(--border-color);
 }
 
-.plan-mode-state {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 10px;
-  padding: 9px 10px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--bg-app);
-}
-
-.plan-mode-state.active {
-  border-color: var(--status-approval-border);
-  background: var(--status-approval-soft);
-}
-
-.plan-mode-state-dot {
-  width: 8px;
-  height: 8px;
-  margin-top: 3px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--text-muted);
-}
-
-.plan-mode-state.active .plan-mode-state-dot {
-  background: var(--status-approval);
-  box-shadow: 0 0 0 3px var(--status-approval-soft);
-}
-
-.plan-mode-state div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.plan-mode-state strong {
-  color: var(--text-primary);
-  font-size: 11px;
-}
-
-.plan-mode-state span:not(.plan-mode-state-dot) {
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
 .goal-status-box {
   display: flex;
   flex-direction: column;
@@ -942,6 +887,26 @@
   color: var(--text-secondary);
 }
 
+.section-title-bar button {
+  margin-left: auto;
+}
+
+.workflow-file-current,
+.workflow-file-count {
+  overflow: hidden;
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-file-count + button,
+.workflow-file-current + button {
+  margin-left: 0;
+}
+
 .files-layout {
   display: grid;
   grid-template-columns: 190px 1fr;
@@ -1013,6 +978,11 @@
   word-break: break-all;
 }
 
+.plan-viewer-full-width {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .plan-viewer-content {
   word-break: normal;
   white-space: normal;
@@ -1021,6 +991,40 @@
 
 .plan-viewer-content .markdown-content {
   font-size: 12px;
+}
+
+.goal-tab-pane {
+  min-height: 100%;
+}
+
+.goal-files-section {
+  min-height: 0;
+}
+
+.goal-files-list {
+  max-height: 156px;
+  flex: 0 0 auto;
+}
+
+.goal-file-content {
+  min-height: 260px;
+  flex: 1 1 auto;
+  word-break: normal;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.goal-file-content .markdown-content {
+  font-size: 12px;
+}
+
+.file-raw-content {
+  margin: 0;
+  color: var(--text-primary);
+  font: inherit;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .plan-viewer-content .markdown-content h1:first-child,

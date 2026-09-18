@@ -56,12 +56,9 @@ describe('SidePanel plan viewer', () => {
     );
 
     expect(screen.queryByRole('button', { name: /README\.md/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /goal\/plan\.md/ }));
-    await waitFor(() => expect(api.getWorkflowFileContent).toHaveBeenCalledWith(
-      'goal/plan.md',
-      'thread-1',
-      expect.objectContaining({ projectId: null }),
-    ));
+    expect(screen.queryByRole('button', { name: /goal\/plan\.md/ })).toBeNull();
+    expect(screen.getByText('plan/plan.md')).toBeDefined();
+    expect(document.querySelector('.plan-viewer-full-width')).toBeTruthy();
   });
 
   it('keeps builtin tools in the workspace and gives goals their own tab', async () => {
@@ -80,5 +77,13 @@ describe('SidePanel plan viewer', () => {
     fireEvent.click(screen.getByRole('button', { name: '目标' }));
     await waitFor(() => expect(screen.getByText('线程目标 (Thread Goal)')).toBeDefined());
     expect(screen.queryByText('内置工具权限控制 (Builtin Tools)')).toBeNull();
+    await waitFor(() => expect(screen.getByRole('button', { name: /goal\/plan\.md/ })).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: /goal\/plan\.md/ }));
+    await waitFor(() => expect(api.getWorkflowFileContent).toHaveBeenCalledWith(
+      'goal/plan.md',
+      'thread-1',
+      expect.objectContaining({ projectId: null }),
+    ));
+    expect(document.querySelector('.goal-file-content')).toBeTruthy();
   });
 });

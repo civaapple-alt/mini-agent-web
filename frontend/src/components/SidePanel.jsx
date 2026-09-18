@@ -48,7 +48,7 @@ function PlanModeCard({ planActive, onTogglePlan }) {
           <div>
             <span className="workflow-title">规划模式 (Plan Mode)</span>
             <p className="workflow-sub">
-              源码与项目文件保持只读；Shell 按当前审批策略执行，plan.md 可持续更新
+              源码只读规划，可手动切换模式
             </p>
           </div>
         </div>
@@ -65,17 +65,6 @@ function PlanModeCard({ planActive, onTogglePlan }) {
           >
             <span>{planActive ? '关闭 Plan Mode' : '开启 Plan Mode'}</span>
           </button>
-        </div>
-      </div>
-      <div className={`plan-mode-state ${planActive ? 'active' : 'inactive'}`} role="status">
-        <span className="plan-mode-state-dot" aria-hidden="true" />
-        <div>
-          <strong>{planActive ? 'Plan Mode 已开启' : 'Plan Mode 已关闭'}</strong>
-          <span>
-            {planActive
-              ? '本轮规划完成后可确认“开始实施”，系统会自动关闭 Plan Mode。'
-              : '开启后先进行只读规划，确认实施时再切回默认模式。'}
-          </span>
         </div>
       </div>
     </div>
@@ -235,7 +224,25 @@ function normalizePanelTab(tab) {
 
 function isPlanArtifact(file) {
   const path = typeof file?.path === 'string' ? file.path.toLowerCase() : '';
-  return path === 'plan.md' || path.endsWith('/plan.md') || path.endsWith('\\plan.md');
+  return path === 'plan.md' || path === 'plan/plan.md' || path === 'plan\\plan.md';
+}
+
+function isGoalArtifact(file) {
+  const path = typeof file?.path === 'string' ? file.path.toLowerCase() : '';
+  return path.startsWith('goal/') || path.startsWith('goal\\');
+}
+
+function WorkflowFileContent({ path, content, emptyMessage }) {
+  if (!content) return <div className="no-content">{emptyMessage}</div>;
+
+  const isMarkdown = /\.(md|markdown)$/i.test(path || '');
+  return isMarkdown ? (
+    <div className="markdown-content">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+    </div>
+  ) : (
+    <pre className="file-raw-content">{content}</pre>
+  );
 }
 
 function formatXmlContext(context) {
@@ -539,7 +546,14 @@ export default function SidePanel({
       } else if (activeTab === 'plan_view') {
         await loadWorkflowFiles(requestContext);
       } else if (activeTab === 'workspace_tools' || activeTab === 'goal') {
-        await loadWorkflow(requestContext);
+        if (activeTab === 'goal') {
+          await Promise.all([
+            loadWorkflow(requestContext),
+            loadWorkflowFiles(requestContext, isGoalArtifact),
+          ]);
+        } else {
+          await loadWorkflow(requestContext);
+        }
       } else if (activeTab === 'workspace_mcp') {
         await loadMcp(requestContext);
       } else if (activeTab === 'workspace_git') {
@@ -634,7 +648,7 @@ export default function SidePanel({
     }
   };
 
-  const loadWorkflowFiles = async (context = null) => {
+  const loadWorkflowFiles = async (context = null, filter = isPlanArtifact) => {
     const requestContext = context || beginRequest();
     try {
       const res = await api.getWorkflowFiles(threadId, {
@@ -642,7 +656,7 @@ export default function SidePanel({
         signal: requestContext.signal,
       });
       if (!isCurrentRequest(requestContext)) return;
-      const files = (res.files || []).filter(isPlanArtifact);
+      const files = (res.files || []).filter(filter);
       setWorkflowFiles(files);
       if (
         files.length > 0
@@ -972,6 +986,9 @@ export default function SidePanel({
               <div className="workflow-files-section plan-viewer-section">
                 <div className="section-title-bar">
                   <span>规划文件</span>
+                  <span className="workflow-file-current font-mono">
+                    {selectedFile || 'plan.md'}
+                  </span>
                   <button
                     type="button"
                     className="btn-action-small"
@@ -983,36 +1000,12 @@ export default function SidePanel({
                   </button>
                 </div>
 
-                <div className="files-layout plan-viewer-files-layout">
-                  <div className="files-list custom-scrollbar" aria-label="规划文件列表">
-                    {workflowFiles.length > 0 ? (
-                      workflowFiles.map((file) => (
-                        <button
-                          type="button"
-                          key={file.path}
-                          className={`file-item ${selectedFile === file.path ? 'active' : ''}`}
-                          onClick={() => handleSelectFile(file.path)}
-                        >
-                          <span className="file-name font-mono">{file.path}</span>
-                          <span className="file-size font-mono">{file.size} B</span>
-                        </button>
-                      ))
-                    ) : (
-                      <div className="no-files font-mono">未发现 plan.md 等规划文件</div>
-                    )}
-                  </div>
-
-                  <div className="file-content-viewer plan-viewer-content custom-scrollbar">
-                    {selectedFileContent ? (
-                      <div className="markdown-content">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {selectedFileContent}
-                        </ReactMarkdown>
-                      </div>
-                    ) : (
-                      <div className="no-content">请选择左侧文件以查看内容</div>
-                    )}
-                  </div>
+                <div className="file-content-viewer plan-viewer-content plan-viewer-full-width custom-scrollbar">
+                  <WorkflowFileContent
+                    path={selectedFile}
+                    content={selectedFileContent}
+                    emptyMessage={workflowFiles.length > 0 ? '正在读取计划内容...' : '未发现 plan.md'}
+                  />
                 </div>
               </div>
             </div>
@@ -1115,7 +1108,7 @@ export default function SidePanel({
           )}
 
           {activeTab === 'goal' && (
-            <div className="tab-pane">
+            <div className="tab-pane goal-tab-pane">
               <GoalWorkflowCard
                 goal={workflowState?.goal}
                 goalObjectiveInput={goalObjectiveInput}
@@ -1126,6 +1119,48 @@ export default function SidePanel({
                 onUpdateGoal={handleUpdateGoal}
                 onClearGoal={handleClearGoal}
               />
+
+              <div className="workflow-files-section goal-files-section">
+                <div className="section-title-bar">
+                  <span>目标文件</span>
+                  <span className="workflow-file-count font-mono">{workflowFiles.length} 个文件</span>
+                  <button
+                    type="button"
+                    className="btn-action-small"
+                    onClick={() => loadWorkflowFiles(null, isGoalArtifact)}
+                    title="重新读取目标文件"
+                  >
+                    <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} />
+                    <span>刷新</span>
+                  </button>
+                </div>
+
+                <div className="files-list goal-files-list custom-scrollbar" aria-label="目标文件列表">
+                  {workflowFiles.length > 0 ? (
+                    workflowFiles.map((file) => (
+                      <button
+                        type="button"
+                        key={file.path}
+                        className={`file-item ${selectedFile === file.path ? 'active' : ''}`}
+                        onClick={() => handleSelectFile(file.path)}
+                      >
+                        <span className="file-name font-mono">{file.path}</span>
+                        <span className="file-size font-mono">{file.size} B</span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="no-files font-mono">未发现目标文件</div>
+                  )}
+                </div>
+
+                <div className="file-content-viewer goal-file-content custom-scrollbar">
+                  <WorkflowFileContent
+                    path={selectedFile}
+                    content={selectedFileContent}
+                    emptyMessage={workflowFiles.length > 0 ? '正在读取目标文件...' : '暂无目标文件'}
+                  />
+                </div>
+              </div>
             </div>
           )}
 

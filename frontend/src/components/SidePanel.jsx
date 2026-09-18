@@ -19,6 +19,9 @@ import {
   History,
   Sparkles,
   BookOpen,
+  ChevronDown,
+  Check,
+  Copy,
 } from 'lucide-react';
 import { api } from '../api';
 import { readStateRevision, shouldApplyStateRevision } from '../utils/revisionState';
@@ -233,6 +236,87 @@ function normalizePanelTab(tab) {
 function isPlanArtifact(file) {
   const path = typeof file?.path === 'string' ? file.path.toLowerCase() : '';
   return path === 'plan.md' || path.endsWith('/plan.md') || path.endsWith('\\plan.md');
+}
+
+export function PromptContextCard({ context, status = {}, workspace = '' }) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const roots = Array.isArray(status.workspace_roots) ? status.workspace_roots : [];
+  const availableCommands = Array.isArray(status.available_commands)
+    ? status.available_commands
+    : [];
+  const summary = [
+    ['模式', status.mode || 'chat'],
+    ['访问', status.access || 'default'],
+    ['策略', status.policy || 'interactive'],
+    ['文件范围', status.direct_file_scope || 'workspace'],
+  ];
+
+  const handleCopy = async () => {
+    if (!context || !navigator.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(context);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <div className="detail-card full-width prompt-context-card">
+      <div className="prompt-context-header">
+        <div>
+          <span className="card-label">系统注入上下文</span>
+          <span className="prompt-context-caption">模型可见的环境与运行约束</span>
+        </div>
+        <span className="prompt-context-badge">已注入</span>
+      </div>
+
+      <div className="prompt-context-summary" aria-label="系统注入上下文摘要">
+        {summary.map(([label, value]) => (
+          <div className="prompt-context-summary-item" key={label}>
+            <span>{label}</span>
+            <strong className="font-mono">{value}</strong>
+          </div>
+        ))}
+      </div>
+
+      <div className="prompt-context-meta">
+        <span>{roots.length || (workspace ? 1 : 0)} 个工作区根目录</span>
+        <span>{availableCommands.length} 个可用命令</span>
+        <span>{context ? `${context.length.toLocaleString()} 字符` : '无原文'}</span>
+      </div>
+
+      <div className="prompt-context-actions">
+        <button
+          type="button"
+          className="prompt-context-toggle"
+          onClick={() => setExpanded((value) => !value)}
+          aria-expanded={expanded}
+        >
+          <ChevronDown size={13} className={expanded ? 'prompt-context-chevron expanded' : 'prompt-context-chevron'} />
+          <span>{expanded ? '收起完整注入内容' : '查看完整注入内容'}</span>
+        </button>
+        {expanded && (
+          <button
+            type="button"
+            className="prompt-context-copy"
+            onClick={handleCopy}
+            disabled={!context}
+            title="复制完整注入内容"
+          >
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+            <span>{copied ? '已复制' : '复制原文'}</span>
+          </button>
+        )}
+      </div>
+
+      {expanded && (
+        <pre className="xml-preview prompt-context-raw font-mono">{context || '暂无注入内容'}</pre>
+      )}
+    </div>
+  );
 }
 
 export default function SidePanel({
@@ -920,12 +1004,11 @@ export default function SidePanel({
                   </div>
 
                   {worldData.context && (
-                    <div className="detail-card full-width">
-                      <span className="card-label">系统注入上下文 (Prompt Injection Context)</span>
-                      <div className="xml-preview font-mono custom-scrollbar">
-                        {worldData.context}
-                      </div>
-                    </div>
+                    <PromptContextCard
+                      context={worldData.context}
+                      status={worldData.status}
+                      workspace={worldData.workspace}
+                    />
                   )}
                 </div>
               ) : (

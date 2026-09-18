@@ -494,6 +494,139 @@
   white-space: pre-wrap;
 }
 
+.prompt-context-card {
+  gap: 10px;
+}
+
+.prompt-context-header,
+.prompt-context-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.prompt-context-header > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.prompt-context-caption {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.prompt-context-badge {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid var(--status-success-border);
+  border-radius: 999px;
+  background: var(--status-success-soft);
+  color: var(--status-success);
+  font-size: 10px;
+}
+
+.prompt-context-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.prompt-context-summary-item {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: var(--bg-app);
+}
+
+.prompt-context-summary-item span,
+.prompt-context-summary-item strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-context-summary-item span {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.prompt-context-summary-item strong {
+  margin-top: 3px;
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.prompt-context-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.prompt-context-actions {
+  justify-content: flex-start;
+}
+
+.prompt-context-toggle,
+.prompt-context-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.prompt-context-toggle:hover,
+.prompt-context-copy:hover:not(:disabled) {
+  border-color: var(--border-color);
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.prompt-context-copy:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.prompt-context-chevron {
+  transition: transform 0.15s ease;
+}
+
+.prompt-context-chevron.expanded {
+  transform: rotate(180deg);
+}
+
+.prompt-context-raw {
+  width: 100%;
+  max-height: 240px;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+@media (max-width: 560px) {
+  .prompt-context-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prompt-context-header > div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+}
+
 /* Workflows & Goals */
 .workflow-card {
   background-color: var(--bg-surface);

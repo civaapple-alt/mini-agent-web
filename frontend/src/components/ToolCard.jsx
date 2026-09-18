@@ -196,15 +196,11 @@ export default function ToolCard({
     || (normalizedStatus === 'failed' && !isPolicyOutcome);
   const settledOutcome = !isRunning ? outcomePresentation(outcome) : null;
   const isReadFile = name.toLowerCase() === 'read_file';
-  const hasSettledOutput = !isRunning && (error != null || output != null);
+  const hasOutput = error != null || output != null;
   const approvalState = tool.approval?.state || null;
   const pendingCallId = pendingApproval?.data?.callId || pendingApproval?.data?.call_id;
   const pendingRequestId = pendingApproval?.requestId;
   const pendingToolName = pendingApproval?.data?.toolName || pendingApproval?.data?.tool_name;
-
-  useEffect(() => {
-    if (isReadFile && hasSettledOutput) setShowOutput(true);
-  }, [hasSettledOutput, isReadFile, output, error]);
 
   // Check if this tool is currently awaiting human approval
   const isAwaitingApproval =
@@ -311,33 +307,47 @@ export default function ToolCard({
           )}
         </div>
 
-        <div className="tool-right-badge">
-          {isAwaitingApproval ? (
-            <span className="badge-approval-pending font-mono">
-              <ShieldAlert size={11} className="inline mr-1" />
-              等待授权
-            </span>
-          ) : isRunning && !settledOutcome ? (
-            <span className="badge running font-mono">
-              <Loader2 size={11} className="animate-spin inline mr-1" />
-              运行中
-            </span>
-          ) : settledOutcome ? (
-            <span className={`${settledOutcome.className} font-mono`}>
-              <settledOutcome.Icon size={11} className="inline mr-1" />
-              {settledOutcome.label}
-            </span>
-          ) : isFailed ? (
-            <span className="badge failed font-mono">
-              <AlertTriangle size={11} className="inline mr-1" />
-              失败
-            </span>
-          ) : (
-            <span className="badge completed font-mono">
-              <CheckCircle size={11} className="inline mr-1" />
-              已完成
-            </span>
+        <div className="tool-right-actions">
+          {hasOutput && (
+            <button
+              className="toggle-output-btn font-mono"
+              onClick={() => setShowOutput(!showOutput)}
+              aria-expanded={showOutput}
+            >
+              <Terminal size={11} />
+              <span>{showOutput ? '收起输出' : '查看输出'}</span>
+              {showOutput ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+            </button>
           )}
+
+          <div className="tool-right-badge">
+            {isAwaitingApproval ? (
+              <span className="badge-approval-pending font-mono">
+                <ShieldAlert size={11} className="inline mr-1" />
+                等待授权
+              </span>
+            ) : isRunning && !settledOutcome ? (
+              <span className="badge running font-mono">
+                <Loader2 size={11} className="animate-spin inline mr-1" />
+                运行中
+              </span>
+            ) : settledOutcome ? (
+              <span className={`${settledOutcome.className} font-mono`}>
+                <settledOutcome.Icon size={11} className="inline mr-1" />
+                {settledOutcome.label}
+              </span>
+            ) : isFailed ? (
+              <span className="badge failed font-mono">
+                <AlertTriangle size={11} className="inline mr-1" />
+                失败
+              </span>
+            ) : (
+              <span className="badge completed font-mono">
+                <CheckCircle size={11} className="inline mr-1" />
+                已完成
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -358,36 +368,25 @@ export default function ToolCard({
         </div>
       )}
 
-      {/* Output Section (Foldable) */}
-      {(!isAwaitingApproval || !isRunning) && (
+      {/* Full output stays available without taking a row until requested. */}
+      {showOutput && (
         <div className="tool-output-section">
           <div className="output-bar">
-            <button
-              className="toggle-output-btn font-mono"
-              onClick={() => setShowOutput(!showOutput)}
-            >
-              <Terminal size={11} />
-              <span>执行输出 (Output)</span>
-              {showOutput ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-            </button>
+            <span className="output-label font-mono">执行输出</span>
 
-            {showOutput && (
-              <button
-                className="btn-copy-output"
-                onClick={handleCopyOutput}
-                title="复制输出结果"
-              >
-                {copied ? <Check size={11} className="text-green" /> : <Copy size={11} />}
-                <span>{copied ? '已复制' : '复制'}</span>
-              </button>
-            )}
+            <button
+              className="btn-copy-output"
+              onClick={handleCopyOutput}
+              title="复制输出结果"
+            >
+              {copied ? <Check size={11} className="text-green" /> : <Copy size={11} />}
+              <span>{copied ? '已复制' : '复制'}</span>
+            </button>
           </div>
 
-          {showOutput && (
-            <div className="tool-output-box font-mono custom-scrollbar">
-              <pre className={isFailed ? 'text-rose-400' : ''}>{displayOutput}</pre>
-            </div>
-          )}
+          <div className="tool-output-box font-mono custom-scrollbar">
+            <pre className={isFailed ? 'text-rose-400' : ''}>{displayOutput}</pre>
+          </div>
         </div>
       )}
     </div>

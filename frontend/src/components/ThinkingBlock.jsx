@@ -3,7 +3,9 @@ import { Brain, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
 import './ThinkingBlock.css';
 
 export default function ThinkingBlock({ content, isStreaming }) {
-  const [isOpen, setIsOpen] = useState(true);
+  // Keep the live reasoning visible while it is changing. Settled reasoning
+  // is supporting detail and starts collapsed so the answer stays readable.
+  const [isOpen, setIsOpen] = useState(Boolean(isStreaming));
   const [copied, setCopied] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   const startTimeRef = useRef(Date.now());
@@ -71,7 +73,7 @@ export default function ThinkingBlock({ content, isStreaming }) {
             className={`thinking-icon ${isStreaming ? 'pulse' : ''}`}
           />
           <span className="thinking-label">
-            {isStreaming ? 'Reasoning Process (思考中...)' : 'Reasoning Process (思考完毕)'}
+            {isStreaming ? '思考中' : '思考'}
           </span>
           <span className="thinking-meta font-mono">
             {isStreaming

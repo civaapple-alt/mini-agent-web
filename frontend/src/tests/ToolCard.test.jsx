@@ -19,9 +19,10 @@ describe('ToolCard Component Rendering & Interaction', () => {
     expect(screen.getByText('run_command')).toBeDefined();
     expect(screen.getByText('git status')).toBeDefined();
     expect(screen.getByText('已完成')).toBeDefined();
+    expect(screen.queryByText('执行输出')).toBeNull();
 
     // Expand output
-    const toggleBtn = screen.getByText('执行输出 (Output)');
+    const toggleBtn = screen.getByText('查看输出');
     fireEvent.click(toggleBtn);
     expect(screen.getByText(/On branch main/)).toBeDefined();
   });
@@ -39,6 +40,7 @@ describe('ToolCard Component Rendering & Interaction', () => {
     expect(screen.getByText('read_file')).toBeDefined();
     expect(screen.getByText('src/App.jsx')).toBeDefined();
     expect(screen.getByText('运行中')).toBeDefined();
+    expect(screen.queryByText('查看输出')).toBeNull();
   });
 
   it('shows a completed partial read_file result and its line range', () => {
@@ -55,6 +57,10 @@ describe('ToolCard Component Rendering & Interaction', () => {
     );
 
     expect(screen.getByText('scripts/car_model.py · 第 41-52 行')).toBeDefined();
+    expect(screen.queryByText(/41: page content/)).toBeNull();
+    expect(screen.queryByText(/next_offset=52/)).toBeNull();
+
+    fireEvent.click(screen.getByText('查看输出'));
     expect(screen.getByText(/41: page content/)).toBeDefined();
     expect(screen.getByText(/next_offset=52/)).toBeDefined();
   });
@@ -102,7 +108,7 @@ describe('ToolCard Component Rendering & Interaction', () => {
     expect(screen.getByText('失败')).toBeDefined();
 
     // Expand output
-    const toggleBtn = screen.getByText('执行输出 (Output)');
+    const toggleBtn = screen.getByText('查看输出');
     fireEvent.click(toggleBtn);
     expect(screen.getByText('Command failed with exit code 1')).toBeDefined();
   });

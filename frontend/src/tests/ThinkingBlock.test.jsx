@@ -4,6 +4,15 @@ import { render } from '@testing-library/react';
 import ThinkingBlock from '../components/ThinkingBlock';
 
 describe('ThinkingBlock', () => {
+  it('collapses settled reasoning by default', () => {
+    render(
+      <ThinkingBlock content="已完成的思考" isStreaming={false} />,
+    );
+
+    expect(document.querySelector('.thinking-body')).toBeNull();
+    expect(document.querySelector('.thinking-preview')?.textContent).toContain('已完成的思考');
+  });
+
   it('follows new reasoning content inside its bounded viewport', () => {
     const { rerender } = render(
       <ThinkingBlock content="第一段思考" isStreaming />,

@@ -402,7 +402,7 @@ export default function MessageItem({
               return (
                 <div
                   key={`text_${idx}`}
-                  className={`markdown-content ${isStreamingThis && idx === renderedBlocks.length - 1 ? 'cursor-blink' : ''}`}
+                  className={`markdown-content assistant-answer ${isStreamingThis && idx === renderedBlocks.length - 1 ? 'cursor-blink' : ''}`}
                 >
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {block.content || ''}
@@ -441,7 +441,7 @@ export default function MessageItem({
             )}
 
             {(text || (isStreamingThis && tools.length === 0)) && (
-              <div className={`markdown-content ${isStreamingThis && tools.length === 0 ? 'cursor-blink' : ''}`}>
+              <div className={`markdown-content assistant-answer ${isStreamingThis && tools.length === 0 ? 'cursor-blink' : ''}`}>
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {text || ''}
                 </ReactMarkdown>

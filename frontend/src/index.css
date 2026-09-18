@@ -155,6 +155,12 @@ code, pre, .font-mono {
   color: var(--text-primary);
 }
 
+.assistant-answer {
+  font-size: 14px;
+  line-height: 1.72;
+  color: var(--text-primary);
+}
+
 .markdown-content p {
   margin-bottom: 8px;
 }

@@ -26,6 +26,7 @@ MAX_RECORD_BYTES = 64 * 1024
 MAX_ERROR_CHARS = 2048
 MAX_CHECKPOINT_MESSAGES = 64
 MAX_CHECKPOINT_MESSAGE_CHARS = 16 * 1024
+MAX_ITEM_LIST_LIMIT = 128
 MAX_NOTEBOOK_ENTRIES = 64
 MAX_NOTEBOOK_CONTENT_BYTES = 4096
 MAX_NOTEBOOK_ENTRY_BYTES = MAX_NOTEBOOK_CONTENT_BYTES
@@ -400,6 +401,32 @@ def _checkpoint_projection(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _read_session_records(path: Path) -> tuple[list[dict[str, Any]], bool] | None:
+    """Read bounded SessionStore records for projections and history queries."""
+    session_path = path / "session.jsonl"
+    try:
+        if session_path.stat().st_size > MAX_SESSION_BYTES:
+            return None
+        records = []
+        skipped_oversized_records = False
+        for line in session_path.read_bytes().splitlines():
+            if len(line) > MAX_RECORD_BYTES:
+                skipped_oversized_records = True
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record, dict):
+                if len(line) > MAX_RECORD_BYTES:
+                    if record.get("kind") != "checkpoint":
+                        continue
+                    record = _checkpoint_projection(record)
+                records.append(record)
+    except OSError:
+        return None
+    return records, skipped_oversized_records
+
+
 class SessionCatalog:
     """Bounded, read-only SessionStore listing and history reader."""
 
@@ -550,6 +577,60 @@ class SessionCatalog:
             "session": entry,
         }
 
+    def list_thread_items(
+        self,
+        workspace: Path,
+        project_id: str,
+        thread_id: str,
+        turn_id: str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        sort_direction: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Return a bounded page over the complete persisted item projection.
+
+        ``read_thread`` intentionally keeps a small preview for checkpoint
+        reads. The history rail needs a different contract: it must be able
+        to walk every persisted Turn without copying the full SessionStore
+        into one HTTP response. Integer cursors match the App Server item
+        listing contract.
+        """
+        entry = self.find_by_thread(workspace, project_id, thread_id)
+        if not entry:
+            return None
+        session_path = self._valid_session_path(
+            _session_base(workspace), str(entry.get("session_id") or "")
+        )
+        if not session_path:
+            return None
+        loaded = _read_session_records(session_path)
+        if loaded is None:
+            return None
+        records, _skipped_oversized_records = loaded
+        entries = [
+            {"turnId": record.get("turn_id"), "item": projected}
+            for record in records
+            if record.get("kind") == "item"
+            and (turn_id is None or str(record.get("turn_id")) == str(turn_id))
+            for projected in _item_projections(record)
+        ]
+        if sort_direction == "desc":
+            entries.reverse()
+
+        start = int(cursor) if cursor and cursor.isdigit() else 0
+        page_limit = max(1, min(limit or MAX_ITEM_LIST_LIMIT, MAX_ITEM_LIST_LIMIT))
+        data = entries[start : start + page_limit]
+        next_cursor = (
+            str(start + len(data)) if start + len(data) < len(entries) else None
+        )
+        backwards_cursor = str(max(0, start - page_limit)) if start > 0 else None
+        return {
+            "thread_id": thread_id,
+            "data": data,
+            "next_cursor": next_cursor,
+            "backwards_cursor": backwards_cursor,
+        }
+
     def read_notebook(
         self,
         workspace: Path,
@@ -666,27 +747,10 @@ class SessionCatalog:
     def _read_session(
         self, path: Path, project_id: str, include_history: bool
     ) -> dict[str, Any] | None:
-        session_path = path / "session.jsonl"
-        try:
-            if session_path.stat().st_size > MAX_SESSION_BYTES:
-                return None
-            records = []
-            skipped_oversized_records = False
-            for line in session_path.read_bytes().splitlines():
-                if len(line) > MAX_RECORD_BYTES:
-                    skipped_oversized_records = True
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(record, dict):
-                    if len(line) > MAX_RECORD_BYTES:
-                        if record.get("kind") != "checkpoint":
-                            continue
-                        record = _checkpoint_projection(record)
-                    records.append(record)
-        except OSError:
+        loaded = _read_session_records(path)
+        if loaded is None:
             return None
+        records, skipped_oversized_records = loaded
         if not records:
             return None
 

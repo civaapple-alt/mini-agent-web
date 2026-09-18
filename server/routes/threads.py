@@ -806,12 +806,16 @@ async def list_thread_items(
     try:
         canonical = session_manager.read_any_project_thread(thread_id, project_id)
         if canonical:
-            return {
-                "thread_id": thread_id,
-                "data": canonical.get("items", []),
-                "next_cursor": None,
-                "backwards_cursor": None,
-            }
+            result = session_manager.list_any_project_thread_items(
+                thread_id=thread_id,
+                project_id=project_id,
+                turn_id=turn_id,
+                cursor=cursor,
+                limit=limit,
+                sort_direction=sort_direction,
+            )
+            if result is not None:
+                return result
         client = await session_manager.get_client_for_thread(thread_id, project_id)
         result = await client.list_thread_items(
             thread_id=thread_id,

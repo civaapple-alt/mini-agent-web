@@ -1290,6 +1290,25 @@ class SessionManager:
         """Find one canonical SessionStore thread without changing the active Project."""
         return self._thread_registry.read_any_project_thread(thread_id, project_id)
 
+    def list_any_project_thread_items(
+        self,
+        thread_id: str,
+        project_id: str | None = None,
+        turn_id: str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        sort_direction: str | None = None,
+    ) -> dict[str, Any] | None:
+        """List canonical SessionStore items without changing the active Project."""
+        return self._thread_registry.list_any_project_thread_items(
+            thread_id,
+            project_id,
+            turn_id,
+            cursor,
+            limit,
+            sort_direction,
+        )
+
     def read_thread_notebook(
         self,
         thread_id: str,

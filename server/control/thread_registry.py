@@ -239,6 +239,80 @@ class ThreadRegistry:
                 return result
         return None
 
+    def list_project_thread_items(
+        self,
+        thread_id: str,
+        project_id: str | None = None,
+        turn_id: str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        sort_direction: str | None = None,
+    ) -> dict[str, Any] | None:
+        owner = self._owner
+        target_id = project_id or owner._current_project_id
+        project = owner._projects_registry.get(target_id)
+        if not project:
+            return None
+        return session_catalog.list_thread_items(
+            Path(project["primary_path"]),
+            target_id,
+            thread_id,
+            turn_id,
+            cursor,
+            limit,
+            sort_direction,
+        )
+
+    def list_any_project_thread_items(
+        self,
+        thread_id: str,
+        project_id: str | None = None,
+        turn_id: str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        sort_direction: str | None = None,
+    ) -> dict[str, Any] | None:
+        owner = self._owner
+        if project_id:
+            project = self.project_for_thread(thread_id, project_id)
+            return self.list_project_thread_items(
+                thread_id,
+                project.get("id"),
+                turn_id,
+                cursor,
+                limit,
+                sort_direction,
+            )
+        metadata_project = owner._active_thread_projects.get(
+            thread_id
+        ) or owner._thread_metadata.get(thread_id, {}).get("project")
+        ordered_ids: list[str] = []
+        if metadata_project in owner._projects_registry:
+            ordered_ids.append(metadata_project)
+        ordered_ids.extend(
+            candidate
+            for candidate in owner._projects_registry
+            if candidate not in ordered_ids
+        )
+        seen_workspaces: set[str] = set()
+        for candidate_project_id in ordered_ids:
+            project = owner._projects_registry[candidate_project_id]
+            workspace_key = str(Path(project["primary_path"]).resolve()).casefold()
+            if workspace_key in seen_workspaces:
+                continue
+            seen_workspaces.add(workspace_key)
+            result = self.list_project_thread_items(
+                thread_id,
+                candidate_project_id,
+                turn_id,
+                cursor,
+                limit,
+                sort_direction,
+            )
+            if result:
+                return result
+        return None
+
     def session_path_for_thread(
         self, thread_id: str, project_id: str | None = None
     ) -> Path | None:

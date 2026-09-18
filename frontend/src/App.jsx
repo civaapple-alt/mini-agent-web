@@ -63,7 +63,6 @@ function readThreadMeta(thread, fallbackTitle = null) {
   };
 }
 
-const MAX_HISTORY_ITEMS = 256;
 const HISTORY_PAGE_SIZE = 128;
 
 async function listThreadItemsForHistory(threadId, projectId, options = {}) {
@@ -71,7 +70,7 @@ async function listThreadItemsForHistory(threadId, projectId, options = {}) {
   let cursor = null;
   const seenCursors = new Set();
 
-  while (entries.length < MAX_HISTORY_ITEMS) {
+  while (true) {
     const page = await api.listThreadItems(threadId, {
       limit: HISTORY_PAGE_SIZE,
       cursor,
@@ -85,7 +84,7 @@ async function listThreadItemsForHistory(threadId, projectId, options = {}) {
     seenCursors.add(nextCursor);
     cursor = nextCursor;
   }
-  return entries.slice(0, MAX_HISTORY_ITEMS);
+  return entries;
 }
 
 export default function App() {

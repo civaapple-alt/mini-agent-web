@@ -125,6 +125,46 @@ async def test_thread_items_cursor_pagination(gateway_test_app):
 
 
 @pytest.mark.asyncio
+async def test_thread_items_canonical_history_keeps_cursor_pagination(
+    gateway_test_app, monkeypatch
+):
+    """Canonical SessionStore history must not collapse to its preview page."""
+    monkeypatch.setattr(
+        session_manager,
+        "read_any_project_thread",
+        lambda _thread_id, _project_id=None: {"items": [{"item": {"id": "preview"}}]},
+    )
+
+    def list_items(**kwargs):
+        assert kwargs == {
+            "thread_id": "t-canonical",
+            "project_id": None,
+            "turn_id": None,
+            "cursor": "128",
+            "limit": 128,
+            "sort_direction": None,
+        }
+        return {
+            "thread_id": "t-canonical",
+            "data": [{"item": {"id": "old-turn"}}],
+            "next_cursor": None,
+            "backwards_cursor": "0",
+        }
+
+    monkeypatch.setattr(session_manager, "list_any_project_thread_items", list_items)
+
+    transport = ASGITransport(app=gateway_test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/api/threads/t-canonical/items",
+            params={"cursor": "128", "limit": 128},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["data"][0]["item"]["id"] == "old-turn"
+
+
+@pytest.mark.asyncio
 async def test_goal_lifecycle_full_state_machine(gateway_test_app):
     """Test POST, GET, PAUSE, RESUME, DELETE endpoints for Thread Goals."""
     current_goal = None

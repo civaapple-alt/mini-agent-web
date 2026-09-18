@@ -928,6 +928,70 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     assert history["last_turn_id"] == "turn-1"
 
 
+def test_session_catalog_lists_all_items_with_bounded_pages(tmp_path, monkeypatch):
+    """The item endpoint can walk older Turns beyond the read preview."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    session_dir = session_base / "s-many"
+    session_dir.mkdir(parents=True)
+    records = [
+        {
+            "seq": 1,
+            "kind": "session_created",
+            "session_id": "s-many",
+            "timestamp_ms": 1000,
+        },
+        {"seq": 2, "kind": "thread_started", "thread_id": "t-many"},
+    ]
+    records.extend(
+        {
+            "seq": index + 3,
+            "kind": "item",
+            "item_id": f"item-{index}",
+            "thread_id": "t-many",
+            "turn_id": f"turn-{index}",
+            "timestamp_ms": 2000 + index,
+            "message": {"role": "user", "text": f"input {index}"},
+        }
+        for index in range(260)
+    )
+    (session_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_base / "thread_index.json").write_text(
+        json.dumps({"version": 1, "threads": {"t-many": {"session_id": "s-many"}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("server.session_catalog._process_alive", lambda _pid: False)
+
+    catalog = SessionCatalog()
+    pages = []
+    cursor = None
+    while True:
+        page = catalog.list_thread_items(
+            workspace, "project-1", "t-many", cursor=cursor, limit=128
+        )
+        assert page is not None
+        pages.extend(page["data"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+
+    assert len(pages) == 260
+    assert pages[0]["item"]["id"] == "item-0"
+    assert pages[-1]["item"]["id"] == "item-259"
+    assert (
+        catalog.list_thread_items(
+            workspace, "project-1", "t-many", cursor="128", limit=128
+        )["backwards_cursor"]
+        == "0"
+    )
+
+
 def test_session_catalog_projects_fork_lineage(tmp_path, monkeypatch):
     """Child discovery can use SessionStore lineage without Gateway metadata."""
     workspace = tmp_path / "workspace"

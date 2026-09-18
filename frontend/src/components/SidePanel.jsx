@@ -238,6 +238,82 @@ function isPlanArtifact(file) {
   return path === 'plan.md' || path.endsWith('/plan.md') || path.endsWith('\\plan.md');
 }
 
+function formatXmlContext(context) {
+  if (!context) return [];
+  const separated = context
+    .replace(/>\s*</g, '><')
+    .replace(/></g, '>\n<')
+    .replace(/>([^<\r\n]+)</g, '>\n$1\n<');
+  let depth = 0;
+  return separated
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const closing = /^<\//.test(line);
+      const opening = /^<[A-Za-z_][\w:.-]*/.test(line)
+        && !/^<\?/.test(line)
+        && !/^<!/.test(line)
+        && !/\/>$/.test(line);
+      if (closing) depth = Math.max(0, depth - 1);
+      const result = `${'  '.repeat(depth)}${line}`;
+      if (opening) depth += 1;
+      return result;
+    });
+}
+
+function renderXmlLine(line, lineIndex) {
+  const tagStart = line.indexOf('<');
+  if (tagStart < 0) {
+    return (
+      <>
+        <span className="xml-line-number" aria-hidden="true">{lineIndex + 1}</span>
+        <span className="xml-line-text">{line}</span>
+      </>
+    );
+  }
+
+  const prefix = line.slice(0, tagStart);
+  const tag = line.slice(tagStart);
+  const parts = [];
+  let cursor = 0;
+  const tokenPattern = /(<\/?[A-Za-z_][\w:.-]*|\/?>|[A-Za-z_][\w:.-]*(?=\s*=)|"[^"\r\n]*"|'[^'\r\n]*')/g;
+  tag.replace(tokenPattern, (match, _unused, offset) => {
+    if (offset > cursor) parts.push(<span key={`text-${offset}`}>{tag.slice(cursor, offset)}</span>);
+    const className = match.startsWith('<') || match.includes('>')
+      ? 'xml-tag-token'
+      : match.startsWith('"') || match.startsWith("'")
+        ? 'xml-attribute-value'
+        : 'xml-attribute-name';
+    parts.push(<span className={className} key={`token-${offset}`}>{match}</span>);
+    cursor = offset + match.length;
+    return match;
+  });
+  if (cursor < tag.length) parts.push(<span key="tail">{tag.slice(cursor)}</span>);
+
+  return (
+    <>
+      <span className="xml-line-number" aria-hidden="true">{lineIndex + 1}</span>
+      <span className="xml-line-text">{prefix}{parts}</span>
+    </>
+  );
+}
+
+function XmlContextPreview({ context }) {
+  const lines = formatXmlContext(context);
+  return (
+    <div className="xml-preview prompt-context-raw" role="region" aria-label="格式化 XML 上下文" tabIndex="0">
+      {lines.length > 0 ? lines.map((line, index) => (
+        <div className="xml-line" key={`${index}-${line}`}>
+          {renderXmlLine(line, index)}
+        </div>
+      )) : (
+        <div className="xml-empty">暂无注入内容</div>
+      )}
+    </div>
+  );
+}
+
 export function PromptContextCard({ context, status = {}, workspace = '' }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -313,7 +389,7 @@ export function PromptContextCard({ context, status = {}, workspace = '' }) {
       </div>
 
       {expanded && (
-        <pre className="xml-preview prompt-context-raw font-mono">{context || '暂无注入内容'}</pre>
+        <XmlContextPreview context={context} />
       )}
     </div>
   );

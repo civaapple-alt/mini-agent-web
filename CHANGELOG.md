@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simplify the Workspace system-injection view: show a compact runtime summary
   by default and keep the full prompt context behind an explicit expand action
   with a copy control.
+- Render the expanded system-injection context as indented, line-numbered XML
+  with highlighted tags, attributes, and values for easier inspection.
 - Make Child scheduling intent per delegation: project/global settings retain only
   `max_concurrent_children`, while Main Thread `delegate_task` requests choose
   `parallel` or `sequential` with optional group and sequence metadata.

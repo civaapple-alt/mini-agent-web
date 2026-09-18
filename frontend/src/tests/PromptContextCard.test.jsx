@@ -26,7 +26,11 @@ describe('PromptContextCard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '查看完整注入内容' }));
 
-    expect(screen.getByText('<world_state><environment os="windows" /></world_state>')).toBeDefined();
+    const renderedLines = [...document.querySelectorAll('.xml-line-text')].map(
+      (line) => line.textContent,
+    );
+    expect(renderedLines).toContain('<world_state>');
+    expect(renderedLines).toContain('  <environment os="windows" />');
     expect(screen.getByRole('button', { name: '收起完整注入内容' })).toBeDefined();
   });
 });

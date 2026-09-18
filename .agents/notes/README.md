@@ -59,6 +59,8 @@
 
 ## 提案
 
+- [Builtin knowledge-work 技能组长期演进](proposed/architecture/2026-09-18-builtin-knowledge-work-skill-group.zh.md)
+- [Knowledge Work Builtin Skill P0/P1 短期接入](proposed/feature/2026-09-18-knowledge-work-p0-p1-integration.zh.md)
 - [Local Web Studio 演进路线](proposed/feature/2026-09-02-local-web-studio-evolution-and-roadmap.md)
 - [Rust 原生 TUI](proposed/architecture/2026-09-02-rust-native-tui-ratatui-architecture.md)
 - [Tauri Desktop Shell](proposed/architecture/2026-09-02-tauri-desktop-app-and-app-server-integration.md)

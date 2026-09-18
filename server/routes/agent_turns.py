@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -298,16 +299,23 @@ async def interrupt_turn(req: InterruptTurnRequest) -> dict[str, Any]:
         thread_id = req.thread_id or "default"
         project_id = session_manager.resolve_thread_project(thread_id, req.project_id)
         session_manager.mark_turn_interrupted(thread_id, req.turn_id, project_id)
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
+        interrupt_task = asyncio.create_task(
+            client.interrupt_turn(
+                turn_id=req.turn_id,
+                thread_id=thread_id,
+            )
+        )
+
+        # Queue the runtime cancellation before releasing an approval wait.
+        # Otherwise the denied approval can resume the model for another step
+        # before the interrupt reaches the App Server.
         await session_manager.cancel_pending_approvals(
             project_id=project_id,
             thread_id=thread_id,
             turn_id=req.turn_id,
         )
-        client = await session_manager.get_client_for_thread(thread_id, project_id)
-        await client.interrupt_turn(
-            turn_id=req.turn_id,
-            thread_id=thread_id,
-        )
+        await interrupt_task
         # The App Server response only acknowledges the cooperative stop
         # request. Keep the Gateway stream and active-turn identity alive until
         # the authoritative turn_finished event arrives; cancelling the stream

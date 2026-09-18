@@ -29,6 +29,7 @@
 - [Security boundaries and hard-limit evidence](implemented/architecture/2026-09-15-security-boundaries-and-hard-limits.md)
 - [Legacy tool typed migration](implemented/architecture/2026-09-15-legacy-tool-typed-migration.md)
 - [Stopping、EOF 与跨仓恢复契约](implemented/architecture/2026-09-15-stopping-eof-recovery.md)
+- [停止 Turn 的审批竞态与迟到事件](implemented/bug-fix/2026-09-18-stopped-turn-approval-race-and-late-events.zh.md)
 - [Tool outcome public projection and Web consumption](implemented/architecture/2026-09-15-tool-outcome-public-projection.md)
 - [Web Studio tool outcome consumption](implemented/architecture/2026-09-15-web-studio-tool-outcome-consumption.md)
 - [Typed tool outcome consumption boundary](implemented/architecture/2026-09-15-typed-tool-outcome-boundary.md)

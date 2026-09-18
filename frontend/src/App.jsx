@@ -11,6 +11,7 @@ import {
   approvalIdentity,
   mergeApprovalEvent,
   shouldIgnoreApprovalWhileInterrupting,
+  shouldIgnoreStreamEventWhileInterrupting,
   shouldSettleActiveTurnFromError,
 } from './utils/messageState';
 import {
@@ -150,6 +151,7 @@ export default function App() {
   const queueDispatchingRef = useRef(false);
   const interruptPendingRef = useRef(false);
   const interruptTurnIdRef = useRef(null);
+  const interruptedTurnIdsRef = useRef(new Set());
   const activeTurnIdRef = useRef(activeTurnId);
   const planActiveRef = useRef(planActive);
   const currentThreadRef = useRef(currentThread);
@@ -179,6 +181,20 @@ export default function App() {
   const clearPendingApprovals = () => {
     setPendingApprovals([]);
     setPendingApproval(null);
+  };
+
+  const rememberInterruptedTurn = (turnId) => {
+    if (!turnId) return;
+    const interruptedTurnIds = interruptedTurnIdsRef.current;
+    interruptedTurnIds.add(String(turnId));
+    while (interruptedTurnIds.size > 64) {
+      const oldest = interruptedTurnIds.values().next().value;
+      interruptedTurnIds.delete(oldest);
+    }
+  };
+
+  const forgetInterruptedTurn = (turnId) => {
+    if (turnId) interruptedTurnIdsRef.current.delete(String(turnId));
   };
 
   const enqueuePendingApproval = (approval) => {
@@ -306,6 +322,7 @@ export default function App() {
     setCurrentSessionReadOnly(false);
     interruptPendingRef.current = false;
     interruptTurnIdRef.current = null;
+    interruptedTurnIdsRef.current.clear();
     queueDispatchingRef.current = false;
     clearPendingApprovals();
     approvalSubmissionRef.current.clear();
@@ -658,6 +675,7 @@ export default function App() {
         setRuntimeStatus(status);
         const runtimeTurnId = status.turn_id || status.turnId;
         if (status.phase === 'stopping' && runtimeTurnId) {
+          rememberInterruptedTurn(runtimeTurnId);
           activeTurnIdRef.current = runtimeTurnId;
           interruptTurnIdRef.current = runtimeTurnId;
           interruptPendingRef.current = true;
@@ -1328,7 +1346,8 @@ export default function App() {
         ) {
           setRuntimeStatus(notification);
           const runtimeTurnId = notification.turnId || notification.turn_id;
-          if (notification.phase === 'stopping' && runtimeTurnId) {
+        if (notification.phase === 'stopping' && runtimeTurnId) {
+            rememberInterruptedTurn(runtimeTurnId);
             activeTurnIdRef.current = runtimeTurnId;
             interruptTurnIdRef.current = runtimeTurnId;
             interruptPendingRef.current = true;
@@ -1372,7 +1391,19 @@ export default function App() {
         { turnId: eventTurnId },
         interruptPendingRef.current,
         interruptTurnIdRef.current,
-      );
+      ) || interruptedTurnIdsRef.current.has(String(eventTurnId || ''));
+      if (shouldIgnoreStreamEventWhileInterrupting(
+        data,
+        interruptPendingRef.current,
+        interruptTurnIdRef.current,
+        interruptedTurnIdsRef.current,
+      )) {
+        console.debug('[Studio][turn-control] ignored late Turn event', {
+          turnId: eventTurnId || null,
+          eventType: data.event?.type || null,
+        });
+        return;
+      }
       if (eventTurnId && !stoppedTurn) {
         activeTurnIdRef.current = eventTurnId;
         setActiveTurnId(eventTurnId);
@@ -1766,13 +1797,25 @@ export default function App() {
     }
     interruptPendingRef.current = true;
     interruptTurnIdRef.current = turnId;
+    rememberInterruptedTurn(turnId);
     setIsInterrupting(true);
     setIsGenerating(false);
     // Keep the approval dock visible while the interrupt settles. Its actions
     // are disabled by isInterrupting, which makes the cancellation boundary
     // observable and prevents a stale approval from looking actionable.
+    const hasPendingApproval = pendingApprovalsRef.current.length > 0
+      || Boolean(pendingApprovalRef.current);
+    const restoreAfterInterruptFailure = (err) => {
+      if (interruptTurnIdRef.current !== turnId) return;
+      forgetInterruptedTurn(turnId);
+      interruptPendingRef.current = false;
+      interruptTurnIdRef.current = null;
+      setIsInterrupting(false);
+      setIsGenerating(true);
+      showToast(`停止请求发送失败：${err.message || '服务端未确认'}。`, 'error', 4000);
+    };
     let sent = false;
-    if (wsRef.current) {
+    if (!hasPendingApproval && wsRef.current) {
       sent = wsRef.current.send({
         action: 'interrupt',
         turnId,
@@ -1781,6 +1824,15 @@ export default function App() {
         source,
       });
     }
+    if (hasPendingApproval || !sent) {
+      // A WebSocket send only means that the browser accepted the frame. When
+      // an approval is pending, use the REST boundary whose response includes
+      // the Gateway's approval cancellation and App Server interrupt result.
+      sent = true;
+      void api.interruptTurn(turnId, currentThread, {
+        projectId: currentThreadProject,
+      }).catch(restoreAfterInterruptFailure);
+    }
     console.info('[Studio][turn-control]', {
       action: 'interrupt',
       source,
@@ -1788,13 +1840,6 @@ export default function App() {
       turnId,
       sent,
     });
-    if (!sent) {
-      interruptPendingRef.current = false;
-      interruptTurnIdRef.current = null;
-      setIsInterrupting(false);
-      showToast('停止请求发送失败，请确认连接后重试。', 'error', 3000);
-      return;
-    }
     // Keep the Turn identity until the authoritative turn_finished/error
     // arrives. Clearing it here makes a late terminal event look unscoped and
     // leaves the UI in "stopping" when the approval path settles first.

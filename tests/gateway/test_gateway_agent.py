@@ -362,6 +362,41 @@ async def test_agent_steer_and_interrupt_endpoints(agent_test_app):
         assert interrupt_resp.json()["turn_id"] == "turn-1"
 
 
+@pytest.mark.asyncio
+async def test_interrupt_queues_runtime_stop_before_releasing_approval(agent_test_app):
+    """An approval denial must not resume the model before cancellation is queued."""
+    events = []
+    mock_client = AsyncMock()
+
+    async def interrupt_turn(**_kwargs):
+        events.append("interrupt")
+        return {"status": "interrupted"}
+
+    mock_client.interrupt_turn = interrupt_turn
+    session_manager._client = mock_client
+    session_manager._clients["default"] = mock_client
+
+    async def cancel_pending_approvals(**_kwargs):
+        await asyncio.sleep(0)
+        events.append("approval-cancel")
+        return 1
+
+    with patch.object(
+        session_manager,
+        "cancel_pending_approvals",
+        new=cancel_pending_approvals,
+    ):
+        transport = ASGITransport(app=agent_test_app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/agent/interrupt",
+                json={"turn_id": "turn-order"},
+            )
+
+    assert response.status_code == 200
+    assert events == ["interrupt", "approval-cancel"]
+
+
 def test_process_attachments_pipeline(tmp_path, monkeypatch):
     """Test image and pasted text attachments stay in Gateway state."""
     session_manager._current_project_path = tmp_path

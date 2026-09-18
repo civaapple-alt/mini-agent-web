@@ -289,12 +289,6 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     session_manager.mark_turn_interrupted(
                         thread_id, turn_id, routing_project_id
                     )
-                await session_manager.cancel_pending_approvals(
-                    project_id=routing_project_id,
-                    thread_id=thread_id,
-                    turn_id=turn_id,
-                )
-
                 # Notify the App Server engine off the receive loop. A
                 # successful response only acknowledges admission; the
                 # Gateway stream remains authoritative until turn_finished.
@@ -304,6 +298,15 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                             websocket, thread_id, turn_id, routing_project_id
                         )
                     )
+
+                # Queue the runtime cancellation before releasing an approval
+                # wait. Otherwise the denied approval can resume the model for
+                # another step before the interrupt reaches the App Server.
+                await session_manager.cancel_pending_approvals(
+                    project_id=routing_project_id,
+                    thread_id=thread_id,
+                    turn_id=turn_id,
+                )
 
                 # Send an immediate admission acknowledgement. The stream
                 # remains authoritative and will emit the real turn_finished.

@@ -61,6 +61,28 @@ export function shouldIgnoreApprovalWhileInterrupting(
   return approvalTurnId === interruptedTurnId;
 }
 
+/**
+ * Drop content events that arrive after a Turn has been interrupted. The
+ * terminal event remains observable so the UI can settle its lifecycle state.
+ */
+export function shouldIgnoreStreamEventWhileInterrupting(
+  eventData,
+  interrupting,
+  interruptedTurnId = null,
+  interruptedTurnIds = new Set(),
+) {
+  const eventType = eventData?.event?.type;
+  if (eventType === 'turn_finished') return false;
+  const eventTurnId = eventData?.turnId || eventData?.turn_id;
+  if (
+    eventTurnId
+    && interruptedTurnIds.has(String(eventTurnId))
+  ) return true;
+  if (!interrupting) return false;
+  if (!interruptedTurnId) return true;
+  return !eventTurnId || String(eventTurnId) === String(interruptedTurnId);
+}
+
 function approvalField(approval, camel, snake = camel) {
   return approval?.[camel] ?? approval?.[snake];
 }

@@ -190,6 +190,18 @@ test('api client methods construct expected fetch endpoints and payloads', async
   assert.equal(scopedApprovalBody.thread_id, 'thread-2');
   assert.equal(scopedApprovalBody.turn_id, 'turn-2');
   assert.equal(scopedApprovalBody.call_id, 'call-2');
+
+  const interruptRes = await api.interruptTurn('turn-2', 'thread-2', {
+    projectId: 'project-2',
+  });
+  assert.equal(interruptRes.success, true);
+  const interruptCall = calls[calls.length - 1];
+  assert.equal(interruptCall.url, '/api/agent/interrupt?project_id=project-2');
+  assert.deepEqual(JSON.parse(interruptCall.options.body), {
+    turn_id: 'turn-2',
+    thread_id: 'thread-2',
+    project_id: 'project-2',
+  });
 });
 
 test('thread settings preserve the server guard detail on conflict', async (t) => {

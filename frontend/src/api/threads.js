@@ -1,4 +1,4 @@
-import { request, requestSignal } from './request.js';
+import { request, requestSignal, resolveProjectId } from './request.js';
 
 export const threadApi = {
   async listThreads(options = {}) {
@@ -208,6 +208,26 @@ export const threadApi = {
       options.projectId,
     );
     if (!res.ok) throw new Error(`Failed to get runtime status for ${targetThread}`);
+    return res.json();
+  },
+
+  async interruptTurn(turnId, threadId = 'default', options = {}) {
+    const projectId = resolveProjectId(options.projectId);
+    const targetThread = threadId || 'default';
+    const res = await request('/api/agent/interrupt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        turn_id: turnId,
+        thread_id: targetThread,
+        project_id: projectId || null,
+      }),
+      ...requestSignal(options),
+    }, projectId);
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || `Failed to interrupt turn ${turnId}`);
+    }
     return res.json();
   },
 

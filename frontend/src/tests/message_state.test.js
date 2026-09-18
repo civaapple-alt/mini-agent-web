@@ -12,6 +12,7 @@ import {
   normalizeAssistantBlocks,
   shouldAcceptEventForThread,
   shouldIgnoreApprovalWhileInterrupting,
+  shouldIgnoreStreamEventWhileInterrupting,
   shouldSettleActiveTurnFromError,
 } from '../utils/messageState.js';
 
@@ -344,6 +345,45 @@ test('a stopped Turn cannot reopen its approval dock', () => {
   assert.equal(
     shouldIgnoreApprovalWhileInterrupting({ turnId: 'turn-stopped' }, false),
     false,
+  );
+});
+
+test('late content events from a stopped Turn are ignored but its terminal event is kept', () => {
+  const stoppedTurns = new Set(['turn-stopped']);
+  assert.equal(
+    shouldIgnoreStreamEventWhileInterrupting(
+      { type: 'event', turnId: 'turn-stopped', event: { type: 'assistant_reasoning_delta' } },
+      false,
+      null,
+      stoppedTurns,
+    ),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreStreamEventWhileInterrupting(
+      { type: 'event', turnId: 'turn-stopped', event: { type: 'tool_finished' } },
+      false,
+      null,
+      stoppedTurns,
+    ),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreStreamEventWhileInterrupting(
+      { type: 'event', turnId: 'turn-stopped', event: { type: 'turn_finished' } },
+      false,
+      null,
+      stoppedTurns,
+    ),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreStreamEventWhileInterrupting(
+      { type: 'event', event: { type: 'assistant_text_delta' } },
+      true,
+      'turn-stopped',
+    ),
+    true,
   );
 });
 

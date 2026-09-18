@@ -87,6 +87,7 @@ export default function InputBar({
   const [selectedSkillIndex, setSelectedSkillIndex] = useState(0);
   const [skillCursor, setSkillCursor] = useState(null);
   const [skillQuery, setSkillQuery] = useState('');
+  const [selectedSkillRefs, setSelectedSkillRefs] = useState([]);
   const [workflowSelection, setWorkflowSelection] = useState(null);
   const [composerDirective, setComposerDirective] = useState(null);
   const [showPluginPopup, setShowPluginPopup] = useState(false);
@@ -136,11 +137,9 @@ export default function InputBar({
     const draftSkills = Array.isArray(composerDraft.selectedSkills)
       ? composerDraft.selectedSkills
       : [];
-    const draftPrompt = [
-      composerDraft.prompt || '',
-      ...draftSkills.map((name) => `$${name}`),
-    ].filter(Boolean).join(' ');
-    setPrompt(draftPrompt);
+    const parsedDraft = parseSkillPrompt(composerDraft.prompt || '', availableSkills);
+    setPrompt(parsedDraft.prompt);
+    setSelectedSkillRefs([...new Set([...draftSkills, ...parsedDraft.selectedSkills])]);
     setWorkflowSelection(composerDraft.workflow || null);
     setComposerDirective(composerDraft.directive || null);
     setAttachedImages(
@@ -156,17 +155,20 @@ export default function InputBar({
     setReferencedFiles(composerDraft.referencedFiles || []);
     onComposerDraftApplied?.();
     requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [composerDraft, onComposerDraftApplied]);
+  }, [composerDraft, onComposerDraftApplied, availableSkills]);
 
   const removeSelectedSkill = (name) => {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const token = new RegExp(`(^|\\s)\\$${escaped}(?=$|\\s|[.,!?;:)])`, 'gi');
+    setSelectedSkillRefs((current) => current.filter((skill) => skill !== name));
     setPrompt((current) => current.replace(token, '$1').replace(/[ \\t]{2,}/g, ' ').trimStart());
   };
 
   useEffect(() => {
     if (!skillInsertion?.name) return;
-    setPrompt((current) => `${current}${current && !/\s$/.test(current) ? ' ' : ''}$${skillInsertion.name} `);
+    setSelectedSkillRefs((current) => (
+      current.includes(skillInsertion.name) ? current : [...current, skillInsertion.name]
+    ));
     onSkillInsertionApplied?.();
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, [skillInsertion, onSkillInsertionApplied]);
@@ -269,8 +271,14 @@ export default function InputBar({
     if (skillCursor === null) return;
     const end = textareaRef.current?.selectionEnd || prompt.length;
     const name = skillDisplayName(skill);
-    const newText = prompt.slice(0, skillCursor) + '$' + name + ' ' + prompt.slice(end);
-    const newPos = skillCursor + name.length + 2;
+    const left = prompt.slice(0, skillCursor).replace(/[ \t]+$/, '');
+    const right = prompt.slice(end).replace(/^[ \t]+/, '');
+    const separator = left && right ? ' ' : '';
+    const newText = `${left}${separator}${right}`;
+    const newPos = left.length + separator.length;
+    setSelectedSkillRefs((current) => (
+      current.includes(name) ? current : [...current, name]
+    ));
     setPrompt(newText);
     setShowSkillPopup(false);
     setShowMentionPopup(false);
@@ -321,6 +329,7 @@ export default function InputBar({
 
     if (handled) {
       setPrompt('');
+      setSelectedSkillRefs([]);
       return true;
     }
     return false;
@@ -506,15 +515,20 @@ export default function InputBar({
       && attachedImages.length === 0
       && attachedTextAttachments.length === 0
       && attachedFileAttachments.length === 0
+      && selectedSkillRefs.length === 0
       && !workflow
     ) return;
 
     const parsedSkills = parseSkillPrompt(parsedWorkflow.prompt, availableSkills);
+    const selectedSkills = [...new Set([
+      ...selectedSkillRefs,
+      ...parsedSkills.selectedSkills,
+    ])];
     if (parsedSkills.unknownSkills.length > 0) {
       onToast?.(`未知或已禁用技能: ${parsedSkills.unknownSkills.map((name) => `$${name}`).join('、')}`, 'warning');
       return;
     }
-    if (parsedSkills.selectedSkills.length > 8) {
+    if (selectedSkills.length > 8) {
       onToast?.('每个 Turn 最多加载 8 个技能', 'warning');
       return;
     }
@@ -537,7 +551,7 @@ export default function InputBar({
       textAttachments: attachedTextAttachments.map(({ name, content }) => ({ name, content })),
       fileAttachments: attachedFileAttachments,
       referencedFiles,
-      selectedSkills: parsedSkills.selectedSkills,
+      selectedSkills,
       workflow,
       directive: composerDirective,
     };
@@ -556,6 +570,7 @@ export default function InputBar({
     if (accepted === false) return;
 
     setPrompt('');
+    setSelectedSkillRefs([]);
     setAttachedImages([]);
     setAttachedTextAttachments([]);
     setAttachedFileAttachments([]);
@@ -566,6 +581,11 @@ export default function InputBar({
     setShowMentionPopup(false);
     setShowSkillPopup(false);
   };
+
+  const visibleSelectedSkills = [...new Set([
+    ...selectedSkillRefs,
+    ...parseSkillPrompt(prompt, availableSkills).selectedSkills,
+  ])];
 
   const handleKeyDown = (e) => {
     // Guard against IME composition on Enter (e.g. Chinese/Japanese candidate selection)
@@ -930,9 +950,9 @@ export default function InputBar({
           </div>
         )}
 
-        {parseSkillPrompt(prompt, availableSkills).selectedSkills.length > 0 && (
+        {visibleSelectedSkills.length > 0 && (
           <div className="selected-skills-bar">
-            {parseSkillPrompt(prompt, availableSkills).selectedSkills.map((name) => (
+            {visibleSelectedSkills.map((name) => (
               <span key={name} className="selected-skill-chip font-mono">
                 <Sparkles size={10} /> ${name}
                 <button

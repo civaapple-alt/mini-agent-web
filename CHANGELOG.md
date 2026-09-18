@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with a copy control.
 - Render the expanded system-injection context as indented, line-numbered XML
   with highlighted tags, attributes, and values for easier inspection.
+- Keep selected Skill names in removable composer chips and remove the
+  duplicate `$skill` token from the visible prompt while preserving structured
+  `selectedSkills` submission.
 - Make Child scheduling intent per delegation: project/global settings retain only
   `max_concurrent_children`, while Main Thread `delegate_task` requests choose
   `parallel` or `sequential` with optional group and sequence metadata.

@@ -85,6 +85,25 @@ describe('InputBar composer popups', () => {
     expect(screen.queryByText('加载技能 ($)')).toBeNull();
   });
 
+  it('keeps a selected Skill in the chip and removes its token from the input', () => {
+    const onSendMessage = vi.fn();
+    render(<InputBar {...props} onSendMessage={onSendMessage} />);
+    const textbox = screen.getByRole('textbox');
+
+    fireEvent.change(textbox, { target: { value: '解释 $', selectionStart: 4, selectionEnd: 4 } });
+    fireEvent.click(screen.getByText('$pstack:how'));
+
+    expect(textbox.value).toBe('解释');
+    expect(screen.getByLabelText('移除技能 pstack:how')).toBeDefined();
+    expect(screen.queryByText('$pstack:how', { selector: 'textarea' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    expect(onSendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: '解释',
+      selectedSkills: ['pstack:how'],
+    }));
+  });
+
   it('closes the plugin popup when clicking outside it', () => {
     render(<InputBar {...props} />);
 

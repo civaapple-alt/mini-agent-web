@@ -1,8 +1,13 @@
 # mini-agent-web
 
-`mini-agent-web` 是 Mini Agent App Server 的 Python SDK、FastAPI 网关、Web
-Studio、实验性 TUI 与 Cookbook 工作区。当前发布版本为 `0.8.0`，使用
+`mini-agent-web` 是 Mini Agent 运行系统的用户侧控制平面适配层，包含 Python SDK、
+FastAPI 网关和 Web Studio，并保留实验性 TUI 与 Cookbook。Web Studio 面向项目和
+长时间运行的 Session，负责把 App Server 的执行状态、审批、恢复、Child Session、
+Notebook 和运行事件变成可操作、可观察的工作台。当前发布版本为 `0.8.0`，使用
 JSON-RPC wire protocol version `1`。
+
+本仓不创建第二条 Agent 执行循环。App Server、Host 和 Capabilities 保持运行时、
+准入和副作用的权威；SDK、Gateway 和 Web Studio 负责连接、投影、控制和用户交互。
 
 ## 从哪里开始
 
@@ -33,7 +38,8 @@ Cookbook ── direct dependency ───────────────�
   类型解析和有界事件流；
 - Server 将 SDK 能力映射为 Web API 与 WebSocket；
 - Web Studio 通过 Server 使用 Web API 与 WebSocket；实验性 TUI 和 Cookbook
-  直接使用 Python SDK。用户主流程是 Gateway → Web Studio；TUI 只用于边界验证。
+  直接使用 Python SDK。用户主流程是 Gateway → Web Studio；TUI 只用于 App Server
+  边界验证，Cookbook 只用于 SDK 集成示例。
 
 ## 快速启动
 

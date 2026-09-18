@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BookOpen, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { BookOpen, ChevronDown, ChevronUp, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { api } from '../api';
 
 function NotebookList({ title, data, readOnly, onForget }) {
@@ -56,6 +56,7 @@ export default function NotebookPane({ threadId, projectId, onToast }) {
   const [keywords, setKeywords] = useState('');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isComposeOpen, setIsComposeOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -139,18 +140,39 @@ export default function NotebookPane({ threadId, projectId, onToast }) {
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="按条目、关键词、commit 或文件检索" maxLength={128} />
         <button type="submit" className="btn-action-small">检索</button>
       </form>
-      <form className="notebook-compose" onSubmit={save}>
-        <input value={key} onChange={(event) => setKey(event.target.value)} placeholder="条目名称" maxLength={128} />
-        <input value={keywords} onChange={(event) => setKeywords(event.target.value)} placeholder="关键词，用逗号分隔" maxLength={768} />
-        <select value={importance} onChange={(event) => setImportance(event.target.value)} aria-label="重要性">
-          <option value="critical">critical</option>
-          <option value="high">high</option>
-          <option value="normal">normal</option>
-          <option value="temporary">temporary</option>
-        </select>
-        <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="写入可复用的 Session 事实或决策" maxLength={32768} />
-        <button type="submit" className="btn-action-small"><Plus size={12} /> 保存</button>
-      </form>
+      <div className="notebook-compose-section">
+        <div className="pane-section-header notebook-compose-header">
+          <span className="section-title"><Plus size={14} /> 新增记忆</span>
+          <button
+            type="button"
+            className="btn-action-small"
+            aria-controls="notebook-compose-form"
+            aria-expanded={isComposeOpen}
+            onClick={() => setIsComposeOpen((open) => !open)}
+          >
+            {isComposeOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            {isComposeOpen ? '收起' : '展开'}
+          </button>
+        </div>
+        {isComposeOpen && (
+          <form id="notebook-compose-form" className="notebook-compose" onSubmit={save}>
+            <div className="notebook-compose-fields">
+              <input value={key} onChange={(event) => setKey(event.target.value)} placeholder="条目名称" maxLength={128} />
+              <input value={keywords} onChange={(event) => setKeywords(event.target.value)} placeholder="关键词，用逗号分隔" maxLength={768} />
+              <select value={importance} onChange={(event) => setImportance(event.target.value)} aria-label="重要性">
+                <option value="critical">critical</option>
+                <option value="high">high</option>
+                <option value="normal">normal</option>
+                <option value="temporary">temporary</option>
+              </select>
+            </div>
+            <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="写入可复用的 Session 事实或决策" maxLength={32768} />
+            <div className="notebook-compose-actions">
+              <button type="submit" className="btn-action-small"><Plus size={12} /> 保存</button>
+            </div>
+          </form>
+        )}
+      </div>
       <NotebookList title="当前 Session" data={self} onForget={forget} />
       <NotebookList title="父级 Session 快照" data={parent} readOnly />
     </div>

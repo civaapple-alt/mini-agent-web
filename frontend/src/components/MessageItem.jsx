@@ -17,7 +17,11 @@ import ThinkingBlock from './ThinkingBlock';
 import ToolCard from './ToolCard';
 import ContextCompactionGroup from './ContextCompactionGroup';
 import ErrorBoundary from './ErrorBoundary';
+import SessionTurnRail from './SessionTurnRail';
+import TurnActivityGroup from './TurnActivityGroup';
+import TurnActivitySummary from './TurnActivitySummary';
 import { groupCompactionBlocks, normalizeAssistantBlocks } from '../utils/messageState';
+import { groupSettledAssistantBlocks } from '../utils/turnHistory';
 import {
   extractFileAttachmentNames,
   extractTextAttachmentNames,
@@ -50,6 +54,11 @@ export default function MessageItem({
   onAdjustPrompt,
   onViewThreadHistory,
   traceScope,
+  turnEntry = null,
+  isTurnFocused = false,
+  showTurnSummary = false,
+  anchorRef = null,
+  onSelectTurn,
 }) {
   const { role, text, thinking, tools = [], blocks = [], usage } = message;
   const [copied, setCopied] = useState(false);
@@ -87,7 +96,19 @@ export default function MessageItem({
       ? fileAttachments
       : extractFileAttachmentNames(message.text).map((name) => ({ name }));
     return (
-      <div className={`message-row user ${message.isSteer ? 'steer-message-row' : ''} ${message.isGoal ? 'goal-message-row' : ''}`}>
+      <div
+        ref={anchorRef}
+        data-message-id={message.id}
+        data-turn-id={turnEntry?.turnId || message.turnId || undefined}
+        className={`message-row user ${message.isSteer ? 'steer-message-row' : ''} ${message.isGoal ? 'goal-message-row' : ''} ${isTurnFocused ? 'turn-focus-highlight' : ''}`}
+      >
+        {turnEntry && (
+          <SessionTurnRail
+            entry={turnEntry}
+            onSelectTurn={onSelectTurn}
+            isFocused={isTurnFocused}
+          />
+        )}
         <div className="user-bubble-container">
           {/* Render Attached Images in User Bubble */}
           {images && images.length > 0 && (
@@ -208,6 +229,13 @@ export default function MessageItem({
                 : displayedFileAttachments.length > 0 ? '（文件附件）' : '')}
             </span>
           </div>
+          {showTurnSummary && turnEntry && (
+            <TurnActivitySummary
+              turn={turnEntry}
+              status={turnEntry.state}
+              metrics={turnEntry.metrics}
+            />
+          )}
           <div className="user-actions">
             <div className={`user-trace-wrapper ${traceOpen ? 'trace-open' : ''}`}>
               <button
@@ -332,18 +360,41 @@ export default function MessageItem({
   const fullResponseText = blocks.length > 0
     ? blocks.filter((b) => b.type === 'text').map((b) => b.content).join('\n\n')
     : text;
-  const renderedBlocks = groupCompactionBlocks(normalizeAssistantBlocks(blocks));
+  const renderedBlocks = groupSettledAssistantBlocks(
+    groupCompactionBlocks(normalizeAssistantBlocks(blocks)),
+  );
 
   return (
-    <div className="message-row assistant">
+    <div
+      ref={anchorRef}
+      data-message-id={message.id}
+      data-turn-id={turnEntry?.turnId || message.turnId || undefined}
+      className={`message-row assistant ${isTurnFocused ? 'turn-focus-highlight' : ''}`}
+    >
       <div className="avatar-bot">
         <Sparkles size={13} />
       </div>
 
       <div className="assistant-container">
+        {showTurnSummary && turnEntry && (
+          <TurnActivitySummary
+            turn={turnEntry}
+            status={turnEntry.state}
+            metrics={turnEntry.metrics}
+          />
+        )}
         {/* Render sequential blocks if present */}
         {renderedBlocks.length > 0 ? (
           renderedBlocks.map((block, idx) => {
+            if (block.type === 'activityGroup') {
+              return (
+                <TurnActivityGroup
+                  key={block.id || `activity_${idx}`}
+                  items={block.items}
+                  policy={policy}
+                />
+              );
+            }
             if (block.type === 'thinking') {
               return (
                 <ThinkingBlock

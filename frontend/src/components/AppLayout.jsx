@@ -152,6 +152,8 @@ export default function AppLayout({
           <ErrorBoundary title="对话区域渲染异常 (Chat Area Render Error)">
             <ChatArea
               messages={messages}
+              threadItems={threadItems}
+              statusModel={statusModel}
               isGenerating={isGenerating}
               pendingApproval={pendingApproval}
               lastTurnResult={lastTurnResult}

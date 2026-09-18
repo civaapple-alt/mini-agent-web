@@ -125,15 +125,15 @@ class ClientPool:
         attachment_dir = owner.attachments_path_for_thread(thread_id, project.get("id"))
         attachment_dir.mkdir(parents=True, exist_ok=True)
         env = owner._runtime_env(project)
-        read_roots = [
+        session_read_roots = [
             value
-            for value in env.get("MINI_AGENT_EXTRA_READ_ROOTS", "").split(os.pathsep)
+            for value in env.get("MINI_AGENT_SESSION_READ_ROOTS", "").split(os.pathsep)
             if value
         ]
         attachment_root = str(attachment_dir.resolve())
-        if attachment_root not in read_roots:
-            read_roots.append(attachment_root)
-        env["MINI_AGENT_EXTRA_READ_ROOTS"] = os.pathsep.join(read_roots)
+        if attachment_root not in session_read_roots:
+            session_read_roots.append(attachment_root)
+        env["MINI_AGENT_SESSION_READ_ROOTS"] = os.pathsep.join(session_read_roots)
         env.update(
             {
                 "MINI_AGENT_SESSION_MODE": session_mode,

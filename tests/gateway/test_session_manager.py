@@ -133,8 +133,9 @@ async def test_client_runtime_receives_only_thread_attachment_root(
             "thread-a", "default"
         ).resolve()
     )
-    read_roots = captured["env"]["MINI_AGENT_EXTRA_READ_ROOTS"].split(os.pathsep)
-    assert attachment_root in read_roots
+    session_roots = captured["env"]["MINI_AGENT_SESSION_READ_ROOTS"].split(os.pathsep)
+    assert attachment_root in session_roots
+    assert attachment_root not in captured["env"]["MINI_AGENT_EXTRA_READ_ROOTS"].split(os.pathsep)
     assert not Path(attachment_root).is_relative_to(Path(project["primary_path"]))
 
 

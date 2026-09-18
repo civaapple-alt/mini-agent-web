@@ -15,6 +15,7 @@ describe('PromptContextCard', () => {
           policy: 'default',
           direct_file_scope: 'workspace',
           workspace_roots: [{ name: 'workspace' }],
+          session_read_roots: [{ name: 'attachments', path: 'C:\\state\\attachments' }],
           available_commands: ['git', 'cargo'],
         }}
       />,
@@ -22,6 +23,7 @@ describe('PromptContextCard', () => {
 
     expect(screen.getByText('模型可见的环境与运行约束')).toBeDefined();
     expect(screen.getByText('chat')).toBeDefined();
+    expect(screen.getByText('1 个会话附件根')).toBeDefined();
     expect(screen.queryByText('<world_state><environment os="windows" /></world_state>')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: '查看完整注入内容' }));

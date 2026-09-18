@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep Project-associated roots separate from Gateway-owned Session attachment
+  roots by passing attachments through `MINI_AGENT_SESSION_READ_ROOTS` as a
+  read-only capability. Prompt Context now reports the bounded attachment-root
+  count without treating Session files as Workspace roots.
 - Simplify the Workspace system-injection view: show a compact runtime summary
   by default and keep the full prompt context behind an explicit expand action
   with a copy control.

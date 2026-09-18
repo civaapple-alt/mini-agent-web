@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [Workspace Root、Session 附件根与 Prompt Context](implemented/architecture/2026-09-18-workspace-roots-session-attachments-and-prompt-context.zh.md)
 - [Child Session operation、恢复与 Session notebook](implemented/architecture/2026-09-17-child-operation-recovery-and-notebook.zh.md)
 - [Child 调度意图按分派决定](implemented/architecture/2026-09-18-child-scheduling-intent.zh.md)
 - [全局 Skill 发现、按需加载与阶段状态](implemented/feature/2026-09-17-global-skill-discovery-and-observability.zh.md)

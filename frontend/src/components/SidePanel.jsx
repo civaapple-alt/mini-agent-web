@@ -325,6 +325,9 @@ export function PromptContextCard({ context, status = {}, workspace = '' }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const roots = Array.isArray(status.workspace_roots) ? status.workspace_roots : [];
+  const sessionRoots = Array.isArray(status.session_read_roots)
+    ? status.session_read_roots
+    : [];
   const availableCommands = Array.isArray(status.available_commands)
     ? status.available_commands
     : [];
@@ -367,6 +370,11 @@ export function PromptContextCard({ context, status = {}, workspace = '' }) {
 
       <div className="prompt-context-meta">
         <span>{roots.length || (workspace ? 1 : 0)} 个工作区根目录</span>
+        {sessionRoots.length > 0 && (
+          <span title={sessionRoots.map((root) => root.path).filter(Boolean).join('\n')}>
+            {sessionRoots.length} 个会话附件根
+          </span>
+        )}
         <span>{availableCommands.length} 个可用命令</span>
         <span>{context ? `${context.length.toLocaleString()} 字符` : '无原文'}</span>
       </div>

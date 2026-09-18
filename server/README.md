@@ -48,6 +48,19 @@ uv run mini-agent-server-dev
 Thread、Turn、Goal 和 ThreadItem 的运行时语义来自 App Server；网关不创建
 第二套运行时状态机。
 
+项目根目录和 Session 附件根目录保持分离。`ProjectRegistry.runtime_env()`
+将主目录、关联只读目录和关联可写目录分别映射到
+`MINI_AGENT_EXTRA_READ_ROOTS` 与 `MINI_AGENT_EXTRA_WRITE_ROOTS`；创建 Thread
+Client 时，Gateway-owned 的附件目录只写入
+`MINI_AGENT_SESSION_READ_ROOTS`。它是当前 Thread 的只读根，不得指向整个
+`~/.mini-agent/sessions`。Gateway 不扫描 SessionStore 文件，也不把
+`session.jsonl`、审批证据或 sidecar 作为普通附件暴露给模型。
+
+App Server/Host 通过稳定的逻辑 `session_capabilities` 向模型声明 Plan、Goal、
+Notebook 和当前 Turn 附件；WebStudio 的诊断面可以显示物理附件路径，但它不参与
+权限判断。关联根集合变化会让 Runtime 重绑并产生新的 root fingerprint；附件文件
+变化不会追加新的 Workspace Root，也不会改变稳定 Session 能力上下文。
+
 Child task 是 Host/Gateway 的控制面接缝，不是 Core 的调度器：`POST
 /api/threads/{thread_id}/children` 先通过 App Server `session/fork` 从最近一次
 已提交 checkpoint 创建 exact child Session，再在独立的 Mini Agent App Server

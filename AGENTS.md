@@ -75,6 +75,7 @@ npm --prefix frontend run lint
 npm --prefix frontend test
 npm --prefix frontend run build
 uv build --package mini-agent
+python ../mini-codex/scripts/check_docs_links.py README.md docs
 ```
 
 For live SDK tests, set `MINI_AGENT_APP_SERVER_PATH` to a matching

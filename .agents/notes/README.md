@@ -66,6 +66,7 @@
 
 ## 提案
 
+- [当前文档与运行时对齐](proposed/process/2026-09-19-current-documentation-alignment.zh.md)
 - [Builtin knowledge-work 技能组长期演进](proposed/architecture/2026-09-18-builtin-knowledge-work-skill-group.zh.md)
 - [Knowledge Work Builtin Skill P0/P1 短期接入](proposed/feature/2026-09-18-knowledge-work-p0-p1-integration.zh.md)
 - [Local Web Studio 演进路线](proposed/feature/2026-09-02-local-web-studio-evolution-and-roadmap.md)

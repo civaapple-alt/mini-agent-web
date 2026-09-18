@@ -1,356 +1,160 @@
-# Mini Agent Official Python SDK (`mini-agent`) 0.8.0 Developer Guide
+# Python SDK guide
 
-The `mini-agent` Python package is the official, zero-dependency async SDK designed to communicate with the [Mini Agent Harness (`mini-agent-app-server`)](https://github.com/civaapple-alt/mini-agent-harness) over **Stdio JSON-RPC 2.0**.
+The `mini-agent` package is the zero-dependency asynchronous client for
+`mini-agent-app-server`. It starts or connects to the App Server process,
+speaks JSON-RPC over stdio, parses bounded events, and forwards control
+requests. It does not own an Agent Loop, Session history, approval grants, or
+recovery policy.
 
----
+## Start a client
 
-## 1. Quickstart & Installation
+The SDK requires Python 3.10 or later. In this workspace, install its
+development dependencies with `uv sync`. Ensure that `mini-agent-app-server`
+is on `PATH`, or set `MINI_AGENT_APP_SERVER_PATH`.
 
-The SDK is packaged under `sdk/python` with full PEP 561 type annotation (`py.typed`).
-
-### In this workspace (with `uv`):
-```bash
-# Editable install is automatically wired via root pyproject.toml
-uv sync
-```
-
-### Direct use in your Python scripts:
 ```python
 import asyncio
+
 from mini_agent import MiniAgentClient
 
 
-async def main():
+async def main() -> None:
     async with MiniAgentClient() as client:
         await client.initialize()
-        await client.start_thread()
+        await client.start_thread("default")
 
-        async for event in client.stream_turn("List files in current directory"):
-            if event["type"] == "event":
-                typed = event["typed_event"]
-                print(f"[{typed.event_type}]: {typed}")
+        async for envelope in client.stream_turn("List files in this workspace."):
+            if envelope.get("type") != "event":
+                continue
+            event = envelope["typed_event"]
+            if event.event_type == "assistant_text_delta":
+                print(event.delta, end="", flush=True)
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.run(main())
 ```
 
----
+`MiniAgentClient` loads `.env` files while it walks from `cwd` toward the
+filesystem root. Explicit `env` values override process environment values,
+which override values from `.env`. The client does not modify the parent
+process environment.
 
-## 2. Core Concepts & Architecture
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                 Consumer Applications                       │
-│        (FastAPI Web UI / Streamlit / Cookbook / TUI)        │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ import mini_agent
-┌──────────────────────────────▼──────────────────────────────┐
-│                  Official Python SDK (mini-agent)           │
-│  ├── MiniAgentClient / AsyncMiniAgentClient (client.py)     │
-│  ├── Typed Event Hierarchy (events.py, parse_event)         │
-│  ├── Protocol Dataclasses (types.py, ThreadCheckpoint)      │
-│  └── Error Hierarchy (errors.py, AppServerError)            │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ Stdio JSON-RPC 2.0 (JSONL)
-┌──────────────────────────────▼──────────────────────────────┐
-│                  mini-agent-app-server.exe                  │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Zero-Dependency Philosophy
-`mini-agent` uses **pure standard library** (`asyncio`, `json`, `subprocess`, `dataclasses`, `logging`). It introduces no heavy third-party networking packages (such as `requests`, `httpx`, or `pydantic`), ensuring instant startup and zero dependency conflicts.
-
----
-
-## 3. Client Lifecycle & Configuration
-
-### 3.1 Initializing the Client
+Pass `log_dir` or `log_file` to enable SDK file logging. Logging is optional;
+the default client does not create a log file.
 
 ```python
-from mini_agent import MiniAgentClient
-
 client = MiniAgentClient(
-    executable="mini-agent-app-server",  # Auto-discovers the App Server on PATH
-    log_dir="logs",  # Auto-records detailed session logs
-    approval_handler=None,  # Custom async approval callback
+    executable="mini-agent-app-server",
+    log_dir="logs",
+    request_timeout=30.0,
 )
 ```
 
-### 3.2 Automated `.env` Discovery
-`MiniAgentClient` automatically locates and parses `.env` files, providing credentials (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, etc.) directly to the backend process environment without modifying global state. Set `MINI_AGENT_APP_SERVER_PATH` to select an explicit 0.8.0 App Server binary.
+## Use the runtime boundary
 
-### 3.3 Explicit skill activation
+App Server owns Thread, Turn, Goal, Session, approval, and recovery semantics.
+The SDK exposes those public methods directly:
 
-The capability manifest returned by `initialize` contains bounded skill-group
-and skill metadata. A turn may explicitly activate up to eight known skills by
-passing their names; the App Server revalidates the names and loads their
-bodies for that turn only:
+| Task | SDK method |
+| --- | --- |
+| Create or attach a Thread | `start_thread()` |
+| Submit a turn | `start_turn()` or `stream_turn()` |
+| Read a settled checkpoint | `read_thread()` |
+| Read live state | `get_runtime_status()` |
+| Steer or stop a Turn | `steer_turn()` or `interrupt_turn()` |
+| Read bounded history | `list_thread_items()` or `replay_events()` |
+| Create a logical branch | `fork_thread()` |
+| Create an independent persisted Session | `fork_session()` |
+| Restore serialized Thread state | `resume_thread()` |
+| Manage Plan and Goal | `update_thread_settings()`, `set_goal()`, `get_goal()`, `clear_goal()` |
+| Read or update environment controls | `get_world_state()`, `refresh_world()`, `set_world_execution()` |
+
+The SDK's `get_workflow_state()` is a local, read-only convenience projection.
+It combines cached Thread settings with `thread/goal/get`. It does not send a
+legacy `workflow/state` RPC.
+
+## Stream events and items
+
+`stream_turn()` yields events for its requested Thread and Turn until the
+runtime settles. It keeps unknown event types as `GenericEvent`, so a newer App
+Server event does not break an older consumer.
 
 ```python
-await client.start_turn(
-    "重构这个模块",
-    selected_skills=["architect", "typescript-best-practices"],
+async for envelope in client.stream_turn("Inspect the workspace"):
+    if envelope.get("type") != "event":
+        continue
+    for item in envelope.get("typed_items", []):
+        if item.type == "toolCall":
+            print(item.id, item.name, item.status, item.outcome)
+```
+
+`ThreadItem.status` is an item lifecycle value. `ThreadItem.outcome` is the
+structured tool outcome. Keep those fields separate. Do not infer approval,
+retry, or success from tool output text.
+
+For reconnects, read `get_runtime_status()` and request a bounded event page.
+If `has_gap` is true, reload canonical Thread and item projections before
+accepting the replay as complete.
+
+```python
+page = await client.replay_events("default", after_sequence=last_sequence, limit=128)
+if page.has_gap:
+    checkpoint = await client.read_thread("default")
+    items = await client.list_thread_items("default", limit=128)
+```
+
+## Set execution and workflow controls
+
+Access scope and approval policy are independent controls. They are enforced by
+Host and Capabilities, not by the SDK:
+
+```python
+await client.set_world_execution(access="full_machine", policy="interactive")
+await client.update_thread_settings(
+    "plan",
+    thread_id="default",
+    continuation_mode="manual",
 )
+await client.set_goal("Review the repository and report verified findings.")
 ```
 
-Skill bodies are not copied into the client payload or persisted as global
-prompt state. `skills_loaded` and `skills_load_failed` events report the
-bounded outcome without exposing paths or body contents.
-
-### 3.4 Dynamic File-Based Logging
-Passing `log_dir="logs"` automatically creates script-isolated logs (e.g. `logs/02_streaming_events.log`).
-```python
-# Enable SDK debug logging with script-name auto-detection
-setup_logging(log_dir="logs", level=logging.DEBUG, mode="w")
-```
-
----
-
-## 4. Interaction Patterns
-
-### 4.1 Token-by-Token Streaming (`stream_turn`)
-`stream_turn` returns an async generator yielding only the requested Thread/Turn's real-time events until `turn_finished` or `run_failed`. It also parses `context_compaction_started`, `context_compaction_finished`, and `run_finished`:
+`full_machine` expands candidate filesystem scope. It does not bypass deny
+rules, Plan locks, tool availability, sandbox checks, or high-risk approval.
+An `approval_handler` receives only approval requests that the runtime has not
+already resolved. Without a handler, the SDK denies those pending requests.
 
 ```python
-async for envelope in client.stream_turn("Explain quantum computing"):
-    if envelope["type"] == "event":
-        event = envelope["typed_event"]
-
-        # Token deltas
-        if event.event_type == "assistant_text_delta":
-            print(event.delta, end="", flush=True)
-
-        # Tool execution lifecycle
-        elif event.event_type == "tool_started":
-            print(f"\n[Calling Tool]: {event.call.name}({event.call.arguments})")
-        elif event.event_type == "tool_finished":
-            print(f"\n[Tool Result]: {event.content}")
-```
-
-### 4.2 Security Approval Interception (`approval_handler`)
-Sensitive actions (including shell execution, workspace file modification, and web fetching) trigger an `approval/request` notification from the backend. Under the `automatic` policy, the backend may directly admit a bounded read-only shell inspection when every referenced path stays inside the workspace or a configured read root; writes, dynamic paths, high-risk commands, and outside paths still trigger approval. Under the explicit `trusted` policy, a fully validated non-destructive `apply_patch` update may also run directly; deletes, moves, shell mutations, MCP, and other high-risk actions still trigger approval. You can intercept remaining approval requests programmatically:
-
-If `approval_handler` is omitted, the SDK denies approval requests by default.
-Applications that have a human or other trusted decision authority should return
-a typed `{ "decision": "approve"|"deny", "grantScope": ... }`
-object. `grantScope` is `once`, `session`, or `project`; it is an action grant
-request, not an access-policy setting. The App Server still enforces security Deny, Plan locks, tool exposure,
-and the trusted Project/Session binding.
-
-```python
-async def custom_approver(params: dict) -> dict:
-    print(f"[SECURITY ALERT] Request: {params.get('actionSummary', '')}")
+async def approve_once(request: dict) -> dict:
     return {"decision": "approve", "grantScope": "once"}
 
 
-client = MiniAgentClient(approval_handler=custom_approver)
+client = MiniAgentClient(approval_handler=approve_once)
 ```
 
-### 4.3 Runtime Steering (`steer_turn`)
-Mid-flight corrections can be injected while a turn is actively executing:
+## Branches, sessions, and child work
 
-```python
-# Start turn
-resp = await client.start_turn("Write a 1000-word essay on AI")
+`fork_thread()` branches an in-process Thread history. `fork_session()` creates
+an independent Session from a complete checkpoint and returns its lineage and
+context-policy result. Neither method copies an in-flight Turn or approval
+wait. `resume_thread()` accepts a serialized `ThreadCheckpoint` when a caller
+needs to restore it through the public protocol.
 
-# Wait a second and inject steering instruction
-await asyncio.sleep(1.0)
-await client.steer_turn(resp.turn_id, "Change tone to a 3-bullet summary.")
+Child operations, Notebook entries, background Shell tasks, and scheduled
+wake-up markers are App Server control-plane features. The SDK can read their
+bounded projections, but it must not keep a second operation history or task
+scheduler.
 
-# Wait for turn to settle with the new instructions
-result = await client.wait_for_turn(resp.turn_id)
-print(result.final_text)
-```
+## Verify a protocol change
 
-### 4.4 Cooperative Interruption (`interrupt_turn`)
-Cancel long-running turns safely without corrupting session state:
-
-```python
-await client.interrupt_turn(turn_id)
-result = await client.wait_for_turn(turn_id)
-assert result.status == "cancelled"
-```
-
-### 4.5 Protocol Compatibility, ThreadItems, and Runtime Notifications
-
-The 0.8.0 SDK targets App Server JSON-RPC protocol version `1`. Parsed event
-objects expose `event_type`, and the typed event surface includes context
-compaction (`context_compaction_started` / `context_compaction_finished`) and
-run lifecycle (`run_finished` / structured `run_failed`) events. Unknown future
-event types remain available as `GenericEvent` instead of breaking the stream.
-
-For App Server `turn/event` messages, `stream_turn()` also exposes the raw
-`items` list and typed `ThreadItem` values. The optional `itemId` identifies one
-model response across its streamed deltas and final projection; reasoning items
-use the derived `<itemId>:reasoning` identity. This is the stable projection for
-renderers that reconcile a tool call across `inProgress`, `completed`, and
-`failed` states:
-
-```python
-async for envelope in client.stream_turn("Inspect the workspace"):
-    if envelope["type"] == "event":
-        for item in envelope["typed_items"]:
-            if item.type == "toolCall":
-                print(item.id, item.name, item.status, item.arguments, item.output)
-```
-
-Tool Items expose `status` and `outcome` as separate fields. `status` is the
-Item lifecycle (`inProgress`, `completed`, or `failed`). `outcome` is a string
-result from the runtime. Current known values are `completed`, `failed`,
-`needs_approval`, `deferred`, and `retryable`, but the SDK preserves future
-string values and clients should render unknown values with a generic fallback.
-Do not infer an outcome from `output` text or use it to perform local retries
-or approvals.
-
-The App Server also emits dedicated lifecycle notifications on the same stream.
-They are yielded as notification envelopes and expose a typed
-`ItemLifecycleNotification` under `typed_item_notification`:
-
-```python
-async for envelope in client.stream_turn("Inspect the workspace"):
-    if envelope.get("type") != "notification":
-        continue
-    if envelope["method"] in ("item/started", "item/completed"):
-        item_event = envelope["typed_item_notification"]
-        print(item_event.turn_id, item_event.item.id, item_event.method)
-```
-
-For history/replay, use the bounded cursor API. It reads the existing Session
-projection and does not create a second item store:
-
-```python
-page = await client.list_thread_items(thread_id="default", limit=128)
-for entry in page.data:
-    print(entry.turn_id, entry.item.type, entry.item.id)
-```
-
-Runtime notifications such as `thread/settings/updated`,
-`thread/goal/updated`, and `thread/goal/cleared` are yielded as
-`{"type": "notification", "method": ..., "data": ...}` envelopes. A
-`notification_handler` may be supplied when the application needs to
-broadcast these events outside an active turn stream. The handler also receives
-ordered App Server `turn/event` envelopes, so a Gateway can fan them out to all
-connected WebSocket clients without sending the initiating stream twice.
-
-Use the live runtime snapshot and the bounded event cursor for reconnects:
-
-```python
-status = await client.get_runtime_status(thread_id="thread-1")
-print(status.phase, status.turn_id, status.operation_id, status.error)
-
-page = await client.replay_events(
-    thread_id="thread-1", after_sequence=last_sequence, limit=128
-)
-if page.has_gap:
-    # Reconcile with read_thread/list_thread_items before accepting new events.
-    checkpoint = await client.read_thread("thread-1")
-for envelope in page.data:
-    handle_event(envelope)
-```
-
-Workflow lifecycle notifications include `checkpoint/committed`,
-`goal/verification_started|completed|failed`,
-`goal/continuation_queued|started`, `plan/updated`, and
-`plan/cleanup_started|completed|failed`. Their payloads carry bounded
-Thread/Turn/checkpoint identity, `stateRevision`, and an optional error so the
-consumer can distinguish a verifier wait, continuation queue, and cleanup
-failure without inspecting `goal/*.md` files.
-
-`thread/settings/updated` carries the App Server `stateRevision`. The typed
-`ThreadSettingsResult` and `WorkflowState` expose it as `state_revision`; the
-SDK's cached Thread settings projection only advances when the incoming
-revision is equal to or newer than the cached value, so a delayed notification
-cannot roll a client back to stale Plan or continuation state.
-
-Goal action results and the `thread/goal/updated` / `thread/goal/cleared`
-notifications carry the same `stateRevision`; `ThreadGoalSetResult`,
-`ThreadGoalGetResult`, and `ThreadGoalClearResult` expose it as
-`state_revision`. Consumers that maintain a Goal projection should use the
-same per-Thread monotonic rule for these envelopes. A reconnect should first
-read `get_workflow_state()` and rebuild the cursor because an App Server
-restart may reset its in-memory revision sequence.
-
-`get_workflow_state()` is only a convenience read-only aggregate in the SDK;
-it composes the cached Thread settings projection with `thread/goal/get` and
-does not send a legacy `workflow/state` RPC.
-
-Use the deterministic Cookbook contract check when changing event models:
+Run the deterministic compatibility fixture when changing event models or SDK
+types:
 
 ```bash
 uv run python cookbook/python-demo/06_protocol_compatibility.py
 uv run pytest tests/test_sdk_events.py tests/test_cookbook_validation.py -q
 ```
 
-### 4.6 Project execution controls and Plan Mode
-```python
-# Inspect system environment & available tools
-world_state = await client.get_world_state()
-
-# Access and approval policy are independent Project-owned controls.
-await client.set_world_execution(access="full_machine", policy="interactive")
-
-# Thread loop behavior is a separate explicit setting. Goal Runtime owns its
-# own milestone loop while a Goal is active.
-await client.update_thread_settings(
-    "default", continuation_mode="continuous", thread_id="thread-1"
-)
-
-# Enter read-mostly exploration mode. Plan may use bounded scratch exploration
-# and retain plan.md, but formal Project mutations remain locked.
-await client.set_collaboration_mode("plan")
-
-# Return to the default collaboration mode
-await client.set_collaboration_mode("default")
-
-# Read the canonical App Server Session history projection
-checkpoint = await client.read_thread()
-print(f"Messages count: {len(checkpoint.messages)}")
-```
-
-### 4.7 Thread Branching & Resuming
-```python
-# List all active threads
-threads = await client.list_threads()
-
-# Fork thread state into an experimental branch
-forked = await client.fork_thread(
-    source_thread_id="default", new_thread_id="feature-experiment"
-)
-
-# Resume through the canonical App Server Session contract
-resumed = await client.resume_thread(thread_id="restored-thread", checkpoint=checkpoint)
-```
-
-### 4.8 Thread Goal Runtime
-```python
-# Set a Thread-owned Goal. The App Server schedules Goal Runtime continuation.
-goal_result = await client.set_goal(
-    "Implement High-Performance Caching Layer", token_budget=4096
-)
-goal = goal_result.goal
-print(
-    f"Thread: {goal.thread_id}, Status: {goal.status}, "
-    f"Tokens: {goal.tokens_used}/{goal.token_budget or 'unlimited'}"
-)
-
-# Read the current bounded Goal projection
-current = await client.get_goal()
-
-# Clear the Goal and stop future automatic continuation
-await client.clear_goal()
-```
-
----
-
-## 5. Exception Hierarchy
-
-All SDK exceptions inherit from `MiniAgentError`:
-
-```text
-MiniAgentError (Base)
-├── AppServerError (JSON-RPC error with code, message, and data)
-├── ProtocolVersionMismatchError (Server/Client protocol mismatch)
-├── ServerProcessError (Backend binary crash or startup failure)
-└── TurnTimeoutError (Turn polling timeout)
-```
+The default request timeout is 30 seconds. Configure a different positive
+`request_timeout` only for the caller's local environment. The SDK removes a
+timed-out pending request and raises `ServerProcessError` instead of waiting
+indefinitely.

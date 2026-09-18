@@ -53,7 +53,8 @@
 浏览器界面右上角显示“已断开”红点，或反复弹出连接重试的 Toast 通知。
 
 ### 排查与解决
-1. **验证网关健康状态**：在浏览器访问 `http://127.0.0.1:8000/api/health`，确保返回 `{"status": "ok"}`；
+1. **验证网关健康状态**：在浏览器访问 `http://127.0.0.1:8000/health`，确保响应的
+   `status` 为 `healthy`；
 2. **检查前端反向代理**：确认 `frontend/vite.config.js` 中的 proxy 配置正确映射了 `/api` 与 `/ws` 到网关端口；
 3. **查看终端日志**：检查网关控制台是否有反序列化异常或 App Server 退出日志。
 
@@ -119,11 +120,11 @@ Web Studio 将模型回答作为消息流的主内容。已完成的思考默认
 
 ### 排查与解决
 1. **检查 `.env` 文件**：确保在工作区根目录下创建了 `.env`，并且配置了 `OPENAI_API_KEY` 与 `OPENAI_MODEL`；
-2. **自定义服务商配置**：如使用 DeepSeek、通义千问或 SiliconFlow，请同时配置 `OPENAI_BASE_URL`：
+2. **自定义服务商配置**：如使用 DeepSeek、通义千问或 SiliconFlow，请同时配置 `OPENAI_BASE_URL`。App Server 会在该根 URL 后追加 `/responses`：
    ```env
-   OPENAI_BASE_URL=https://api.deepseek.com/v1
+   OPENAI_BASE_URL=https://api.deepseek.com
    OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
-   OPENAI_MODEL=deepseek-chat
+   OPENAI_MODEL=deepseek-flash
    ```
 
 ---

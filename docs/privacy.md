@@ -1,35 +1,58 @@
-# 数据与隐私保护 (Privacy & Security)
+# Data and privacy
 
-`mini-agent-web` 是一款注重开发者数据主权与代码安全的开源工具。本文档明确说明数据流向、凭证存储与隐私边界。
+`mini-agent-web` is a local SDK, Gateway, and browser client. It does not add a
+separate hosted service for Session history or approval grants. The App Server
+process performs model requests and tool execution under its configured
+runtime.
 
----
+## Data flow
 
-## 1. 零外部遥测与追踪 (Zero Telemetry)
+The Gateway starts or connects to an App Server through the Python SDK. A turn
+request, bounded attachment references, and control requests cross that local
+process boundary. The compatible App Server can then send model-visible context
+to its configured provider and can invoke admitted local or remote tools.
 
-- **无产品遥测**：本项目不包含任何用户分析、页面埋点、崩溃上报或在线激活检查逻辑；
-- **无自建中心服务**：`mini-agent-web` 完全以本地客户端形式运行，不存在任何收集用户代码或会话记录的远端服务器；
-- **纯本地网络绑定**：FastAPI 网关和 Web 前端默认仅监听本地回环地址（`127.0.0.1:8000` 和 `127.0.0.1:5173`），不对公网暴露服务。
+The browser never becomes the authority for a Session, a tool result, or an
+approval grant. It sends an approval decision only in response to an App Server
+request. Host and Capabilities validate the action identity, allowed scope,
+workspace revision, and policy before any reuse. `automatic` and `trusted`
+policies can resolve eligible actions without a browser card. A browser card is
+therefore not a complete audit of every tool action.
 
----
+## Local files
 
-## 2. API 凭证与鉴权信息管理
+Gateway Project and UI metadata are stored below `MINI_AGENT_WEB_STATE_DIR`.
+When the variable is unset, the Gateway uses its local Mini Agent Web state
+directory. Thread attachments are stored below that state directory, outside
+the Project workspace, and are supplied to the runtime through a read-only
+Session attachment root.
 
-- **凭证存储位置**：大模型 API 密钥（如 `OPENAI_API_KEY`、`DEEPSEEK_API_KEY`）必须且仅保存在进程环境变量、系统全局环境或本地 `.env` 文件中；
-- **代码仓库防泄漏**：仓库根目录与子工程的 `.gitignore` 默认忽略 `.env`、`*.local`、`logs/` 等敏感文件。切勿将包含真实密钥的文件提交至版本库；
-- **脱敏与遮蔽**：在工具调用日志、`ToolCard` 参数回显与调试追踪输出中，系统会自动识别并遮蔽常见的敏感字段（如 `key`、`token`、`secret`、`password`、`auth`）。
+App Server Session history, checkpoints, runtime sidecars, and approval
+evidence remain App Server-owned data. Gateway Project removal only removes the
+local registry entry. It does not delete the Project directory or canonical
+Session history.
 
----
+The Gateway log directory is configured by `MINI_AGENT_LOG_DIR` and defaults to
+`logs`. Logs and local state can contain user prompts, filenames, tool status,
+or error details. Review them before sharing a support bundle.
 
-## 3. 会话数据与本地日志流向
+## Credentials and remote services
 
-- **会话持久化**：会话元数据保存在本地目录（如 `~/.mini-agent/`），包含 Prompt、思考链过程、工具调用参数与结算快照。这些数据完全留存在开发者本机磁盘上，未经用户授权绝不上传；
-- **附件**：Web Studio 上传的图片以及大段剪贴板文本由 Gateway 保存在 `MINI_AGENT_WEB_STATE_DIR` 下按项目和会话隔离的附件目录中；未设置时默认位于 `~/.mini-agent/web/attachments/`。附件目录不会创建在项目工作区内，运行时只获得当前会话目录的只读访问根。长文本附件每个最多 128 KiB、每条消息最多 4 个；附件正文只会随模型请求在模型需要读取时进入上下文，不会在消息气泡中展开；
-- **执行日志**：运行过程中的标准输出与错误日志输出至工作区 `logs/` 目录，便于排查与审计，此目录已被 Git 默认忽略；
-- **模型推理流量**：仅有发送给大模型的推理请求会经过用户在 `.env` 中指定的 API 服务商（如 `OPENAI_BASE_URL`）。用户输入、当前会话上下文及受限工具输出将随请求发送至对应服务商，其隐私策略取决于所选的模型供应商。
+Provider credentials and MCP credentials are configuration for the App Server
+runtime or a configured tool. Do not put credentials in a Project file,
+attachment, browser message, or repository commit. Any content made visible to
+a provider, MCP server, or remote tool is governed by that service's privacy
+policy.
 
----
+The default CORS allowlist contains local development origins. The Gateway bind
+host defaults to `0.0.0.0`, so do not treat that CORS allowlist as a network
+access-control boundary. If you expose the port beyond a trusted local network,
+configure the bind host, reverse proxy, and access controls for that deployment.
 
-## 4. 本地工具执行与安全拦截
+## Cleanup
 
-- **交互式权限审批**：当 Agent 试图调用潜在破坏性工具（如执行本地 Shell 命令、编辑或写入文件）时，前端与 TUI 会强制触发安全审批拦截，用户必须明确确认放行方可生效；
-- **严格的工作区边界**：工具操作原则上被限制在用户当前指定的工作区目录范围内，禁止静默跨目录或越权执行。
+Stop the Gateway and any App Server that owns the Session before removing local
+state. Removing Gateway state resets local Project and UI metadata. Removing
+an App Server Session directory is an administrative action that removes its
+history, checkpoints, attachments, Goal state, and other Session-owned data.
+The Gateway has no API for deleting canonical Session history.

@@ -75,6 +75,7 @@ npm --prefix frontend run lint
 npm --prefix frontend test
 npm --prefix frontend run build
 uv build --package mini-agent
+python ../mini-codex/scripts/check_docs_links.py README.md docs
 ```
 
 默认验证不调用真实模型 Provider；需要 Provider 的示例只在 Cookbook 中显式

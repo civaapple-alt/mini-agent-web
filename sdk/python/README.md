@@ -56,8 +56,9 @@ asyncio.run(main())
 - `types.py`：协议结果、Goal、设置、Session history 和错误相关数据类。
 
 执行控制由 Project 的 `access`（`project` / `full_machine`）和
-`policy`（`interactive` / `automatic` / `trusted`）组成。`trusted` 只放行经过
-完整校验的普通工作区补丁更新，高风险、删除/移动、Shell 和 MCP 操作仍需审批。
+`policy`（`interactive` / `automatic` / `trusted`）组成。`trusted` 自动放行经过
+完整校验的普通工作区补丁更新和普通 Shell；递归/强制删除、破坏性 Git、系统级
+命令、MCP 以及工作区外 `read_image` 仍需审批或会被拒绝。
 审批响应另行使用
 `grantScope`（`once` / `session` / `project`）请求授权生命周期。
 `full_machine` 只扩大路径范围，不等于 allow-all；Deny、Plan 锁、工具可用性和

@@ -16,8 +16,9 @@ uv run mini-agent-server
 uv run mini-agent-server-dev
 ```
 
-默认监听 `http://127.0.0.1:8000`，OpenAPI 页面为 `/docs`。静态 Web 资源
-存在时，根路径同时提供 Web Studio。
+默认监听 `0.0.0.0:8000`。本机可通过 `http://127.0.0.1:8000` 访问，OpenAPI 页面
+为 `/docs`。静态 Web 资源存在时，根路径同时提供 Web Studio。若端口会暴露到不受
+信任的网络，请显式配置 bind host、反向代理和访问控制。
 
 ## 路由边界
 

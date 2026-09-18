@@ -695,6 +695,44 @@ export function aggregateThreadItems(messages, entries) {
 }
 
 /**
+ * Restore the visible message order after checkpoint compaction.
+ *
+ * A checkpoint can omit an older user/assistant pair while ThreadItems still
+ * retain it. Appending that projected pair to the checkpoint would make the
+ * Turn rail point below newer Turns. Persisted ThreadItem order is the
+ * canonical Turn order, so use it to stably place all messages that carry a
+ * durable turn id.
+ */
+export function orderMessagesByTurnHistory(messages = [], entries = []) {
+  const turnOrder = new Map();
+  for (const entry of entries || []) {
+    const turnId = entry?.turnId || entry?.turn_id;
+    if (!turnId) continue;
+    const key = String(turnId);
+    if (!turnOrder.has(key)) turnOrder.set(key, turnOrder.size);
+  }
+
+  return (messages || [])
+    .map((message, index) => {
+      const turnId = message?.turnId;
+      const turnIndex = turnId === null || turnId === undefined || turnId === ''
+        ? null
+        : turnOrder.get(String(turnId));
+      return { message, index, turnIndex };
+    })
+    .sort((left, right) => {
+      const leftKnown = left.turnIndex !== undefined && left.turnIndex !== null;
+      const rightKnown = right.turnIndex !== undefined && right.turnIndex !== null;
+      if (leftKnown && rightKnown && left.turnIndex !== right.turnIndex) {
+        return left.turnIndex - right.turnIndex;
+      }
+      if (leftKnown !== rightKnown) return leftKnown ? -1 : 1;
+      return left.index - right.index;
+    })
+    .map(({ message }) => message);
+}
+
+/**
  * Remove history placeholders that have no visible content after item
  * hydration. Empty assistant messages are useful while a live turn is being
  * assembled, but rendering them after a settled history only produces a bare

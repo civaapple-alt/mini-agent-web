@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Load the complete current Thread input history into the Session Turn rail by
   paging the canonical SessionStore item projection instead of stopping at the
   most recent 256 items. Each response remains bounded to one 128-item page.
+- Restore the visible order of projected historical messages from the durable Turn
+  sequence, so an input recovered after compaction navigates to its actual
+  position instead of being appended below newer Turns.
 - Add cross-Turn local background Shell task projection to the SDK, Gateway, and
   Web Studio runtime panel. Child Sessions can read the parent task list but
   cannot control it; remote waits such as GitHub Actions use the scheduled marker

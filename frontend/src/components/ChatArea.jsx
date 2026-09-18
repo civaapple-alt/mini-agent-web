@@ -3,6 +3,7 @@ import { Sparkles, Terminal, Compass, TestTube2, ArrowDown } from 'lucide-react'
 import MessageItem from './MessageItem';
 import SessionTurnRail from './SessionTurnRail';
 import { collectInputMessages } from '../utils/inputTrace';
+import { orderMessagesByTurnHistory } from '../utils/messageState';
 import { buildTurnHistoryEntries } from '../utils/turnHistory';
 import './ChatArea.css';
 
@@ -60,7 +61,7 @@ export default function ChatArea({
       if (assistantIndex >= 0) result.splice(assistantIndex, 0, input);
       else result.push(input);
     });
-    return result;
+    return orderMessagesByTurnHistory(result, threadItems);
   }, [messages, threadItems, traceScope]);
 
   const entryByMessageId = useMemo(

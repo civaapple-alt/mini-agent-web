@@ -10,6 +10,7 @@ import {
   groupCompactionBlocks,
   mergeApprovalEvent,
   normalizeAssistantBlocks,
+  orderMessagesByTurnHistory,
   shouldAcceptEventForThread,
   shouldIgnoreApprovalWhileInterrupting,
   shouldIgnoreStreamEventWhileInterrupting,
@@ -65,6 +66,29 @@ test('unmatched legacy items create a Turn projection instead of using first ass
   assert.equal(messages[1].blocks.length, 0);
   assert.equal(messages[2].turnId, 'turn-unmatched');
   assert.equal(messages[2].blocks[0].id, 'call-unmatched');
+});
+
+test('restores projected messages before newer checkpoint Turns', () => {
+  const ordered = orderMessagesByTurnHistory(
+    [
+      { id: 'turn-11-user', role: 'user', turnId: 'turn-11', text: '不做剪贴板监听' },
+      { id: 'turn-11-assistant', role: 'assistant', turnId: 'turn-11', text: 'answer' },
+      { id: 'turn-9-user', role: 'user', turnId: 'turn-9', text: 'recall 继续' },
+      { id: 'turn-9-assistant', role: 'assistant', turnId: 'turn-9', text: 'older answer' },
+    ],
+    [
+      { turnId: 'turn-9', item: { type: 'userMessage', text: 'recall 继续' } },
+      { turnId: 'turn-9', item: { type: 'agentMessage', text: 'older answer' } },
+      { turnId: 'turn-11', item: { type: 'userMessage', text: '不做剪贴板监听' } },
+    ],
+  );
+
+  assert.deepEqual(ordered.map((message) => message.id), [
+    'turn-9-user',
+    'turn-9-assistant',
+    'turn-11-user',
+    'turn-11-assistant',
+  ]);
 });
 
 test('message stream aggregation cleanly sequences thinking, text, and tools', () => {

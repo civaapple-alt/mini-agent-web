@@ -71,6 +71,30 @@ describe('Turn history projection', () => {
 });
 
 describe('ChatArea direction cues', () => {
+  it('anchors a projected older input before newer checkpoint content', () => {
+    const { container } = render(
+      <ChatArea
+        messages={[
+          { id: 'turn-11-user', role: 'user', text: '不做剪贴板监听', turnId: 'turn-11' },
+          { id: 'turn-11-assistant', role: 'assistant', turnId: 'turn-11', text: 'answer' },
+        ]}
+        threadItems={[
+          { turnId: 'turn-9', item: { type: 'userMessage', id: 'turn-9-user', text: 'recall 继续' } },
+          { turnId: 'turn-11', item: { type: 'userMessage', id: 'turn-11-user', text: '不做剪贴板监听' } },
+        ]}
+        statusModel={null}
+        isGenerating={false}
+        pendingApproval={null}
+        lastTurnResult={null}
+        traceScope={{ threadId: 'thread-1', projectId: 'project-1' }}
+      />,
+    );
+
+    expect(Array.from(container.querySelectorAll('.message-row')).map((node) => (
+      node.getAttribute('data-turn-id')
+    ))).toEqual(['turn-9', 'turn-11', 'turn-11']);
+  });
+
   it('renders a Turn rail, inline summary, and supports node navigation', () => {
     const user = { ...messages[0], inputTrace: { source: 'user', scope: { turnId: 'turn-1' } } };
     const node = document.createElement('div');

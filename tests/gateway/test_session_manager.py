@@ -355,7 +355,6 @@ def test_subagent_settings_keep_capacity_only(mock_session_manager):
     """Execution mode is not exposed as a global or project policy."""
     mock_session_manager._settings["subagent"] = {
         "max_concurrent_children": 3,
-        "default_execution_mode": "sequential",
     }
     settings = mock_session_manager.get_settings()
 
@@ -374,9 +373,8 @@ def test_notebook_limits_merge_global_defaults_and_project_override(
     env = mock_session_manager._runtime_env(project)
     assert env["MINI_AGENT_NOTEBOOK_MAX_ENTRIES"] == "12"
     assert env["MINI_AGENT_NOTEBOOK_MAX_ENTRY_BYTES"] == "2048"
-    assert env["MINI_AGENT_NOTEBOOK_MAX_ENTRY_CHARS"] == "2048"
 
-    project["notebook"] = {"max_entries": 8, "max_entry_chars": 1024}
+    project["notebook"] = {"max_entries": 8, "max_entry_bytes": 1024}
     env = mock_session_manager._runtime_env(project)
     assert env["MINI_AGENT_NOTEBOOK_MAX_ENTRIES"] == "8"
     assert env["MINI_AGENT_NOTEBOOK_MAX_ENTRY_BYTES"] == "1024"

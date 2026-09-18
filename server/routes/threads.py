@@ -99,7 +99,7 @@ class ChildTaskRequest(BaseModel):
         default=None, description="Canonical project routing context"
     )
     group_id: str | None = Field(default=None, max_length=128)
-    execution_mode: Literal["parallel", "sequential"] | None = Field(default=None)
+    execution_mode: Literal["parallel", "sequential"] = Field(...)
     sequence: int | None = Field(default=None, ge=0)
 
 

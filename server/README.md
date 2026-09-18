@@ -58,8 +58,8 @@ SessionStore 的 `forked_from` lineage 和 live runtime projection 组合读取 
 受 `1..=8` 配置限制，默认两个。项目配置只保存这个并发上限；Main Thread 在
 每次委派时通过 `execution_mode`、可选 `group_id` 和 `sequence` 表达当前任务的
 调度意图。`parallel` 按槽位启动，`sequential` 按 operation group 排队。
-旧客户端不传 `execution_mode` 时由 Host 兼容回退为 `parallel`。compact fork
-仍要求父 Thread idle。
+`execution_mode` 必须由 Main Thread 在每次 Child 委派时提供；缺少该字段的请求
+会被拒绝。compact fork 仍要求父 Thread idle。
 
 Child 的 `operation_id`、attempt 和 `queued`/`running`/`awaiting_approval`/
 `completed`/`failed`/`cancelled` 状态来自 SessionStore 的 append-only
@@ -86,7 +86,7 @@ Session Notebook 通过 `/notebook` 读取和写入，Gateway 不保存第二份
 Notebook 写入可附带关键词和 Commit/File evidence。evidence 是调用方声明的
 有界来源元数据，不宣称已由 Git 或文件系统自动验证；读取和检索不会再次查询
 Git。配置只暴露 `notebook.max_entries` 与 `notebook.max_entry_bytes`，项目值
-覆盖全局默认值；旧的 `max_entry_chars` 仍兼容，但按 UTF-8 字节解释。总文件
+覆盖全局默认值。总文件
 上限按条数、单条上限和固定元数据预算计算，并且不超过运行时 64 KiB 硬上限。
 Notebook 写入或遗忘后，App Server 发送 `session/notebook/updated`，只包含
 revision 和 changed keys，WebStudio 据此重新读取当前投影。

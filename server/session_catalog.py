@@ -27,8 +27,8 @@ MAX_ERROR_CHARS = 2048
 MAX_CHECKPOINT_MESSAGES = 64
 MAX_CHECKPOINT_MESSAGE_CHARS = 16 * 1024
 MAX_NOTEBOOK_ENTRIES = 64
-MAX_NOTEBOOK_CONTENT_CHARS = 4096
-MAX_NOTEBOOK_ENTRY_CHARS = MAX_NOTEBOOK_CONTENT_CHARS
+MAX_NOTEBOOK_CONTENT_BYTES = 4096
+MAX_NOTEBOOK_ENTRY_BYTES = MAX_NOTEBOOK_CONTENT_BYTES
 THREAD_INDEX_FILE_NAME = "thread_index.json"
 THREAD_SETTINGS_FILE_NAME = "thread_settings.json"
 
@@ -87,6 +87,18 @@ def _bounded_text(value: Any, limit: int = MAX_ERROR_CHARS) -> str | None:
     if len(value) <= limit:
         return value
     return f"{value[:limit]}…"
+
+
+def _bounded_utf8_text(value: Any, max_bytes: int) -> str | None:
+    """Bound Notebook content by its UTF-8 byte size."""
+    if not isinstance(value, str) or not value:
+        return None
+    encoded = value.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return value
+    suffix = "…"
+    prefix = encoded[: max(0, max_bytes - len(suffix.encode("utf-8")))]
+    return prefix.decode("utf-8", errors="ignore") + suffix
 
 
 def _field(value: dict[str, Any], snake: str, camel: str) -> Any:
@@ -545,7 +557,7 @@ class SessionCatalog:
         thread_id: str,
         scope: str = "self",
         max_entries: int = MAX_NOTEBOOK_ENTRIES,
-        max_entry_chars: int = MAX_NOTEBOOK_ENTRY_CHARS,
+        max_entry_bytes: int = MAX_NOTEBOOK_ENTRY_BYTES,
     ) -> dict[str, Any] | None:
         """Read a bounded Session notebook projection without exposing paths."""
         entry = self.find_by_thread(workspace, project_id, thread_id)
@@ -583,9 +595,9 @@ class SessionCatalog:
                 if not isinstance(raw_entry, dict):
                     continue
                 key = _bounded_text(raw_entry.get("key"), 96)
-                content = _bounded_text(
+                content = _bounded_utf8_text(
                     raw_entry.get("content"),
-                    max(1, min(max_entry_chars, MAX_NOTEBOOK_ENTRY_CHARS)),
+                    max(1, min(max_entry_bytes, MAX_NOTEBOOK_ENTRY_BYTES)),
                 )
                 if key and content is not None:
                     importance = raw_entry.get("importance")

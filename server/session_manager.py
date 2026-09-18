@@ -33,11 +33,9 @@ logger = logging.getLogger("mini_agent.server")
 MAX_INTERRUPTED_TURNS = 256
 MAX_CHILD_TASKS_PER_PARENT = 2
 MAX_CONFIGURED_CHILD_TASKS_PER_PARENT = 8
-DEFAULT_CHILD_EXECUTION_MODE = "parallel"
 MAX_CHILD_TASK_PROMPT_BYTES = 32 * 1024
 MAX_NOTEBOOK_ENTRIES = 64
 MAX_NOTEBOOK_ENTRY_BYTES = 4096
-MAX_NOTEBOOK_ENTRY_CHARS = MAX_NOTEBOOK_ENTRY_BYTES
 __all__ = ["SessionManager", "session_manager", "to_json_serializable"]
 
 
@@ -186,7 +184,7 @@ class SessionManager:
                     "operation_id": child.get("operation_id"),
                     "child_thread_id": child.get("child_thread_id"),
                     "status": status or child.get("status"),
-                    "execution_mode": child.get("execution_mode") or "parallel",
+                    "execution_mode": child.get("execution_mode"),
                     "operation_group_id": child.get("operation_group_id"),
                     "group_sequence": child.get("group_sequence"),
                     "error_code": "child_operation_failed"
@@ -406,8 +404,9 @@ class SessionManager:
         title: str | None = None,
         project_id: str | None = None,
         group_id: str | None = None,
-        execution_mode: str | None = None,
         sequence: int | None = None,
+        *,
+        execution_mode: str,
     ) -> dict[str, Any]:
         """Create an exact child Session and run one detached child Turn.
 
@@ -446,10 +445,6 @@ class SessionManager:
         group_id = group_id.strip() if group_id else None
         if group_id and len(group_id.encode("utf-8")) > 128:
             raise ValueError("child task group id is too long")
-        # Scheduling intent belongs to this delegation, not to the project
-        # policy. Keep parallel as the compatibility fallback for older
-        # callers that do not send the optional field.
-        execution_mode = execution_mode or DEFAULT_CHILD_EXECUTION_MODE
         if execution_mode not in {"parallel", "sequential"}:
             raise ValueError("child execution mode must be parallel or sequential")
         if execution_mode == "sequential" and not group_id:
@@ -683,7 +678,13 @@ class SessionManager:
                 candidate = None
                 for child in queued:
                     group_id = child.get("operation_group_id")
-                    mode = child.get("execution_mode") or "parallel"
+                    mode = child.get("execution_mode")
+                    if mode not in {"parallel", "sequential"}:
+                        logger.warning(
+                            "Skipping Child %s with missing execution mode",
+                            child.get("child_thread_id"),
+                        )
+                        continue
                     if mode == "sequential" and group_id:
                         if any(
                             item.get("operation_group_id") == group_id
@@ -884,7 +885,7 @@ class SessionManager:
                 retry_kwargs.update(
                     {
                         "operation_group_id": child.get("operation_group_id"),
-                        "execution_mode": child.get("execution_mode") or "parallel",
+                        "execution_mode": child.get("execution_mode"),
                         "group_sequence": child.get("group_sequence"),
                     }
                 )
@@ -980,7 +981,7 @@ class SessionManager:
                     "operation_id": operation_id,
                     "operation_attempt": session.get("operation_attempt") or 1,
                     "operation_group_id": session.get("operation_group_id"),
-                    "execution_mode": session.get("execution_mode") or "parallel",
+                    "execution_mode": session.get("execution_mode"),
                     "group_sequence": session.get("group_sequence"),
                     "operation_prompt": session.get("operation_prompt"),
                     "operation_result": session.get("operation_result"),
@@ -1263,7 +1264,7 @@ class SessionManager:
             max_entries=(self.get_settings(resolved_project_id).get("notebook") or {}).get(
                 "max_entries", MAX_NOTEBOOK_ENTRIES
             ),
-            max_entry_chars=(self.get_settings(resolved_project_id).get("notebook") or {}).get(
+            max_entry_bytes=(self.get_settings(resolved_project_id).get("notebook") or {}).get(
                 "max_entry_bytes", MAX_NOTEBOOK_ENTRY_BYTES
             ),
         )
@@ -1410,17 +1411,9 @@ class SessionManager:
         project_notebook = project.get("notebook")
         if isinstance(project_notebook, dict):
             notebook.update(project_notebook)
-            if (
-                "max_entry_bytes" not in project_notebook
-                and "max_entry_chars" in project_notebook
-            ):
-                notebook["max_entry_bytes"] = project_notebook["max_entry_chars"]
         try:
             max_entries = int(notebook.get("max_entries", MAX_NOTEBOOK_ENTRIES))
-            max_entry_bytes = int(
-                notebook.get("max_entry_bytes")
-                or notebook.get("max_entry_chars", MAX_NOTEBOOK_ENTRY_BYTES)
-            )
+            max_entry_bytes = int(notebook.get("max_entry_bytes", MAX_NOTEBOOK_ENTRY_BYTES))
         except (TypeError, ValueError):
             max_entries, max_entry_bytes = MAX_NOTEBOOK_ENTRIES, MAX_NOTEBOOK_ENTRY_BYTES
         notebook = {
@@ -1585,12 +1578,7 @@ class SessionManager:
             try:
                 max_entries = int(incoming.get("max_entries", MAX_NOTEBOOK_ENTRIES))
                 max_entry_bytes = int(
-                    incoming.get(
-                        "max_entry_bytes"
-                    )
-                    or incoming.get(
-                        "max_entry_chars", MAX_NOTEBOOK_ENTRY_BYTES
-                    )
+                    incoming.get("max_entry_bytes", MAX_NOTEBOOK_ENTRY_BYTES)
                 )
             except (TypeError, ValueError) as error:
                 raise ValueError("invalid notebook limits") from error
@@ -1771,8 +1759,8 @@ class SessionManager:
             return
         if not isinstance(group_id, str):
             group_id = None
-        if not isinstance(execution_mode, str):
-            execution_mode = None
+        if execution_mode not in {"parallel", "sequential"}:
+            return
         if not isinstance(sequence, int) or isinstance(sequence, bool):
             sequence = None
         receipt_key = ":".join(
@@ -1843,8 +1831,8 @@ class SessionManager:
                 title if isinstance(title, str) else None,
                 project_id,
                 group_id,
-                execution_mode,
                 sequence,
+                execution_mode=execution_mode,
             )
             if receipt_key:
                 self._update_delegation_receipt(receipt_key, "materialized")

@@ -39,13 +39,7 @@ class UpdateSettingsRequest(BaseModel):
 
     class NotebookSettings(BaseModel):
         max_entries: int = Field(default=64, ge=1, le=64)
-        max_entry_bytes: int | None = Field(default=None, ge=256, le=4096)
-        max_entry_chars: int | None = Field(
-            default=None,
-            ge=256,
-            le=4096,
-            description="Legacy alias for max_entry_bytes",
-        )
+        max_entry_bytes: int = Field(default=4096, ge=256, le=4096)
 
     notebook: NotebookSettings | None = Field(
         default=None, description="Bounded Notebook entry count and single-entry size"

@@ -93,6 +93,7 @@ describe('ChatArea direction cues', () => {
       />,
     );
 
+    expect(screen.getByRole('navigation', { name: 'Session Turn 导航' })).toBeDefined();
     expect(screen.getByRole('button', { name: /检查仓库结构，运行中/ })).toBeDefined();
     expect(screen.getByText('当前 Turn · 运行中')).toBeDefined();
     expect(screen.getByText(/工具 1 次 · 命令 1 次 · 思考 1 段/)).toBeDefined();

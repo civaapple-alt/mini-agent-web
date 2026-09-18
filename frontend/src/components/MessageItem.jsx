@@ -17,7 +17,6 @@ import ThinkingBlock from './ThinkingBlock';
 import ToolCard from './ToolCard';
 import ContextCompactionGroup from './ContextCompactionGroup';
 import ErrorBoundary from './ErrorBoundary';
-import SessionTurnRail from './SessionTurnRail';
 import TurnActivityGroup from './TurnActivityGroup';
 import TurnActivitySummary from './TurnActivitySummary';
 import { groupCompactionBlocks, normalizeAssistantBlocks } from '../utils/messageState';
@@ -58,7 +57,6 @@ export default function MessageItem({
   isTurnFocused = false,
   showTurnSummary = false,
   anchorRef = null,
-  onSelectTurn,
 }) {
   const { role, text, thinking, tools = [], blocks = [], usage } = message;
   const [copied, setCopied] = useState(false);
@@ -102,13 +100,6 @@ export default function MessageItem({
         data-turn-id={turnEntry?.turnId || message.turnId || undefined}
         className={`message-row user ${message.isSteer ? 'steer-message-row' : ''} ${message.isGoal ? 'goal-message-row' : ''} ${isTurnFocused ? 'turn-focus-highlight' : ''}`}
       >
-        {turnEntry && (
-          <SessionTurnRail
-            entry={turnEntry}
-            onSelectTurn={onSelectTurn}
-            isFocused={isTurnFocused}
-          />
-        )}
         <div className="user-bubble-container">
           {/* Render Attached Images in User Bubble */}
           {images && images.length > 0 && (

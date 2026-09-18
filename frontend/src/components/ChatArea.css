@@ -75,22 +75,22 @@
 }
 
 /* Messages List */
-.messages-list {
+.message-stream-layout {
   max-width: 860px;
   margin: 0 auto;
   width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
 }
 
-.messages-list.has-turn-rail {
+.message-stream-layout.has-turn-rail {
   position: relative;
   max-width: 1040px;
-  padding-left: 176px;
+  display: grid;
+  grid-template-columns: 158px minmax(0, 1fr);
+  column-gap: 18px;
+  align-items: start;
 }
 
-.messages-list.has-turn-rail::before {
+.message-stream-layout.has-turn-rail::before {
   content: '';
   position: absolute;
   top: 18px;
@@ -101,15 +101,34 @@
   opacity: 0.9;
 }
 
+.messages-list {
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
 .session-turn-rail {
-  position: absolute;
-  top: 0;
-  left: 0;
+  position: sticky;
+  top: 18px;
+  align-self: start;
   width: 158px;
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+  scrollbar-width: thin;
   z-index: 2;
 }
 
+.message-stream-layout.has-turn-rail > .messages-list {
+  grid-column: 2;
+  max-width: none;
+  margin: 0;
+}
+
 .session-turn-node {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 7px;
@@ -147,6 +166,7 @@
   content: '';
   position: absolute;
   left: 12px;
+  top: 4px;
   width: 9px;
   height: 9px;
   border: 2px solid var(--bg-surface);
@@ -426,7 +446,6 @@
 }
 
 .message-row.user {
-  position: relative;
   justify-content: flex-end;
 }
 
@@ -864,14 +883,18 @@
     gap: 16px;
   }
 
-  .messages-list.has-turn-rail {
+  .message-stream-layout.has-turn-rail {
     max-width: 860px;
-    padding-left: 0;
+    display: block;
   }
 
-  .messages-list.has-turn-rail::before,
+  .message-stream-layout.has-turn-rail::before,
   .session-turn-rail {
     display: none;
+  }
+
+  .message-stream-layout.has-turn-rail > .messages-list {
+    max-width: 860px;
   }
 
   .user-bubble-container {

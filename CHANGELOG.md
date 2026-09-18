@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Redact free-form approval arguments from SDK and Gateway logs. Approval
+  records now keep the tool name, bounded `apply_patch` counts, and request ID
+  without printing complete Shell commands or paths.
+- Keep the Session Turn rail visible as an independent sticky navigation column
+  instead of rendering each node inside an individual user message row.
 - Make the approval dock show structured `apply_patch` change counts, including
   deletions, and expandable bounded target paths before the operation runs.
 - Keep Project-associated roots separate from Gateway-owned Session attachment

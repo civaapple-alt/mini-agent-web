@@ -8,6 +8,8 @@ from collections import OrderedDict
 from typing import Any, Protocol
 from uuid import uuid4
 
+from mini_agent.approval_logging import approval_log_fields
+
 logger = logging.getLogger("mini_agent.server")
 
 
@@ -247,7 +249,13 @@ class ApprovalBridge:
                 "reason": "当前 Turn 已停止，审批已失效",
             }
         action_name = str(req.get("actionSummary") or req.get("action") or "")
-        logger.info("Approval requested by server: %s", req_data)
+        tool_name, summary_counts = approval_log_fields(req_data)
+        logger.info(
+            "Approval requested by server: tool=%s summary=%s request_id=%s",
+            tool_name,
+            summary_counts,
+            req_id,
+        )
 
         loop = asyncio.get_running_loop()
         future: asyncio.Future[dict[str, Any]] = loop.create_future()

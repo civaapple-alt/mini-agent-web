@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { Sparkles, Terminal, Compass, TestTube2, ArrowDown } from 'lucide-react';
 import MessageItem from './MessageItem';
+import SessionTurnRail from './SessionTurnRail';
 import { collectInputMessages } from '../utils/inputTrace';
 import { buildTurnHistoryEntries } from '../utils/turnHistory';
 import './ChatArea.css';
@@ -196,45 +197,53 @@ export default function ChatArea({
           </div>
         </div>
       ) : (
-        <div className={`messages-list ${turnEntries.length > 0 ? 'has-turn-rail' : ''}`}>
-          {displayMessages.map((msg, index) => {
-            const messageId = String(msg.id || `msg_${index}`);
-            const turnId = msg.turnId ? String(msg.turnId) : null;
-            const turnEntry = msg.role === 'user'
-              ? entryByMessageId.get(messageId)
-              : (turnId ? entryByTurnId.get(turnId) : null);
-            const hasAssistantForTurn = Boolean(turnId && displayMessages.some((candidate) => (
-              candidate.role === 'assistant'
-                && String(candidate.turnId || '') === turnId
-            )));
-            const showTurnSummary = Boolean(turnEntry) && (
-              (msg.role === 'user' && turnEntry.isCurrent && !hasAssistantForTurn)
-              || (msg.role === 'assistant' && !displayMessages.slice(0, index).some((previous) => (
-                previous.role === 'assistant'
-                  && previous.turnId
-                  && String(previous.turnId) === String(turnEntry.turnId)
-              )))
-            );
-            return (
-              <MessageItem
-                key={msg.id || `msg_${index}`}
-                message={msg}
-                isLast={index === displayMessages.length - 1}
-                isGenerating={isGenerating}
-                pendingApproval={pendingApproval}
-                policy={policy}
-                onRetryPrompt={onRetryPrompt}
-                onAdjustPrompt={onAdjustPrompt}
-                onViewThreadHistory={onViewThreadHistory}
-                traceScope={traceScope}
-                turnEntry={turnEntry}
-                showTurnSummary={showTurnSummary}
-                isTurnFocused={Boolean(turnEntry && focusedTurnId && focusedTurnId === (turnEntry.turnId || turnEntry.id))}
-                anchorRef={(node) => setMessageRef(messageId, node)}
-                onSelectTurn={selectTurn}
-              />
-            );
-          })}
+        <div className={`message-stream-layout ${turnEntries.length > 0 ? 'has-turn-rail' : ''}`}>
+          {turnEntries.length > 0 && (
+            <SessionTurnRail
+              entries={turnEntries}
+              onSelectTurn={selectTurn}
+              focusedTurnId={focusedTurnId}
+            />
+          )}
+          <div className="messages-list">
+            {displayMessages.map((msg, index) => {
+              const messageId = String(msg.id || `msg_${index}`);
+              const turnId = msg.turnId ? String(msg.turnId) : null;
+              const turnEntry = msg.role === 'user'
+                ? entryByMessageId.get(messageId)
+                : (turnId ? entryByTurnId.get(turnId) : null);
+              const hasAssistantForTurn = Boolean(turnId && displayMessages.some((candidate) => (
+                candidate.role === 'assistant'
+                  && String(candidate.turnId || '') === turnId
+              )));
+              const showTurnSummary = Boolean(turnEntry) && (
+                (msg.role === 'user' && turnEntry.isCurrent && !hasAssistantForTurn)
+                || (msg.role === 'assistant' && !displayMessages.slice(0, index).some((previous) => (
+                  previous.role === 'assistant'
+                    && previous.turnId
+                    && String(previous.turnId) === String(turnEntry.turnId)
+                )))
+              );
+              return (
+                <MessageItem
+                  key={msg.id || `msg_${index}`}
+                  message={msg}
+                  isLast={index === displayMessages.length - 1}
+                  isGenerating={isGenerating}
+                  pendingApproval={pendingApproval}
+                  policy={policy}
+                  onRetryPrompt={onRetryPrompt}
+                  onAdjustPrompt={onAdjustPrompt}
+                  onViewThreadHistory={onViewThreadHistory}
+                  traceScope={traceScope}
+                  turnEntry={turnEntry}
+                  showTurnSummary={showTurnSummary}
+                  isTurnFocused={Boolean(turnEntry && focusedTurnId && focusedTurnId === (turnEntry.turnId || turnEntry.id))}
+                  anchorRef={(node) => setMessageRef(messageId, node)}
+                />
+              );
+            })}
+          </div>
         </div>
       )}
 

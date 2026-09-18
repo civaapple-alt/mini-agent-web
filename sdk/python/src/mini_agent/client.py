@@ -14,6 +14,7 @@ import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any, Self
 
+from mini_agent.approval_logging import approval_log_fields
 from mini_agent.errors import (
     AppServerError,
     ProtocolVersionMismatchError,
@@ -581,12 +582,13 @@ class MiniAgentClient:
 
     async def _publish_approval(self, params: dict[str, Any], phase: str) -> None:
         approval = {**params, "phase": phase}
+        tool_name, summary_counts = approval_log_fields(approval)
         logger.info(
-            "[Approval] %s action: %s (id=%s, outcome=%s)",
+            "[Approval] %s tool=%s summary=%s request_id=%s",
             phase,
-            approval.get("actionSummary", ""),
+            tool_name,
+            summary_counts,
             approval.get("requestId", ""),
-            approval.get("outcome", "pending"),
         )
         for q in self._event_queues:
             await q.put({"type": "approval", "approval": approval})

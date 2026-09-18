@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Hide synthetic context-compaction handoff summaries from the user input
+  history and Session Turn rail while preserving the summary for the next model
+  context and the structured compaction card.
 - Add cross-Turn local background Shell task projection to the SDK, Gateway, and
   Web Studio runtime panel. Child Sessions can read the parent task list but
   cannot control it; remote waits such as GitHub Actions use the scheduled marker

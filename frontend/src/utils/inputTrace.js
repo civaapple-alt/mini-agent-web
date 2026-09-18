@@ -23,6 +23,24 @@ export const INPUT_TRACE_CONTINUATION_LABELS = {
   continuous: '连续执行',
 };
 
+export const COMPACTED_CONTEXT_PREFIX = '[Compacted conversation context]';
+
+/**
+ * Compaction summaries are synthetic user-role messages for the next model
+ * context, not user submissions. Keep them out of input history and the Turn
+ * rail; the structured context-compaction item owns their visible projection.
+ */
+export function isInternalCompactionMessage(message) {
+  if (!message || typeof message !== 'object') return false;
+  if (message.type === 'contextCompaction' || message.type === 'context_compaction') {
+    return true;
+  }
+  if (message.messageKind === 'context_compaction' || message.itemKind === 'context_compaction') {
+    return true;
+  }
+  return String(message.text || '').trim().startsWith(COMPACTED_CONTEXT_PREFIX);
+}
+
 function normalizeFiles(files) {
   if (!Array.isArray(files)) return [];
   return files
@@ -215,11 +233,14 @@ function entryInputMessage(entry, index, scope) {
  * not replaced by the deliberately smaller historical projection.
  */
 export function collectInputMessages(messages = [], entries = [], scope = {}) {
-  const existing = messages.filter((message) => message?.role === 'user');
+  const existing = messages.filter((message) => (
+    message?.role === 'user' && !isInternalCompactionMessage(message)
+  ));
   const used = new Set();
   const result = [];
   const inputEntries = (entries || []).filter((entry) => (
-    entry?.item?.type === 'userMessage' || entry?.item?.type === 'user_message'
+    (entry?.item?.type === 'userMessage' || entry?.item?.type === 'user_message')
+    && !isInternalCompactionMessage(entry.item)
   ));
 
   for (const [index, entry] of inputEntries.entries()) {

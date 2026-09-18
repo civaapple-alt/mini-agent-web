@@ -42,6 +42,7 @@ import {
   cleanInputText,
   createInputTrace,
   extractTextAttachmentNames,
+  isInternalCompactionMessage,
 } from './utils/inputTrace.js';
 import { startImplementationTurn } from './utils/planWorkflow.js';
 import './App.css';
@@ -858,6 +859,7 @@ export default function App() {
       let historyGoalObjective = persistedGoalObjective;
       let goalMessageAdded = false;
       const formatted = rawMessages.reduce((result, m, idx) => {
+        if (isInternalCompactionMessage(m)) return result;
         const text = (m.text || '').trim();
         const internalGoalObjective = extractGoalObjective(text);
         if (internalGoalObjective) {

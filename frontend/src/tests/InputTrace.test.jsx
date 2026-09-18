@@ -10,6 +10,7 @@ import {
   extractFileAttachmentNames,
   getInputTrace,
   extractTextAttachmentNames,
+  isInternalCompactionMessage,
 } from '../utils/inputTrace';
 
 describe('input trace presentation', () => {
@@ -77,6 +78,29 @@ describe('input trace presentation', () => {
 
     expect(messages.map((message) => message.text)).toEqual(['较早输入', '当前输入']);
     expect(getInputTrace(messages[0]).capturedAt).toBe('2026-09-17T10:00:00.000Z');
+  });
+
+  it('keeps the synthetic compaction summary out of input history', () => {
+    const summary = {
+      role: 'user',
+      id: 'compaction-1',
+      text: '[Compacted conversation context]\n# Handoff Summary\nContinue the work.',
+    };
+
+    expect(isInternalCompactionMessage(summary)).toBe(true);
+    expect(isInternalCompactionMessage({ role: 'user', text: '真实用户输入' })).toBe(false);
+    expect(collectInputMessages(
+      [
+        summary,
+        { role: 'user', id: 'user-1', text: '真实用户输入', turnId: 'turn-1' },
+      ],
+      [
+        { turnId: 'turn-0', item: { type: 'userMessage', id: 'compaction-item', ...summary } },
+        { turnId: 'turn-1', item: { type: 'userMessage', id: 'user-item', text: '真实用户输入' } },
+      ],
+    )).toEqual([
+      { role: 'user', id: 'user-1', text: '真实用户输入', turnId: 'turn-1' },
+    ]);
   });
 
   it('keeps a safe image count when history only has gateway context', () => {

@@ -546,65 +546,11 @@
   color: var(--status-running);
 }
 
-.thread-status-badge.paused {
-  border-color: var(--status-approval);
-  color: var(--status-approval);
-}
-
-.thread-status-badge.failed,
-.thread-status-badge.step-limit,
-.thread-status-badge.interrupted {
-  border-color: var(--status-failed-border);
-  color: var(--status-failed);
-}
-
-.thread-status-badge.completed {
-  border-color: var(--status-success-border);
-  color: var(--status-success);
-}
-
-.thread-status-badge.cleanup {
-  border-color: var(--accent-purple);
-  color: var(--accent-purple);
-}
-
-.thread-process-badge {
-  flex-shrink: 0;
-  margin-left: 4px;
-  padding: 1px 4px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  font-size: 9px;
-  line-height: 14px;
-}
-
-.thread-process-badge.active {
-  border-color: var(--status-success-border);
-  color: var(--status-success);
-}
-
-.thread-process-badge.standby {
-  border-color: var(--border-color);
-  color: var(--text-muted);
-}
-
 .thread-tail-indicators {
   display: flex;
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-}
-
-.selected-spinner-dot {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-}
-
-.active-circle {
-  color: var(--text-secondary);
-  opacity: 0.6;
 }
 
 .btn-thread-menu-trigger {

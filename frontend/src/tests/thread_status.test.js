@@ -13,10 +13,7 @@ test('an active Turn is running while its process is online', () => {
     }),
     {
       turnActive: true,
-      processOnline: true,
-      lifecycleLabel: '运行中',
-      lifecycleClass: 'running',
-      processLabel: '在线',
+      isRunning: true,
     },
   );
 });
@@ -32,21 +29,17 @@ test('a locked idle process is standby, not running', () => {
     }),
     {
       turnActive: false,
-      processOnline: true,
-      lifecycleLabel: '已完成',
-      lifecycleClass: 'completed',
-      processLabel: '待命',
+      isRunning: false,
     },
   );
 });
 
-test('an interrupted Turn remains distinct from historical sessions', () => {
+test('an interrupted Turn is not shown as running', () => {
   const status = getThreadStatusPresentation({
     last_turn_status: 'interrupted',
     turn_active: false,
     process_online: false,
   });
 
-  assert.equal(status.lifecycleLabel, '已中断');
-  assert.equal(status.lifecycleClass, 'interrupted');
+  assert.equal(status.isRunning, false);
 });

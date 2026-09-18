@@ -247,4 +247,31 @@ describe('Sidebar session actions', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认关闭' }));
     expect(onCloseThread).toHaveBeenCalledWith(thread.thread_id, thread.project);
   });
+
+  it('shows only the active Turn status in the session list', async () => {
+    renderSessionSidebar({
+      currentThread: 't-running',
+      threads: [
+        {
+          ...thread,
+          last_turn_status: 'completed',
+          process_online: true,
+          turn_active: false,
+        },
+        {
+          ...thread,
+          thread_id: 't-running',
+          title: '运行中的会话',
+          last_turn_status: 'in_progress',
+          process_online: true,
+          turn_active: true,
+        },
+      ],
+    });
+
+    await waitFor(() => expect(screen.getByText('运行中的会话')).toBeTruthy());
+    expect(screen.getByText('运行中')).toBeTruthy();
+    expect(screen.queryByText('已完成')).toBeNull();
+    expect(screen.queryByText('待命')).toBeNull();
+  });
 });

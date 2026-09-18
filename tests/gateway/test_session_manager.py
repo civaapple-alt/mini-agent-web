@@ -14,6 +14,7 @@ import pytest
 from server.control import client_pool as client_pool_module
 from server.session_catalog import SessionCatalog
 from server.session_manager import SessionManager
+from server.thread_titles import build_auto_thread_title
 
 
 @pytest.fixture
@@ -926,6 +927,92 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     assert history["last_turn_status"] == "step_limit"
     assert history["last_turn_error"] == "model request failed: transport error"
     assert history["last_turn_id"] == "turn-1"
+
+
+def test_session_catalog_title_uses_first_prompt_for_multi_turn_history(
+    tmp_path, monkeypatch
+):
+    """Historical multi-turn sessions keep a stable title from their first input."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    session_dir = session_base / "s-history"
+    session_dir.mkdir(parents=True)
+    first_prompt = "first question establishes the session purpose"
+    later_prompt = "later question must not replace the historical title"
+    records = [
+        {
+            "seq": 1,
+            "kind": "session_created",
+            "session_id": "s-history",
+            "timestamp_ms": 1000,
+        },
+        {"seq": 2, "kind": "thread_started", "thread_id": "t-history"},
+        {
+            "seq": 3,
+            "kind": "turn_started",
+            "thread_id": "t-history",
+            "turn_id": "turn-1",
+            "prompt": first_prompt,
+        },
+        {
+            "seq": 4,
+            "kind": "item",
+            "thread_id": "t-history",
+            "turn_id": "turn-1",
+            "message": {"role": "user", "text": first_prompt},
+        },
+        {
+            "seq": 5,
+            "kind": "turn_settled",
+            "thread_id": "t-history",
+            "turn_id": "turn-1",
+            "status": "completed",
+        },
+        {
+            "seq": 6,
+            "kind": "turn_started",
+            "thread_id": "t-history",
+            "turn_id": "turn-2",
+            "prompt": later_prompt,
+        },
+        {
+            "seq": 7,
+            "kind": "item",
+            "thread_id": "t-history",
+            "turn_id": "turn-2",
+            "message": {"role": "user", "text": later_prompt},
+        },
+        {
+            "seq": 8,
+            "kind": "turn_settled",
+            "thread_id": "t-history",
+            "turn_id": "turn-2",
+            "status": "completed",
+        },
+    ]
+    (session_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "created_at_ms": 1000,
+                "updated_at_ms": 2000,
+                "turn_count": 2,
+                "last_prompt": later_prompt,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("server.session_catalog._process_alive", lambda _pid: False)
+
+    listed = SessionCatalog().list_sessions(workspace, "project-1")
+
+    assert listed["data"][0]["title"] == build_auto_thread_title(first_prompt)
 
 
 def test_session_catalog_lists_all_items_with_bounded_pages(tmp_path, monkeypatch):

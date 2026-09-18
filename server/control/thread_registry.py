@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from server.session_catalog import session_catalog
+from server.thread_titles import is_default_thread_title
 
 
 class _ThreadOwner(Protocol):
@@ -168,7 +169,9 @@ class ThreadRegistry:
         )
         for session in result["data"]:
             meta = self.get_thread_meta(session["thread_id"], target_id)
-            session["title"] = meta.get("title") or session["title"]
+            metadata_title = meta.get("title")
+            if not is_default_thread_title(metadata_title, session["thread_id"]):
+                session["title"] = metadata_title
             session["summary"] = meta.get("summary") or session["summary"]
         return result
 

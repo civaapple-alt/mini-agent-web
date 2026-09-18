@@ -20,6 +20,7 @@ from server.session_manager import (
     session_manager,
     to_json_serializable,
 )
+from server.thread_titles import is_default_thread_title
 
 router = APIRouter(prefix="/api/threads", tags=["Threads"])
 
@@ -211,6 +212,11 @@ async def list_threads(
             }
             catalog_entry = catalog_entries.get((project_id, tid))
             if catalog_entry:
+                if (
+                    is_default_thread_title(item["title"], tid)
+                    and catalog_entry.get("title")
+                ):
+                    item["title"] = catalog_entry["title"]
                 item.update(
                     {
                         "project": project_id,
@@ -765,6 +771,12 @@ async def read_thread(
         canonical = session_manager.read_any_project_thread(thread_id, project_id)
         if canonical:
             meta = session_manager.get_thread_meta(thread_id, project_id)
+            catalog_title = canonical.get("session", {}).get("title")
+            if (
+                is_default_thread_title(meta.get("title"), thread_id)
+                and catalog_title
+            ):
+                meta = {**meta, "title": catalog_title}
             return {
                 **canonical,
                 "metadata": meta,

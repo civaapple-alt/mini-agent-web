@@ -38,6 +38,7 @@ import {
 } from './utils/sessionState.js';
 import { getStatusViewModel, normalizeTheme } from './utils/statusModel.js';
 import { parseSkillPrompt, parseWorkflowPrompt } from './utils/skillTokens.js';
+import { buildAutoThreadTitle, isDefaultThreadTitle } from './utils/threadTitle.js';
 import {
   cleanInputText,
   createInputTrace,
@@ -169,6 +170,7 @@ export default function App() {
   const catalogRequestControllerRef = useRef(null);
   const runtimeRecoveryRef = useRef(new Set());
   const pendingUserMessageIdRef = useRef(null);
+  const autoTitleAttemptsRef = useRef(new Set());
   activeTurnIdRef.current = activeTurnId;
   planActiveRef.current = planActive;
   currentThreadRef.current = currentThread;
@@ -1480,6 +1482,39 @@ export default function App() {
   // Action Handlers
   // ---------------------------------------------------------------------------
 
+  const maybeAutoTitleThread = (prompt) => {
+    const threadId = currentThreadRef.current;
+    const projectId = currentThreadProjectRef.current;
+    const key = scopedThreadKey(threadId, projectId);
+    if (
+      autoTitleAttemptsRef.current.has(key)
+      || !isDefaultThreadTitle(currentThreadMeta.title, threadId)
+      || messages.some((message) => message.role === 'user')
+    ) return;
+
+    const nextTitle = buildAutoThreadTitle(prompt);
+    if (!nextTitle) return;
+
+    autoTitleAttemptsRef.current.add(key);
+    const previousTitle = currentThreadMeta.title;
+    setCurrentThreadMeta((previous) => ({ ...previous, title: nextTitle }));
+    void api.renameThread(threadId, nextTitle, { projectId })
+      .then(() => loadThreads())
+      .catch(() => {
+        autoTitleAttemptsRef.current.delete(key);
+        if (
+          currentThreadRef.current === threadId
+          && (currentThreadProjectRef.current || null) === (projectId || null)
+        ) {
+          setCurrentThreadMeta((previous) => (
+            previous.title === nextTitle
+              ? { ...previous, title: previousTitle }
+              : previous
+          ));
+        }
+      });
+  };
+
   const handleSendMessage = (inputPayload) => {
     const {
       prompt: promptText,
@@ -1584,6 +1619,7 @@ export default function App() {
       return false;
     }
 
+    maybeAutoTitleThread(parsedSkills.prompt || parsedWorkflow.prompt || promptText);
     pendingUserMessageIdRef.current = messageId;
     setMessages((prev) => [
       ...prev,

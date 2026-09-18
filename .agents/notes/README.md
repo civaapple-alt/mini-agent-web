@@ -56,6 +56,7 @@
 - [Session Turn 轨道可见性修复](implemented/bug-fix/2026-09-18-turn-rail-visibility.zh.md)
 - [Web Studio 审批变更观测](implemented/feature/2026-09-18-approval-observation.zh.md)
 - [审批日志脱敏](implemented/feature/2026-09-18-approval-log-redaction.zh.md)
+- [Web Studio 会话标题与运行状态显示](implemented/feature/2026-09-19-web-studio-thread-title-and-running-state.zh.md)
 - [审批身份与生命周期收敛](implemented/bug-fix/2026-09-14-approval-identity-and-lifecycle.md)
 - [停止超时与大 Session 重启恢复](implemented/bug-fix/2026-09-14-session-recovery-after-large-checkpoint.md)
 - [Trusted 低打断工具执行](implemented/feature/2026-09-14-trusted-low-interruption-execution.md)

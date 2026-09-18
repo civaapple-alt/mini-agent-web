@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from server.thread_titles import build_auto_thread_title
+
 MAX_SESSIONS = 128
 # Keep this at least as large as the App Server SessionStore limit. Oversized
 # checkpoint records are projected below, so a large history remains readable
@@ -117,6 +119,24 @@ def _entry_has_conversation_history(entry: dict[str, Any]) -> bool:
         and message.get("role") in {"user", "assistant", "tool"}
         for message in messages or []
     )
+
+
+def _first_user_prompt(records: list[dict[str, Any]]) -> str:
+    """Read the first bounded user prompt from canonical event history."""
+    for record in records:
+        if record.get("kind") == "turn_started":
+            prompt = record.get("prompt")
+            if isinstance(prompt, str) and prompt.strip():
+                return prompt
+        if record.get("kind") != "item":
+            continue
+        message = record.get("message")
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        text = message.get("text")
+        if isinstance(text, str) and text.strip():
+            return text
+    return ""
 
 
 def _process_alive(pid: int) -> bool:
@@ -766,6 +786,7 @@ class SessionCatalog:
         turn_count = 0
         forked_from: dict[str, Any] | None = None
         latest_operation: dict[str, Any] | None = None
+        first_user_prompt = _first_user_prompt(records)
         for record in records:
             kind = record.get("kind")
             if kind == "session_created":
@@ -883,7 +904,10 @@ class SessionCatalog:
             "thread_id": thread_id,
             "project_id": project_id,
             "workspace_id": workspace_id,
-            "title": str(summary.get("last_prompt") or f"会话 {thread_id}"),
+            "title": (
+                build_auto_thread_title(first_user_prompt)
+                or str(summary.get("last_prompt") or f"会话 {thread_id}")
+            ),
             "summary": str(summary.get("last_prompt") or ""),
             "created_at": _timestamp(summary.get("created_at_ms")),
             "updated_at": _timestamp(updated_ms),

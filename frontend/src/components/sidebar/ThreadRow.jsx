@@ -1,11 +1,9 @@
 import React from 'react';
 import {
-  Circle,
   Copy,
   Edit2,
   FileText,
   GitFork,
-  Loader2,
   MoreVertical,
   Trash2,
 } from 'lucide-react';
@@ -25,11 +23,12 @@ export default function ThreadRow({
   const isSelected =
     thread.thread_id === currentThread &&
     (!currentThreadProject || thread.project === currentThreadProject);
+  const isRunning = status.isRunning || (isSelected && isGenerating);
   const threadKey = `${thread.project || 'unknown'}:${thread.thread_id}`;
 
   return (
     <div
-      className={`nested-thread-item ${isSelected ? 'selected' : ''} ${status.turnActive ? 'is-running' : ''}`}
+      className={`nested-thread-item ${isSelected ? 'selected' : ''} ${isRunning ? 'is-running' : ''}`}
       onClick={() => onSelectThread(thread.thread_id, thread.project)}
       title={thread.session_id ? `${thread.title}\nSession ID: ${thread.session_id}` : thread.title}
     >
@@ -45,39 +44,16 @@ export default function ThreadRow({
         )}
       </div>
 
-      {status.lifecycleLabel && (
+      {isRunning && (
         <span
-          className={`thread-status-badge ${status.lifecycleClass}`}
-          title={thread.resumable ? '可恢复的历史会话' : undefined}
+          className="thread-status-badge running"
+          title="当前 Turn 正在运行"
         >
-          {status.lifecycleLabel}
-        </span>
-      )}
-
-      {status.processLabel && (
-        <span
-          className={`thread-process-badge ${status.turnActive ? 'active' : 'standby'}`}
-          title={
-            status.turnActive
-              ? 'Session 进程在线，当前 Turn 正在运行'
-              : 'Session 进程在线，当前没有活跃 Turn'
-          }
-        >
-          {status.processLabel}
+          运行中
         </span>
       )}
 
       <div className="thread-tail-indicators">
-        {isSelected && (
-          <div className="selected-spinner-dot">
-            {isGenerating ? (
-              <Loader2 size={11} className="animate-spin text-muted" />
-            ) : (
-              <Circle size={10} className="active-circle" />
-            )}
-          </div>
-        )}
-
         <button
           className="btn-thread-menu-trigger"
           onClick={(event) => {

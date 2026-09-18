@@ -61,4 +61,27 @@ describe('ApprovalDock', () => {
       'call-second',
     );
   });
+
+  it('shows the patch change kind and target files before approval', () => {
+    render(
+      <ApprovalDock
+        pendingApproval={{
+          requestId: 'approval-patch-1',
+          data: {
+            actionSummary: 'apply_patch · 修改 1 个文件 · 删除 1 个文件',
+            pathScope: {
+              kind: 'project',
+              paths: ['README.md', 'docs/_probe.md'],
+            },
+          },
+        }}
+        onRespondApproval={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(/删除 1 个文件/)).toBeDefined();
+    expect(screen.getByText('涉及文件 2 个')).toBeDefined();
+    fireEvent.click(screen.getByText('涉及文件 2 个'));
+    expect(screen.getByText('docs/_probe.md')).toBeDefined();
+  });
 });

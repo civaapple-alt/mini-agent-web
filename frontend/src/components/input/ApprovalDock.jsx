@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Check, ShieldAlert, X } from 'lucide-react';
+import { Check, ChevronDown, FileWarning, ShieldAlert, X } from 'lucide-react';
+import { getApprovalObservation } from '../../utils/approvalPresentation';
 
 export default function ApprovalDock({
   pendingApproval,
@@ -11,10 +12,7 @@ export default function ApprovalDock({
   const [showDenyInput, setShowDenyInput] = useState(false);
   if (!pendingApproval) return null;
 
-  const approvalActionText =
-    typeof pendingApproval.data === 'object' && pendingApproval.data !== null
-      ? pendingApproval.data.actionSummary || JSON.stringify(pendingApproval.data, null, 2)
-      : String(pendingApproval.data);
+  const observation = getApprovalObservation(pendingApproval);
 
   const handleApprove = (scope = 'once') => {
     onRespondApproval?.(
@@ -63,8 +61,22 @@ export default function ApprovalDock({
         </span>
       </div>
 
-      <div className="dock-action-content font-mono custom-scrollbar">
-        <pre>{approvalActionText}</pre>
+      <div className={`dock-action-content font-mono custom-scrollbar ${observation.hasDestructiveChange ? 'has-destructive-change' : ''}`}>
+        <div className="dock-action-summary">
+          {observation.hasDestructiveChange && <FileWarning size={13} />}
+          <span>{observation.actionSummary}</span>
+        </div>
+        {observation.targetPaths.length > 0 && (
+          <details className="dock-target-paths">
+            <summary>
+              <ChevronDown size={12} />
+              <span>涉及文件 {observation.targetPaths.length} 个</span>
+            </summary>
+            <ul>
+              {observation.targetPaths.map((path) => <li key={path}>{path}</li>)}
+            </ul>
+          </details>
+        )}
       </div>
 
       {showDenyInput && !isInterrupting && (

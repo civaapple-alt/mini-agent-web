@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Make the approval dock show structured `apply_patch` change counts, including
+  deletions, and expandable bounded target paths before the operation runs.
 - Keep Project-associated roots separate from Gateway-owned Session attachment
   roots by passing attachments through `MINI_AGENT_SESSION_READ_ROOTS` as a
   read-only capability. Prompt Context now reports the bounded attachment-root

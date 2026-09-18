@@ -513,6 +513,67 @@ body.theme-dark .dock-action-content {
   margin: 0;
 }
 
+.dock-action-content.has-destructive-change {
+  border-color: var(--status-failed-border);
+  background-color: var(--status-failed-soft);
+}
+
+.dock-action-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.dock-action-summary svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--status-failed);
+}
+
+.dock-target-paths {
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.dock-target-paths summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 500;
+}
+
+.dock-target-paths summary::-webkit-details-marker {
+  display: none;
+}
+
+.dock-target-paths summary svg {
+  transition: transform 0.15s ease;
+}
+
+.dock-target-paths[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.dock-target-paths ul {
+  display: grid;
+  gap: 3px;
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 400;
+}
+
+.dock-target-paths li {
+  overflow-wrap: anywhere;
+}
+
 .dock-deny-box {
   width: 100%;
 }

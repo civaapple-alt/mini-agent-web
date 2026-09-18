@@ -59,7 +59,7 @@ export default function Sidebar({
   const [projectsData, setProjectsData] = useState(null);
   const [expandedProjects, setExpandedProjects] = useState({});
   const [expandedThreadLists, setExpandedThreadLists] = useState({});
-  const [showAllProjects, setShowAllProjects] = useState(false);
+  const [showProjectsSection, setShowProjectsSection] = useState(true);
   const [showRecentSection, setShowRecentSection] = useState(false);
 
   // Project Detail Popover (Image 1)
@@ -404,8 +404,6 @@ export default function Sidebar({
     return [];
   }, [projectsData]);
 
-  const displayedProjects = showAllProjects ? allProjects : allProjects.slice(0, 5);
-
   const handleAction = (e, action, thread) => {
     e.stopPropagation();
     setActiveMenuThread(null);
@@ -567,7 +565,19 @@ export default function Sidebar({
       {/* 3. Projects Section */}
       <div className="sidebar-projects-section custom-scrollbar">
         <div className="section-header-row">
-          <span className="section-title-label">项目</span>
+          <button
+            type="button"
+            className="section-collapse-toggle"
+            onClick={() => setShowProjectsSection((visible) => !visible)}
+            aria-expanded={showProjectsSection}
+            aria-controls="sidebar-project-tree"
+          >
+            <ChevronRight
+              size={14}
+              className={`section-chevron ${showProjectsSection ? 'open' : ''}`}
+            />
+            <span className="section-title-label">项目</span>
+          </button>
           <div className="section-header-actions" style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
             <button
               className="btn-add-project-mini"
@@ -579,38 +589,40 @@ export default function Sidebar({
           </div>
         </div>
 
-        {showSearchBox && (
-          <div className="sidebar-search-box" style={{ padding: '4px 8px 8px', display: 'flex', gap: '4px', alignItems: 'center' }}>
-            <input
-              type="text"
-              className="sidebar-search-input"
-              style={{
-                width: '100%',
-                fontSize: '11px',
-                padding: '4px 6px',
-                borderRadius: '4px',
-                border: '1px solid var(--border-color)',
-                background: 'var(--bg-surface)',
-                color: 'inherit',
-              }}
-              placeholder="搜索会话标题/ID..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              autoFocus
-            />
-            {searchQuery && (
-              <button
-                style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}
-                onClick={() => setSearchQuery('')}
-              >
-                <X size={12} />
-              </button>
+        {showProjectsSection && (
+          <>
+            {showSearchBox && (
+              <div className="sidebar-search-box" style={{ padding: '4px 8px 8px', display: 'flex', gap: '4px', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  className="sidebar-search-input"
+                  style={{
+                    width: '100%',
+                    fontSize: '11px',
+                    padding: '4px 6px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-surface)',
+                    color: 'inherit',
+                  }}
+                  placeholder="搜索会话标题/ID..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  autoFocus
+                />
+                {searchQuery && (
+                  <button
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}
+                    onClick={() => setSearchQuery('')}
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
             )}
-          </div>
-        )}
 
-        <div className="project-tree-list">
-          {displayedProjects.map((proj) => {
+            <div className="project-tree-list" id="sidebar-project-tree">
+              {allProjects.map((proj) => {
             const isExpanded = Boolean(expandedProjects[proj.name] || expandedProjects[proj.id]);
             const isCurrentProj = proj.name === currentProjectName || proj.id === currentProjectName;
             const projThreads = filteredThreads.filter(
@@ -631,8 +643,8 @@ export default function Sidebar({
                   (isCurrentProj && (!thread.project || thread.project === currentProjectName)))
             ).length;
 
-            return (
-              <div key={proj.name || proj.id} className="project-tree-item">
+                return (
+                  <div key={proj.name || proj.id} className="project-tree-item">
                 {/* Project Folder Row with Hover Actions */}
                 <div
                   className={`project-folder-row ${isCurrentProj ? 'active-proj' : ''} ${activeProjectPopover === (proj.id || proj.name) ? 'has-open-popover' : ''}`}
@@ -766,19 +778,12 @@ export default function Sidebar({
                     )}
                   </div>
                 )}
-              </div>
-            );
-          })}
-
-          {allProjects.length > 5 && (
-            <div
-              className="btn-expand-more-projects"
-              onClick={() => setShowAllProjects(!showAllProjects)}
-            >
-              <span>{showAllProjects ? '收起' : '展开显示'}</span>
+                  </div>
+                );
+              })}
             </div>
-          )}
-        </div>
+          </>
+        )}
 
         {/* 4. Bottom Collapsible "最近 >" */}
         <div className="sidebar-bottom-recent">

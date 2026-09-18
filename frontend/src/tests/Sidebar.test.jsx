@@ -69,6 +69,73 @@ describe('Sidebar project creation', () => {
       expect(onSelectThread).toHaveBeenCalledWith('default', 'ma-three');
     });
   });
+
+  it('keeps the project list scrollable instead of truncating it to five projects', async () => {
+    api.listProjects.mockResolvedValue({
+      current_project: { id: 'project-1', name: 'project-1' },
+      projects: Array.from({ length: 6 }, (_, index) => ({
+        id: `project-${index + 1}`,
+        name: `project-${index + 1}`,
+      })),
+      recent_projects: [],
+    });
+
+    render(
+      <Sidebar
+        threads={[]}
+        currentThread="default"
+        currentThreadProject={null}
+        isGenerating={false}
+        onSelectThread={vi.fn()}
+        onNewThread={vi.fn()}
+        onForkThread={vi.fn()}
+        onCloseThread={vi.fn()}
+        onRenameThread={vi.fn()}
+        onUpdateSummary={vi.fn()}
+        onRefreshThreads={vi.fn()}
+        onToast={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('project-6')).toBeTruthy();
+    });
+    expect(screen.queryByText('展开显示')).toBeNull();
+  });
+
+  it('can collapse and expand the project section independently from recent sessions', async () => {
+    api.listProjects.mockResolvedValue({
+      current_project: { id: 'memory-card', name: 'memory-card' },
+      projects: [{ id: 'memory-card', name: 'memory-card' }],
+      recent_projects: [],
+    });
+
+    render(
+      <Sidebar
+        threads={[]}
+        currentThread="default"
+        currentThreadProject={null}
+        isGenerating={false}
+        onSelectThread={vi.fn()}
+        onNewThread={vi.fn()}
+        onForkThread={vi.fn()}
+        onCloseThread={vi.fn()}
+        onRenameThread={vi.fn()}
+        onUpdateSummary={vi.fn()}
+        onRefreshThreads={vi.fn()}
+        onToast={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText('memory-card')).toBeTruthy());
+    const toggle = screen.getByRole('button', { name: '项目' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText('memory-card')).toBeNull();
+    fireEvent.click(toggle);
+    expect(screen.getByText('memory-card')).toBeTruthy();
+  });
 });
 
 describe('Sidebar session actions', () => {

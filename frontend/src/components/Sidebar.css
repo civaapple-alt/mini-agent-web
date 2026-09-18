@@ -187,6 +187,29 @@
   padding: 6px 10px 2px;
 }
 
+.section-collapse-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.section-collapse-toggle:hover {
+  color: var(--text-primary);
+}
+
+.section-chevron {
+  transition: transform 0.15s ease;
+}
+
+.section-chevron.open {
+  transform: rotate(90deg);
+}
+
 .section-title-label {
   font-size: 11.5px;
   font-weight: 600;
@@ -669,7 +692,6 @@
 
 /* 4. Bottom Collapsible "最近 >" */
 .sidebar-bottom-recent {
-  margin-top: auto;
   padding-top: 8px;
   border-top: 1px solid var(--border-subtle);
 }

@@ -17,8 +17,6 @@ export default function ChatArea({
   policy = 'interactive',
   onQuickPrompt,
   onRetryPrompt,
-  onAdjustPrompt,
-  onViewThreadHistory,
   traceScope,
   autoScroll = true,
   wordWrap = true,
@@ -222,9 +220,6 @@ export default function ChatArea({
                   pendingApproval={pendingApproval}
                   policy={policy}
                   onRetryPrompt={onRetryPrompt}
-                  onAdjustPrompt={onAdjustPrompt}
-                  onViewThreadHistory={onViewThreadHistory}
-                  traceScope={traceScope}
                   turnEntry={turnEntry}
                   isTurnFocused={Boolean(turnEntry && focusedTurnId && focusedTurnId === (turnEntry.turnId || turnEntry.id))}
                   anchorRef={(node) => setMessageRef(messageId, node)}

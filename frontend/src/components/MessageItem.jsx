@@ -2,12 +2,9 @@ import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  Activity,
   Check,
   Copy,
-  Edit3,
   FileText,
-  History,
   Navigation,
   RotateCcw,
   Sparkles,
@@ -23,24 +20,7 @@ import { groupSettledAssistantBlocks } from '../utils/turnHistory';
 import {
   extractFileAttachmentNames,
   extractTextAttachmentNames,
-  getInputTrace,
-  getInputTraceSourceLabel,
-  INPUT_TRACE_ACCESS_LABELS,
-  INPUT_TRACE_CONTINUATION_LABELS,
-  INPUT_TRACE_POLICY_LABELS,
 } from '../utils/inputTrace';
-
-function formatTraceTimestamp(value) {
-  if (!value) return '历史时间未记录';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '时间未记录';
-  return date.toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 export default function MessageItem({
   message,
@@ -49,17 +29,12 @@ export default function MessageItem({
   pendingApproval,
   policy = 'interactive',
   onRetryPrompt,
-  onAdjustPrompt,
-  onViewThreadHistory,
-  traceScope,
   turnEntry = null,
   isTurnFocused = false,
   anchorRef = null,
 }) {
   const { role, text, thinking, tools = [], blocks = [], usage } = message;
   const [copied, setCopied] = useState(false);
-  const [traceOpen, setTraceOpen] = useState(false);
-  const inputTrace = getInputTrace(message, traceScope);
 
   const handleCopyText = (content) => {
     navigator.clipboard.writeText(content);
@@ -219,93 +194,6 @@ export default function MessageItem({
             </span>
           </div>
           <div className="user-actions">
-            <div className={`user-trace-wrapper ${traceOpen ? 'trace-open' : ''}`}>
-              <button
-                type="button"
-                className="msg-action-btn user-trace-trigger"
-                aria-label="查看输入追踪"
-                aria-haspopup="dialog"
-                aria-expanded={traceOpen}
-                title="查看输入追踪"
-                onClick={() => setTraceOpen((open) => !open)}
-              >
-                <Activity size={11} />
-              </button>
-              <div className="user-trace-popover" role="dialog" aria-label="输入追踪">
-                <div className="user-trace-header">
-                  <span>
-                    <Activity size={12} />
-                    输入追踪
-                  </span>
-                  <span className="user-trace-source">
-                    {getInputTraceSourceLabel(inputTrace.source)}
-                  </span>
-                </div>
-                <div className="user-trace-prompt" title={text}>
-                  {text || (images.length > 0
-                    ? '（图片输入）'
-                    : displayedTextAttachments.length > 0
-                    ? '（文本附件）'
-                    : displayedFileAttachments.length > 0 ? '（文件附件）' : '（空输入）')}
-                </div>
-                <dl className="user-trace-details">
-                  <div>
-                    <dt>作用域</dt>
-                    <dd>{inputTrace.scope?.projectId || '未绑定项目'} / {inputTrace.scope?.threadId || 'default'}</dd>
-                  </div>
-                  <div>
-                    <dt>Turn</dt>
-                    <dd>{inputTrace.scope?.turnId || '提交后分配'}</dd>
-                  </div>
-                  <div>
-                    <dt>记录时间</dt>
-                    <dd>{formatTraceTimestamp(inputTrace.capturedAt)}</dd>
-                  </div>
-                  <div>
-                    <dt>执行设置</dt>
-                    <dd>
-                      {inputTrace.execution
-                        ? [
-                          INPUT_TRACE_ACCESS_LABELS[inputTrace.execution.accessScope]
-                            || inputTrace.execution.accessScope,
-                          INPUT_TRACE_POLICY_LABELS[inputTrace.execution.policy]
-                            || inputTrace.execution.policy,
-                          INPUT_TRACE_CONTINUATION_LABELS[inputTrace.execution.continuationMode]
-                            || inputTrace.execution.continuationMode,
-                        ].filter(Boolean).join(' · ')
-                        : '历史输入未保存提交时配置'}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>附件</dt>
-                    <dd>
-                      {inputTrace.attachments?.known === false
-                        ? '历史投影未提供附件明细'
-                        : `${inputTrace.attachments?.imageCount || 0} 张图片 · ${inputTrace.attachments?.textCount || 0} 个文本附件 · ${inputTrace.attachments?.fileCount || 0} 个文件/路径 · ${inputTrace.attachments?.referencedFiles?.length || 0} 个文件引用`}
-                    </dd>
-                  </div>
-                </dl>
-                {inputTrace.historical && (
-                  <p className="user-trace-note">
-                    这是当前 Thread 的历史投影；未持久化的执行设置不会用当前值代替。
-                  </p>
-                )}
-                <div className="user-trace-actions">
-                  {onAdjustPrompt && !message.isGoal && (
-                    <button type="button" onClick={() => onAdjustPrompt(message)}>
-                      <Edit3 size={11} />
-                      调整输入
-                    </button>
-                  )}
-                  {onViewThreadHistory && (
-                    <button type="button" onClick={() => onViewThreadHistory(message.id)}>
-                      <History size={11} />
-                      查看 Thread 历史
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
             <button
               className="msg-action-btn"
               onClick={() => handleCopyText(text)}

@@ -28,7 +28,6 @@ export default function SessionTurnRail({
             type="button"
             className={`session-turn-node state-${entry?.state || 'unknown'} ${entry?.isCurrent ? 'is-current' : ''} ${isFocused ? 'is-focused' : ''}`}
             onClick={() => onSelectTurn?.(entry)}
-            title={`${entry?.summary || '当前输入'} · ${response}`}
             aria-label={`${entry?.summary || '当前输入'}，${response}`}
             aria-current={entry?.isCurrent ? 'step' : undefined}
           >

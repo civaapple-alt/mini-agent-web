@@ -3,8 +3,6 @@ import {
   Check,
   ChevronDown,
   Compass,
-  ExternalLink,
-  FileText,
   Navigation,
   Shield,
   ShieldAlert,
@@ -182,12 +180,6 @@ export default function StatusRail({
             <span>{settings.summary || '运行设置'}</span>
             <ChevronDown size={11} aria-hidden="true" />
           </button>
-          <button type="button" className="status-rail-button" onClick={onOpenDetails}>
-            <FileText size={12} aria-hidden="true" />
-            <span>详情</span>
-            <ExternalLink size={10} aria-hidden="true" />
-          </button>
-
           {showSettings && (
             <div className="status-settings-popover" role="dialog" aria-label="运行设置">
               <div className="status-settings-header">

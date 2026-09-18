@@ -138,7 +138,6 @@ export default function App() {
   // Panels & Modals
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
   const [sidePanelTab, setSidePanelTab] = useState('status');
-  const [historyFocusMessageId, setHistoryFocusMessageId] = useState(null);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionState, setConnectionState] = useState('offline');
@@ -329,7 +328,6 @@ export default function App() {
     setPendingMessages([]);
     setComposerDraft(null);
     setLastTurnResult(null);
-    setHistoryFocusMessageId(null);
     pendingUserMessageIdRef.current = null;
     setPlanReviewPending(false);
     setPlanActive(false);
@@ -2288,36 +2286,6 @@ export default function App() {
     setSidePanelOpen(true);
   };
 
-  const handleAdjustPrompt = (message) => {
-    if (!message) return;
-    setComposerDraft({
-      prompt: message.text || '',
-      images: Array.isArray(message.images) ? message.images : [],
-      textAttachments: Array.isArray(message.textAttachments)
-        ? message.textAttachments
-        : [],
-      fileAttachments: Array.isArray(message.fileAttachments)
-        ? message.fileAttachments
-        : [],
-      referencedFiles: Array.isArray(message.referencedFiles)
-        ? message.referencedFiles
-        : [],
-      selectedSkills: Array.isArray(message.selectedSkills)
-        ? message.selectedSkills
-        : [],
-      workflow: message.workflow || null,
-      directive: message.directive || null,
-      editToken: Date.now(),
-    });
-    setSidePanelOpen(false);
-    showToast('已将这条输入放回编辑器，可调整后重新发送', 'info', 2200);
-  };
-
-  const handleViewThreadHistory = (messageId = null) => {
-    setHistoryFocusMessageId(messageId);
-    handleOpenSidePanel('thread_history');
-  };
-
   const handleUpdateExecution = async (nextAccess, nextPolicy) => {
     if (isGenerating || activeTurnIdRef.current || isInterrupting || interruptPendingRef.current || pendingApproval) {
       showToast('当前轮次正在执行，策略未切换；请在本轮结束后重试。', 'info', 3000);
@@ -2443,9 +2411,6 @@ export default function App() {
       lastTurnResult={lastTurnResult}
       policy={policy}
       onSendMessage={handleSendMessage}
-      onAdjustPrompt={handleAdjustPrompt}
-      onViewThreadHistory={handleViewThreadHistory}
-      historyFocusMessageId={historyFocusMessageId}
       userSettings={userSettings}
       isLoadingHistory={isLoadingHistory}
       sessionReadOnly={currentSessionReadOnly}

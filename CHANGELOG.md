@@ -22,8 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   input and Turn result appear only in a hover/focus popover. Remove repeated
   inline historical Turn summary cards so the message stream keeps one clear
   top-to-bottom reading path.
+- Keep the rail beside the left navigation in a centered sticky marker column,
+  with a wider active marker and no connecting vertical line. The message
+  stream keeps its centered reading width instead of being pushed to the right.
+- Remove duplicate navigation surfaces from the message stream and runtime
+  details: user messages no longer render an input-trace card, the runtime
+  drawer no longer has a separate `输入历史` tab, and the status rail no longer
+  repeats the second-row `详情` action. The Session Turn rail is the single
+  input-history entry point.
 - Remove the repeated assistant avatar marker from the message stream; agent
   identity remains available in the surrounding session chrome and tool details.
+- Fix Windows development-mode startup by forcing Uvicorn reload subprocesses
+  to use a Proactor event loop, which supports the SDK child-process path.
 - Add cross-Turn local background Shell task projection to the SDK, Gateway, and
   Web Studio runtime panel. Child Sessions can read the parent task list but
   cannot control it; remote waits such as GitHub Actions use the scheduled marker

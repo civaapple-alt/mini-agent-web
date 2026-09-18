@@ -16,7 +16,6 @@ import {
   RotateCcw,
   Wrench,
   Activity,
-  History,
   Sparkles,
   BookOpen,
   ChevronDown,
@@ -26,7 +25,6 @@ import {
 import { api } from '../api';
 import { readStateRevision, shouldApplyStateRevision } from '../utils/revisionState';
 import StatusDetailsPane from './StatusDetailsPane';
-import ThreadHistoryPane from './ThreadHistoryPane';
 import SkillPanel from './SkillPanel';
 import NotebookPane from './NotebookPane';
 import './SidePanel.css';
@@ -219,7 +217,6 @@ function normalizePanelTab(tab) {
   if (tab === 'plan' || tab === 'plan_view') return 'plan_view';
   if (tab === 'plan_goal' || tab === 'goal') return 'goal';
   if (tab === 'notebook' || tab === 'memory') return 'notebook';
-  if (tab === 'history' || tab === 'thread_history') return 'thread_history';
   return tab || 'status';
 }
 
@@ -424,10 +421,6 @@ export default function SidePanel({
   projectId = null,
   onGoalChanged,
   onToast,
-  messages = [],
-  threadItems = [],
-  onAdjustPrompt,
-  historyFocusMessageId = null,
   availableSkills = [],
   skillGroups = [],
   skillsLoading = false,
@@ -899,14 +892,6 @@ export default function SidePanel({
               <span>记忆</span>
             </button>
 
-            <button
-              className={`panel-tab-btn ${activeTab === 'thread_history' ? 'active' : ''}`}
-              onClick={() => setActiveTab('thread_history')}
-            >
-              <History size={14} />
-              <span>输入历史</span>
-            </button>
-
           </div>
 
           <button className="panel-close-btn" onClick={onClose} aria-label="关闭详情抽屉">
@@ -963,17 +948,6 @@ export default function SidePanel({
               threadId={threadId}
               projectId={projectId}
               onOpenThread={onOpenThread}
-            />
-          )}
-
-          {activeTab === 'thread_history' && (
-            <ThreadHistoryPane
-              messages={messages}
-              itemEntries={threadItems}
-              threadId={threadId}
-              projectId={projectId}
-              focusMessageId={historyFocusMessageId}
-              onAdjustPrompt={onAdjustPrompt}
             />
           )}
 

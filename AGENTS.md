@@ -2,9 +2,20 @@
 
 ## Scope
 
-This repository contains the `mini-agent` Python SDK, the FastAPI gateway, the
-React frontend, the TUI, and executable Cookbook examples for the Mini Agent
-App Server. Keep the public SDK and the App Server JSON-RPC contract aligned.
+This repository is the user-facing control-plane adapter for the Mini Agent
+runtime. It contains the `mini-agent` Python SDK, the FastAPI gateway, the
+React Web Studio, the TUI, and executable Cookbook examples for the Mini Agent
+App Server.
+
+Web Studio is the control and observation surface for projects and long-lived
+Sessions. It presents runtime state, approvals, recovery, Child Sessions,
+Notebook, and bounded events as user actions and projections. Keep the public
+SDK and the App Server JSON-RPC contract aligned.
+
+The App Server, Host, and Capabilities remain authoritative for execution,
+admission, side effects, and durable Session state. This repository must not
+create a second Agent loop, authorization source, Session history, or recovery
+model in the SDK, Gateway, or frontend.
 
 ## Documentation topology
 

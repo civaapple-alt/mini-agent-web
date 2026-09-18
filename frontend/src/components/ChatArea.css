@@ -83,7 +83,9 @@
 
 .message-stream-layout.has-turn-rail {
   position: relative;
-  max-width: 860px;
+  max-width: 888px;
+  padding-left: 28px;
+  box-sizing: border-box;
 }
 
 .messages-list {
@@ -98,7 +100,7 @@
 .session-turn-rail {
   position: absolute;
   top: 16px;
-  left: -28px;
+  left: 0;
   width: 16px;
   max-height: calc(100% - 32px);
   overflow-y: auto;
@@ -782,6 +784,7 @@
   .message-stream-layout.has-turn-rail {
     max-width: 860px;
     display: block;
+    padding-left: 0;
   }
 
   .session-turn-rail {

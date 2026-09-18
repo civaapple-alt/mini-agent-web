@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Activity, ShieldAlert, X } from 'lucide-react';
+import { threadApi } from '../api/threads.js';
 import ChildTasksPane from './ChildTasksPane';
 
 function formatBytes(value) {
@@ -9,6 +10,23 @@ function formatBytes(value) {
   return `${(value / (1024 * 1024)).toFixed(2)} MiB`;
 }
 
+function formatTaskAge(startedAt) {
+  if (!Number.isFinite(startedAt) || startedAt <= 0) return '—';
+  const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+}
+
+const taskStateLabels = {
+  starting: '启动中',
+  running: '运行中',
+  stopping: '停止中',
+  stopped: '已停止',
+  failed: '失败',
+  lost: '已丢失',
+};
+
 export default function StatusDetailsPane({
   status,
   sessionMeta = null,
@@ -16,6 +34,10 @@ export default function StatusDetailsPane({
   projectId = null,
   onOpenThread,
 }) {
+  const [backgroundTasks, setBackgroundTasks] = useState([]);
+  const [backgroundTaskError, setBackgroundTaskError] = useState(null);
+  const [expandedLogs, setExpandedLogs] = useState({});
+  const isChild = Boolean(sessionMeta?.parentSessionId);
   const hasSession = Boolean(sessionMeta?.sessionId);
   const hasForkMetrics = hasSession && (
     sessionMeta.parentSessionId
@@ -23,6 +45,55 @@ export default function StatusDetailsPane({
     || sessionMeta.contextAfterBytes !== null
     || sessionMeta.sessionBytes !== null
   );
+
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const result = await threadApi.listBackgroundTasks(threadId, { projectId });
+        if (active) {
+          setBackgroundTasks(result?.data || []);
+          setBackgroundTaskError(null);
+        }
+      } catch (error) {
+        if (active) setBackgroundTaskError(error.message || '无法读取后台任务');
+      }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 3000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [projectId, threadId]);
+
+  const refreshBackgroundTasks = async () => {
+    const result = await threadApi.listBackgroundTasks(threadId, { projectId });
+    setBackgroundTasks(result?.data || []);
+  };
+
+  const handleTaskAction = async (taskId, action) => {
+    try {
+      if (action === 'stop') await threadApi.stopBackgroundTask(threadId, taskId, { projectId });
+      else await threadApi.restartBackgroundTask(threadId, taskId, { projectId });
+      await refreshBackgroundTasks();
+    } catch (error) {
+      setBackgroundTaskError(error.message || '后台任务操作失败');
+    }
+  };
+
+  const toggleLogs = async (taskId) => {
+    if (expandedLogs[taskId]) {
+      setExpandedLogs((current) => ({ ...current, [taskId]: null }));
+      return;
+    }
+    try {
+      const result = await threadApi.readBackgroundTaskLogs(threadId, taskId, { projectId });
+      setExpandedLogs((current) => ({ ...current, [taskId]: result }));
+    } catch (error) {
+      setBackgroundTaskError(error.message || '无法读取后台日志');
+    }
+  };
 
   return (
     <div className="tab-pane status-details-pane">
@@ -156,6 +227,62 @@ export default function StatusDetailsPane({
         <span className="card-label">最近事件</span>
         <div className="status-detail-event font-mono">
           {status?.runtime?.lastWorkflowEvent || '暂无新的工作流事件'}
+        </div>
+      </div>
+
+      <div className="status-detail-section background-tasks-section">
+        <div className="pane-section-header">
+          <span className="card-label">后台 Shell 任务</span>
+          {isChild && <span className="background-task-readonly">Child 只读</span>}
+        </div>
+        {backgroundTaskError && (
+          <div className="background-task-error">{backgroundTaskError}</div>
+        )}
+        {backgroundTasks.length === 0 && !backgroundTaskError && (
+          <div className="status-detail-event">暂无后台 Shell 任务</div>
+        )}
+        <div className="background-task-list">
+          {backgroundTasks.map((task) => {
+            const state = task.state || 'lost';
+            const logs = expandedLogs[task.task_id];
+            return (
+              <div className="background-task-card" key={task.task_id}>
+                <div className="background-task-heading">
+                  <strong className="font-mono">{task.task_id}</strong>
+                  <span className={`background-task-state ${state}`}>
+                    {taskStateLabels[state] || state}
+                  </span>
+                </div>
+                <div className="background-task-command" title={task.command_summary}>
+                  {task.command_summary || '—'}
+                </div>
+                <div className="background-task-meta font-mono">
+                  PID {task.process_id || '—'} · {formatTaskAge(task.started_at)} · 日志 {formatBytes(task.log_bytes)} · hash {task.command_hash || '—'}
+                </div>
+                <div className="background-task-meta" title={task.working_directory}>
+                  {task.working_directory || '—'}
+                </div>
+                <div className="background-task-actions">
+                  <button type="button" className="btn-action-small" onClick={() => toggleLogs(task.task_id)}>
+                    {logs ? '收起日志' : '查看日志'}
+                  </button>
+                  {!isChild && state !== 'stopped' && state !== 'failed' && state !== 'lost' && (
+                    <button type="button" className="btn-action-small" onClick={() => handleTaskAction(task.task_id, 'stop')}>
+                      停止
+                    </button>
+                  )}
+                  {!isChild && (state === 'stopped' || state === 'failed' || state === 'lost') && (
+                    <button type="button" className="btn-action-small" onClick={() => handleTaskAction(task.task_id, 'restart')}>
+                      重启
+                    </button>
+                  )}
+                </div>
+                {logs && (
+                  <pre className="background-task-logs">{logs.text || '暂无输出'}</pre>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 

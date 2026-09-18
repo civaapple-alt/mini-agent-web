@@ -352,6 +352,39 @@ class SessionManager:
     ) -> MiniAgentClient:
         return await self._client_pool.get_client_for_thread(thread_id, project_id)
 
+    async def get_background_task_target(
+        self, thread_id: str, project_id: str | None = None
+    ) -> tuple[MiniAgentClient, str, bool]:
+        """Resolve the owner runtime for a background Shell read/control.
+
+        Child Sessions expose their parent's task list read-only. The Gateway
+        resolves that lineage from the canonical SessionStore projection and
+        forwards to the parent's client; it does not keep a process registry.
+        """
+        resolved_project_id = self.resolve_thread_project(thread_id, project_id)
+        canonical = self._canonical_thread(thread_id, resolved_project_id)
+        session = (canonical or {}).get("session") or {}
+        parent_session_id = session.get("parent_session_id")
+        if parent_session_id:
+            parent = next(
+                (
+                    item
+                    for item in self.list_project_sessions(resolved_project_id, limit=128)[
+                        "data"
+                    ]
+                    if item.get("session_id") == parent_session_id
+                ),
+                None,
+            )
+            if parent and parent.get("thread_id"):
+                parent_thread_id = str(parent["thread_id"])
+                client = await self.get_client_for_thread(
+                    parent_thread_id, resolved_project_id
+                )
+                return client, parent_thread_id, True
+        client = await self.get_client_for_thread(thread_id, resolved_project_id)
+        return client, thread_id, False
+
     async def get_client_for_project(
         self, project_id: str | None = None, thread_id: str | None = None
     ) -> MiniAgentClient:

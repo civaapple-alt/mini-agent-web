@@ -67,6 +67,14 @@ RuntimePhase = Literal[
     "completed",
     "failed",
 ]
+BackgroundTaskState = Literal[
+    "starting",
+    "running",
+    "stopping",
+    "stopped",
+    "failed",
+    "lost",
+]
 
 CollaborationModeKind = Literal["default", "plan"]
 ContinuationMode = Literal["manual", "continuous"]
@@ -330,6 +338,66 @@ class RuntimeStatus:
             if "timestampMs" in val
             else val.get("timestamp_ms", 0),
             error=val.get("error"),
+            raw=data,
+        )
+
+
+@dataclass
+class BackgroundTask:
+    """Bounded snapshot of a locally managed background Shell task."""
+
+    task_id: str
+    owner_thread_id: str
+    state: BackgroundTaskState
+    command_summary: str
+    command_hash: str
+    working_directory: str
+    process_id: int | None = None
+    started_at: int = 0
+    stopped_at: int | None = None
+    exit_code: int | None = None
+    log_bytes: int = 0
+    log_truncated: bool = False
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BackgroundTask:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        return cls(
+            task_id=val.get("taskId") or val.get("task_id", ""),
+            owner_thread_id=val.get("ownerThreadId") or val.get("owner_thread_id", ""),
+            state=val.get("state", "lost"),
+            command_summary=val.get("commandSummary") or val.get("command_summary", ""),
+            command_hash=val.get("commandHash") or val.get("command_hash", ""),
+            working_directory=val.get("workingDirectory") or val.get("working_directory", ""),
+            process_id=val.get("processId") if "processId" in val else val.get("process_id"),
+            started_at=val.get("startedAt", val.get("started_at", 0)),
+            stopped_at=val.get("stoppedAt") if "stoppedAt" in val else val.get("stopped_at"),
+            exit_code=val.get("exitCode") if "exitCode" in val else val.get("exit_code"),
+            log_bytes=val.get("logBytes", val.get("log_bytes", 0)),
+            log_truncated=bool(val.get("logTruncated", val.get("log_truncated", False))),
+            raw=data,
+        )
+
+
+@dataclass
+class BackgroundTaskLogs:
+    """Bounded tail of one background Shell task's combined output."""
+
+    task_id: str
+    text: str
+    bytes: int = 0
+    truncated: bool = False
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BackgroundTaskLogs:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        return cls(
+            task_id=val.get("taskId") or val.get("task_id", ""),
+            text=val.get("text", ""),
+            bytes=val.get("bytes", 0),
+            truncated=bool(val.get("truncated", False)),
             raw=data,
         )
 

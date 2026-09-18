@@ -24,6 +24,8 @@ from mini_agent.errors import (
 from mini_agent.events import parse_event
 from mini_agent.types import (
     DEFAULT_BUILTIN_TOOLS,
+    BackgroundTask,
+    BackgroundTaskLogs,
     CollaborationMode,
     CollaborationModeKind,
     ItemLifecycleNotification,
@@ -701,6 +703,52 @@ class MiniAgentClient:
             {"threadId": thread_id or self._active_thread_id},
         )
         return RuntimeStatus.from_dict(res)
+
+    async def list_background_tasks(
+        self, thread_id: str | None = None
+    ) -> list[BackgroundTask]:
+        """List locally managed background Shell tasks for a Thread runtime."""
+        res = await self._send_request(
+            "background-task/list", {"threadId": thread_id or self._active_thread_id}
+        )
+        value = res.get("value", res) if isinstance(res, dict) else res
+        return [BackgroundTask.from_dict(item) for item in value.get("data", [])]
+
+    async def read_background_task(
+        self, task_id: str, thread_id: str | None = None
+    ) -> BackgroundTask:
+        res = await self._send_request(
+            "background-task/read",
+            {"threadId": thread_id or self._active_thread_id, "taskId": task_id},
+        )
+        return BackgroundTask.from_dict(res)
+
+    async def read_background_task_logs(
+        self, task_id: str, thread_id: str | None = None
+    ) -> BackgroundTaskLogs:
+        res = await self._send_request(
+            "background-task/logs",
+            {"threadId": thread_id or self._active_thread_id, "taskId": task_id},
+        )
+        return BackgroundTaskLogs.from_dict(res)
+
+    async def stop_background_task(
+        self, task_id: str, thread_id: str | None = None
+    ) -> BackgroundTask:
+        res = await self._send_request(
+            "background-task/stop",
+            {"threadId": thread_id or self._active_thread_id, "taskId": task_id},
+        )
+        return BackgroundTask.from_dict(res)
+
+    async def restart_background_task(
+        self, task_id: str, thread_id: str | None = None
+    ) -> BackgroundTask:
+        res = await self._send_request(
+            "background-task/restart",
+            {"threadId": thread_id or self._active_thread_id, "taskId": task_id},
+        )
+        return BackgroundTask.from_dict(res)
 
     async def replay_events(
         self,

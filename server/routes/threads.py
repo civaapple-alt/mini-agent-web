@@ -24,6 +24,13 @@ from server.session_manager import (
 router = APIRouter(prefix="/api/threads", tags=["Threads"])
 
 
+def _background_task_json(value: Any) -> dict[str, Any]:
+    payload = to_json_serializable(value)
+    if isinstance(payload, dict):
+        payload.pop("raw", None)
+    return payload
+
+
 @router.get("/project/{project_id}/sessions", summary="List Project Sessions")
 async def list_project_sessions(
     project_id: str, cursor: str | None = None, limit: int = Query(64, ge=1, le=128)
@@ -349,6 +356,122 @@ async def get_runtime_status(
             "timestamp_ms": status.timestamp_ms,
             "error": status.error,
         }
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.get("/{thread_id}/background-tasks", summary="List background Shell tasks")
+async def list_background_tasks(
+    thread_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
+    """Read the authoritative local background Shell task list."""
+    try:
+        client, owner_thread_id, _ = await session_manager.get_background_task_target(
+            thread_id, project_id
+        )
+        tasks = await client.list_background_tasks(owner_thread_id)
+        return {
+            "thread_id": thread_id,
+            "owner_thread_id": owner_thread_id,
+            "data": [_background_task_json(task) for task in tasks],
+        }
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+async def _background_task_action(
+    thread_id: str,
+    task_id: str,
+    project_id: str | None,
+    action: str,
+) -> dict[str, Any]:
+    client, owner_thread_id, is_child = await session_manager.get_background_task_target(
+        thread_id, project_id
+    )
+    if is_child and action in {"stop", "restart"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Child Sessions can read background Shell tasks but cannot control them",
+        )
+    if action == "read":
+        value = await client.read_background_task(task_id, owner_thread_id)
+    elif action == "logs":
+        value = await client.read_background_task_logs(task_id, owner_thread_id)
+    elif action == "stop":
+        value = await client.stop_background_task(task_id, owner_thread_id)
+    else:
+        value = await client.restart_background_task(task_id, owner_thread_id)
+    return {
+        "thread_id": thread_id,
+        "owner_thread_id": owner_thread_id,
+        **_background_task_json(value),
+    }
+
+
+@router.get("/{thread_id}/background-tasks/{task_id}", summary="Read a background Shell task")
+async def read_background_task(
+    thread_id: str, task_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
+    try:
+        return await _background_task_action(thread_id, task_id, project_id, "read")
+    except HTTPException:
+        raise
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.get("/{thread_id}/background-tasks/{task_id}/logs", summary="Read background Shell logs")
+async def read_background_task_logs(
+    thread_id: str, task_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
+    try:
+        return await _background_task_action(thread_id, task_id, project_id, "logs")
+    except HTTPException:
+        raise
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.post("/{thread_id}/background-tasks/{task_id}/stop", summary="Stop a background Shell task")
+async def stop_background_task(
+    thread_id: str, task_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
+    try:
+        return await _background_task_action(thread_id, task_id, project_id, "stop")
+    except HTTPException:
+        raise
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.post("/{thread_id}/background-tasks/{task_id}/restart", summary="Restart a background Shell task")
+async def restart_background_task(
+    thread_id: str, task_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
+    try:
+        return await _background_task_action(thread_id, task_id, project_id, "restart")
+    except HTTPException:
+        raise
     except RuntimeError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err
     except ServerProcessError as err:

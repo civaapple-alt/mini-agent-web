@@ -291,6 +291,22 @@
   font-size: 9px;
 }
 
+.background-tasks-section { gap: 8px; }
+.background-task-readonly { color: var(--text-muted); font-size: 10px; }
+.background-task-error { padding: 8px 10px; border: 1px solid var(--status-failed-border); border-radius: 6px; background: var(--status-failed-soft); color: var(--status-failed); font-size: 11px; }
+.background-task-list { display: flex; flex-direction: column; gap: 8px; }
+.background-task-card { display: flex; flex-direction: column; gap: 6px; padding: 9px 10px; border: 1px solid var(--border-color); border-radius: 7px; background: var(--bg-card); }
+.background-task-heading, .background-task-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.background-task-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.background-task-state { flex: 0 0 auto; color: var(--text-muted); font-size: 10px; }
+.background-task-state.running, .background-task-state.starting { color: var(--status-success); }
+.background-task-state.stopping { color: var(--status-approval); }
+.background-task-state.failed, .background-task-state.lost { color: var(--status-failed); }
+.background-task-command, .background-task-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: 10px; }
+.background-task-meta { color: var(--text-muted); }
+.background-task-actions { justify-content: flex-start; }
+.background-task-logs { max-height: 180px; margin: 0; overflow: auto; padding: 8px; border-radius: 5px; background: var(--bg-app); color: var(--text-secondary); font: 10px/1.45 var(--font-mono); white-space: pre-wrap; word-break: break-word; }
+
 .tab-pane {
   display: flex;
   flex-direction: column;

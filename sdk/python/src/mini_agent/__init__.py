@@ -36,6 +36,9 @@ from mini_agent.events import (
 )
 from mini_agent.types import (
     ApprovalPolicy,
+    BackgroundTask,
+    BackgroundTaskLogs,
+    BackgroundTaskState,
     CollaborationMode,
     CollaborationModeKind,
     ContinuationMode,
@@ -86,6 +89,9 @@ __all__ = [
     "AssistantReasoningDeltaEvent",
     "AssistantTextDeltaEvent",
     "AsyncMiniAgentClient",
+    "BackgroundTask",
+    "BackgroundTaskLogs",
+    "BackgroundTaskState",
     "CollaborationMode",
     "CollaborationModeKind",
     "ContextCompactionFinishedEvent",

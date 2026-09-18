@@ -211,6 +211,57 @@ export const threadApi = {
     return res.json();
   },
 
+  async listBackgroundTasks(threadId = 'default', options = {}) {
+    const targetThread = threadId || 'default';
+    const res = await request(
+      `/api/threads/${encodeURIComponent(targetThread)}/background-tasks`,
+      requestSignal(options),
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to list background tasks for ${targetThread}`);
+    return res.json();
+  },
+
+  async readBackgroundTask(threadId, taskId, options = {}) {
+    const res = await request(
+      `/api/threads/${encodeURIComponent(threadId || 'default')}/background-tasks/${encodeURIComponent(taskId)}`,
+      requestSignal(options),
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to read background task ${taskId}`);
+    return res.json();
+  },
+
+  async readBackgroundTaskLogs(threadId, taskId, options = {}) {
+    const res = await request(
+      `/api/threads/${encodeURIComponent(threadId || 'default')}/background-tasks/${encodeURIComponent(taskId)}/logs`,
+      requestSignal(options),
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to read background task logs ${taskId}`);
+    return res.json();
+  },
+
+  async stopBackgroundTask(threadId, taskId, options = {}) {
+    const res = await request(
+      `/api/threads/${encodeURIComponent(threadId || 'default')}/background-tasks/${encodeURIComponent(taskId)}/stop`,
+      { method: 'POST', ...requestSignal(options) },
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to stop background task ${taskId}`);
+    return res.json();
+  },
+
+  async restartBackgroundTask(threadId, taskId, options = {}) {
+    const res = await request(
+      `/api/threads/${encodeURIComponent(threadId || 'default')}/background-tasks/${encodeURIComponent(taskId)}/restart`,
+      { method: 'POST', ...requestSignal(options) },
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to restart background task ${taskId}`);
+    return res.json();
+  },
+
   async interruptTurn(turnId, threadId = 'default', options = {}) {
     const projectId = resolveProjectId(options.projectId);
     const targetThread = threadId || 'default';

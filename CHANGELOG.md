@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add cross-Turn local background Shell task projection to the SDK, Gateway, and
+  Web Studio runtime panel. Child Sessions can read the parent task list but
+  cannot control it; remote waits such as GitHub Actions remain out of scope.
+
 - Redact free-form approval arguments from SDK and Gateway logs. Approval
   records now keep the tool name, bounded `apply_patch` counts, and request ID
   without printing complete Shell commands or paths.

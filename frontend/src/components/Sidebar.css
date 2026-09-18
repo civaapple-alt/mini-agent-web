@@ -758,6 +758,93 @@
   animation: scaleInEditModal 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.session-action-modal {
+  width: min(440px, calc(100vw - 32px));
+}
+
+.session-action-body {
+  gap: 12px;
+}
+
+.session-action-footer {
+  padding: 0 20px 20px;
+}
+
+.session-action-textarea {
+  width: 100%;
+  min-height: 108px;
+  padding: 9px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  outline: none;
+  resize: vertical;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.session-action-textarea:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
+}
+
+.session-confirm-message {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.session-confirm-target {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: var(--bg-app);
+}
+
+.session-confirm-target strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-confirm-target span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-confirm-button {
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent-green);
+  color: var(--on-accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.session-confirm-button:hover {
+  opacity: 0.9;
+}
+
+.session-confirm-button.danger {
+  background: var(--status-failed);
+}
+
 @keyframes scaleInEditModal {
   from { opacity: 0; transform: scale(0.95); }
   to { opacity: 1; transform: scale(1); }

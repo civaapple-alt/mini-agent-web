@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Circle,
+  Copy,
   Edit2,
   FileText,
   GitFork,
@@ -108,6 +109,15 @@ export default function ThreadRow({
             <FileText size={12} />
             <span>指定摘要</span>
           </button>
+          {thread.session_id && (
+            <button
+              className="popover-btn"
+              onClick={(event) => onAction(event, 'copy_session_id', thread)}
+            >
+              <Copy size={12} />
+              <span>复制 Session ID</span>
+            </button>
+          )}
           <button
             className="popover-btn"
             onClick={(event) => onAction(event, 'fork', thread)}

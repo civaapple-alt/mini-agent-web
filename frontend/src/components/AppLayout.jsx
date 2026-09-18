@@ -99,6 +99,7 @@ export default function AppLayout({
         onOpenSettings={onOpenSettings}
         onRenameThread={onRenameCurrentThread}
         onUpdateSummary={onUpdateCurrentSummary}
+        onToast={onToast}
         sidebarOpen={mobileSidebarOpen}
         onToggleSidebar={() => setMobileSidebarOpen((open) => !open)}
       />

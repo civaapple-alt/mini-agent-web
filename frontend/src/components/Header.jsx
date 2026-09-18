@@ -6,6 +6,7 @@ import {
   Settings,
   Edit2,
   Check,
+  Copy,
   X,
   FileText,
   Menu,
@@ -22,6 +23,7 @@ export default function Header({
   onOpenSettings,
   onRenameThread,
   onUpdateSummary,
+  onToast,
   sidebarOpen = false,
   onToggleSidebar,
 }) {
@@ -43,10 +45,32 @@ export default function Header({
   }, [showSummaryPopover]);
 
   const handleSaveTitle = () => {
-    if (newTitle.trim() && onRenameThread) {
-      onRenameThread(newTitle.trim());
+    const nextTitle = newTitle.trim();
+    const currentTitle = (threadTitle || currentThread).trim();
+    if (nextTitle && nextTitle !== currentTitle && onRenameThread) {
+      onRenameThread(nextTitle);
     }
     setIsEditingTitle(false);
+  };
+
+  const handleCancelTitle = () => {
+    setNewTitle(threadTitle || currentThread);
+    setIsEditingTitle(false);
+  };
+
+  const handleCopySessionId = async (event) => {
+    event.stopPropagation();
+    if (!sessionId) return;
+    if (!navigator.clipboard?.writeText) {
+      onToast?.('当前环境不支持复制 Session ID', 'warning');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      onToast?.('Session ID 已复制', 'success');
+    } catch {
+      onToast?.('复制 Session ID 失败', 'error');
+    }
   };
 
   const handleSaveSummary = () => {
@@ -84,48 +108,69 @@ export default function Header({
             <GitBranch size={13} className="text-sky" />
           </div>
 
-          {isEditingTitle ? (
-            <div className="title-edit-box">
-              <input
-                type="text"
-                className="title-edit-input font-mono"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                onBlur={handleSaveTitle}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSaveTitle();
-                  if (e.key === 'Escape') setIsEditingTitle(false);
-                }}
-                autoFocus
-              />
-              <button className="icon-btn-micro check" onClick={handleSaveTitle} title="确认">
-                <Check size={12} />
-              </button>
-              <button className="icon-btn-micro cancel" onClick={() => setIsEditingTitle(false)} title="取消">
-                <X size={12} />
-              </button>
-            </div>
-          ) : (
-            <div className="title-display-box" onClick={() => {
-              setNewTitle(threadTitle || currentThread);
-              setIsEditingTitle(true);
-            }}>
-              <div className="thread-identity-copy">
+          <div className="thread-identity-stack">
+            {isEditingTitle ? (
+              <div className="title-edit-box">
+                <input
+                  type="text"
+                  className="title-edit-input font-mono"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  onBlur={handleCancelTitle}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSaveTitle();
+                    }
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      handleCancelTitle();
+                    }
+                  }}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  className="icon-btn-micro check"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={handleSaveTitle}
+                  title="确认"
+                >
+                  <Check size={12} />
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn-micro cancel"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={handleCancelTitle}
+                  title="取消"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ) : (
+              <div className="title-display-box" onClick={() => {
+                setNewTitle(threadTitle || currentThread);
+                setIsEditingTitle(true);
+              }}>
                 <span className="thread-title-text" title="点击重命名会话">
                   {threadTitle || currentThread}
                 </span>
-                {sessionId && (
-                  <span
-                    className="thread-session-id font-mono"
-                    title={`实际 Session ID: ${sessionId}`}
-                  >
-                    Session {sessionId}
-                  </span>
-                )}
+                <Edit2 size={11} className="title-edit-hint" />
               </div>
-              <Edit2 size={11} className="title-edit-hint" />
-            </div>
-          )}
+            )}
+            {sessionId && (
+              <button
+                type="button"
+                className="thread-session-copy font-mono"
+                onClick={handleCopySessionId}
+                title="复制实际 Session ID"
+              >
+                <span className="thread-session-id">Session {sessionId}</span>
+                <Copy size={11} />
+              </button>
+            )}
+          </div>
 
           {/* Thread Summary Popover Badge */}
           <div className="summary-popover-wrapper">

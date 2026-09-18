@@ -70,3 +70,114 @@ describe('Sidebar project creation', () => {
     });
   });
 });
+
+describe('Sidebar session actions', () => {
+  const project = {
+    id: 'memory-card',
+    name: 'memory-card',
+    primary_path: 'D:\\workspace\\memory-card',
+  };
+
+  const thread = {
+    thread_id: 't-1',
+    title: '会话一',
+    project: 'memory-card',
+    summary: '旧摘要',
+    session_id: 's-1',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api.listProjects.mockResolvedValue({
+      current_project: project,
+      projects: [project],
+      recent_projects: [],
+    });
+  });
+
+  const renderSessionSidebar = (overrides = {}) => render(
+    <Sidebar
+      threads={[thread]}
+      currentThread={thread.thread_id}
+      currentThreadProject={thread.project}
+      isGenerating={false}
+      onSelectThread={vi.fn()}
+      onNewThread={vi.fn()}
+      onForkThread={vi.fn()}
+      onCloseThread={vi.fn()}
+      onRenameThread={vi.fn()}
+      onUpdateSummary={vi.fn()}
+      onRefreshThreads={vi.fn()}
+      onToast={vi.fn()}
+      {...overrides}
+    />,
+  );
+
+  const openThreadMenu = async () => {
+    await waitFor(() => expect(screen.getByText(thread.title)).toBeTruthy());
+    fireEvent.click(screen.getByTitle('会话选项'));
+  };
+
+  it('uses an in-app dialog for renaming instead of the native prompt', async () => {
+    const onRenameThread = vi.fn();
+
+    renderSessionSidebar({ onRenameThread });
+    await openThreadMenu();
+    fireEvent.click(screen.getByRole('button', { name: '重命名' }));
+
+    expect(screen.getByRole('dialog', { name: '重命名会话' })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('会话名称'), {
+      target: { value: '新的会话名称' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    expect(onRenameThread).toHaveBeenCalledWith(
+      thread.thread_id,
+      '新的会话名称',
+      thread.project,
+    );
+  });
+
+  it('uses an in-app dialog for summary editing', async () => {
+    const onUpdateSummary = vi.fn();
+
+    renderSessionSidebar({ onUpdateSummary });
+    await openThreadMenu();
+    fireEvent.click(screen.getByRole('button', { name: '指定摘要' }));
+
+    expect(screen.getByRole('dialog', { name: '指定会话摘要' })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('阶段摘要'), {
+      target: { value: '新的执行摘要' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存摘要' }));
+
+    expect(onUpdateSummary).toHaveBeenCalledWith(
+      thread.thread_id,
+      '新的执行摘要',
+      thread.project,
+    );
+  });
+
+  it('requires confirmation before fork and close actions execute', async () => {
+    const onForkThread = vi.fn();
+    const onCloseThread = vi.fn();
+
+    renderSessionSidebar({ onForkThread, onCloseThread });
+    await openThreadMenu();
+    fireEvent.click(screen.getByRole('button', { name: '精确派生（默认）' }));
+
+    expect(onForkThread).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: '确认精确派生' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '确认派生' }));
+    expect(onForkThread).toHaveBeenCalledWith(thread.thread_id, thread.project, 'exact');
+
+    await openThreadMenu();
+    fireEvent.click(screen.getByRole('button', { name: '关闭会话' }));
+
+    expect(onCloseThread).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: '确认关闭会话' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '确认关闭' }));
+    expect(onCloseThread).toHaveBeenCalledWith(thread.thread_id, thread.project);
+  });
+});

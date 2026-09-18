@@ -16,6 +16,25 @@ import { api } from '../api';
 import ThreadRow from './sidebar/ThreadRow';
 import './Sidebar.css';
 
+const sessionConfirmationDetails = {
+  fork: {
+    title: '确认精确派生',
+    message: '将从当前会话创建一个独立的子会话，并保留当前上下文。',
+    confirmLabel: '确认派生',
+  },
+  fork_compact: {
+    title: '确认派生并压缩',
+    message: '将从当前会话创建一个独立的子会话，并先压缩上下文。',
+    confirmLabel: '确认派生并压缩',
+  },
+  close: {
+    title: '确认关闭会话',
+    message: '关闭后该会话将从当前会话列表中移除。已保存的会话数据不会因此删除。',
+    confirmLabel: '确认关闭',
+    danger: true,
+  },
+};
+
 export default function Sidebar({
   threads,
   currentThread,
@@ -34,6 +53,7 @@ export default function Sidebar({
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchBox, setShowSearchBox] = useState(false);
   const [activeMenuThread, setActiveMenuThread] = useState(null);
+  const [sessionModal, setSessionModal] = useState(null);
 
   // Projects State
   const [projectsData, setProjectsData] = useState(null);
@@ -78,6 +98,15 @@ export default function Sidebar({
     window.addEventListener('click', handleWindowClick);
     return () => window.removeEventListener('click', handleWindowClick);
   }, []);
+
+  useEffect(() => {
+    if (!sessionModal) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setSessionModal(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [sessionModal]);
 
   const loadProjects = async () => {
     projectRequestControllerRef.current?.abort();
@@ -382,23 +411,64 @@ export default function Sidebar({
     setActiveMenuThread(null);
 
     if (action === 'fork' || action === 'fork_compact') {
-      onForkThread(
-        thread.thread_id,
-        thread.project,
-        action === 'fork_compact' ? 'compact' : 'exact',
-      );
+      setSessionModal({ kind: 'confirm', action, thread });
     } else if (action === 'close') {
-      onCloseThread(thread.thread_id, thread.project);
+      setSessionModal({ kind: 'confirm', action, thread });
     } else if (action === 'rename') {
-      const newTitle = window.prompt('重命名会话:', thread.title);
-      if (newTitle && newTitle.trim()) {
-        onRenameThread(thread.thread_id, newTitle.trim(), thread.project);
-      }
+      setSessionModal({ kind: 'rename', thread, value: thread.title });
     } else if (action === 'summary') {
-      const newSum = window.prompt('设置阶段摘要:', thread.summary);
-      if (newSum !== null) {
-        onUpdateSummary(thread.thread_id, newSum.trim(), thread.project);
+      setSessionModal({ kind: 'summary', thread, value: thread.summary });
+    } else if (action === 'copy_session_id') {
+      void handleCopySessionId(thread);
+    }
+  };
+
+  const handleSessionModalSubmit = (event) => {
+    event.preventDefault();
+    if (!sessionModal) return;
+
+    const { kind, thread } = sessionModal;
+    setSessionModal(null);
+
+    if (kind === 'rename') {
+      const nextTitle = sessionModal.value.trim();
+      if (nextTitle && nextTitle !== thread.title) {
+        onRenameThread(thread.thread_id, nextTitle, thread.project);
       }
+      return;
+    }
+
+    if (kind === 'summary') {
+      onUpdateSummary(thread.thread_id, sessionModal.value.trim(), thread.project);
+      return;
+    }
+
+    if (sessionModal.action === 'close') {
+      onCloseThread(thread.thread_id, thread.project);
+      return;
+    }
+
+    onForkThread(
+      thread.thread_id,
+      thread.project,
+      sessionModal.action === 'fork_compact' ? 'compact' : 'exact',
+    );
+  };
+
+  const handleCopySessionId = async (thread) => {
+    if (!thread.session_id) {
+      onToast?.('该会话没有可用的 Session ID', 'warning');
+      return;
+    }
+    if (!navigator.clipboard?.writeText) {
+      onToast?.('当前环境不支持复制 Session ID', 'warning');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(thread.session_id);
+      onToast?.('Session ID 已复制', 'success');
+    } catch {
+      onToast?.('复制 Session ID 失败', 'error');
     }
   };
 
@@ -1028,6 +1098,159 @@ export default function Sidebar({
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {sessionModal && (
+        <div
+          className="modal-overlay-edit-project session-action-overlay"
+          onClick={() => setSessionModal(null)}
+        >
+          <div
+            className="modal-card-edit-project session-action-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="session-action-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {sessionModal.kind === 'rename' && (
+              <form onSubmit={handleSessionModalSubmit}>
+                <div className="modal-edit-header">
+                  <span className="modal-edit-title" id="session-action-modal-title">
+                    重命名会话
+                  </span>
+                  <button
+                    type="button"
+                    className="modal-edit-close"
+                    onClick={() => setSessionModal(null)}
+                    aria-label="取消重命名"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+                <div className="modal-edit-body session-action-body">
+                  <div className="form-group-block">
+                    <label className="field-label-text" htmlFor="session-rename-input">
+                      会话名称
+                    </label>
+                    <div className="modal-input-wrap">
+                      <input
+                        id="session-rename-input"
+                        type="text"
+                        className="modal-text-input"
+                        value={sessionModal.value}
+                        onChange={(event) => setSessionModal((current) => (
+                          current?.kind === 'rename'
+                            ? { ...current, value: event.target.value }
+                            : current
+                        ))}
+                        autoFocus
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="modal-edit-footer session-action-footer">
+                  <div />
+                  <div className="footer-right-buttons">
+                    <button type="button" className="btn-cancel-edit" onClick={() => setSessionModal(null)}>
+                      取消
+                    </button>
+                    <button type="submit" className="btn-save-project-primary">保存</button>
+                  </div>
+                </div>
+              </form>
+            )}
+
+            {sessionModal.kind === 'summary' && (
+              <form onSubmit={handleSessionModalSubmit}>
+                <div className="modal-edit-header">
+                  <span className="modal-edit-title" id="session-action-modal-title">
+                    指定会话摘要
+                  </span>
+                  <button
+                    type="button"
+                    className="modal-edit-close"
+                    onClick={() => setSessionModal(null)}
+                    aria-label="取消指定摘要"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+                <div className="modal-edit-body session-action-body">
+                  <div className="form-group-block">
+                    <label className="field-label-text" htmlFor="session-summary-input">
+                      阶段摘要
+                    </label>
+                    <textarea
+                      id="session-summary-input"
+                      className="session-action-textarea"
+                      value={sessionModal.value}
+                      onChange={(event) => setSessionModal((current) => (
+                        current?.kind === 'summary'
+                          ? { ...current, value: event.target.value }
+                          : current
+                      ))}
+                      placeholder="输入当前会话的目标或执行阶段摘要"
+                      rows={4}
+                      autoFocus
+                    />
+                  </div>
+                </div>
+                <div className="modal-edit-footer session-action-footer">
+                  <div />
+                  <div className="footer-right-buttons">
+                    <button type="button" className="btn-cancel-edit" onClick={() => setSessionModal(null)}>
+                      取消
+                    </button>
+                    <button type="submit" className="btn-save-project-primary">保存摘要</button>
+                  </div>
+                </div>
+              </form>
+            )}
+
+            {sessionModal.kind === 'confirm' && (() => {
+              const details = sessionConfirmationDetails[sessionModal.action];
+              return (
+                <form onSubmit={handleSessionModalSubmit}>
+                  <div className="modal-edit-header">
+                    <span className="modal-edit-title" id="session-action-modal-title">
+                      {details.title}
+                    </span>
+                    <button
+                      type="button"
+                      className="modal-edit-close"
+                      onClick={() => setSessionModal(null)}
+                      aria-label="取消操作"
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
+                  <div className="modal-edit-body session-action-body">
+                    <p className="session-confirm-message">{details.message}</p>
+                    <div className="session-confirm-target">
+                      <strong>{sessionModal.thread.title}</strong>
+                      <span className="font-mono">{sessionModal.thread.thread_id}</span>
+                    </div>
+                  </div>
+                  <div className="modal-edit-footer session-action-footer">
+                    <div />
+                    <div className="footer-right-buttons">
+                      <button type="button" className="btn-cancel-edit" onClick={() => setSessionModal(null)}>
+                        取消
+                      </button>
+                      <button
+                        type="submit"
+                        className={`session-confirm-button ${details.danger ? 'danger' : ''}`}
+                      >
+                        {details.confirmLabel}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              );
+            })()}
           </div>
         </div>
       )}

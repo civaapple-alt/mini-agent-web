@@ -67,17 +67,29 @@ Child 的 `operation_id`、attempt 和 `queued`/`running`/`awaiting_approval`/
 `turn/interrupt`，不会删除 Session，`retry` 创建新的 child Turn 并递增
 attempt。没有在线进程时，Gateway 返回需要恢复/重新 attach 的状态，不伪造
 成功结果。队列和 group metadata 持久化在 operation 记录中，重启后仍可恢复。
+Gateway 启动、Runtime attach、Session restore 和项目 Runtime 重启后会主动
+reconcile：无 `turn_id` 的 queued operation 重新 drain，已有 `turn_id` 的
+operation 只重新绑定等待，不重复创建 Turn。`delegate_task` 还会在 Child
+materialization 前写入有界 delegation receipt，因此 Gateway 在 fork 前崩溃时
+可以补建或重新绑定 Child；相同 receipt 重放不会产生重复 Child。
+
+父 Thread 的 Child 状态通过 `child_operation_updated` 发送轻量状态投影，前端
+同时使用 `listChildTasks()` 做首次加载、轮询和刷新后的 canonical 恢复。事件只
+包含 operation/Child ID、状态、execution mode、group/sequence 和有限错误码，
+不复制 Child transcript；点击状态行进入独立 Child Thread。
 
 Session Notebook 通过 `/notebook` 读取和写入，Gateway 不保存第二份内容缓存。
 运行时恢复时只向模型注入有界摘要；完整条目由 App Server 的
 `notebook_read`/`notebook_write`/`notebook_forget` 工具按需处理。Child 可以
 读取 Host 校验后的 parent 快照，但只能修改自己的 Notebook。
 
-Notebook 写入可附带关键词和 Commit/File 证据。Commit 的 hash、规范化
-subject、author/commit 时间以及记录时间在写入时缓存，读取和检索不会再次
-查询 Git。配置只暴露 `notebook.max_entries` 与 `notebook.max_entry_chars`，
-总文件上限按这两项和固定元数据预算计算，并且不超过运行时 64 KiB 硬上限；
-其余证据和 subject 限制也是运行时硬上限。
+Notebook 写入可附带关键词和 Commit/File evidence。evidence 是调用方声明的
+有界来源元数据，不宣称已由 Git 或文件系统自动验证；读取和检索不会再次查询
+Git。配置只暴露 `notebook.max_entries` 与 `notebook.max_entry_bytes`，项目值
+覆盖全局默认值；旧的 `max_entry_chars` 仍兼容，但按 UTF-8 字节解释。总文件
+上限按条数、单条上限和固定元数据预算计算，并且不超过运行时 64 KiB 硬上限。
+Notebook 写入或遗忘后，App Server 发送 `session/notebook/updated`，只包含
+revision 和 changed keys，WebStudio 据此重新读取当前投影。
 
 技能目录来自当前 Project App Server 的 `initialize.capabilityManifest`，
 不是 Gateway 扫描文件系统的结果。Runtime 会发现项目

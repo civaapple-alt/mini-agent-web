@@ -1,5 +1,6 @@
 import React from 'react';
 import { Activity, ShieldAlert, X } from 'lucide-react';
+import ChildTasksPane from './ChildTasksPane';
 
 function formatBytes(value) {
   if (!Number.isFinite(value)) return '—';
@@ -8,7 +9,13 @@ function formatBytes(value) {
   return `${(value / (1024 * 1024)).toFixed(2)} MiB`;
 }
 
-export default function StatusDetailsPane({ status, sessionMeta = null }) {
+export default function StatusDetailsPane({
+  status,
+  sessionMeta = null,
+  threadId = 'default',
+  projectId = null,
+  onOpenThread,
+}) {
   const hasSession = Boolean(sessionMeta?.sessionId);
   const hasForkMetrics = hasSession && (
     sessionMeta.parentSessionId
@@ -151,6 +158,12 @@ export default function StatusDetailsPane({ status, sessionMeta = null }) {
           {status?.runtime?.lastWorkflowEvent || '暂无新的工作流事件'}
         </div>
       </div>
+
+      <ChildTasksPane
+        threadId={threadId}
+        projectId={projectId}
+        onOpenThread={onOpenThread}
+      />
     </div>
   );
 }

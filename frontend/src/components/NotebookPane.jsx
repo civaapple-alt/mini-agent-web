@@ -75,6 +75,17 @@ export default function NotebookPane({ threadId, projectId, onToast }) {
 
   useEffect(() => { load(); }, [threadId, projectId]);
 
+  useEffect(() => {
+    const handleNotebookUpdated = (event) => {
+      const updatedThread = event.detail?.data?.threadId
+        || event.detail?.data?.thread_id
+        || event.detail?.threadId;
+      if (!updatedThread || updatedThread === threadId) void load();
+    };
+    window.addEventListener('mini-agent:notebook-updated', handleNotebookUpdated);
+    return () => window.removeEventListener('mini-agent:notebook-updated', handleNotebookUpdated);
+  }, [threadId, projectId]);
+
   const save = async (event) => {
     event.preventDefault();
     if (!key.trim() || !content.trim()) return;

@@ -1038,6 +1038,23 @@ export default function App() {
       eventCursorsRef.current.set(eventKey, sequence);
     }
 
+    if (data.type === 'child_operation_updated') {
+      window.dispatchEvent(
+        new CustomEvent('mini-agent:child-operation-updated', { detail: data }),
+      );
+      return;
+    }
+
+    if (
+      data.type === 'notification'
+      && data.method === 'session/notebook/updated'
+    ) {
+      window.dispatchEvent(
+        new CustomEvent('mini-agent:notebook-updated', { detail: data }),
+      );
+      return;
+    }
+
     // 1. Capture Turn ID from submission
     if (data.type === '_turn_submission') {
       const turnId = data.data?.turn_id || data.submission?.turn_id;
@@ -2429,6 +2446,7 @@ export default function App() {
       skillsError={skillsError}
       onToggleSkillGroup={handleToggleSkillGroup}
       onInsertSkill={handleInsertSkill}
+      onOpenThread={handleSelectThread}
       skillInsertion={skillInsertion}
       onSkillInsertionApplied={() => setSkillInsertion(null)}
     />

@@ -398,18 +398,20 @@ class ProjectRegistry:
         if isinstance(updates.get("notebook"), dict):
             raw = updates["notebook"]
             max_entries = raw.get("max_entries")
-            max_entry_chars = raw.get("max_entry_chars")
+            max_entry_bytes = raw.get("max_entry_bytes")
+            if max_entry_bytes is None:
+                max_entry_bytes = raw.get("max_entry_chars")
             if (
                 isinstance(max_entries, int)
                 and not isinstance(max_entries, bool)
                 and 1 <= max_entries <= 64
-                and isinstance(max_entry_chars, int)
-                and not isinstance(max_entry_chars, bool)
-                and 256 <= max_entry_chars <= 4096
+                and isinstance(max_entry_bytes, int)
+                and not isinstance(max_entry_bytes, bool)
+                and 256 <= max_entry_bytes <= 4096
             ):
                 project["notebook"] = {
                     "max_entries": max_entries,
-                    "max_entry_chars": max_entry_chars,
+                    "max_entry_bytes": max_entry_bytes,
                 }
         if isinstance(updates.get("source_folders"), list):
             project["source_folders"] = updates["source_folders"]
@@ -568,18 +570,27 @@ class ProjectRegistry:
             "MINI_AGENT_EXTRA_READ_ROOTS": os.pathsep.join(read_roots),
             "MINI_AGENT_EXTRA_WRITE_ROOTS": os.pathsep.join(write_roots),
         }
-        notebook = project.get("notebook") if isinstance(project, dict) else None
-        if not isinstance(notebook, dict):
-            notebook = {}
+        effective_settings = owner.get_settings(project.get("id"))
+        notebook = effective_settings.get("notebook") or {}
         try:
             max_entries = int(notebook.get("max_entries", 64))
-            max_entry_chars = int(notebook.get("max_entry_chars", 4096))
+            max_entry_bytes = int(
+                notebook.get(
+                    "max_entry_bytes",
+                    notebook.get("max_entry_chars", 4096),
+                )
+            )
         except (TypeError, ValueError):
-            max_entries, max_entry_chars = 64, 4096
+            max_entries, max_entry_bytes = 64, 4096
         env["MINI_AGENT_NOTEBOOK_MAX_ENTRIES"] = str(max(1, min(max_entries, 64)))
-        env["MINI_AGENT_NOTEBOOK_MAX_ENTRY_CHARS"] = str(
-            max(256, min(max_entry_chars, 4096))
+        env["MINI_AGENT_NOTEBOOK_MAX_ENTRY_BYTES"] = str(
+            max(256, min(max_entry_bytes, 4096))
         )
+        # Older runtimes accept the legacy name; keep it during the rolling
+        # upgrade so a project does not silently fall back to the default.
+        env["MINI_AGENT_NOTEBOOK_MAX_ENTRY_CHARS"] = env[
+            "MINI_AGENT_NOTEBOOK_MAX_ENTRY_BYTES"
+        ]
         if project.get("name"):
             env["MINI_AGENT_PROJECT_NAME"] = str(project["name"])
         return env

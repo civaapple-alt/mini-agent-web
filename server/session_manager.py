@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 from collections import OrderedDict
@@ -24,7 +25,7 @@ from server.control.project_registry import ProjectRegistry
 from server.control.thread_registry import ThreadRegistry
 from server.control.turn_registry import TurnRegistry
 from server.control.ws_broker import WebSocketBroker
-from server.persistence import to_json_serializable
+from server.persistence import atomic_write_json, to_json_serializable
 from server.session_catalog import session_catalog
 
 logger = logging.getLogger("mini_agent.server")
@@ -35,7 +36,8 @@ MAX_CONFIGURED_CHILD_TASKS_PER_PARENT = 8
 DEFAULT_CHILD_EXECUTION_MODE = "parallel"
 MAX_CHILD_TASK_PROMPT_BYTES = 32 * 1024
 MAX_NOTEBOOK_ENTRIES = 64
-MAX_NOTEBOOK_ENTRY_CHARS = 4096
+MAX_NOTEBOOK_ENTRY_BYTES = 4096
+MAX_NOTEBOOK_ENTRY_CHARS = MAX_NOTEBOOK_ENTRY_BYTES
 __all__ = ["SessionManager", "session_manager", "to_json_serializable"]
 
 
@@ -80,6 +82,8 @@ class SessionManager:
             if state_dir_env
             else (Path.home() / ".mini-agent" / "web")
         )
+        self._delegation_receipts_path = self._state_dir / "delegation_receipts.json"
+        self._delegation_receipts: dict[str, dict[str, Any]] = {}
 
         # Structured project registry: project_id -> project dict
         self._current_project_path: Path = Path.cwd().resolve()
@@ -120,15 +124,81 @@ class SessionManager:
             },
             "notebook": {
                 "max_entries": MAX_NOTEBOOK_ENTRIES,
-                "max_entry_chars": MAX_NOTEBOOK_ENTRY_CHARS,
+                "max_entry_bytes": MAX_NOTEBOOK_ENTRY_BYTES,
             },
         }
 
         # Load persisted state or initialize clean default with only the active workspace
         self._load_state()
+        self._load_delegation_receipts()
+
+    def _load_delegation_receipts(self) -> None:
+        """Load bounded delegation intents used to recover an async crash window."""
+        self._delegation_receipts_path = self._state_dir / "delegation_receipts.json"
+        try:
+            raw = json.loads(self._delegation_receipts_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return
+        if not isinstance(raw, dict):
+            return
+        self._delegation_receipts = {
+            str(key): dict(value)
+            for key, value in list(raw.items())[-256:]
+            if isinstance(value, dict)
+        }
+
+    def _save_delegation_receipts(self) -> None:
+        self._delegation_receipts_path = self._state_dir / "delegation_receipts.json"
+        atomic_write_json(
+            self._delegation_receipts_path,
+            {key: value for key, value in list(self._delegation_receipts.items())[-256:]},
+        )
+
+    def _record_delegation_receipt(
+        self, key: str, payload: dict[str, Any], status: str = "pending"
+    ) -> dict[str, Any]:
+        receipt = {
+            **payload,
+            "status": status,
+            "receipt_key": key,
+        }
+        self._delegation_receipts[key] = receipt
+        self._save_delegation_receipts()
+        return receipt
+
+    def _update_delegation_receipt(self, key: str, status: str) -> None:
+        receipt = self._delegation_receipts.get(key)
+        if receipt is None:
+            return
+        receipt["status"] = status
+        self._save_delegation_receipts()
+
+    async def _broadcast_child_operation(
+        self, child: dict[str, Any], status: str | None = None
+    ) -> None:
+        """Publish only the bounded parent projection of a Child operation."""
+        await self.broadcast_ws(
+            {
+                "type": "child_operation_updated",
+                "threadId": child.get("parent_thread_id"),
+                "projectId": child.get("project"),
+                "data": {
+                    "operation_id": child.get("operation_id"),
+                    "child_thread_id": child.get("child_thread_id"),
+                    "status": status or child.get("status"),
+                    "execution_mode": child.get("execution_mode") or "parallel",
+                    "operation_group_id": child.get("operation_group_id"),
+                    "group_sequence": child.get("group_sequence"),
+                    "error_code": "child_operation_failed"
+                    if (status or child.get("status")) == "failed"
+                    else None,
+                },
+            }
+        )
 
     def _set_state_paths(self, base_dir: Path) -> None:
         """Configure directory layout for state persistence."""
+        self._delegation_receipts_path = base_dir / "delegation_receipts.json"
         self._project_registry.set_state_paths(base_dir)
 
     @property
@@ -451,7 +521,7 @@ class SessionManager:
             else:
                 fork = await self.fork_thread(*fork_args)
             if queued:
-                return {
+                result = {
                     "parent_thread_id": source_thread_id,
                     "child_thread_id": new_thread_id,
                     "project": resolved_project_id,
@@ -464,6 +534,8 @@ class SessionManager:
                     "group_sequence": sequence,
                     "status": "queued",
                 }
+                await self._broadcast_child_operation(result)
+                return result
             child_client = await self.get_client_for_thread(
                 new_thread_id, resolved_project_id
             )
@@ -515,6 +587,7 @@ class SessionManager:
                 )
             )
             self.set_active_turn(new_thread_id, turn_id, task, resolved_project_id)
+            await self._broadcast_child_operation(result)
             return result
 
     async def _wait_for_child_turn(
@@ -527,14 +600,41 @@ class SessionManager:
     ) -> None:
         """Keep the child turn registered until its canonical result settles."""
         task = asyncio.current_task()
+        settlement_status = "completed"
         try:
-            await client.wait_for_turn(turn_id)
+            result = await client.wait_for_turn(turn_id)
+            result_status = getattr(result, "status", None)
+            if result_status == "cancelled":
+                settlement_status = "cancelled"
+            elif result_status in {"failed", "step_limit"}:
+                settlement_status = "failed"
         except asyncio.CancelledError:
+            settlement_status = "cancelled"
             raise
         except Exception:
+            settlement_status = "failed"
             logger.exception("Child Turn %s failed while settling", turn_id)
         finally:
+            for key, receipt in self._delegation_receipts.items():
+                if receipt.get("child_thread_id") == thread_id:
+                    self._update_delegation_receipt(key, settlement_status)
             self.clear_active_turn(thread_id, project_id, turn_id, task)
+            try:
+                children = await self.list_child_tasks(
+                    parent_thread_id or thread_id, project_id
+                )
+                child = next(
+                    (item for item in children if item.get("child_thread_id") == thread_id),
+                    None,
+                )
+                if child:
+                    await self._broadcast_child_operation(child)
+            except Exception:
+                logger.debug(
+                    "Unable to publish settled Child projection for %s",
+                    thread_id,
+                    exc_info=True,
+                )
             try:
                 await self._drain_child_queue(parent_thread_id or thread_id, project_id)
             except Exception:
@@ -647,12 +747,64 @@ class SessionManager:
                     self.set_active_turn(
                         child_thread_id, started_turn_id, task, project_id
                     )
+                    await self._broadcast_child_operation(
+                        {**candidate, "status": "running", "turn_id": started_turn_id}
+                    )
                     active.append({**candidate, "turn_id": started_turn_id, "status": "running"})
                     queued.remove(candidate)
                     capacity -= 1
                 except Exception:
                     logger.exception("Unable to start queued child %s", child_thread_id)
                     return
+
+    async def reconcile_child_operations(self, project_id: str) -> None:
+        """Reattach live Child Turns and drain durable queued operations."""
+        sessions = self.list_project_sessions(project_id, limit=128).get("data", [])
+        parents: set[str] = set()
+        for session in sessions:
+            parent = session.get("operation_parent_thread_id")
+            status = session.get("operation_status") or session.get("status")
+            thread_id = str(session.get("thread_id") or "")
+            turn_id = str(session.get("operation_turn_id") or "")
+            if not isinstance(parent, str) or not parent:
+                continue
+            parents.add(parent)
+            if (
+                status in {"running", "awaiting_approval", "in_progress"}
+                and turn_id
+                and (project_id, thread_id) not in self._active_turns_by_project
+            ):
+                try:
+                    client = await self.get_client_for_thread(thread_id, project_id)
+                    task = asyncio.create_task(
+                        self._wait_for_child_turn(
+                            client, thread_id, project_id, turn_id, parent
+                        )
+                    )
+                    self.set_active_turn(thread_id, turn_id, task, project_id)
+                except Exception:
+                    logger.warning(
+                        "Unable to reattach Child %s during recovery",
+                        thread_id,
+                        exc_info=True,
+                    )
+        for parent in sorted(parents):
+            try:
+                await self._drain_child_queue(parent, project_id)
+            except Exception:
+                logger.warning(
+                    "Unable to reconcile queued Child operations for %s",
+                    parent,
+                    exc_info=True,
+                )
+
+    def _schedule_child_reconciliation(self, project_id: str) -> None:
+        """Schedule recovery after the manager lock has been released."""
+        async def recover() -> None:
+            await self.reconcile_delegation_receipts(project_id)
+            await self.reconcile_child_operations(project_id)
+
+        asyncio.create_task(recover())
 
     async def cancel_child_task(
         self, source_thread_id: str, child_thread_id: str, project_id: str | None = None
@@ -865,6 +1017,7 @@ class SessionManager:
                     "default", current_project_id, current_default
                 )
                 self._initialized = True
+                self._schedule_child_reconciliation(current_project_id)
                 return
             self._client = None
             canonical = self.read_project_thread("default")
@@ -891,6 +1044,7 @@ class SessionManager:
                 "default", self._current_project_id, self._client
             )
             self._initialized = True
+            self._schedule_child_reconciliation(current_project_id)
 
     async def restart_for_current_project(self) -> None:
         """Restart the current Project runtime without touching other Projects."""
@@ -971,6 +1125,7 @@ class SessionManager:
             await self.start()
         else:
             await self._client_pool.get_client_for_project(project_id)
+            self._schedule_child_reconciliation(project_id)
         self._runtime_generation += 1
         await self.broadcast_ws(
             {
@@ -1109,7 +1264,7 @@ class SessionManager:
                 "max_entries", MAX_NOTEBOOK_ENTRIES
             ),
             max_entry_chars=(self.get_settings(resolved_project_id).get("notebook") or {}).get(
-                "max_entry_chars", MAX_NOTEBOOK_ENTRY_CHARS
+                "max_entry_bytes", MAX_NOTEBOOK_ENTRY_BYTES
             ),
         )
 
@@ -1255,16 +1410,22 @@ class SessionManager:
         project_notebook = project.get("notebook")
         if isinstance(project_notebook, dict):
             notebook.update(project_notebook)
+            if (
+                "max_entry_bytes" not in project_notebook
+                and "max_entry_chars" in project_notebook
+            ):
+                notebook["max_entry_bytes"] = project_notebook["max_entry_chars"]
         try:
             max_entries = int(notebook.get("max_entries", MAX_NOTEBOOK_ENTRIES))
-            max_entry_chars = int(
-                notebook.get("max_entry_chars", MAX_NOTEBOOK_ENTRY_CHARS)
+            max_entry_bytes = int(
+                notebook.get("max_entry_bytes")
+                or notebook.get("max_entry_chars", MAX_NOTEBOOK_ENTRY_BYTES)
             )
         except (TypeError, ValueError):
-            max_entries, max_entry_chars = MAX_NOTEBOOK_ENTRIES, MAX_NOTEBOOK_ENTRY_CHARS
+            max_entries, max_entry_bytes = MAX_NOTEBOOK_ENTRIES, MAX_NOTEBOOK_ENTRY_BYTES
         notebook = {
             "max_entries": max(1, min(max_entries, MAX_NOTEBOOK_ENTRIES)),
-            "max_entry_chars": max(256, min(max_entry_chars, MAX_NOTEBOOK_ENTRY_CHARS)),
+            "max_entry_bytes": max(256, min(max_entry_bytes, MAX_NOTEBOOK_ENTRY_BYTES)),
         }
         return {
             **self._settings,
@@ -1423,8 +1584,13 @@ class SessionManager:
             incoming = updates["notebook"]
             try:
                 max_entries = int(incoming.get("max_entries", MAX_NOTEBOOK_ENTRIES))
-                max_entry_chars = int(
-                    incoming.get("max_entry_chars", MAX_NOTEBOOK_ENTRY_CHARS)
+                max_entry_bytes = int(
+                    incoming.get(
+                        "max_entry_bytes"
+                    )
+                    or incoming.get(
+                        "max_entry_chars", MAX_NOTEBOOK_ENTRY_BYTES
+                    )
                 )
             except (TypeError, ValueError) as error:
                 raise ValueError("invalid notebook limits") from error
@@ -1432,16 +1598,16 @@ class SessionManager:
                 raise ValueError(
                     f"notebook max entries must be between 1 and {MAX_NOTEBOOK_ENTRIES}"
                 )
-            if not 256 <= max_entry_chars <= MAX_NOTEBOOK_ENTRY_CHARS:
+            if not 256 <= max_entry_bytes <= MAX_NOTEBOOK_ENTRY_BYTES:
                 raise ValueError(
-                    "notebook max entry chars must be between 256 and "
-                    f"{MAX_NOTEBOOK_ENTRY_CHARS}"
+                    "notebook max entry bytes must be between 256 and "
+                    f"{MAX_NOTEBOOK_ENTRY_BYTES}"
                 )
             updates = {
                 **updates,
                 "notebook": {
                     "max_entries": max_entries,
-                    "max_entry_chars": max_entry_chars,
+                    "max_entry_bytes": max_entry_bytes,
                 },
             }
         self._settings.update(updates)
@@ -1609,6 +1775,34 @@ class SessionManager:
             execution_mode = None
         if not isinstance(sequence, int) or isinstance(sequence, bool):
             sequence = None
+        receipt_key = ":".join(
+            str(value or "")
+            for value in (
+                parent_thread_id,
+                payload.get("turnId") or payload.get("turn_id"),
+                event.get("item_id") or event.get("itemId") or call.get("id"),
+            )
+        )
+        if not receipt_key.strip(":"):
+            return
+        if self._delegation_receipts.get(receipt_key, {}).get("status") in {
+            "materialized",
+            "completed",
+        }:
+            return
+        self._record_delegation_receipt(
+            receipt_key,
+            {
+                "parent_thread_id": parent_thread_id,
+                "child_thread_id": child_thread_id,
+                "prompt": prompt,
+                "title": arguments.get("title"),
+                "project_id": project_id,
+                "group_id": group_id,
+                "execution_mode": execution_mode,
+                "sequence": sequence,
+            },
+        )
         asyncio.create_task(
             self._start_delegated_child(
                 parent_thread_id,
@@ -1619,6 +1813,7 @@ class SessionManager:
                 group_id,
                 execution_mode,
                 sequence,
+                receipt_key,
             )
         )
 
@@ -1632,8 +1827,15 @@ class SessionManager:
         group_id: str | None,
         execution_mode: str | None,
         sequence: int | None,
+        receipt_key: str | None = None,
     ) -> None:
         try:
+            existing = self._canonical_thread(child_thread_id, project_id)
+            if existing:
+                if receipt_key:
+                    self._update_delegation_receipt(receipt_key, "materialized")
+                await self.reconcile_child_operations(project_id or self._current_project_id)
+                return
             await self.start_child_task(
                 parent_thread_id,
                 child_thread_id,
@@ -1644,11 +1846,34 @@ class SessionManager:
                 execution_mode,
                 sequence,
             )
+            if receipt_key:
+                self._update_delegation_receipt(receipt_key, "materialized")
         except Exception:
+            if receipt_key:
+                self._update_delegation_receipt(receipt_key, "failed")
             logger.exception(
                 "Unable to start delegated child %s from %s",
                 child_thread_id,
                 parent_thread_id,
+            )
+
+    async def reconcile_delegation_receipts(self, project_id: str) -> None:
+        """Retry pending delegation intents after Gateway recovery."""
+        for key, receipt in list(self._delegation_receipts.items()):
+            if receipt.get("project_id") != project_id:
+                continue
+            if receipt.get("status") not in {"pending", "materialized"}:
+                continue
+            await self._start_delegated_child(
+                str(receipt.get("parent_thread_id") or ""),
+                str(receipt.get("child_thread_id") or ""),
+                str(receipt.get("prompt") or ""),
+                receipt.get("title"),
+                project_id,
+                receipt.get("group_id"),
+                receipt.get("execution_mode"),
+                receipt.get("sequence"),
+                key,
             )
 
     def resolve_approval(

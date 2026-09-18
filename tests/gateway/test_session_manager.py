@@ -362,6 +362,82 @@ def test_subagent_settings_keep_capacity_only(mock_session_manager):
     assert settings["subagent"] == {"max_concurrent_children": 3}
 
 
+def test_notebook_limits_merge_global_defaults_and_project_override(
+    mock_session_manager,
+):
+    """Runtime env uses canonical byte limits with legacy project compatibility."""
+    mock_session_manager._settings["notebook"] = {
+        "max_entries": 12,
+        "max_entry_bytes": 2048,
+    }
+    project = mock_session_manager._projects_registry["default"]
+    env = mock_session_manager._runtime_env(project)
+    assert env["MINI_AGENT_NOTEBOOK_MAX_ENTRIES"] == "12"
+    assert env["MINI_AGENT_NOTEBOOK_MAX_ENTRY_BYTES"] == "2048"
+    assert env["MINI_AGENT_NOTEBOOK_MAX_ENTRY_CHARS"] == "2048"
+
+    project["notebook"] = {"max_entries": 8, "max_entry_chars": 1024}
+    env = mock_session_manager._runtime_env(project)
+    assert env["MINI_AGENT_NOTEBOOK_MAX_ENTRIES"] == "8"
+    assert env["MINI_AGENT_NOTEBOOK_MAX_ENTRY_BYTES"] == "1024"
+
+
+def test_delegation_receipts_are_bounded_and_reloadable(mock_session_manager, tmp_path):
+    """A pending delegation survives Gateway state reload without full history."""
+    mock_session_manager._state_dir = tmp_path
+    mock_session_manager._record_delegation_receipt(
+        "parent:turn:call",
+        {
+            "parent_thread_id": "parent",
+            "child_thread_id": "child",
+            "prompt": "inspect the boundary",
+            "project_id": "default",
+        },
+    )
+    reloaded = SessionManager()
+    reloaded._state_dir = tmp_path
+    reloaded._load_delegation_receipts()
+
+    assert reloaded._delegation_receipts["parent:turn:call"]["status"] == "pending"
+    assert reloaded._delegation_receipts["parent:turn:call"]["prompt"] == (
+        "inspect the boundary"
+    )
+
+
+@pytest.mark.asyncio
+async def test_reconcile_child_operations_drains_each_persisted_parent(
+    mock_session_manager, monkeypatch
+):
+    """Runtime attach scans durable child operations instead of waiting for a settlement."""
+    monkeypatch.setattr(
+        mock_session_manager,
+        "list_project_sessions",
+        lambda _project_id, limit=128: {
+            "data": [
+                {
+                    "operation_parent_thread_id": "parent-a",
+                    "operation_status": "queued",
+                    "thread_id": "child-a",
+                },
+                {
+                    "operation_parent_thread_id": "parent-b",
+                    "operation_status": "queued",
+                    "thread_id": "child-b",
+                },
+            ]
+        },
+    )
+    drain = AsyncMock()
+    monkeypatch.setattr(mock_session_manager, "_drain_child_queue", drain)
+
+    await mock_session_manager.reconcile_child_operations("default")
+
+    assert {call.args[0] for call in drain.await_args_list} == {
+        "parent-a",
+        "parent-b",
+    }
+
+
 @pytest.mark.asyncio
 async def test_continuation_preference_waits_for_goal_runtime_to_settle(
     mock_session_manager, monkeypatch

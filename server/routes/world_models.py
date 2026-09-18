@@ -83,7 +83,7 @@ class UpdateProjectRequest(BaseModel):
     )
     notebook: dict[str, Any] | None = Field(
         default=None,
-        description="Project Notebook max entries and single-entry character limit",
+        description="Project Notebook max entries and single-entry byte limit",
     )
 
 

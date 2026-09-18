@@ -258,6 +258,7 @@ export default function SidePanel({
   skillsError = null,
   onToggleSkillGroup,
   onInsertSkill,
+  onOpenThread,
 }) {
   const [activeTab, setActiveTab] = useState(() => normalizePanelTab(initialTab));
   const [worldData, setWorldData] = useState(null);
@@ -771,7 +772,13 @@ export default function SidePanel({
           )}
 
           {activeTab === 'status' && (
-            <StatusDetailsPane status={status} sessionMeta={sessionMeta} />
+            <StatusDetailsPane
+              status={status}
+              sessionMeta={sessionMeta}
+              threadId={threadId}
+              projectId={projectId}
+              onOpenThread={onOpenThread}
+            />
           )}
 
           {activeTab === 'thread_history' && (

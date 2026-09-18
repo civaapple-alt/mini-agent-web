@@ -112,12 +112,13 @@ project > Agent Skills user > Mini Agent user > builtin > plugin 的优先级合
 响应包含最多 64 个 Skill 的
 `name`、`qualifiedName`、兼容 `aliases`、描述、来源、分组和启用状态，
 以及最多 8 个 builtin group。WebStudio 默认把 `pstack` 写入新 Project
-的 `builtin_skill_groups`；面板关闭它会在无活动 Turn/审批时重启该 Project
-runtime，并让 `+ pstack` 与 `$pstack:skill` 入口 fail closed。
+的 `builtin_skill_groups`；面板可以按 Catalog 启用或关闭任意 group，并在无活动
+Turn 或审批时重启该 Project runtime。关闭 group 会让对应的 `+ <group>` 与
+`$<group>:skill` 入口 fail closed。
 
 Turn 请求通过 `selectedSkills` 和可选 `workflow` 传递到 SDK：
-`$pstack:architect` 是 Skill 级显式正文加载，`+ pstack` 是当前 Turn
-的 metadata-first Skill Group 激活。Gateway 只转发清理后的 prompt 和结构化
+`$group:skill` 是 Skill 级显式正文加载，`+ <group>` 是当前 Turn 的
+metadata-first Skill Group 激活。Gateway 只转发清理后的 prompt 和结构化
 名称，不接受或转发 Skill 路径/正文；Host 负责最终校验、8 个 Skill 和 32 KiB
 正文限制。结构化 `skill_group_activated`、`skills_loaded` 和
 `skills_load_failed` 事件沿 SSE/WebSocket/replay 原样转发。`skills_loaded` 的

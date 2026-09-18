@@ -95,8 +95,9 @@ Get-ChildItem -Recurse -Filter SKILL.md "$source\data" | Measure-Object
    }
    ```
 
-6. 将 `world_projects.py` 的 pstack fallback 改为 Catalog 或 manifest 的真实内容，
-   不在路由中补造 pstack group。
+6. 将 `world_projects.py` 的 pstack fallback 改为通用的资源组元数据补全：manifest
+   中已有的 group 以运行时内容为准；资源目录中可用但未启用的 group 以
+   `enabled: false` 展示，供用户重新启用。不为 pstack 单独维护 fallback。
 7. 将 `SkillPanel.jsx` 的组卡片、开关、排序、提示和 Skill 标签改为通用逻辑。
 8. 保留 `InputBar.jsx` 和 `skillTokens.js` 的现有 Catalog 驱动逻辑，并增加
    pstack 与 knowledge-work 并存时的测试。
@@ -117,7 +118,7 @@ Get-ChildItem -Recurse -Filter SKILL.md "$source\data" | Measure-Object
 | --- | --- | --- | --- | --- | --- |
 | P0-01 | 资源目录同时包含 pstack 和 knowledge-work | 运行同步器 | 两个 group 都有独立 marker、目标目录和同步结果 | knowledge-work 同步失败时 pstack 目标目录内容和 marker 不变 | Gateway 单元测试，检查目录、marker 和 hash |
 | P0-02 | pstack 已同步，knowledge-work 内容发生变化 | 再次运行同步器 | 只有 knowledge-work 被原子替换 | pstack 的文件、hash 和 marker 不变 | 同步器隔离测试 |
-| P0-03 | Project 启用两个 group | 请求 `/api/skills` 并打开 Skill 面板 | 返回真实 group；面板显示两个通用 group 卡片 | manifest 缺少 pstack 时，路由不会凭空注入 pstack | Gateway 路由测试和前端组件测试 |
+| P0-03 | Project 启用两个 group | 请求 `/api/skills` 并打开 Skill 面板 | 返回真实 group；面板显示两个通用 group 卡片 | manifest 缺少某个 group 时，路由只按资源组元数据补充 disabled 条目，不为 pstack 单独注入 | Gateway 路由测试和前端组件测试 |
 | P0-04 | Project 只启用 knowledge-work | 使用 `+ knowledge-work` 或 `$knowledge-work:data` | 事件包含正确的 group 和 Skill 标识；正文只在需要时读取 | 使用未知 group 或被禁用 group 时不读取正文、不执行对应 Skill | Catalog、激活和 fail-closed 测试 |
 | P0-05 | 同步器已完成一次同步 | 重复运行同步器 | 返回无变化结果，不产生不必要的替换 | 内容未变化但 target 被重新删除和复制 | 幂等测试和文件 hash 检查 |
 | P0-06 | 已选 Skill 正文需要进入当前 Turn | 完成一次带 Skill 的请求 | 正文只存在于受限的当前 Turn 上下文 | 正文出现在后续会话历史或全局 system prompt | Harness 场景、事件和历史断言 |
@@ -254,6 +255,23 @@ git diff --check
 
 验证不得依赖付费 Provider，也不应要求真实 MCP 登录。P1 必须运行 deterministic
 mock-provider Harness 场景。
+
+## 实施记录
+
+2026-09-18 的实现已完成 P0 基础和 P1 资源边界：
+
+- `server/builtin_skills.py` 已按资源组元数据同步多个 group，并为每个 group 保留
+  独立的版本、源 commit、内容 hash、原子替换和失败回滚记录；
+- `knowledge-work` 已导入 `product-management`、`productivity` 和 `data` 三个入口，
+  导入器执行 source commit、逐目录许可证和大小预算检查；
+- Gateway、SkillPanel、加号入口和 `$` 激活路径已改为通用 group 逻辑，未知或禁用
+  group 继续 fail closed；
+- Host/Capabilities 已按启用的 group 发现 builtin Skill，且不改变 Core/Protocol；
+- 已有 Gateway、前端、Capabilities 和 Host 测试覆盖多组隔离、Catalog 展示、显式激活、
+  未知 group、幂等同步和 group id 边界。
+
+P1 的三个 mock-provider Harness 场景仍是合并前的证据门槛；在这些场景补齐前，本提案
+不把模型输出结构宣称为已验证完成。实现提交不得使用付费 Provider 或真实 MCP 登录。
 
 ## 后续明确不纳入本短期提案的能力
 

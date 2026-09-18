@@ -1,20 +1,24 @@
 # Skills integration
 
-WebStudio ships the ChatGPT-compatible `pstack` skill group and exposes it as
-Mini Agent builtin skills. The App Server owns discovery and activation. The
-Gateway and Web Studio consume the resulting capability manifest.
+WebStudio ships the ChatGPT-compatible `pstack` group and the curated,
+read-only `knowledge-work` group as Mini Agent builtin skills. The App Server
+owns discovery and activation. The Gateway and Web Studio consume the
+resulting capability manifest.
 
 ## Built-in skill installation
 
-At Gateway startup, WebStudio reads
-`resources/builtin-skills/pstack` and synchronizes the 26 `SKILL.md` files to
-`%USERPROFILE%/.mini-agent/skills/builtin/pstack`. The synchronizer writes a
-version marker and source hash. If both values match, it leaves the installed
-directory unchanged. A changed resource set is copied to a staging directory
-and switched into place atomically.
+At Gateway startup, WebStudio discovers each group under
+`resources/builtin-skills` and synchronizes it to
+`%USERPROFILE%/.mini-agent/skills/builtin/<group>`. The current groups are
+`pstack` and `knowledge-work`. Each group has an independent version marker,
+source hash, and optional source commit. If the marker matches, the
+synchronizer leaves that group unchanged. A changed group is copied to a
+staging directory and switched into place atomically; another group is not
+replaced when one group changes.
 
-The first release includes skill bodies and metadata only. It does not install
-the `pstack` plugin's MCP servers, hooks, commands, or Cursor-specific features.
+Builtin resources include skill bodies, metadata, and bounded references only.
+They do not install MCP servers, hooks, commands, plugin manifests, or external
+write actions.
 
 ## Project settings
 
@@ -22,14 +26,14 @@ Each Project stores the enabled builtin groups in `builtin_skill_groups`:
 
 ```json
 {
-  "builtin_skill_groups": ["pstack"]
+  "builtin_skill_groups": ["pstack", "knowledge-work"]
 }
 ```
 
-New Projects enable `pstack`. An empty list disables all builtin groups for that
-Project. Changing the list while a Turn or approval is active returns HTTP 409.
-After the change, the Gateway restarts only that Project's runtime and reads a
-new capability manifest.
+New Projects enable only `pstack`. An empty list disables all builtin groups
+for that Project. Changing the list while a Turn or approval is active returns
+HTTP 409. After the change, the Gateway restarts only that Project's runtime
+and reads a new capability manifest.
 
 ## Skill catalog
 
@@ -45,7 +49,8 @@ The response is derived from the selected runtime's latest `initialize` result:
 {
   "projectId": "project-id",
   "builtinSkillGroups": [
-    {"id": "pstack", "version": "0.2.0", "enabled": true}
+    {"id": "pstack", "version": "0.2.0", "enabled": true},
+    {"id": "knowledge-work", "version": "0.1.0", "enabled": true}
   ],
   "skills": [
     {
@@ -67,34 +72,32 @@ skill bodies. The Gateway does not scan skill directories for the frontend.
 ## Skill panel
 
 The WebStudio Skill tab renders the complete bounded catalog returned by the
-runtime. It does not use a second hardcoded pstack list. The pstack section
-shows each returned Skill's canonical name, description, source, and compatible
-aliases, so the panel remains accurate when the builtin resource changes.
+runtime. It does not maintain a second group or Skill list. Each returned group
+has its own status, activation labels, and Skill entries, so the panel remains
+accurate when a builtin resource changes.
 
-The panel distinguishes the two pstack entry points:
+The panel distinguishes the two entry points for every enabled group:
 
 | Panel label | Meaning | Body loading |
 | --- | --- | --- |
-| `+ pstack · 组内按需` | Turn-level workflow activation; pstack becomes the candidate group and the model selects relevant Skills from metadata. | No bulk preload; relevant bodies are read on demand. |
-| `$ 直接调用` | Skill-level activation; the user names one Skill such as `$pstack:architect`. | Host loads the selected body before model execution. |
+| `+ <group> · 组内按需` | Turn-level workflow activation; the selected group becomes the candidate group and the model selects relevant Skills from metadata. | No bulk preload; relevant bodies are read on demand. |
+| `$ 直接调用` | Skill-level activation; the user names one Skill such as `$knowledge-work:data`. | Host loads the selected body before model execution. |
 
-All enabled pstack Skills can use both entry points. `+ pstack` is not a
-shortcut for loading all 26 bodies, and `$pstack:skill` is not a request to
-activate the whole group. The panel's `$` insertion always uses the canonical
-qualified name; `pstack-plugin:skill` and the short name remain visible as
-compatibility aliases when provided by the manifest.
+All enabled groups can use both entry points. `+ <group>` is not a shortcut for
+loading every body, and `$<group>:skill` is not a request to activate the whole
+group. The panel's `$` insertion always uses the canonical qualified name;
+compatibility aliases remain visible when provided by the manifest.
 
-If the group status is enabled but the catalog contains no pstack Skill entry,
-the panel shows a runtime-catalog warning and asks the user to refresh or
-restart the Project runtime. It does not scan the builtin directory or invent
-metadata in the browser.
+If a group is enabled but the catalog contains no Skill entry for it, the panel
+shows a runtime-catalog warning and asks the user to refresh or restart the
+Project runtime. It does not scan the builtin directory or invent metadata in
+the browser.
 
 ## Explicit activation
 
-The input parser recognizes `$skill-name`, `$pstack:skill-name`, and the
-Codex compatibility form `$pstack-plugin:skill-name` at the start of a token.
-It removes recognized tokens from the user prompt and sends their canonical
-names in
+The input parser recognizes `$skill-name` and `$group:skill-name` at the start
+of a token. It removes recognized tokens from the user prompt and sends their
+canonical names in
 `selectedSkills`:
 
 ```json
@@ -163,7 +166,7 @@ event replay path retains them. Web Studio renders a successful event as
 Normal metadata-first discovery does not preload or emit an event. When the
 model first reads an enabled Skill's `SKILL.md`, the App Server emits
 `skills_loaded(phase: "started", activation: "on_demand")` before the read and
-`skills_loaded(phase: "loaded")` after success. With `+ pstack`,
+`skills_loaded(phase: "loaded")` after success. With `+ <group>`,
 `skill_group_activated` is emitted before execution and the same on-demand
 events identify the concrete Skills selected by the model. Reads of
 `references/`, `scripts/`, `assets/`, and other files below an already loaded
@@ -174,28 +177,28 @@ The runtime catalog also discovers direct user Skills from
 `%USERPROFILE%/.mini-agent/skills` and `%USERPROFILE%/.agents/skills`, in
 addition to project Skills and synchronized builtin groups. The fixed priority
 is project, Agent Skills user, Mini Agent user, builtin, then plugin. Higher
-priority unqualified entries shadow lower-priority entries; grouped pstack
-entries retain names such as `pstack:how`.
+priority unqualified entries shadow lower-priority entries; grouped entries
+retain names such as `pstack:how` and `knowledge-work:data`.
 
 ## Plugin workflow activation
 
-The plus menu and `+ pstack task` shorthand set a turn-local workflow without
+The plus menu and `+ <group> task` shorthand set a turn-local workflow without
 changing Project settings:
 
 ```json
 {
   "prompt": "重构这个模块",
-  "selectedSkills": ["pstack:architect"],
-  "workflow": {"kind": "skill_group", "id": "pstack", "mode": "auto"}
+  "selectedSkills": ["knowledge-work:data"],
+  "workflow": {"kind": "skill_group", "id": "knowledge-work", "mode": "auto"}
 }
 ```
 
-`+ pstack` adds group metadata and lets the model choose relevant Skill bodies
-through `read_file`; it does not pre-load all 26 files or call a routing model.
+`+ <group>` adds group metadata and lets the model choose relevant Skill bodies
+through `read_file`; it does not pre-load every file or call a routing model.
 The event stream shows `skill_group_activated`, then emits the same started and
 loaded on-demand events for each first `SKILL.md` read with
 `activation: "on_demand"`.
-Disabling pstack in the panel disables both entry points for the Project.
+Disabling a group in the panel disables both entry points for that group.
 
 ## Composer files and local paths
 

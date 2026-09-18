@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
+from server.builtin_skills import builtin_skill_group_specs
 from server.routes.world_models import (
     CreateProjectRequest,
     SwitchProjectRequest,
@@ -21,13 +22,39 @@ async def list_skills(project_id: str | None = None) -> dict[str, Any]:
     """Return the bounded Skill catalog advertised by the project runtime."""
     client = await session_manager.get_client_for_project(project_id)
     manifest = getattr(client, "capability_manifest", {}) or {}
-    groups = manifest.get("builtinSkillGroups", []) or []
-    if not any(group.get("id") == "pstack" for group in groups if isinstance(group, dict)):
-        groups = [{"id": "pstack", "version": "0.2.0", "enabled": False}, *groups]
+    raw_groups = manifest.get("builtinSkillGroups", []) or []
+    raw_skills = manifest.get("availableSkills", []) or []
+    groups = (
+        [
+            group
+            for group in raw_groups
+            if isinstance(group, dict) and isinstance(group.get("id"), str)
+        ][:8]
+        if isinstance(raw_groups, list)
+        else []
+    )
+    group_ids = {group.get("id") for group in groups}
+    for spec in builtin_skill_group_specs():
+        if len(groups) >= 8:
+            break
+        if spec["id"] not in group_ids:
+            groups.append(
+                {
+                    "id": spec["id"],
+                    "version": spec["version"],
+                    "enabled": False,
+                }
+            )
+            group_ids.add(spec["id"])
+    skills = (
+        [skill for skill in raw_skills if isinstance(skill, dict)][:64]
+        if isinstance(raw_skills, list)
+        else []
+    )
     return {
         "projectId": project_id or session_manager._current_project_id,
-        "builtinSkillGroups": groups[:8],
-        "skills": (manifest.get("availableSkills", []) or [])[:64],
+        "builtinSkillGroups": groups,
+        "skills": skills,
     }
 
 # -----------------------------------------------------------------------------

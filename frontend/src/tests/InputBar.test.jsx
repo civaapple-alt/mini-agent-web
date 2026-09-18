@@ -115,6 +115,22 @@ describe('InputBar composer popups', () => {
     expect(screen.queryByText('添加 (+)')).toBeNull();
   });
 
+  it('lists every enabled runtime Skill group in the plus menu', () => {
+    render(
+      <InputBar
+        {...props}
+        skillGroups={[
+          { id: 'pstack', version: '0.2.0', enabled: true },
+          { id: 'knowledge-work', version: '0.1.0', enabled: true },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle('添加文件、目标、计划或当前 Turn 的插件工作流'));
+    expect(screen.getByRole('button', { name: /\+ pstack/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: /\+ knowledge-work/ })).toBeDefined();
+  });
+
   it('shows a Target chip without activating Goal before submit', () => {
     const onStartGoal = vi.fn();
     render(<InputBar {...props} onStartGoal={onStartGoal} />);

@@ -1,0 +1,35 @@
+{
+  "id": "knowledge-work",
+  "version": "0.1.0",
+  "source_repository": "https://github.com/anthropics/knowledge-work-plugins",
+  "source_commit": "bdf7160f2b33598fb0cb3860027e033cbaec7ce6",
+  "license_checks": [
+    {
+      "path": "product-management/LICENSE",
+      "sha256": "3ddf9be5c28fe27dad143a5dc76eea25222ad1dd68934a047064e56ed2fa40c5"
+    },
+    {
+      "path": "productivity/LICENSE",
+      "sha256": "3ddf9be5c28fe27dad143a5dc76eea25222ad1dd68934a047064e56ed2fa40c5"
+    },
+    {
+      "path": "data/LICENSE",
+      "sha256": "3ddf9be5c28fe27dad143a5dc76eea25222ad1dd68934a047064e56ed2fa40c5"
+    }
+  ],
+  "reference_sizes": {
+    "product-management/write-spec.md": 12743,
+    "product-management/roadmap-update.md": 12809,
+    "product-management/synthesize-research.md": 16623,
+    "product-management/metrics-review.md": 18597,
+    "product-management/product-brainstorming.md": 16395,
+    "product-management/stakeholder-update.md": 15204,
+    "productivity/task-management.md": 2861,
+    "productivity/memory-management.md": 9233,
+    "data/write-query.md": 5029,
+    "data/sql-queries.md": 11708,
+    "data/explore-data.md": 12000,
+    "data/validate-data.md": 15455,
+    "data/data-visualization.md": 11517
+  }
+}

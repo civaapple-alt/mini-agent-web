@@ -86,6 +86,36 @@ async def test_gateway_skill_catalog_is_bounded_and_skill_toggle_rejects_active_
 
 
 @pytest.mark.asyncio
+async def test_gateway_skill_catalog_lists_available_groups_without_pstack_special_case(
+    test_app, monkeypatch
+):
+    client_mock = SimpleNamespace(
+        capability_manifest={
+            "builtinSkillGroups": [
+                {"id": "knowledge-work", "version": "0.1.0", "enabled": True}
+            ],
+            "availableSkills": [],
+        }
+    )
+    monkeypatch.setattr(
+        session_manager, "get_client_for_project", AsyncMock(return_value=client_mock)
+    )
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/skills", params={"project_id": "project-1"})
+
+    assert response.status_code == 200
+    groups = {group["id"]: group for group in response.json()["builtinSkillGroups"]}
+    assert groups["knowledge-work"]["enabled"] is True
+    assert groups["pstack"] == {
+        "id": "pstack",
+        "version": "0.2.0",
+        "enabled": False,
+    }
+
+
+@pytest.mark.asyncio
 async def test_gateway_threads_and_workflows(test_app):
     # Initialize background session manager for testing
     await session_manager.start()

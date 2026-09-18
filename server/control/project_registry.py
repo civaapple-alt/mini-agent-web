@@ -68,6 +68,7 @@ class ProjectRegistry:
                     project.pop("approval", None)
                     project.setdefault("policy", "interactive")
                     project.setdefault("builtin_skill_groups", ["pstack"])
+                    project.setdefault("subagent", {})
                     project_path = project.get("primary_path", "")
                     if (
                         "pytest" in project_path.lower()
@@ -146,6 +147,7 @@ class ProjectRegistry:
                 "access": "project",
                 "policy": "interactive",
                 "builtin_skill_groups": ["pstack"],
+                "subagent": {},
             }
 
         if owner._current_project_id not in owner._projects_registry:
@@ -365,6 +367,20 @@ class ProjectRegistry:
                 isinstance(group, str) and group.strip() for group in groups
             ):
                 project["builtin_skill_groups"] = list(dict.fromkeys(groups))
+        if isinstance(updates.get("subagent"), dict):
+            raw = updates["subagent"]
+            max_children = raw.get("max_concurrent_children")
+            mode = raw.get("default_execution_mode")
+            if (
+                isinstance(max_children, int)
+                and not isinstance(max_children, bool)
+                and 1 <= max_children <= 8
+                and mode in ("parallel", "sequential")
+            ):
+                project["subagent"] = {
+                    "max_concurrent_children": max_children,
+                    "default_execution_mode": mode,
+                }
         if isinstance(updates.get("source_folders"), list):
             project["source_folders"] = updates["source_folders"]
             primary = next(

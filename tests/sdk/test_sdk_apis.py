@@ -87,6 +87,17 @@ async def test_advanced_thread_and_workflow_apis(tmp_path: Path):
         assert session_fork.parent_session_id
         assert session_fork.context_after_bytes <= session_fork.context_before_bytes
 
+        notebook = await client.write_notebook(
+            "architecture.child_session",
+            "Child state is independent.",
+            importance="high",
+        )
+        assert notebook["entries"][0]["importance"] == "high"
+        notebook = await client.read_notebook()
+        assert notebook["entries"][0]["key"] == "architecture.child_session"
+        notebook = await client.forget_notebook("architecture.child_session")
+        assert notebook["entries"] == []
+
         # 4. World Governance & MCP
         world = await client.get_world_state()
         assert hasattr(world, "context") and bool(world.context)

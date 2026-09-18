@@ -77,6 +77,10 @@ class UpdateProjectRequest(BaseModel):
         max_length=8,
         description="Enabled built-in Skill groups for this project",
     )
+    subagent: dict[str, Any] | None = Field(
+        default=None,
+        description="Child Session concurrency and execution mode",
+    )
 
 
 class SwitchProjectRequest(BaseModel):

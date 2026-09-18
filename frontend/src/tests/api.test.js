@@ -96,6 +96,21 @@ test('api client methods construct expected fetch endpoints and payloads', async
     calls[calls.length - 1].url,
     '/api/threads/t-123/notebook?project_id=project-1',
   );
+  await api.writeNotebook('t-123', {
+    key: 'decision',
+    content: 'keep the boundary',
+    importance: 'high',
+  }, { projectId: 'project-1' });
+  assert.equal(
+    calls[calls.length - 1].url,
+    '/api/threads/t-123/notebook?project_id=project-1',
+  );
+  assert.equal(JSON.parse(calls[calls.length - 1].options.body).importance, 'high');
+  await api.forgetNotebook('t-123', 'decision', { projectId: 'project-1' });
+  assert.equal(
+    calls[calls.length - 1].url,
+    '/api/threads/t-123/notebook?project_id=project-1',
+  );
 
   // 2. Settings APIs
   const setRes = await api.updateSettings({ reasoning_effort: 'high' });

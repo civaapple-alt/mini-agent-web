@@ -32,7 +32,9 @@ uv run mini-agent-server-dev
 | `/api/threads/{thread_id}/children` | 创建或读取由该 Thread 派生的独立 child Session/runtime |
 | `/api/threads/{thread_id}/children/{child_thread_id}/cancel` | 通过 child App Server 请求 cooperative interrupt |
 | `/api/threads/{thread_id}/children/{child_thread_id}/retry` | 为已结束的失败/取消 child 启动有界的新 attempt |
-| `/api/threads/{thread_id}/notebook` | 读取 SessionStore 所有的有界 notebook 投影 |
+| `/api/threads/{thread_id}/notebook` | 读取当前或父级只读的有界 Notebook 投影 |
+| `POST /api/threads/{thread_id}/notebook` | 通过当前 App Server 写入 Notebook 条目 |
+| `DELETE /api/threads/{thread_id}/notebook` | 通过当前 App Server 遗忘 Notebook 条目 |
 | `/api/threads/{thread_id}/settings` | Thread collaboration mode、Builtin tools、显式推进方式和 App Server `state_revision` |
 | `/api/threads/{thread_id}/goal` | Thread Goal 的读取、设置和清除 |
 | `/api/agent/*` | Turn、Steer、Interrupt 和审批 HTTP 操作 |
@@ -51,19 +53,21 @@ Child task 是 Host/Gateway 的控制面接缝，不是 Core 的调度器：`POS
 client 中启动一个 Turn。父 Turn 可以继续运行；child 的历史、工具审批、runtime
 status 和 `turn/event` 都保持自己的 Thread/Session 身份。`GET` 同一路径从
 SessionStore 的 `forked_from` lineage 和 live runtime projection 组合读取 child，
-而不是维护第二份 child history。第一版限制每个父 Thread 同时最多两个 active
-children、只允许 exact context；compact fork 仍要求父 Thread idle。
+而不是维护第二份 child history。Child 最多一层，每个父 Thread 的 active children
+受 `1..=8` 配置限制，默认两个；`parallel` 按槽位启动，`sequential` 按 operation
+group 排队。compact fork 仍要求父 Thread idle。
 
 Child 的 `operation_id`、attempt 和 `queued`/`running`/`awaiting_approval`/
 `completed`/`failed`/`cancelled` 状态来自 SessionStore 的 append-only
 `operation` 记录。Gateway 重启后从 catalog 重建投影；`cancel` 只发出标准
 `turn/interrupt`，不会删除 Session，`retry` 创建新的 child Turn 并递增
 attempt。没有在线进程时，Gateway 返回需要恢复/重新 attach 的状态，不伪造
-成功结果。Child 最多一层、每个父 Thread 最多两个 active children。
+成功结果。队列和 group metadata 持久化在 operation 记录中，重启后仍可恢复。
 
-Session notebook 通过 `/notebook` 读取，Gateway 不保存第二份内容缓存。运行时
-恢复时只向模型注入有界摘要；完整条目由 Host/Capabilities 的
-`notebook_read`/`notebook_write` 工具按需处理。
+Session Notebook 通过 `/notebook` 读取和写入，Gateway 不保存第二份内容缓存。
+运行时恢复时只向模型注入有界摘要；完整条目由 App Server 的
+`notebook_read`/`notebook_write`/`notebook_forget` 工具按需处理。Child 可以
+读取 Host 校验后的 parent 快照，但只能修改自己的 Notebook。
 
 技能目录来自当前 Project App Server 的 `initialize.capabilityManifest`，
 不是 Gateway 扫描文件系统的结果。Runtime 会发现项目

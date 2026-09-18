@@ -327,6 +327,10 @@ class ClientPool:
         context_policy: str = "exact",
         operation_id: str | None = None,
         operation_attempt: int | None = None,
+        operation_prompt: str | None = None,
+        operation_group_id: str | None = None,
+        execution_mode: str | None = None,
+        group_sequence: int | None = None,
     ) -> dict[str, Any]:
         """Create and attach a child process backed by a new SessionStore."""
         owner = self.owner
@@ -395,6 +399,10 @@ class ClientPool:
             if operation_id is not None:
                 fork_kwargs["operation_id"] = operation_id
                 fork_kwargs["operation_attempt"] = operation_attempt
+                fork_kwargs["operation_prompt"] = operation_prompt
+                fork_kwargs["operation_group_id"] = operation_group_id
+                fork_kwargs["execution_mode"] = execution_mode
+                fork_kwargs["group_sequence"] = group_sequence
             result = await client.fork_session(**fork_kwargs)
             source_meta = owner.get_thread_meta(source_thread_id, source_project)
             fork_title = title or f"{source_meta.get('title', source_thread_id)} (Fork)"

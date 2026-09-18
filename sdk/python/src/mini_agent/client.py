@@ -769,6 +769,10 @@ class MiniAgentClient:
         context_policy: str = "exact",
         operation_id: str | None = None,
         operation_attempt: int | None = None,
+        operation_prompt: str | None = None,
+        operation_group_id: str | None = None,
+        execution_mode: str | None = None,
+        group_sequence: int | None = None,
     ) -> SessionForkResult:
         """Create an independent persisted Session from a settled checkpoint."""
         params: dict[str, Any] = {
@@ -780,6 +784,14 @@ class MiniAgentClient:
             params["operationId"] = operation_id
         if operation_attempt is not None:
             params["operationAttempt"] = operation_attempt
+        if operation_prompt:
+            params["operationPrompt"] = operation_prompt
+        if operation_group_id:
+            params["operationGroupId"] = operation_group_id
+        if execution_mode:
+            params["executionMode"] = execution_mode
+        if group_sequence is not None:
+            params["groupSequence"] = group_sequence
         res = await self._send_request(
             "session/fork",
             params,
@@ -818,6 +830,9 @@ class MiniAgentClient:
         workflow: dict[str, Any] | None = None,
         operation_id: str | None = None,
         operation_attempt: int | None = None,
+        operation_group_id: str | None = None,
+        execution_mode: str | None = None,
+        group_sequence: int | None = None,
     ) -> TurnSubmissionResult:
         """Submit a turn prompt to the App Server with optional reasoning effort ('low', 'medium', 'high')."""
         payload: dict[str, Any] = {
@@ -837,6 +852,12 @@ class MiniAgentClient:
             payload["operationId"] = operation_id
         if operation_attempt is not None:
             payload["operationAttempt"] = operation_attempt
+        if operation_group_id:
+            payload["operationGroupId"] = operation_group_id
+        if execution_mode:
+            payload["executionMode"] = execution_mode
+        if group_sequence is not None:
+            payload["groupSequence"] = group_sequence
         if effort is not None:
             payload["effort"] = effort
         res = await self._send_request("turn/start", payload)
@@ -1219,6 +1240,61 @@ class MiniAgentClient:
         if not val:
             return None
         return SessionInfo.from_dict(res)
+
+    async def read_notebook(
+        self,
+        thread_id: str | None = None,
+        scope: str = "self",
+    ) -> dict[str, Any]:
+        """Read the current session notebook or its parent read-only snapshot."""
+        if scope not in ("self", "parent"):
+            raise ValueError("scope must be self or parent")
+        res = await self._send_request(
+            "session/notebook/read",
+            {
+                "threadId": thread_id or self._active_thread_id,
+                "scope": scope,
+            },
+        )
+        return res.get("value", res) if isinstance(res, dict) else res
+
+    async def write_notebook(
+        self,
+        key: str,
+        content: str,
+        append: bool = False,
+        importance: str = "normal",
+        thread_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Upsert one entry in the current session notebook."""
+        if importance not in ("critical", "high", "normal", "temporary"):
+            raise ValueError("importance must be critical, high, normal, or temporary")
+        res = await self._send_request(
+            "session/notebook/write",
+            {
+                "threadId": thread_id or self._active_thread_id,
+                "key": key,
+                "content": content,
+                "append": append,
+                "importance": importance,
+            },
+        )
+        return res.get("value", res) if isinstance(res, dict) else res
+
+    async def forget_notebook(
+        self,
+        key: str,
+        thread_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Forget one entry from the current session notebook."""
+        res = await self._send_request(
+            "session/notebook/forget",
+            {
+                "threadId": thread_id or self._active_thread_id,
+                "key": key,
+            },
+        )
+        return res.get("value", res) if isinstance(res, dict) else res
 
     async def get_world_state(self) -> WorldStateResult:
         """Get snapshot of current workspace, sandbox, and execution policy."""

@@ -26,7 +26,7 @@ MAX_RECORD_BYTES = 64 * 1024
 MAX_ERROR_CHARS = 2048
 MAX_CHECKPOINT_MESSAGES = 64
 MAX_CHECKPOINT_MESSAGE_CHARS = 16 * 1024
-MAX_NOTEBOOK_ENTRIES = 32
+MAX_NOTEBOOK_ENTRIES = 64
 MAX_NOTEBOOK_CONTENT_CHARS = 4096
 THREAD_INDEX_FILE_NAME = "thread_index.json"
 THREAD_SETTINGS_FILE_NAME = "thread_settings.json"
@@ -533,15 +533,39 @@ class SessionCatalog:
         }
 
     def read_notebook(
-        self, workspace: Path, project_id: str, thread_id: str
+        self,
+        workspace: Path,
+        project_id: str,
+        thread_id: str,
+        scope: str = "self",
     ) -> dict[str, Any] | None:
-        """Read the bounded Session-owned notebook without exposing its path."""
+        """Read a bounded Session notebook projection without exposing paths."""
         entry = self.find_by_thread(workspace, project_id, thread_id)
         if not entry:
             return None
         base = _session_base(workspace)
         session_path = self._valid_session_path(base, str(entry.get("session_id") or ""))
         if not session_path:
+            return None
+        if scope == "parent":
+            parent_session_id = entry.get("parent_session_id")
+            if not isinstance(parent_session_id, str) or not parent_session_id:
+                return {
+                    "thread_id": thread_id,
+                    "scope": "parent",
+                    "available": False,
+                    "entries": [],
+                }
+            parent_path = self._valid_session_path(base, parent_session_id)
+            if not parent_path:
+                return {
+                    "thread_id": thread_id,
+                    "scope": "parent",
+                    "available": False,
+                    "entries": [],
+                }
+            session_path = parent_path
+        elif scope != "self":
             return None
         notebook = _read_json(session_path / "notebook.json")
         raw_entries = notebook.get("entries")
@@ -555,15 +579,31 @@ class SessionCatalog:
                     raw_entry.get("content"), MAX_NOTEBOOK_CONTENT_CHARS
                 )
                 if key and content is not None:
+                    importance = raw_entry.get("importance")
+                    if importance not in {"critical", "high", "normal", "temporary"}:
+                        importance = "normal"
                     entries.append(
                         {
                             "key": key,
                             "content": content,
+                            "importance": importance,
                             "updated_at": _timestamp(raw_entry.get("updated_at_ms")),
                         }
                     )
+        entries.sort(
+            key=lambda item: (
+                {"critical": 4, "high": 3, "normal": 2, "temporary": 1}.get(
+                    item["importance"], 2
+                ),
+                item.get("updated_at") or "",
+                item["key"],
+            ),
+            reverse=True,
+        )
         return {
             "thread_id": thread_id,
+            "scope": scope,
+            "available": True,
             "version": _bounded_int(notebook.get("version")) or 1,
             "revision": _bounded_int(notebook.get("revision")),
             "updated_at": _timestamp(notebook.get("updated_at_ms")),
@@ -651,6 +691,20 @@ class SessionCatalog:
                         ),
                         "operation_turn_id": _bounded_text(record.get("turn_id"), 128),
                         "operation_attempt": _bounded_int(record.get("attempt")),
+                        "operation_prompt": _bounded_text(
+                            record.get("prompt"), 32 * 1024
+                        ),
+                        "operation_group_id": _bounded_text(
+                            record.get("operation_group_id"), 128
+                        ),
+                        "execution_mode": _bounded_text(
+                            record.get("execution_mode"), 16
+                        ),
+                        "group_sequence": _bounded_int(
+                            record.get("group_sequence")
+                        )
+                        if record.get("group_sequence") is not None
+                        else None,
                         "operation_result": _bounded_text(
                             record.get("result"), 16 * 1024
                         ),

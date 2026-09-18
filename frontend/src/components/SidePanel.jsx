@@ -18,12 +18,14 @@ import {
   Activity,
   History,
   Sparkles,
+  BookOpen,
 } from 'lucide-react';
 import { api } from '../api';
 import { readStateRevision, shouldApplyStateRevision } from '../utils/revisionState';
 import StatusDetailsPane from './StatusDetailsPane';
 import ThreadHistoryPane from './ThreadHistoryPane';
 import SkillPanel from './SkillPanel';
+import NotebookPane from './NotebookPane';
 import './SidePanel.css';
 
 const BUILTIN_TOOL_INFO = {
@@ -223,6 +225,7 @@ function normalizePanelTab(tab) {
   if (tab === 'tools' || tab === 'builtin_tools') return 'workspace_tools';
   if (tab === 'plan' || tab === 'plan_view') return 'plan_view';
   if (tab === 'plan_goal' || tab === 'goal') return 'goal';
+  if (tab === 'notebook' || tab === 'memory') return 'notebook';
   if (tab === 'history' || tab === 'thread_history') return 'thread_history';
   return tab || 'status';
 }
@@ -703,6 +706,14 @@ export default function SidePanel({
             </button>
 
             <button
+              className={`panel-tab-btn ${activeTab === 'notebook' ? 'active' : ''}`}
+              onClick={() => setActiveTab('notebook')}
+            >
+              <BookOpen size={14} />
+              <span>记忆</span>
+            </button>
+
+            <button
               className={`panel-tab-btn ${activeTab === 'thread_history' ? 'active' : ''}`}
               onClick={() => setActiveTab('thread_history')}
             >
@@ -950,6 +961,10 @@ export default function SidePanel({
                 onClearGoal={handleClearGoal}
               />
             </div>
+          )}
+
+          {activeTab === 'notebook' && (
+            <NotebookPane threadId={threadId} projectId={projectId} onToast={onToast} />
           )}
 
           {/* TAB 3: MCP Status */}

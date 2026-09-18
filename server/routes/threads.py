@@ -98,6 +98,20 @@ class ChildTaskRequest(BaseModel):
     project_id: str | None = Field(
         default=None, description="Canonical project routing context"
     )
+    group_id: str | None = Field(default=None, max_length=128)
+    execution_mode: Literal["parallel", "sequential"] | None = Field(default=None)
+    sequence: int | None = Field(default=None, ge=0)
+
+
+class NotebookWriteRequest(BaseModel):
+    key: str = Field(..., min_length=1, max_length=128)
+    content: str = Field(..., max_length=32768)
+    append: bool = False
+    importance: Literal["critical", "high", "normal", "temporary"] = "normal"
+
+
+class NotebookForgetRequest(BaseModel):
+    key: str = Field(..., min_length=1, max_length=128)
 
 
 class UpdateThreadSummaryRequest(BaseModel):
@@ -398,6 +412,9 @@ async def start_child_task(
             prompt=req.prompt,
             title=req.title,
             project_id=req.project_id or req.project,
+            group_id=req.group_id,
+            execution_mode=req.execution_mode,
+            sequence=req.sequence,
         )
     except KeyError as err:
         raise HTTPException(status_code=404, detail=str(err)) from err
@@ -452,15 +469,56 @@ async def retry_child_task(
 
 @router.get("/{thread_id}/notebook", summary="Read the Session notebook")
 async def read_thread_notebook(
-    thread_id: str, project_id: str | None = Query(default=None)
+    thread_id: str,
+    scope: Literal["self", "parent"] = Query(default="self"),
+    project_id: str | None = Query(default=None),
 ) -> dict[str, Any]:
     try:
-        notebook = session_manager.read_thread_notebook(thread_id, project_id)
+        notebook = session_manager.read_thread_notebook(thread_id, project_id, scope)
     except KeyError as err:
         raise HTTPException(status_code=404, detail=str(err)) from err
     if notebook is None:
         raise HTTPException(status_code=404, detail=f"Thread '{thread_id}' not found")
     return notebook
+
+
+@router.post("/{thread_id}/notebook", summary="Write the Session notebook")
+async def write_thread_notebook(
+    thread_id: str,
+    req: NotebookWriteRequest,
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """Write the current Thread notebook; parent snapshots are read-only."""
+    try:
+        return await session_manager.write_thread_notebook(
+            thread_id,
+            req.key,
+            req.content,
+            req.append,
+            req.importance,
+            project_id,
+        )
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except (RuntimeError, ValueError, AppServerError, ServerProcessError) as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+
+
+@router.delete("/{thread_id}/notebook", summary="Forget a Session notebook entry")
+async def forget_thread_notebook(
+    thread_id: str,
+    req: NotebookForgetRequest,
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """Forget one entry from the current Thread notebook."""
+    try:
+        return await session_manager.forget_thread_notebook(
+            thread_id, req.key, project_id
+        )
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except (RuntimeError, ValueError, AppServerError, ServerProcessError) as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
 
 
 @router.get("/{thread_id}", summary="Read canonical thread history")

@@ -69,14 +69,14 @@ async def update_project_endpoint(
     try:
         updates = {k: v for k, v in req.model_dump().items() if v is not None}
         if (
-            req.builtin_skill_groups is not None
+            (req.builtin_skill_groups is not None or req.subagent is not None)
             and (
                 session_manager.project_has_active_turn(project_id)
                 or session_manager.project_has_pending_approval(project_id)
             )
         ):
             raise RuntimeError(
-                f"Project '{project_id}' has an active Turn or pending approval; wait for it to settle before changing Skills"
+                f"Project '{project_id}' has an active Turn or pending approval; wait for it to settle before changing runtime settings"
             )
         proj = session_manager.update_project(project_id, updates)
         resolved_project_id = str(proj.get("id") or project_id)

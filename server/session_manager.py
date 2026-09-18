@@ -31,6 +31,7 @@ logger = logging.getLogger("mini_agent.server")
 
 MAX_INTERRUPTED_TURNS = 256
 MAX_CHILD_TASKS_PER_PARENT = 2
+MAX_CONFIGURED_CHILD_TASKS_PER_PARENT = 8
 MAX_CHILD_TASK_PROMPT_BYTES = 32 * 1024
 __all__ = ["SessionManager", "session_manager", "to_json_serializable"]
 
@@ -111,6 +112,10 @@ class SessionManager:
             "auto_scroll": True,
             "word_wrap": True,
             "font_size": 13,
+            "subagent": {
+                "max_concurrent_children": MAX_CHILD_TASKS_PER_PARENT,
+                "default_execution_mode": "parallel",
+            },
         }
 
         # Load persisted state or initialize clean default with only the active workspace
@@ -298,6 +303,10 @@ class SessionManager:
         context_policy: str = "exact",
         operation_id: str | None = None,
         operation_attempt: int | None = None,
+        operation_prompt: str | None = None,
+        operation_group_id: str | None = None,
+        execution_mode: str | None = None,
+        group_sequence: int | None = None,
     ) -> dict[str, Any]:
         return await self._client_pool.fork_thread(
             source_thread_id,
@@ -307,6 +316,10 @@ class SessionManager:
             context_policy,
             operation_id,
             operation_attempt,
+            operation_prompt,
+            operation_group_id,
+            execution_mode,
+            group_sequence,
         )
 
     async def start_child_task(
@@ -316,6 +329,9 @@ class SessionManager:
         prompt: str,
         title: str | None = None,
         project_id: str | None = None,
+        group_id: str | None = None,
+        execution_mode: str | None = None,
+        sequence: int | None = None,
     ) -> dict[str, Any]:
         """Create an exact child Session and run one detached child Turn.
 
@@ -339,6 +355,30 @@ class SessionManager:
         resolved_project_id = self.resolve_thread_project(
             source_thread_id, project_id
         )
+        subagent = self.get_settings(resolved_project_id).get("subagent") or {}
+        try:
+            max_children = int(
+                subagent.get(
+                    "max_concurrent_children", MAX_CHILD_TASKS_PER_PARENT
+                )
+            )
+        except (TypeError, ValueError):
+            max_children = MAX_CHILD_TASKS_PER_PARENT
+        max_children = max(
+            1, min(max_children, MAX_CONFIGURED_CHILD_TASKS_PER_PARENT)
+        )
+        group_id = group_id.strip() if group_id else None
+        if group_id and len(group_id.encode("utf-8")) > 128:
+            raise ValueError("child task group id is too long")
+        execution_mode = execution_mode or str(
+            subagent.get("default_execution_mode", "parallel")
+        )
+        if execution_mode not in {"parallel", "sequential"}:
+            raise ValueError("child execution mode must be parallel or sequential")
+        if execution_mode == "sequential" and not group_id:
+            raise ValueError("sequential child tasks require a group id")
+        if sequence is not None and sequence < 0:
+            raise ValueError("child task sequence must be non-negative")
         async with self._child_task_lock:
             parent = self._canonical_thread(source_thread_id, resolved_project_id)
             if not parent:
@@ -367,10 +407,6 @@ class SessionManager:
                     in self._active_turns_by_project
                 )
             )
-            if active_children >= MAX_CHILD_TASKS_PER_PARENT:
-                raise RuntimeError(
-                    f"parent Thread already has {MAX_CHILD_TASKS_PER_PARENT} active children"
-                )
             if self._canonical_thread(new_thread_id, resolved_project_id):
                 raise RuntimeError(
                     f"child Thread '{new_thread_id}' already exists"
@@ -378,8 +414,17 @@ class SessionManager:
 
             operation_id = f"child:{new_thread_id}"
             operation_attempt = 1
-
-            fork = await self.fork_thread(
+            same_group_active = any(
+                child.get("operation_group_id") == group_id
+                and (child.get("operation_status") or child.get("status"))
+                in {"queued", "running", "awaiting_approval", "in_progress"}
+                for child in children
+                if group_id
+            )
+            queued = active_children >= max_children or (
+                execution_mode == "sequential" and same_group_active
+            )
+            fork_args = (
                 source_thread_id,
                 new_thread_id,
                 title,
@@ -388,19 +433,52 @@ class SessionManager:
                 operation_id,
                 operation_attempt,
             )
+            if queued or group_id or execution_mode != "parallel" or sequence is not None:
+                fork = await self.fork_thread(
+                    *fork_args,
+                    prompt,
+                    group_id,
+                    execution_mode,
+                    sequence,
+                )
+            else:
+                fork = await self.fork_thread(*fork_args)
+            if queued:
+                return {
+                    "parent_thread_id": source_thread_id,
+                    "child_thread_id": new_thread_id,
+                    "project": resolved_project_id,
+                    "session": fork,
+                    "turn_id": None,
+                    "operation_id": operation_id,
+                    "operation_attempt": operation_attempt,
+                    "operation_group_id": group_id,
+                    "execution_mode": execution_mode,
+                    "group_sequence": sequence,
+                    "status": "queued",
+                }
             child_client = await self.get_client_for_thread(
                 new_thread_id, resolved_project_id
             )
-            submission = await child_client.start_turn(
-                prompt=prompt,
-                mode="start",
-                thread_id=new_thread_id,
-                effort=self.get_settings(resolved_project_id).get(
+            turn_kwargs: dict[str, Any] = {
+                "prompt": prompt,
+                "mode": "start",
+                "thread_id": new_thread_id,
+                "effort": self.get_settings(resolved_project_id).get(
                     "reasoning_effort", "high"
                 ),
-                operation_id=operation_id,
-                operation_attempt=operation_attempt,
-            )
+                "operation_id": operation_id,
+                "operation_attempt": operation_attempt,
+            }
+            if group_id or execution_mode != "parallel" or sequence is not None:
+                turn_kwargs.update(
+                    {
+                        "operation_group_id": group_id,
+                        "execution_mode": execution_mode,
+                        "group_sequence": sequence,
+                    }
+                )
+            submission = await child_client.start_turn(**turn_kwargs)
             turn_id = str(getattr(submission, "turn_id", None) or "")
             result: dict[str, Any] = {
                 "parent_thread_id": source_thread_id,
@@ -410,6 +488,9 @@ class SessionManager:
                 "turn_id": turn_id or None,
                 "operation_id": operation_id,
                 "operation_attempt": operation_attempt,
+                "operation_group_id": group_id,
+                "execution_mode": execution_mode,
+                "group_sequence": sequence,
                 "status": "running"
                 if turn_id
                 else str(getattr(submission, "status", "not_started")),
@@ -423,6 +504,7 @@ class SessionManager:
                     new_thread_id,
                     resolved_project_id,
                     turn_id,
+                    source_thread_id,
                 )
             )
             self.set_active_turn(new_thread_id, turn_id, task, resolved_project_id)
@@ -434,6 +516,7 @@ class SessionManager:
         thread_id: str,
         project_id: str,
         turn_id: str,
+        parent_thread_id: str | None = None,
     ) -> None:
         """Keep the child turn registered until its canonical result settles."""
         task = asyncio.current_task()
@@ -445,6 +528,124 @@ class SessionManager:
             logger.exception("Child Turn %s failed while settling", turn_id)
         finally:
             self.clear_active_turn(thread_id, project_id, turn_id, task)
+            try:
+                await self._drain_child_queue(parent_thread_id or thread_id, project_id)
+            except Exception:
+                logger.exception("Unable to drain queued child tasks for %s", thread_id)
+
+    async def _drain_child_queue(
+        self, source_thread_id: str, project_id: str
+    ) -> None:
+        """Start durable queued child operations while configured slots exist."""
+        async with self._child_task_lock:
+            parent = self._canonical_thread(source_thread_id, project_id)
+            if not parent:
+                return
+            subagent = self.get_settings(project_id).get("subagent") or {}
+            try:
+                limit = int(
+                    subagent.get(
+                        "max_concurrent_children", MAX_CHILD_TASKS_PER_PARENT
+                    )
+                )
+            except (TypeError, ValueError):
+                limit = MAX_CHILD_TASKS_PER_PARENT
+            limit = max(1, min(limit, MAX_CONFIGURED_CHILD_TASKS_PER_PARENT))
+            children = await self.list_child_tasks(source_thread_id, project_id)
+            active = [
+                child
+                for child in children
+                if child.get("status")
+                in {"running", "awaiting_approval", "in_progress", "queued"}
+                and child.get("turn_id")
+            ]
+            capacity = limit - len(active)
+            if capacity <= 0:
+                return
+            queued = [child for child in children if child.get("status") == "queued"]
+            queued.sort(
+                key=lambda child: (
+                    child.get("operation_group_id") or "",
+                    child.get("group_sequence")
+                    if child.get("group_sequence") is not None
+                    else 2**31,
+                    child.get("child_thread_id") or "",
+                )
+            )
+            while capacity > 0:
+                candidate = None
+                for child in queued:
+                    group_id = child.get("operation_group_id")
+                    mode = child.get("execution_mode") or "parallel"
+                    if mode == "sequential" and group_id:
+                        if any(
+                            item.get("operation_group_id") == group_id
+                            and item.get("turn_id")
+                            and item.get("status")
+                            in {"running", "awaiting_approval", "in_progress", "queued"}
+                            for item in active
+                        ):
+                            continue
+                        earlier = [
+                            item
+                            for item in queued
+                            if item is not child
+                            and item.get("operation_group_id") == group_id
+                            and item.get("group_sequence") is not None
+                            and child.get("group_sequence") is not None
+                            and item.get("group_sequence") < child.get("group_sequence")
+                        ]
+                        if earlier:
+                            continue
+                    candidate = child
+                    break
+                if candidate is None:
+                    return
+                prompt = str(candidate.get("operation_prompt") or "").strip()
+                child_thread_id = str(candidate.get("child_thread_id") or "")
+                turn_id = str(candidate.get("turn_id") or "")
+                if not prompt or not child_thread_id or turn_id:
+                    return
+                try:
+                    client = await self.get_client_for_thread(
+                        child_thread_id, project_id
+                    )
+                    submission = await client.start_turn(
+                        prompt=prompt,
+                        mode="start",
+                        thread_id=child_thread_id,
+                        effort=self.get_settings(project_id).get(
+                            "reasoning_effort", "high"
+                        ),
+                        operation_id=candidate.get("operation_id"),
+                        operation_attempt=int(
+                            candidate.get("operation_attempt") or 1
+                        ),
+                        operation_group_id=candidate.get("operation_group_id"),
+                        execution_mode=candidate.get("execution_mode"),
+                        group_sequence=candidate.get("group_sequence"),
+                    )
+                    started_turn_id = str(getattr(submission, "turn_id", None) or "")
+                    if not started_turn_id:
+                        return
+                    task = asyncio.create_task(
+                        self._wait_for_child_turn(
+                            client,
+                            child_thread_id,
+                            project_id,
+                            started_turn_id,
+                            source_thread_id,
+                        )
+                    )
+                    self.set_active_turn(
+                        child_thread_id, started_turn_id, task, project_id
+                    )
+                    active.append({**candidate, "turn_id": started_turn_id, "status": "running"})
+                    queued.remove(candidate)
+                    capacity -= 1
+                except Exception:
+                    logger.exception("Unable to start queued child %s", child_thread_id)
+                    return
 
     async def cancel_child_task(
         self, source_thread_id: str, child_thread_id: str, project_id: str | None = None
@@ -506,21 +707,38 @@ class SessionManager:
             )
             attempt = int(child.get("operation_attempt") or 1) + 1
             client = await self.get_client_for_thread(child_thread_id, resolved_project_id)
-            submission = await client.start_turn(
-                prompt=prompt,
-                mode="start",
-                thread_id=child_thread_id,
-                effort=self.get_settings(resolved_project_id).get(
+            retry_kwargs: dict[str, Any] = {
+                "prompt": prompt,
+                "mode": "start",
+                "thread_id": child_thread_id,
+                "effort": self.get_settings(resolved_project_id).get(
                     "reasoning_effort", "high"
                 ),
-                operation_id=operation_id,
-                operation_attempt=attempt,
-            )
+                "operation_id": operation_id,
+                "operation_attempt": attempt,
+            }
+            if (
+                child.get("operation_group_id")
+                or child.get("execution_mode") != "parallel"
+                or child.get("group_sequence") is not None
+            ):
+                retry_kwargs.update(
+                    {
+                        "operation_group_id": child.get("operation_group_id"),
+                        "execution_mode": child.get("execution_mode") or "parallel",
+                        "group_sequence": child.get("group_sequence"),
+                    }
+                )
+            submission = await client.start_turn(**retry_kwargs)
             turn_id = str(getattr(submission, "turn_id", None) or "")
             if turn_id:
                 task = asyncio.create_task(
                     self._wait_for_child_turn(
-                        client, child_thread_id, resolved_project_id, turn_id
+                        client,
+                        child_thread_id,
+                        resolved_project_id,
+                        turn_id,
+                        source_thread_id,
                     )
                 )
                 self.set_active_turn(child_thread_id, turn_id, task, resolved_project_id)
@@ -602,6 +820,10 @@ class SessionManager:
                     "turn_id": active_turn_id,
                     "operation_id": operation_id,
                     "operation_attempt": session.get("operation_attempt") or 1,
+                    "operation_group_id": session.get("operation_group_id"),
+                    "execution_mode": session.get("execution_mode") or "parallel",
+                    "group_sequence": session.get("group_sequence"),
+                    "operation_prompt": session.get("operation_prompt"),
                     "operation_result": session.get("operation_result"),
                     "operation_error": session.get("operation_error"),
                     "recovery_required": status
@@ -862,15 +1084,49 @@ class SessionManager:
         return self._thread_registry.read_any_project_thread(thread_id, project_id)
 
     def read_thread_notebook(
-        self, thread_id: str, project_id: str | None = None
+        self,
+        thread_id: str,
+        project_id: str | None = None,
+        scope: str = "self",
     ) -> dict[str, Any] | None:
         resolved_project_id = self.resolve_thread_project(thread_id, project_id)
         project = self._projects_registry.get(resolved_project_id)
         if not project:
             return None
         return session_catalog.read_notebook(
-            Path(project["primary_path"]), resolved_project_id, thread_id
+            Path(project["primary_path"]), resolved_project_id, thread_id, scope
         )
+
+    async def write_thread_notebook(
+        self,
+        thread_id: str,
+        key: str,
+        content: str,
+        append: bool = False,
+        importance: str = "normal",
+        project_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Write only the current Thread notebook through its runtime authority."""
+        resolved_project_id = self.resolve_thread_project(thread_id, project_id)
+        client = await self.get_client_for_thread(thread_id, resolved_project_id)
+        return await client.write_notebook(
+            key=key,
+            content=content,
+            append=append,
+            importance=importance,
+            thread_id=thread_id,
+        )
+
+    async def forget_thread_notebook(
+        self,
+        thread_id: str,
+        key: str,
+        project_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Forget only the current Thread notebook through its runtime authority."""
+        resolved_project_id = self.resolve_thread_project(thread_id, project_id)
+        client = await self.get_client_for_thread(thread_id, resolved_project_id)
+        return await client.forget_notebook(key=key, thread_id=thread_id)
 
     def session_path_for_thread(
         self, thread_id: str, project_id: str | None = None
@@ -928,8 +1184,28 @@ class SessionManager:
         project = self._projects_registry.get(
             project_id or self._current_project_id, {}
         )
+        subagent = dict(self._settings.get("subagent") or {})
+        project_subagent = project.get("subagent")
+        if isinstance(project_subagent, dict):
+            subagent.update(project_subagent)
+        try:
+            max_children = int(
+                subagent.get("max_concurrent_children", MAX_CHILD_TASKS_PER_PARENT)
+            )
+        except (TypeError, ValueError):
+            max_children = MAX_CHILD_TASKS_PER_PARENT
+        mode = subagent.get("default_execution_mode", "parallel")
+        if mode not in {"parallel", "sequential"}:
+            mode = "parallel"
+        subagent = {
+            "max_concurrent_children": max(
+                1, min(max_children, MAX_CONFIGURED_CHILD_TASKS_PER_PARENT)
+            ),
+            "default_execution_mode": mode,
+        }
         return {
             **self._settings,
+            "subagent": subagent,
             "access": project.get("access", "project"),
             "policy": project.get("policy", "interactive"),
         }
@@ -1059,6 +1335,30 @@ class SessionManager:
 
     def update_settings(self, updates: dict[str, Any]) -> dict[str, Any]:
         """Update system settings."""
+        if isinstance(updates.get("subagent"), dict):
+            incoming = updates["subagent"]
+            try:
+                max_children = int(
+                    incoming.get(
+                        "max_concurrent_children", MAX_CHILD_TASKS_PER_PARENT
+                    )
+                )
+            except (TypeError, ValueError) as error:
+                raise ValueError("invalid subagent concurrency") from error
+            mode = incoming.get("default_execution_mode", "parallel")
+            if not 1 <= max_children <= MAX_CONFIGURED_CHILD_TASKS_PER_PARENT:
+                raise ValueError(
+                    f"subagent concurrency must be between 1 and {MAX_CONFIGURED_CHILD_TASKS_PER_PARENT}"
+                )
+            if mode not in {"parallel", "sequential"}:
+                raise ValueError("subagent execution mode must be parallel or sequential")
+            updates = {
+                **updates,
+                "subagent": {
+                    "max_concurrent_children": max_children,
+                    "default_execution_mode": mode,
+                },
+            }
         self._settings.update(updates)
         self._save_settings()
         logger.info("Updated system settings: %s", updates)

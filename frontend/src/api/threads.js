@@ -59,17 +59,23 @@ export const threadApi = {
 
   async startChildTask(sourceThreadId, newThreadId, prompt, options = {}) {
     const projectId = options.projectId || null;
+    const body = {
+      new_thread_id: newThreadId,
+      prompt,
+      title: options.title || null,
+      project_id: projectId,
+    };
+    if (options.groupId) body.group_id = options.groupId;
+    if (options.executionMode) body.execution_mode = options.executionMode;
+    if (options.sequence !== undefined && options.sequence !== null) {
+      body.sequence = options.sequence;
+    }
     const res = await request(
       `/api/threads/${encodeURIComponent(sourceThreadId || 'default')}/children`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          new_thread_id: newThreadId,
-          prompt,
-          title: options.title || null,
-          project_id: projectId,
-        }),
+        body: JSON.stringify(body),
         ...requestSignal(options),
       },
       projectId,
@@ -113,12 +119,45 @@ export const threadApi = {
 
   async readNotebook(threadId = 'default', options = {}) {
     const targetThread = threadId || 'default';
+    const params = new URLSearchParams();
+    if (options.scope === 'parent') params.set('scope', 'parent');
+    const query = params.toString();
     const res = await request(
-      `/api/threads/${encodeURIComponent(targetThread)}/notebook`,
+      `/api/threads/${encodeURIComponent(targetThread)}/notebook${query ? `?${query}` : ''}`,
       requestSignal(options),
       options.projectId,
     );
     if (!res.ok) throw new Error(`Failed to read notebook for ${targetThread}`);
+    return res.json();
+  },
+
+  async writeNotebook(threadId = 'default', entry = {}, options = {}) {
+    const res = await request(
+      `/api/threads/${encodeURIComponent(threadId)}/notebook`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(entry),
+        ...requestSignal(options),
+      },
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to write notebook for ${threadId}`);
+    return res.json();
+  },
+
+  async forgetNotebook(threadId = 'default', key, options = {}) {
+    const res = await request(
+      `/api/threads/${encodeURIComponent(threadId)}/notebook`,
+      {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key }),
+        ...requestSignal(options),
+      },
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to forget notebook entry for ${threadId}`);
     return res.json();
   },
 

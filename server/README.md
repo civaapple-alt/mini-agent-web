@@ -1,270 +1,81 @@
 # FastAPI Gateway
 
-本目录实现 Mini Agent 的本地 FastAPI 网关。它管理 App Server 子进程，将
-Python SDK 能力映射为 REST/WebSocket，并负责本地连接、审批和项目元数据的
-网关级管理。
+本目录实现 Web Studio 的本地 FastAPI Gateway。Gateway 启动并连接 Python SDK
+client，将 App Server 操作映射为 HTTP 与 WebSocket API，只保存自身的 Project
+和 UI 元数据。Session history、执行、审批与持久化恢复仍由 App Server 决定。
 
-## 启动
+## 启动 Gateway
+
+在仓库根目录运行常规服务：
 
 ```bash
 uv run mini-agent-server
 ```
 
-开发模式：
+开发代码时使用自动重载：
 
 ```bash
 uv run mini-agent-server-dev
 ```
 
-默认监听 `0.0.0.0:8000`。本机可通过 `http://127.0.0.1:8000` 访问，OpenAPI 页面
-为 `/docs`。静态 Web 资源存在时，根路径同时提供 Web Studio。若端口会暴露到不受
-信任的网络，请显式配置 bind host、反向代理和访问控制。
+默认监听 `0.0.0.0:8000`。在 `http://127.0.0.1:8000/docs` 查看生成的 API
+参考；`GET /health` 返回 Gateway 健康状态。构建 `frontend/dist/` 后，`GET /`
+也会提供 Web Studio。
 
-## 路由边界
+若要把监听端口暴露给本机外的网络，请设置明确的 bind host，并在 Gateway 前配置
+身份验证与网络访问控制。CORS 不限制网络访问。
 
-| 路由 | 作用 |
-| --- | --- |
-| `/ws/agent` | Turn 流、审批、Steer、Interrupt 和 runtime notifications |
-| `/api/threads` | Thread 列表、创建、读取、按 source Project 派生独立 Session、摘要和关闭 |
-| `/api/threads/{thread_id}/attach` | 按可选 Project ID/name attach 历史/暂停 Session，或报告外部运行锁 |
-| `/api/threads/{thread_id}/items` | 有界 ThreadItem 历史投影 |
-| `/api/threads/{thread_id}/events` | App Server `turn/event` 的有界 cursor 重放；发生 gap 时回退到 canonical history |
-| `/api/threads/{thread_id}/runtime/status` | 非阻塞 runtime phase、Turn/operation/checkpoint 和错误快照 |
-| `/api/threads/{thread_id}/children` | 创建或读取由该 Thread 派生的独立 child Session/runtime |
-| `/api/threads/{thread_id}/children/{child_thread_id}/cancel` | 通过 child App Server 请求 cooperative interrupt |
-| `/api/threads/{thread_id}/children/{child_thread_id}/retry` | 为已结束的失败/取消 child 启动有界的新 attempt |
-| `/api/threads/{thread_id}/notebook` | 读取当前或父级只读的有界 Notebook 投影 |
-| `POST /api/threads/{thread_id}/notebook` | 通过当前 App Server 写入 Notebook 条目 |
-| `GET /api/threads/{thread_id}/notebook/search?q=...` | 按条目、关键词、内容和缓存的证据元数据检索 Notebook |
-| `DELETE /api/threads/{thread_id}/notebook` | 通过当前 App Server 遗忘 Notebook 条目 |
-| `/api/threads/{thread_id}/settings` | Thread collaboration mode、Builtin tools、显式推进方式和 App Server `state_revision` |
-| `/api/threads/{thread_id}/goal` | Thread Goal 的读取、设置和清除 |
-| `/api/agent/*` | Turn、Steer、Interrupt 和审批 HTTP 操作 |
-| `/api/skills` | 当前 Project 的有界有效 Skill 目录 |
-| `/api/world/*` | World、MCP、Git 和本地工作区探测 |
-| `/api/projects/*` | 本地项目元数据管理 |
-| `/api/settings` | 网关偏好设置 |
-| `/api/workflows/state` | 只读 workflow 聚合投影（含锁定 Session 的 canonical 状态） |
+## 配置
 
-Thread、Turn、Goal 和 ThreadItem 的运行时语义来自 App Server；网关不创建
-第二套运行时状态机。
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `MINI_AGENT_HOST` | `0.0.0.0` | Gateway bind host |
+| `MINI_AGENT_PORT` | `8000` | Gateway bind port |
+| `MINI_AGENT_CORS_ORIGINS` | 本地 Vite 与 Gateway origins | 逗号分隔的允许浏览器 origins |
+| `MINI_AGENT_LOG_DIR` | `logs` | Gateway client 使用的 SDK 日志目录 |
+| `MINI_AGENT_LOG_LEVEL` | `INFO` | Gateway client 使用的 SDK 日志级别 |
+| `MINI_AGENT_WEB_STATE_DIR` | `~/.mini-agent/web` | Gateway 的 Project、UI 与附件元数据目录 |
+| `MINI_AGENT_APP_SERVER_PATH` | `PATH` 中的 `mini-agent-app-server` | SDK 使用的 App Server 可执行文件 |
 
-项目根目录和 Session 附件根目录保持分离。`ProjectRegistry.runtime_env()`
-将主目录、关联只读目录和关联可写目录分别映射到
-`MINI_AGENT_EXTRA_READ_ROOTS` 与 `MINI_AGENT_EXTRA_WRITE_ROOTS`；创建 Thread
-Client 时，Gateway-owned 的附件目录只写入
-`MINI_AGENT_SESSION_READ_ROOTS`。它是当前 Thread 的只读根，不得指向整个
-`~/.mini-agent/sessions`。Gateway 不扫描 SessionStore 文件，也不把
-`session.jsonl`、审批证据或 sidecar 作为普通附件暴露给模型。
+不要将 `MINI_AGENT_WEB_STATE_DIR` 放在 Project workspace 内。Gateway 会拒绝
+这种布局，避免上传附件意外成为 workspace 文件。
 
-App Server/Host 通过稳定的逻辑 `session_capabilities` 向模型声明 Plan、Goal、
-Notebook 和当前 Turn 附件；WebStudio 的诊断面可以显示物理附件路径，但它不参与
-权限判断。关联根集合变化会让 Runtime 重绑并产生新的 root fingerprint；附件文件
-变化不会追加新的 Workspace Root，也不会改变稳定 Session 能力上下文。
+## API 分工
 
-Child task 是 Host/Gateway 的控制面接缝，不是 Core 的调度器：`POST
-/api/threads/{thread_id}/children` 先通过 App Server `session/fork` 从最近一次
-已提交 checkpoint 创建 exact child Session，再在独立的 Mini Agent App Server
-client 中启动一个 Turn。父 Turn 可以继续运行；child 的历史、工具审批、runtime
-status 和 `turn/event` 都保持自己的 Thread/Session 身份。`GET` 同一路径从
-SessionStore 的 `forked_from` lineage 和 live runtime projection 组合读取 child，
-而不是维护第二份 child history。Child 最多一层，每个父 Thread 的 active children
-受 `1..=8` 配置限制，默认两个。项目配置只保存这个并发上限；Main Thread 在
-每次委派时通过 `execution_mode`、可选 `group_id` 和 `sequence` 表达当前任务的
-调度意图。`parallel` 按槽位启动，`sequential` 按 operation group 排队。
-`execution_mode` 必须由 Main Thread 在每次 Child 委派时提供；缺少该字段的请求
-会被拒绝。compact fork 仍要求父 Thread idle。
+`/docs` 是路由级 API 契约。各模块的职责如下：
 
-Child 的 `operation_id`、attempt 和 `queued`/`running`/`awaiting_approval`/
-`completed`/`failed`/`cancelled` 状态来自 SessionStore 的 append-only
-`operation` 记录。Gateway 重启后从 catalog 重建投影；`cancel` 只发出标准
-`turn/interrupt`，不会删除 Session，`retry` 创建新的 child Turn 并递增
-attempt。没有在线进程时，Gateway 返回需要恢复/重新 attach 的状态，不伪造
-成功结果。队列和 group metadata 持久化在 operation 记录中，重启后仍可恢复。
-Gateway 启动、Runtime attach、Session restore 和项目 Runtime 重启后会主动
-reconcile：无 `turn_id` 的 queued operation 重新 drain，已有 `turn_id` 的
-operation 只重新绑定等待，不重复创建 Turn。`delegate_task` 还会在 Child
-materialization 前写入有界 delegation receipt，因此 Gateway 在 fork 前崩溃时
-可以补建或重新绑定 Child；相同 receipt 重放不会产生重复 Child。
+| 模块 | 路由前缀 | 职责 |
+| --- | --- | --- |
+| `routes/agent_turns.py` | `/api/agent`、`/api/approval` | HTTP Turn、stream、steer、interrupt 与审批响应 |
+| `routes/agent_ws.py` | `/ws/agent` | 按 Project 过滤的实时 Turn 与控制消息 |
+| `routes/threads.py` | `/api/threads` | Thread attach、history、事件重放、Child Session、Notebook 与后台/定时任务视图 |
+| `routes/world_*.py` | `/api/world`、`/api/projects`、`/api/workflows`、`/api/skills`、`/api/mcp` | Project 设置、执行设置、本地探测、workflow、Skill 与 MCP 状态 |
+| `routes/settings.py` | `/api/settings` | Gateway UI 偏好 |
 
-父 Thread 的 Child 状态通过 `child_operation_updated` 发送轻量状态投影，前端
-同时使用 `listChildTasks()` 做首次加载、轮询和刷新后的 canonical 恢复。事件只
-包含 operation/Child ID、状态、execution mode、group/sequence 和有限错误码，
-不复制 Child transcript；点击状态行进入独立 Child Thread。
+`session_manager.py` 协调 SDK client、runtime 通知、审批桥接和 Project-qualified
+请求路由。`control/` 中的模块提供所需的 registry 与 broker。不要在这些层新增
+第二套生命周期、授权或 Session history 存储。
 
-Session Notebook 通过 `/notebook` 读取和写入，Gateway 不保存第二份内容缓存。
-运行时恢复时只向模型注入有界摘要；完整条目由 App Server 的
-`notebook_read`/`notebook_write`/`notebook_forget` 工具按需处理。Child 可以
-读取 Host 校验后的 parent 快照，但只能修改自己的 Notebook。
-
-Notebook 写入可附带关键词和 Commit/File evidence。evidence 是调用方声明的
-有界来源元数据，不宣称已由 Git 或文件系统自动验证；读取和检索不会再次查询
-Git。配置只暴露 `notebook.max_entries` 与 `notebook.max_entry_bytes`，项目值
-覆盖全局默认值。总文件
-上限按条数、单条上限和固定元数据预算计算，并且不超过运行时 64 KiB 硬上限。
-Notebook 写入或遗忘后，App Server 发送 `session/notebook/updated`，只包含
-revision 和 changed keys，WebStudio 据此重新读取当前投影。
-
-技能目录来自当前 Project App Server 的 `initialize.capabilityManifest`，
-不是 Gateway 扫描文件系统的结果。Runtime 会发现项目
-`.agents/skills`、用户 `%USERPROFILE%/.agents/skills`、用户
-`%USERPROFILE%/.mini-agent/skills` 和同步的 builtin group；直接子目录按
-project > Agent Skills user > Mini Agent user > builtin > plugin 的优先级合并。
-响应包含最多 64 个 Skill 的
-`name`、`qualifiedName`、兼容 `aliases`、描述、来源、分组和启用状态，
-以及最多 8 个 builtin group。WebStudio 默认把 `pstack` 写入新 Project
-的 `builtin_skill_groups`；面板可以按 Catalog 启用或关闭任意 group，并在无活动
-Turn 或审批时重启该 Project runtime。关闭 group 会让对应的 `+ <group>` 与
-`$<group>:skill` 入口 fail closed。
-
-Turn 请求通过 `selectedSkills` 和可选 `workflow` 传递到 SDK：
-`$group:skill` 是 Skill 级显式正文加载，`+ <group>` 是当前 Turn 的
-metadata-first Skill Group 激活。Gateway 只转发清理后的 prompt 和结构化
-名称，不接受或转发 Skill 路径/正文；Host 负责最终校验、8 个 Skill 和 32 KiB
-正文限制。结构化 `skill_group_activated`、`skills_loaded` 和
-`skills_load_failed` 事件沿 SSE/WebSocket/replay 原样转发。`skills_loaded` 的
-`phase` 为 `started` 或 `loaded`；旧事件缺少该字段时按 `loaded` 处理。
-
-父模型发出 `delegate_task` 的真实 `tool_started` 事件后，Gateway 仅作为观察者
-触发既有 child control seam；child 的 Session operation 与 runtime projection
-仍是状态权威，Gateway 的 client/task map 不承担第二套调度或历史职责。
-
-运行时还会把每个已启用 Skill 的根目录作为受信任的只读根传给 Host。模型可以
-通过现有 `read_file` 按需查看 `SKILL.md`、参考文档、脚本源码、assets 和其他
-文本文件。Gateway 不扫描或预加载这些文件；首次读取 `SKILL.md` 才产生按需技能
-状态事件，关联资源读取不重复产生事件。Skill 目录的读取合计受每个 Turn
-64 KiB 的 `read_file` 输出限制，写入和脚本执行继续走 Host 现有的审批与沙箱路径。
-
-输入历史由 `GET /api/threads/{thread_id}` 的 checkpoint 与
-`GET /api/threads/{thread_id}/items` 的 bounded item projection 合并展示；
-WebStudio 会跟随 `next_cursor` 加载最多最近 256 个 item，避免压缩后的
-checkpoint 让较早用户输入消失。历史 item 的持久化时间以 `capturedAt` 投影，
-旧记录没有有效时间时省略时间字段。附件原始字节不进入历史 JSON 或 item
-projection；当前输入/队列保留图片数据，历史回放只显示已经持久化的有限附件摘要。
-
-Web Studio 对剪贴板文本采用有界的临时附件体验：多行、较长或明显日志格式的粘贴内容
-不会直接写入 composer，而是在提交前显示为 `pasted-text.txt` 附件。每个文本附件最多
-128 KiB，每条消息最多 4 个；Gateway 将正文写入当前 Project/Thread 的隔离附件目录，
-只把受控文件引用加入 Turn prompt，运行时可通过现有 `read_file` 按需读取。短句粘贴仍
-直接进入输入框。文本附件不自动执行、不写入 Project 工作区，历史消息只显示有限文件名
-摘要，不回显正文。
-
-输入框的 `+` 菜单只提供一个 `文件` 选择项，图片也从这里选择；不再提供目录选择器。
-文件夹可直接复制或拖入。桌面桥接或操作系统能提供物理路径时，Gateway 只记录该路径，
-按当前 Turn 的只读路径引用传递，不复制文件夹，也不生成相对路径树。浏览器没有提供物理
-路径时会提示用户使用支持路径桥接的窗口。普通文件没有可用物理路径时才作为有界内容附件
-写入 Gateway 的 Project/Thread 隔离附件目录。路径和内容附件都在 Gateway 边界校验，路径
-不能指向 `.git`；读取不等于执行，脚本执行和写入仍遵守 Host 审批与沙箱规则。
-
-同一 `+` 菜单中的 `目标`、`计划模式` 只是当前编辑器的待提交标记，点击时不会立即切换
-runtime。提交时 Goal/Plan 与任务、技能和附件一起发送；运行中的 Turn 则整体进入队列，
-出队时才设置 Goal 或开启 Plan Mode。队列和实时消息保留有限的文件/路径摘要，历史投影
-只保留安全名称与数量，不回显物理路径。
-
-同一 Thread 的 Gateway attach/start 请求在客户端创建与 canonical Session 检查
-期间串行化；并发请求会复用同一个已建立的 App Server client，不会制造重复的
-workspace 绑定竞争。Thread fork 在同一 SessionManager 临界区内完成 source
-checkpoint 复制、独立 child Session 创建、child App Server 启动、metadata 写入和
-binding；父子 Thread 不共享 App Server client。并发 attach 会等待 child 完整绑定后
-复用 child client；如果 child 启动失败，已持久化的 Session 仍可从 catalog 重新 attach。
-Attach 成功响应同时返回 `active_turn_id` 和 `turn_active`；因此同一 Gateway
-上的第二个浏览器可以沿用当前 Turn 身份继续观察。若锁属于外部进程，attach
-只返回锁定信息并保持只读，不会创建第二个 writer。
-
-Thread settings 的 `state_revision` 只是 canonical App Server revision 的有界
-投影。Gateway 通过 WebSocket 原样转发 `thread/settings/updated` 以及带同一
-revision 的 `thread/goal/updated|cleared`；Goal/settings REST action result 也
-返回它。SDK 和 Web Studio 对每个 Thread 单调消费该 revision，Gateway 不保存
-另一份 settings 或 Goal authority。历史 Session 尚未携带 revision 时返回空值；
-WebSocket 重连后由 Studio 重新读取 workflow projection，以处理 App Server
-重启造成的 in-memory revision 序列重置。Gateway 自己重绑 App Server 后还会
-广播有界的 `gateway/runtime/restarted` generation；Studio 收到后清空旧 cursor
-并执行同样的 canonical workflow read，即使浏览器 WebSocket 没有断开也不会继续
-使用旧运行时的 revision。
-
-SDK 的 `notification_handler` 负责把每个 App Server `turn/event` 和 runtime
-notification 广播给所有 WebSocket 客户端；单个请求的 WebSocket 只发送自己的
-`_turn_submission`，避免发起端收到重复事件。Studio 在 WebSocket 重连时使用
-`/events?after_sequence=...` 补齐短暂断线期间的 Core 事件；如果返回
-`has_gap=true`，则先重新读取 Thread/Item canonical projection。
-
-工具审批也按 Project 广播给已连接的 Studio 客户端。多个浏览器可以同时看到同一
-审批，但只有第一个通过 Project/Thread/Turn 身份校验的响应生效；Gateway 会立即广播
-`approval.phase=resolved`，使其他浏览器关闭过期审批卡片。断线重连时仍通过审批快照
-对账；Gateway 进程退出会取消内存中的待审批请求。
-
-Studio 同时把 `approval.phase=resolved` 投影到消息流中对应的工具卡片，展示允许、拒绝、
-失效或中断结果；审批 Dock 关闭后，用户仍能从工具卡片看到决策。工具匹配优先使用
-`callId`，不会因为多个工具名称相同而把它们全部标记为待审批。
-
-App Server 会在已绑定持久化 Session 的 Thread 目录旁写入独立的
-`approval-evidence.jsonl`。该文件在请求进入等待态和最终决策时分别记录
-`approval_requested` / `approval_resolved`，包含 Project/Thread/Turn/call 标识、策略、
-访问范围、工具与命令首词、`session_item_id` 关联键、动作 hash 和结果。完整命令不复制
-到该 trace；读取方用 `session_item_id=call_id` 关联同目录 `session.jsonl` 中对应的
-`kind=item` 记录。它不属于 Gateway 的 pending 状态，也不是 Session history 或授权
-缓存。多个 Thread 的项目级分析应在读取时聚合，trace 不能自动扩大 allow 规则。
-
-所有 Thread、Turn、Workflow、World 和 Session 请求都使用统一的
-`project_id` 路由上下文；REST 请求通过 query 参数传递，创建、attach、fork 和
-Goal 请求在需要时同时保留 payload 字段。WebSocket 建连时使用
-`?project_id=...`，每个 `turn`、`steer`、`interrupt`、审批响应和 `ping` 也会
-携带项目标识。Gateway 按 Project 过滤 runtime 广播，Studio 会拒绝不属于当前
-Thread/Project 的事件，避免同名 `default` Session 串线。
-
-Web Studio 对会话目录、历史、Workflow 和文件读取使用 request epoch 与取消信号。
-切换、创建、Fork 或关闭 Session 时，页面先原子清空旧的消息、Turn、Goal、Plan、
-Runtime 和审批投影，再加载新项目的 canonical 状态；已失效请求即使晚返回也不能
-回写当前页面。
-
-Session 目录中的 `turn_active` 与 `process_online` 是两个独立观察点：前者仅表示
-存在尚未结算且仍由存活进程持有的 Turn，后者表示进程锁在线。因崩溃留下的未结算
-记录可能是 `process_online=false`、`turn_active=false`，但仍保留
-`last_turn_status=in_progress` 供诊断，并在有 checkpoint 时标记为可恢复。空闲的
-在线进程因此显示为“在线/待命”，不会被误显示为“运行中”。
-
-`/api/workflows/state` 及线程目录还投影 `plan_review_pending`。已完成 Plan Turn
-后的“继续规划/开始实施”确认写入 Session-owned `plan_mode.json`，刷新或恢复会话
-时仍可继续处理；选择实施后才切回 default collaboration mode。
-
-访问和批准是当前 Project 的执行设置：`project` / `full_machine` 控制路径范围，
-`interactive` / `automatic` 控制审批策略；`once` / `session` / `project`
-只在审批响应中表达本次 action grant 的生命周期。
-`full_machine` 只表示整机路径范围，不是 allow-all；Deny、Plan 模式下的源文件变更锁、
-工具可用性和仍需人工确认的高风险动作继续由 App Server/Host 执行。Shell 仍按所选
-审批策略处理，Plan 不额外施加只读限制。`trusted` 自动放行经过工具自身校验的普通工作区
-操作和普通 Shell；递归/强制删除、破坏性 Git、系统级命令、MCP、工作区外 `read_image`
-和安全 Deny 规则仍需确认或拒绝。
-`/api/world/execution` 更新这些 Project 设置时复用现有 App Server，不会为了策略切换重启
-运行时；活动 Turn 仍由 App Server 拒绝控制面变更，Studio 提示用户等本轮结算后重试。
-Auto Copilot 是 Web Studio 中显式选择的 `trusted + continuous` 运行预设，不由访问范围
-或审批策略隐式推导；活动 Goal 会临时接管自己的里程碑循环。
-
-Project 的主目录和关联目录会在启动 SDK 时分别绑定为主工作区、额外可写根目录或
-只读参考根目录。切换或编辑 Project 会重启并重绑 Host；Web 的 UI 状态只保存
-Project 清单和界面偏好，Session history、Goal、checkpoint 和批准授权由
-App Server 的 canonical Session/Runtime 所有。若同一 Thread ID 已绑定到另一个
-live Project，显式 attach 或 start 会返回 `409`，不会静默把请求路由到错误 workspace。
-Fork 也沿用 source Thread 的 Project binding；如果目标 Thread ID 已属于另一个
-live Project，分叉请求同样 fail closed 为 `409`。
-
-## 文件分工
+## 目录分工
 
 ```text
-app.py                 FastAPI 工厂、生命周期和静态资源
-main.py                Uvicorn 启动入口
-config.py              环境变量和端口配置
-session_manager.py     SDK 进程、连接、审批和网关元数据
-routes/agent.py        Turn 与 WebSocket
-routes/threads.py      Thread 与 ThreadItem
-routes/world.py        World、MCP、Git、Settings、Goal
-routes/projects.py     项目元数据
-routes/settings.py     网关偏好
+app.py                  FastAPI factory、lifespan、CORS 与静态 UI 服务
+main.py                 常规与自动重载启动入口
+config.py               环境变量配置
+session_manager.py      SDK client、runtime 通知与审批
+routes/                 HTTP 与 WebSocket 路由模块
+control/                client、Project、Thread、Turn、审批与 socket 协调
+persistence/            Gateway 自身 JSON 持久化辅助函数
 ```
 
-## 网关开发检查
+## 验证 Gateway 改动
+
+在仓库根目录运行聚焦的 Gateway 检查：
 
 ```bash
 uv run ruff check server
-uv run pytest tests/test_gateway_api.py -q
+uv run pytest tests/gateway/ -q
 ```
+
+默认测试使用 fake，不得调用模型 Provider。只有需要匹配 App Server 可执行文件的
+测试或手工运行才设置 `MINI_AGENT_APP_SERVER_PATH`。

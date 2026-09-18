@@ -81,7 +81,9 @@ async def test_gateway_skill_catalog_is_bounded_and_skill_toggle_rejects_active_
         )
 
     assert catalog.status_code == 200
-    assert catalog.json()["skills"] == client_mock.capability_manifest["availableSkills"]
+    assert (
+        catalog.json()["skills"] == client_mock.capability_manifest["availableSkills"]
+    )
     assert conflict.status_code == 409
 
 

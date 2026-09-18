@@ -40,8 +40,10 @@ def test_builtin_skill_sync_is_idempotent_and_replaces_changed_content(
     assert second["groups"] == [
         {"group": "pstack", "version": "0.2.0", "source_commit": None, "changed": False}
     ]
-    assert (target / "architect" / "SKILL.md").read_text(encoding="utf-8").endswith(
-        "first\n"
+    assert (
+        (target / "architect" / "SKILL.md")
+        .read_text(encoding="utf-8")
+        .endswith("first\n")
     )
 
     (source / "architect" / "SKILL.md").write_text(
@@ -50,8 +52,10 @@ def test_builtin_skill_sync_is_idempotent_and_replaces_changed_content(
     )
     changed = builtin_skills.sync_builtin_skills()
     assert changed["changed"] is True
-    assert (target / "architect" / "SKILL.md").read_text(encoding="utf-8").endswith(
-        "second\n"
+    assert (
+        (target / "architect" / "SKILL.md")
+        .read_text(encoding="utf-8")
+        .endswith("second\n")
     )
     marker = (target / builtin_skills.MARKER_NAME).read_text(encoding="utf-8")
     assert '"version": "0.2.0"' in marker
@@ -94,7 +98,9 @@ def test_builtin_skill_groups_sync_independently(tmp_path, monkeypatch):
     )
     second = builtin_skills.sync_builtin_skills()
     assert second["changed"] is True
-    assert (target_root / "pstack" / "SKILL.md").read_text(encoding="utf-8") == pstack_before
-    assert (
-        target_root / "knowledge-work" / "SKILL.md"
-    ).read_text(encoding="utf-8") == "knowledge-work changed\n"
+    assert (target_root / "pstack" / "SKILL.md").read_text(
+        encoding="utf-8"
+    ) == pstack_before
+    assert (target_root / "knowledge-work" / "SKILL.md").read_text(
+        encoding="utf-8"
+    ) == "knowledge-work changed\n"

@@ -80,13 +80,30 @@ def _run_git(source: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-def _source_identity(source: Path, expected_commit: str | None, allow_dirty: bool) -> dict[str, str]:
+def _source_identity(
+    source: Path, expected_commit: str | None, allow_dirty: bool
+) -> dict[str, str]:
     commit = _run_git(source, "rev-parse", "HEAD")
     if expected_commit and commit != expected_commit:
-        raise RuntimeError(f"source commit mismatch: expected {expected_commit}, got {commit}")
+        raise RuntimeError(
+            f"source commit mismatch: expected {expected_commit}, got {commit}"
+        )
     if not allow_dirty and _run_git(source, "status", "--porcelain"):
-        raise RuntimeError("source repository has uncommitted changes; pass --allow-dirty only for local development")
-    remote = _run_git(source, "config", "--get", "remote.origin.url")
+        raise RuntimeError(
+            "source repository has uncommitted changes; pass --allow-dirty only for local development"
+        )
+    remote_result = subprocess.run(
+        ["git", "-C", str(source), "config", "--get", "remote.origin.url"],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if remote_result.returncode not in (0, 1) or remote_result.stderr.strip():
+        raise RuntimeError(
+            remote_result.stderr.strip() or "cannot read source repository remote"
+        )
+    remote = remote_result.stdout.strip()
     return {"commit": commit, "repository": remote or "local source repository"}
 
 
@@ -99,7 +116,9 @@ def _sha256(path: Path) -> str:
 def _copy_reference(source: Path, destination: Path, relative_source: str) -> int:
     source_path = source / relative_source
     if not source_path.is_file():
-        raise RuntimeError(f"selected Knowledge Work reference is missing: {source_path}")
+        raise RuntimeError(
+            f"selected Knowledge Work reference is missing: {source_path}"
+        )
     content = source_path.read_text(encoding="utf-8")
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(
@@ -119,10 +138,10 @@ def _render_role(role_id: str, spec: dict[str, Any]) -> str:
     )
     return f"""---
 name: {role_id}
-description: {spec['description']}
+description: {spec["description"]}
 ---
 
-# {role_id.replace('-', ' ').title()}
+# {role_id.replace("-", " ").title()}
 
 Use this entry for local, read-only knowledge work. Use the user's prompt, attachments, and
 project files as the source of facts. State assumptions, distinguish facts from inferences,
@@ -160,7 +179,9 @@ requests an external connector, a command, a hook, or a write action.
 def _validate_license(source: Path, role_id: str) -> dict[str, str]:
     license_path = source / role_id / "LICENSE"
     if not license_path.is_file():
-        raise RuntimeError(f"LICENSE is missing for selected source group: {license_path}")
+        raise RuntimeError(
+            f"LICENSE is missing for selected source group: {license_path}"
+        )
     return {"path": f"{role_id}/LICENSE", "sha256": _sha256(license_path)}
 
 
@@ -169,11 +190,15 @@ def _write_group(source: Path, destination: Path, identity: dict[str, str]) -> N
     if not root_license.is_file():
         raise RuntimeError(f"source repository LICENSE is missing: {root_license}")
 
-    with tempfile.TemporaryDirectory(prefix=f".{GROUP_ID}.", dir=destination.parent) as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix=f".{GROUP_ID}.", dir=destination.parent
+    ) as temporary:
         staging = Path(temporary) / GROUP_ID
         staging.mkdir(parents=True)
         license_checks = [_validate_license(source, role_id) for role_id in ROLE_SPECS]
-        (staging / "LICENSE").write_text(root_license.read_text(encoding="utf-8"), encoding="utf-8")
+        (staging / "LICENSE").write_text(
+            root_license.read_text(encoding="utf-8"), encoding="utf-8"
+        )
 
         reference_sizes: dict[str, int] = {}
         for role_id, spec in ROLE_SPECS.items():
@@ -182,12 +207,16 @@ def _write_group(source: Path, destination: Path, identity: dict[str, str]) -> N
             entry = role_dir / "SKILL.md"
             entry.write_text(_render_role(role_id, spec), encoding="utf-8")
             if entry.stat().st_size > MAX_ACTIVATED_SKILL_BYTES:
-                raise RuntimeError(f"generated entry exceeds the activation budget: {entry}")
+                raise RuntimeError(
+                    f"generated entry exceeds the activation budget: {entry}"
+                )
             for reference_name, relative_source in spec["references"].items():
                 reference = role_dir / "references" / reference_name
                 size = _copy_reference(source, reference, relative_source)
                 if size > MAX_SINGLE_READ_BYTES:
-                    raise RuntimeError(f"reference exceeds the single-read budget: {reference}")
+                    raise RuntimeError(
+                        f"reference exceeds the single-read budget: {reference}"
+                    )
                 reference_sizes[f"{role_id}/{reference_name}"] = size
 
         metadata = {
@@ -230,7 +259,12 @@ def _write_group(source: Path, destination: Path, identity: dict[str, str]) -> N
                 shutil.rmtree(backup)
 
 
-def generate(source: Path, destination: Path, expected_commit: str | None = None, allow_dirty: bool = False) -> dict[str, Any]:
+def generate(
+    source: Path,
+    destination: Path,
+    expected_commit: str | None = None,
+    allow_dirty: bool = False,
+) -> dict[str, Any]:
     """Validate the source and generate the curated group at destination."""
     source = source.resolve()
     destination = destination.resolve()
@@ -252,12 +286,16 @@ def main() -> int:
     )
     parser.add_argument("--expected-commit")
     parser.add_argument("--allow-dirty", action="store_true")
-    parser.add_argument("--write", action="store_true", help="write the generated group")
+    parser.add_argument(
+        "--write", action="store_true", help="write the generated group"
+    )
     args = parser.parse_args()
     if not args.write:
         parser.error("pass --write to generate resources")
     try:
-        result = generate(args.source, args.output, args.expected_commit, args.allow_dirty)
+        result = generate(
+            args.source, args.output, args.expected_commit, args.allow_dirty
+        )
     except RuntimeError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

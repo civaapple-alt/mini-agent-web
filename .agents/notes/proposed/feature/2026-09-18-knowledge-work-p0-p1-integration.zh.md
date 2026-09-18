@@ -1,6 +1,6 @@
 # Knowledge Work Builtin Skill P0/P1 短期接入提案
 
-- status: proposed
+- status: implemented
 - date: 2026-09-18
 - scope: `mini-agent-web` 的 Builtin Skill 资源、Gateway 同步、Project 配置、WebStudio Catalog 和 P0/P1 场景验证
 
@@ -211,7 +211,7 @@ references 的目录总大小不直接等同于一次读取的 64 KiB 限制，�
 | `resources/builtin-skills` | 保存经过审查的生成资源 | 是 |
 | Gateway | 同步 group、保存 Project 选择、返回 Catalog | 是 |
 | WebStudio | 消费运行时 Catalog 和事件 | 是 |
-| Host、App Server、Capabilities | 校验名称、读取受信内容、执行权限和副作用控制 | 仅增加测试，不改变职责 |
+| Host、App Server、Capabilities | 校验名称、读取受信内容、执行权限和副作用控制 | 增加多组发现、workflow 提示和 Harness 测试；职责不变 |
 | Core、Protocol | 模型回合、事件和协议契约 | 否 |
 
 ### 六问
@@ -269,9 +269,14 @@ mock-provider Harness 场景。
 - Host/Capabilities 已按启用的 group 发现 builtin Skill，且不改变 Core/Protocol；
 - 已有 Gateway、前端、Capabilities 和 Host 测试覆盖多组隔离、Catalog 展示、显式激活、
   未知 group、幂等同步和 group id 边界。
+- App Server 已增加 deterministic mock-provider Harness 场景：product-management、
+  productivity、data 三个本地只读输出，受限 reference read，非 pstack workflow
+  提示，以及禁用 group fail closed；Capabilities 也覆盖 32 KiB 正文拒绝；
+- 导入器已有可重复生成、source commit、dirty source、逐目录 LICENSE 和幂等输出测试。
 
-P1 的三个 mock-provider Harness 场景仍是合并前的证据门槛；在这些场景补齐前，本提案
-不把模型输出结构宣称为已验证完成。实现提交不得使用付费 Provider 或真实 MCP 登录。
+上述 Harness 证据只证明本地 fixture 下的控制流、输出结构和边界，不把模型输出质量、
+真实 Provider 或真实 MCP 连接器行为扩展解释为已验证。实现提交不得使用付费 Provider
+或真实 MCP 登录。
 
 ## 后续明确不纳入本短期提案的能力
 

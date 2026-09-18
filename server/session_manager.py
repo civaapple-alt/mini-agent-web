@@ -33,6 +33,8 @@ MAX_INTERRUPTED_TURNS = 256
 MAX_CHILD_TASKS_PER_PARENT = 2
 MAX_CONFIGURED_CHILD_TASKS_PER_PARENT = 8
 MAX_CHILD_TASK_PROMPT_BYTES = 32 * 1024
+MAX_NOTEBOOK_ENTRIES = 64
+MAX_NOTEBOOK_ENTRY_CHARS = 4096
 __all__ = ["SessionManager", "session_manager", "to_json_serializable"]
 
 
@@ -115,6 +117,10 @@ class SessionManager:
             "subagent": {
                 "max_concurrent_children": MAX_CHILD_TASKS_PER_PARENT,
                 "default_execution_mode": "parallel",
+            },
+            "notebook": {
+                "max_entries": MAX_NOTEBOOK_ENTRIES,
+                "max_entry_chars": MAX_NOTEBOOK_ENTRY_CHARS,
             },
         }
 
@@ -1094,8 +1100,49 @@ class SessionManager:
         if not project:
             return None
         return session_catalog.read_notebook(
-            Path(project["primary_path"]), resolved_project_id, thread_id, scope
+            Path(project["primary_path"]),
+            resolved_project_id,
+            thread_id,
+            scope,
+            max_entries=(self.get_settings(resolved_project_id).get("notebook") or {}).get(
+                "max_entries", MAX_NOTEBOOK_ENTRIES
+            ),
+            max_entry_chars=(self.get_settings(resolved_project_id).get("notebook") or {}).get(
+                "max_entry_chars", MAX_NOTEBOOK_ENTRY_CHARS
+            ),
         )
+
+    def search_thread_notebook(
+        self,
+        thread_id: str,
+        query: str,
+        project_id: str | None = None,
+        scope: str = "self",
+        limit: int = 8,
+    ) -> dict[str, Any] | None:
+        notebook = self.read_thread_notebook(thread_id, project_id, scope)
+        if notebook is None:
+            return None
+        normalized = query.strip().lower()
+        if not normalized:
+            raise ValueError("notebook search query must not be empty")
+        matches = []
+        for entry in notebook.get("entries", []):
+            evidence = entry.get("evidence", [])
+            searchable = [
+                entry.get("key", ""),
+                entry.get("content", ""),
+                *entry.get("keywords", []),
+            ]
+            for item in evidence:
+                if isinstance(item, dict):
+                    searchable.extend(
+                        item.get(field, "")
+                        for field in ("project", "commit", "path", "subject")
+                    )
+            if any(normalized in str(value).lower() for value in searchable):
+                matches.append(entry)
+        return {**notebook, "entries": matches[: max(1, min(limit, 8))]}
 
     async def write_thread_notebook(
         self,
@@ -1104,6 +1151,8 @@ class SessionManager:
         content: str,
         append: bool = False,
         importance: str = "normal",
+        keywords: list[str] | None = None,
+        evidence: list[dict[str, Any]] | None = None,
         project_id: str | None = None,
     ) -> dict[str, Any]:
         """Write only the current Thread notebook through its runtime authority."""
@@ -1114,6 +1163,8 @@ class SessionManager:
             content=content,
             append=append,
             importance=importance,
+            keywords=keywords,
+            evidence=evidence,
             thread_id=thread_id,
         )
 
@@ -1203,9 +1254,25 @@ class SessionManager:
             ),
             "default_execution_mode": mode,
         }
+        notebook = dict(self._settings.get("notebook") or {})
+        project_notebook = project.get("notebook")
+        if isinstance(project_notebook, dict):
+            notebook.update(project_notebook)
+        try:
+            max_entries = int(notebook.get("max_entries", MAX_NOTEBOOK_ENTRIES))
+            max_entry_chars = int(
+                notebook.get("max_entry_chars", MAX_NOTEBOOK_ENTRY_CHARS)
+            )
+        except (TypeError, ValueError):
+            max_entries, max_entry_chars = MAX_NOTEBOOK_ENTRIES, MAX_NOTEBOOK_ENTRY_CHARS
+        notebook = {
+            "max_entries": max(1, min(max_entries, MAX_NOTEBOOK_ENTRIES)),
+            "max_entry_chars": max(256, min(max_entry_chars, MAX_NOTEBOOK_ENTRY_CHARS)),
+        }
         return {
             **self._settings,
             "subagent": subagent,
+            "notebook": notebook,
             "access": project.get("access", "project"),
             "policy": project.get("policy", "interactive"),
         }
@@ -1357,6 +1424,31 @@ class SessionManager:
                 "subagent": {
                     "max_concurrent_children": max_children,
                     "default_execution_mode": mode,
+                },
+            }
+        if isinstance(updates.get("notebook"), dict):
+            incoming = updates["notebook"]
+            try:
+                max_entries = int(incoming.get("max_entries", MAX_NOTEBOOK_ENTRIES))
+                max_entry_chars = int(
+                    incoming.get("max_entry_chars", MAX_NOTEBOOK_ENTRY_CHARS)
+                )
+            except (TypeError, ValueError) as error:
+                raise ValueError("invalid notebook limits") from error
+            if not 1 <= max_entries <= MAX_NOTEBOOK_ENTRIES:
+                raise ValueError(
+                    f"notebook max entries must be between 1 and {MAX_NOTEBOOK_ENTRIES}"
+                )
+            if not 256 <= max_entry_chars <= MAX_NOTEBOOK_ENTRY_CHARS:
+                raise ValueError(
+                    "notebook max entry chars must be between 256 and "
+                    f"{MAX_NOTEBOOK_ENTRY_CHARS}"
+                )
+            updates = {
+                **updates,
+                "notebook": {
+                    "max_entries": max_entries,
+                    "max_entry_chars": max_entry_chars,
                 },
             }
         self._settings.update(updates)

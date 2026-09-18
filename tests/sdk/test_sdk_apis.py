@@ -91,8 +91,19 @@ async def test_advanced_thread_and_workflow_apis(tmp_path: Path):
             "architecture.child_session",
             "Child state is independent.",
             importance="high",
+            keywords=["child", "checkpoint"],
+            evidence=[
+                {
+                    "kind": "commit",
+                    "project": "mini-codex",
+                    "commit": "3941fcc",
+                    "subject": "feat: implement session notebook and subagent policy",
+                    "committedAt": "2026-09-18T10:00:00Z",
+                }
+            ],
         )
         assert notebook["entries"][0]["importance"] == "high"
+        assert notebook["entries"][0]["keywords"] == ["child", "checkpoint"]
         notebook = await client.read_notebook()
         assert notebook["entries"][0]["key"] == "architecture.child_session"
         notebook = await client.forget_notebook("architecture.child_session")

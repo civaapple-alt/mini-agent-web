@@ -131,6 +131,19 @@ export const threadApi = {
     return res.json();
   },
 
+  async searchNotebook(threadId = 'default', query, options = {}) {
+    const params = new URLSearchParams({ q: query });
+    if (options.scope === 'parent') params.set('scope', 'parent');
+    if (options.limit) params.set('limit', String(options.limit));
+    const res = await request(
+      `/api/threads/${encodeURIComponent(threadId)}/notebook/search?${params.toString()}`,
+      requestSignal(options),
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to search notebook for ${threadId}`);
+    return res.json();
+  },
+
   async writeNotebook(threadId = 'default', entry = {}, options = {}) {
     const res = await request(
       `/api/threads/${encodeURIComponent(threadId)}/notebook`,

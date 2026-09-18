@@ -106,6 +106,11 @@ test('api client methods construct expected fetch endpoints and payloads', async
     '/api/threads/t-123/notebook?project_id=project-1',
   );
   assert.equal(JSON.parse(calls[calls.length - 1].options.body).importance, 'high');
+  await api.searchNotebook('t-123', 'commit', { projectId: 'project-1', limit: 4 });
+  assert.equal(
+    calls[calls.length - 1].url,
+    '/api/threads/t-123/notebook/search?q=commit&limit=4&project_id=project-1',
+  );
   await api.forgetNotebook('t-123', 'decision', { projectId: 'project-1' });
   assert.equal(
     calls[calls.length - 1].url,

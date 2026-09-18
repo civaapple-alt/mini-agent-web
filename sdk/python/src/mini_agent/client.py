@@ -1264,19 +1264,47 @@ class MiniAgentClient:
         content: str,
         append: bool = False,
         importance: str = "normal",
+        keywords: list[str] | None = None,
+        evidence: list[dict[str, Any]] | None = None,
         thread_id: str | None = None,
     ) -> dict[str, Any]:
         """Upsert one entry in the current session notebook."""
         if importance not in ("critical", "high", "normal", "temporary"):
             raise ValueError("importance must be critical, high, normal, or temporary")
+        params: dict[str, Any] = {
+            "threadId": thread_id or self._active_thread_id,
+            "key": key,
+            "content": content,
+            "append": append,
+            "importance": importance,
+        }
+        if keywords is not None:
+            params["keywords"] = keywords
+        if evidence is not None:
+            params["evidence"] = evidence
         res = await self._send_request(
             "session/notebook/write",
+            params,
+        )
+        return res.get("value", res) if isinstance(res, dict) else res
+
+    async def search_notebook(
+        self,
+        query: str,
+        scope: str = "self",
+        limit: int = 8,
+        thread_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Search bounded Notebook metadata and matching entries."""
+        if scope not in ("self", "parent"):
+            raise ValueError("scope must be self or parent")
+        res = await self._send_request(
+            "session/notebook/search",
             {
                 "threadId": thread_id or self._active_thread_id,
-                "key": key,
-                "content": content,
-                "append": append,
-                "importance": importance,
+                "query": query,
+                "scope": scope,
+                "limit": max(1, min(limit, 8)),
             },
         )
         return res.get("value", res) if isinstance(res, dict) else res

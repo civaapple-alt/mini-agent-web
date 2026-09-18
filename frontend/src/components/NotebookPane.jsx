@@ -25,7 +25,20 @@ function NotebookList({ title, data, readOnly, onForget }) {
                   </button>
                 )}
               </div>
+              {entry.keywords?.length > 0 && (
+                <div className="notebook-entry-keywords">关键词：{entry.keywords.join('、')}</div>
+              )}
               <div className="notebook-entry-content">{entry.content}</div>
+              {entry.evidence?.length > 0 && (
+                <div className="notebook-entry-evidence">
+                  {entry.evidence.map((item, index) => (
+                    <span key={`${item.kind}-${item.commit || item.path || index}`}>
+                      {item.kind === 'commit' ? 'commit' : 'file'}：{item.subject || item.path || item.commit || '证据'}
+                      {item.committed_at ? ` · ${item.committed_at}` : ''}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -40,6 +53,8 @@ export default function NotebookPane({ threadId, projectId, onToast }) {
   const [key, setKey] = useState('');
   const [content, setContent] = useState('');
   const [importance, setImportance] = useState('normal');
+  const [keywords, setKeywords] = useState('');
+  const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
@@ -64,13 +79,29 @@ export default function NotebookPane({ threadId, projectId, onToast }) {
     event.preventDefault();
     if (!key.trim() || !content.trim()) return;
     try {
-      await api.writeNotebook(threadId, { key: key.trim(), content: content.trim(), importance }, { projectId });
+      await api.writeNotebook(threadId, {
+        key: key.trim(),
+        content: content.trim(),
+        importance,
+        keywords: keywords.split(',').map((item) => item.trim()).filter(Boolean),
+      }, { projectId });
       setKey('');
       setContent('');
+      setKeywords('');
       await load();
       onToast?.('Notebook 已更新', 'success');
     } catch (err) {
       onToast?.(`更新 Notebook 失败: ${err.message}`, 'error');
+    }
+  };
+
+  const search = async (event) => {
+    event.preventDefault();
+    if (!query.trim()) return load();
+    try {
+      setSelf(await api.searchNotebook(threadId, query.trim(), { projectId }));
+    } catch (err) {
+      onToast?.(`检索 Notebook 失败: ${err.message}`, 'error');
     }
   };
 
@@ -93,8 +124,13 @@ export default function NotebookPane({ threadId, projectId, onToast }) {
         </button>
       </div>
       <p className="text-muted text-xs">当前 Session 可编辑；父级 Notebook 仅供 Child 只读继承，不会被子任务改写。</p>
+      <form className="notebook-search" onSubmit={search}>
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="按条目、关键词、commit 或文件检索" maxLength={128} />
+        <button type="submit" className="btn-action-small">检索</button>
+      </form>
       <form className="notebook-compose" onSubmit={save}>
         <input value={key} onChange={(event) => setKey(event.target.value)} placeholder="条目名称" maxLength={128} />
+        <input value={keywords} onChange={(event) => setKeywords(event.target.value)} placeholder="关键词，用逗号分隔" maxLength={768} />
         <select value={importance} onChange={(event) => setImportance(event.target.value)} aria-label="重要性">
           <option value="critical">critical</option>
           <option value="high">high</option>

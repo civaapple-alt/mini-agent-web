@@ -81,6 +81,10 @@ class UpdateProjectRequest(BaseModel):
         default=None,
         description="Child Session concurrency and execution mode",
     )
+    notebook: dict[str, Any] | None = Field(
+        default=None,
+        description="Project Notebook max entries and single-entry character limit",
+    )
 
 
 class SwitchProjectRequest(BaseModel):

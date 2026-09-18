@@ -105,9 +105,11 @@ class ChildTaskRequest(BaseModel):
 
 class NotebookWriteRequest(BaseModel):
     key: str = Field(..., min_length=1, max_length=128)
-    content: str = Field(..., max_length=32768)
+    content: str = Field(..., max_length=4096)
     append: bool = False
     importance: Literal["critical", "high", "normal", "temporary"] = "normal"
+    keywords: list[str] | None = Field(default=None, max_length=12)
+    evidence: list[dict[str, Any]] | None = Field(default=None, max_length=8)
 
 
 class NotebookForgetRequest(BaseModel):
@@ -482,6 +484,27 @@ async def read_thread_notebook(
     return notebook
 
 
+@router.get("/{thread_id}/notebook/search", summary="Search Session notebook")
+async def search_thread_notebook(
+    thread_id: str,
+    q: str = Query(..., min_length=1, max_length=128),
+    scope: Literal["self", "parent"] = Query(default="self"),
+    limit: int = Query(default=8, ge=1, le=8),
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    try:
+        notebook = session_manager.search_thread_notebook(
+            thread_id, q, project_id, scope, limit
+        )
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except ValueError as err:
+        raise HTTPException(status_code=422, detail=str(err)) from err
+    if notebook is None:
+        raise HTTPException(status_code=404, detail=f"Thread '{thread_id}' not found")
+    return notebook
+
+
 @router.post("/{thread_id}/notebook", summary="Write the Session notebook")
 async def write_thread_notebook(
     thread_id: str,
@@ -496,6 +519,8 @@ async def write_thread_notebook(
             req.content,
             req.append,
             req.importance,
+            req.keywords,
+            req.evidence,
             project_id,
         )
     except KeyError as err:

@@ -34,6 +34,7 @@ uv run mini-agent-server-dev
 | `/api/threads/{thread_id}/children/{child_thread_id}/retry` | 为已结束的失败/取消 child 启动有界的新 attempt |
 | `/api/threads/{thread_id}/notebook` | 读取当前或父级只读的有界 Notebook 投影 |
 | `POST /api/threads/{thread_id}/notebook` | 通过当前 App Server 写入 Notebook 条目 |
+| `GET /api/threads/{thread_id}/notebook/search?q=...` | 按条目、关键词、内容和缓存的证据元数据检索 Notebook |
 | `DELETE /api/threads/{thread_id}/notebook` | 通过当前 App Server 遗忘 Notebook 条目 |
 | `/api/threads/{thread_id}/settings` | Thread collaboration mode、Builtin tools、显式推进方式和 App Server `state_revision` |
 | `/api/threads/{thread_id}/goal` | Thread Goal 的读取、设置和清除 |
@@ -68,6 +69,12 @@ Session Notebook 通过 `/notebook` 读取和写入，Gateway 不保存第二份
 运行时恢复时只向模型注入有界摘要；完整条目由 App Server 的
 `notebook_read`/`notebook_write`/`notebook_forget` 工具按需处理。Child 可以
 读取 Host 校验后的 parent 快照，但只能修改自己的 Notebook。
+
+Notebook 写入可附带关键词和 Commit/File 证据。Commit 的 hash、规范化
+subject、author/commit 时间以及记录时间在写入时缓存，读取和检索不会再次
+查询 Git。配置只暴露 `notebook.max_entries` 与 `notebook.max_entry_chars`，
+总文件上限按这两项和固定元数据预算计算，并且不超过运行时 64 KiB 硬上限；
+其余证据和 subject 限制也是运行时硬上限。
 
 技能目录来自当前 Project App Server 的 `initialize.capabilityManifest`，
 不是 Gateway 扫描文件系统的结果。Runtime 会发现项目

@@ -69,6 +69,7 @@ class ProjectRegistry:
                     project.setdefault("policy", "interactive")
                     project.setdefault("builtin_skill_groups", ["pstack"])
                     project.setdefault("subagent", {})
+                    project.setdefault("notebook", {})
                     project_path = project.get("primary_path", "")
                     if (
                         "pytest" in project_path.lower()
@@ -148,6 +149,7 @@ class ProjectRegistry:
                 "policy": "interactive",
                 "builtin_skill_groups": ["pstack"],
                 "subagent": {},
+                "notebook": {},
             }
 
         if owner._current_project_id not in owner._projects_registry:
@@ -332,6 +334,9 @@ class ProjectRegistry:
             "source_folders": sources,
             "access": "project",
             "policy": "interactive",
+            "builtin_skill_groups": ["pstack"],
+            "subagent": {},
+            "notebook": {},
         }
         owner._projects_registry[project_id] = project
         owner._current_project_id = project_id
@@ -380,6 +385,22 @@ class ProjectRegistry:
                 project["subagent"] = {
                     "max_concurrent_children": max_children,
                     "default_execution_mode": mode,
+                }
+        if isinstance(updates.get("notebook"), dict):
+            raw = updates["notebook"]
+            max_entries = raw.get("max_entries")
+            max_entry_chars = raw.get("max_entry_chars")
+            if (
+                isinstance(max_entries, int)
+                and not isinstance(max_entries, bool)
+                and 1 <= max_entries <= 64
+                and isinstance(max_entry_chars, int)
+                and not isinstance(max_entry_chars, bool)
+                and 256 <= max_entry_chars <= 4096
+            ):
+                project["notebook"] = {
+                    "max_entries": max_entries,
+                    "max_entry_chars": max_entry_chars,
                 }
         if isinstance(updates.get("source_folders"), list):
             project["source_folders"] = updates["source_folders"]
@@ -538,6 +559,18 @@ class ProjectRegistry:
             "MINI_AGENT_EXTRA_READ_ROOTS": os.pathsep.join(read_roots),
             "MINI_AGENT_EXTRA_WRITE_ROOTS": os.pathsep.join(write_roots),
         }
+        notebook = project.get("notebook") if isinstance(project, dict) else None
+        if not isinstance(notebook, dict):
+            notebook = {}
+        try:
+            max_entries = int(notebook.get("max_entries", 64))
+            max_entry_chars = int(notebook.get("max_entry_chars", 4096))
+        except (TypeError, ValueError):
+            max_entries, max_entry_chars = 64, 4096
+        env["MINI_AGENT_NOTEBOOK_MAX_ENTRIES"] = str(max(1, min(max_entries, 64)))
+        env["MINI_AGENT_NOTEBOOK_MAX_ENTRY_CHARS"] = str(
+            max(256, min(max_entry_chars, 4096))
+        )
         if project.get("name"):
             env["MINI_AGENT_PROJECT_NAME"] = str(project["name"])
         return env

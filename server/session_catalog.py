@@ -28,6 +28,7 @@ MAX_CHECKPOINT_MESSAGES = 64
 MAX_CHECKPOINT_MESSAGE_CHARS = 16 * 1024
 MAX_NOTEBOOK_ENTRIES = 64
 MAX_NOTEBOOK_CONTENT_CHARS = 4096
+MAX_NOTEBOOK_ENTRY_CHARS = MAX_NOTEBOOK_CONTENT_CHARS
 THREAD_INDEX_FILE_NAME = "thread_index.json"
 THREAD_SETTINGS_FILE_NAME = "thread_settings.json"
 
@@ -86,6 +87,11 @@ def _bounded_text(value: Any, limit: int = MAX_ERROR_CHARS) -> str | None:
     if len(value) <= limit:
         return value
     return f"{value[:limit]}…"
+
+
+def _field(value: dict[str, Any], snake: str, camel: str) -> Any:
+    """Read canonical Rust JSON while tolerating legacy snake_case fixtures."""
+    return value.get(camel, value.get(snake))
 
 
 def _entry_has_conversation_history(entry: dict[str, Any]) -> bool:
@@ -538,6 +544,8 @@ class SessionCatalog:
         project_id: str,
         thread_id: str,
         scope: str = "self",
+        max_entries: int = MAX_NOTEBOOK_ENTRIES,
+        max_entry_chars: int = MAX_NOTEBOOK_ENTRY_CHARS,
     ) -> dict[str, Any] | None:
         """Read a bounded Session notebook projection without exposing paths."""
         entry = self.find_by_thread(workspace, project_id, thread_id)
@@ -571,12 +579,13 @@ class SessionCatalog:
         raw_entries = notebook.get("entries")
         entries = []
         if isinstance(raw_entries, list):
-            for raw_entry in raw_entries[:MAX_NOTEBOOK_ENTRIES]:
+            for raw_entry in raw_entries[: max(1, min(max_entries, MAX_NOTEBOOK_ENTRIES))]:
                 if not isinstance(raw_entry, dict):
                     continue
                 key = _bounded_text(raw_entry.get("key"), 96)
                 content = _bounded_text(
-                    raw_entry.get("content"), MAX_NOTEBOOK_CONTENT_CHARS
+                    raw_entry.get("content"),
+                    max(1, min(max_entry_chars, MAX_NOTEBOOK_ENTRY_CHARS)),
                 )
                 if key and content is not None:
                     importance = raw_entry.get("importance")
@@ -587,7 +596,39 @@ class SessionCatalog:
                             "key": key,
                             "content": content,
                             "importance": importance,
-                            "updated_at": _timestamp(raw_entry.get("updated_at_ms")),
+                            "updated_at": _timestamp(
+                                _field(raw_entry, "updated_at_ms", "updatedAtMs")
+                            ),
+                            "keywords": [
+                                item
+                                for item in (raw_entry.get("keywords") or [])[:12]
+                                if isinstance(item, str) and item.strip()
+                            ],
+                            "evidence": [
+                                {
+                                    "kind": item.get("kind"),
+                                    "project": _bounded_text(item.get("project"), 256),
+                                    "commit": _bounded_text(item.get("commit"), 256),
+                                    "path": _bounded_text(item.get("path"), 256),
+                                    "subject": _bounded_text(
+                                        item.get("subject"), 160
+                                    ),
+                                    "subject_truncated": bool(
+                                        _field(item, "subject_truncated", "subjectTruncated")
+                                    ),
+                                    "author_at": _bounded_text(
+                                        _field(item, "author_at", "authorAt"), 256
+                                    ),
+                                    "committed_at": _bounded_text(
+                                        _field(item, "committed_at", "committedAt"), 256
+                                    ),
+                                    "recorded_at": _timestamp(
+                                        _field(item, "recorded_at_ms", "recordedAtMs")
+                                    ),
+                                }
+                                for item in (raw_entry.get("evidence") or [])[:8]
+                                if isinstance(item, dict)
+                            ],
                         }
                     )
         entries.sort(

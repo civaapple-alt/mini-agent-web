@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restore the visible order of projected historical messages from the durable Turn
   sequence, so an input recovered after compaction navigates to its actual
   position instead of being appended below newer Turns.
+- Replace the wide Session Turn column with a narrow vertical marker rail whose
+  input and Turn result appear only in a hover/focus popover. Remove repeated
+  inline historical Turn summary cards so the message stream keeps one clear
+  top-to-bottom reading path.
+- Remove the repeated assistant avatar marker from the message stream; agent
+  identity remains available in the surrounding session chrome and tool details.
 - Add cross-Turn local background Shell task projection to the SDK, Gateway, and
   Web Studio runtime panel. Child Sessions can read the parent task list but
   cannot control it; remote waits such as GitHub Actions use the scheduled marker

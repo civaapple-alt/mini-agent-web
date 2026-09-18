@@ -68,6 +68,22 @@ function boundedSummary(message) {
   return '（空输入）';
 }
 
+function boundedResponseSummary(messages, turnId) {
+  const text = (messages || [])
+    .filter((message) => message?.role === 'assistant')
+    .filter((message) => normalizedTurnId(message.turnId) === turnId)
+    .flatMap((message) => {
+      if (message.text) return [message.text];
+      return (message.blocks || [])
+        .filter((block) => block?.type === 'text' && block.content)
+        .map((block) => block.content);
+    })
+    .map((value) => cleanInputText(value))
+    .filter(Boolean)
+    .at(-1) || '';
+  return text.length > 140 ? `${text.slice(0, 140).trim()}…` : text;
+}
+
 function blocksForTurn(messages, turnId) {
   return (messages || [])
     .filter((message) => message?.role === 'assistant')
@@ -162,6 +178,7 @@ export function buildTurnHistoryEntries({
       state,
       stateLabel: TURN_STATE_LABELS[state] || TURN_STATE_LABELS.unknown,
       isCurrent,
+      responseSummary: boundedResponseSummary(messages, turnId),
       metrics: metricsForTurn(messages, turnId, lastTurnResult),
       actionHint: actionHint(state, statusModel, isCurrent),
     };

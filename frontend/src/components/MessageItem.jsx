@@ -18,7 +18,6 @@ import ToolCard from './ToolCard';
 import ContextCompactionGroup from './ContextCompactionGroup';
 import ErrorBoundary from './ErrorBoundary';
 import TurnActivityGroup from './TurnActivityGroup';
-import TurnActivitySummary from './TurnActivitySummary';
 import { groupCompactionBlocks, normalizeAssistantBlocks } from '../utils/messageState';
 import { groupSettledAssistantBlocks } from '../utils/turnHistory';
 import {
@@ -55,7 +54,6 @@ export default function MessageItem({
   traceScope,
   turnEntry = null,
   isTurnFocused = false,
-  showTurnSummary = false,
   anchorRef = null,
 }) {
   const { role, text, thinking, tools = [], blocks = [], usage } = message;
@@ -220,13 +218,6 @@ export default function MessageItem({
                 : displayedFileAttachments.length > 0 ? '（文件附件）' : '')}
             </span>
           </div>
-          {showTurnSummary && turnEntry && (
-            <TurnActivitySummary
-              turn={turnEntry}
-              status={turnEntry.state}
-              metrics={turnEntry.metrics}
-            />
-          )}
           <div className="user-actions">
             <div className={`user-trace-wrapper ${traceOpen ? 'trace-open' : ''}`}>
               <button
@@ -362,18 +353,7 @@ export default function MessageItem({
       data-turn-id={turnEntry?.turnId || message.turnId || undefined}
       className={`message-row assistant ${isTurnFocused ? 'turn-focus-highlight' : ''}`}
     >
-      <div className="avatar-bot">
-        <Sparkles size={13} />
-      </div>
-
       <div className="assistant-container">
-        {showTurnSummary && turnEntry && (
-          <TurnActivitySummary
-            turn={turnEntry}
-            status={turnEntry.state}
-            metrics={turnEntry.metrics}
-          />
-        )}
         {/* Render sequential blocks if present */}
         {renderedBlocks.length > 0 ? (
           renderedBlocks.map((block, idx) => {

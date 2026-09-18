@@ -213,18 +213,6 @@ export default function ChatArea({
               const turnEntry = msg.role === 'user'
                 ? entryByMessageId.get(messageId)
                 : (turnId ? entryByTurnId.get(turnId) : null);
-              const hasAssistantForTurn = Boolean(turnId && displayMessages.some((candidate) => (
-                candidate.role === 'assistant'
-                  && String(candidate.turnId || '') === turnId
-              )));
-              const showTurnSummary = Boolean(turnEntry) && (
-                (msg.role === 'user' && turnEntry.isCurrent && !hasAssistantForTurn)
-                || (msg.role === 'assistant' && !displayMessages.slice(0, index).some((previous) => (
-                  previous.role === 'assistant'
-                    && previous.turnId
-                    && String(previous.turnId) === String(turnEntry.turnId)
-                )))
-              );
               return (
                 <MessageItem
                   key={msg.id || `msg_${index}`}
@@ -238,7 +226,6 @@ export default function ChatArea({
                   onViewThreadHistory={onViewThreadHistory}
                   traceScope={traceScope}
                   turnEntry={turnEntry}
-                  showTurnSummary={showTurnSummary}
                   isTurnFocused={Boolean(turnEntry && focusedTurnId && focusedTurnId === (turnEntry.turnId || turnEntry.id))}
                   anchorRef={(node) => setMessageRef(messageId, node)}
                 />

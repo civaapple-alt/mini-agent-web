@@ -118,10 +118,10 @@ describe('ChatArea direction cues', () => {
     );
 
     expect(screen.getByRole('navigation', { name: 'Session Turn 导航' })).toBeDefined();
-    expect(screen.getByRole('button', { name: /检查仓库结构，运行中/ })).toBeDefined();
-    expect(screen.getByText('当前 Turn · 运行中')).toBeDefined();
-    expect(screen.getByText(/工具 1 次 · 命令 1 次 · 思考 1 段/)).toBeDefined();
-    fireEvent.click(screen.getByRole('button', { name: /检查仓库结构，运行中/ }));
+    expect(screen.getByRole('button', { name: /检查仓库结构，仓库结构已检查/ })).toBeDefined();
+    expect(screen.queryByText('当前 Turn · 运行中')).toBeNull();
+    expect(screen.getAllByText('仓库结构已检查。').length).toBeGreaterThanOrEqual(1);
+    fireEvent.click(screen.getByRole('button', { name: /检查仓库结构，仓库结构已检查/ }));
     expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled();
     HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
     expect(node).toBeDefined();

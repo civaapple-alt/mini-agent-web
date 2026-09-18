@@ -385,6 +385,17 @@ class SessionManager:
         client = await self.get_client_for_thread(thread_id, resolved_project_id)
         return client, thread_id, False
 
+    async def get_scheduled_task_target(
+        self, thread_id: str, project_id: str | None = None
+    ) -> tuple[MiniAgentClient, str, bool]:
+        """Resolve the owner runtime for a scheduled wake-up marker.
+
+        Scheduled tasks follow the same Thread ownership boundary as local
+        background Shell tasks: a Child Session may read its parent's markers,
+        but only the owner runtime can cancel one.
+        """
+        return await self.get_background_task_target(thread_id, project_id)
+
     async def get_client_for_project(
         self, project_id: str | None = None, thread_id: str | None = None
     ) -> MiniAgentClient:

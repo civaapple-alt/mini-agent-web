@@ -198,12 +198,14 @@ async def test_gateway_threads_and_workflows(test_app):
                 "apply_patch",
                 "shell",
                 "read_image",
+                "scheduled_task",
             ]
             assert resp_wf.json()["available_builtin_tools"] == [
                 "read_file",
                 "apply_patch",
                 "shell",
                 "read_image",
+                "scheduled_task",
                 "web_fetch",
             ]
 

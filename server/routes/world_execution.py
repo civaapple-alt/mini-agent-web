@@ -19,6 +19,7 @@ DEFAULT_BUILTIN_TOOLS: list[str] = [
     "apply_patch",
     "shell",
     "read_image",
+    "scheduled_task",
 ]
 
 ALL_BUILTIN_TOOLS: list[str] = [

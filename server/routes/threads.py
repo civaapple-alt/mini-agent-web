@@ -31,6 +31,13 @@ def _background_task_json(value: Any) -> dict[str, Any]:
     return payload
 
 
+def _scheduled_task_json(value: Any) -> dict[str, Any]:
+    payload = to_json_serializable(value)
+    if isinstance(payload, dict):
+        payload.pop("raw", None)
+    return payload
+
+
 @router.get("/project/{project_id}/sessions", summary="List Project Sessions")
 async def list_project_sessions(
     project_id: str, cursor: str | None = None, limit: int = Query(64, ge=1, le=128)
@@ -470,6 +477,86 @@ async def restart_background_task(
 ) -> dict[str, Any]:
     try:
         return await _background_task_action(thread_id, task_id, project_id, "restart")
+    except HTTPException:
+        raise
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.get("/{thread_id}/scheduled-tasks", summary="List scheduled wake-up tasks")
+async def list_scheduled_tasks(
+    thread_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
+    """Read bounded wake-up markers owned by the Thread runtime."""
+    try:
+        client, owner_thread_id, _ = await session_manager.get_scheduled_task_target(
+            thread_id, project_id
+        )
+        tasks = await client.list_scheduled_tasks(owner_thread_id)
+        return {
+            "thread_id": thread_id,
+            "owner_thread_id": owner_thread_id,
+            "data": [_scheduled_task_json(task) for task in tasks],
+        }
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+async def _scheduled_task_action(
+    thread_id: str,
+    task_id: str,
+    project_id: str | None,
+    action: str,
+) -> dict[str, Any]:
+    client, owner_thread_id, is_child = await session_manager.get_scheduled_task_target(
+        thread_id, project_id
+    )
+    if is_child and action == "cancel":
+        raise HTTPException(
+            status_code=403,
+            detail="Child Sessions can read scheduled tasks but cannot cancel them",
+        )
+    if action == "read":
+        value = await client.read_scheduled_task(task_id, owner_thread_id)
+    else:
+        value = await client.cancel_scheduled_task(task_id, owner_thread_id)
+    return {
+        "thread_id": thread_id,
+        "owner_thread_id": owner_thread_id,
+        **_scheduled_task_json(value),
+    }
+
+
+@router.get("/{thread_id}/scheduled-tasks/{task_id}", summary="Read a scheduled wake-up task")
+async def read_scheduled_task(
+    thread_id: str, task_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
+    try:
+        return await _scheduled_task_action(thread_id, task_id, project_id, "read")
+    except HTTPException:
+        raise
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.post("/{thread_id}/scheduled-tasks/{task_id}/cancel", summary="Cancel a scheduled wake-up task")
+async def cancel_scheduled_task(
+    thread_id: str, task_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
+    try:
+        return await _scheduled_task_action(thread_id, task_id, project_id, "cancel")
     except HTTPException:
         raise
     except RuntimeError as err:

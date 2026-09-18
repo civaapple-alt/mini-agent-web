@@ -11,7 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add cross-Turn local background Shell task projection to the SDK, Gateway, and
   Web Studio runtime panel. Child Sessions can read the parent task list but
-  cannot control it; remote waits such as GitHub Actions remain out of scope.
+  cannot control it; remote waits such as GitHub Actions use the scheduled marker
+  described below rather than a local Shell task.
+- Add bounded scheduled wake-up task projection to the SDK, Gateway, and runtime
+  panel. A ready marker lets a later model Turn perform one remote status query;
+  it does not run Shell, auto-resume the model, or cancel the remote operation.
 
 - Redact free-form approval arguments from SDK and Gateway logs. Approval
   records now keep the tool name, bounded `apply_patch` counts, and request ID

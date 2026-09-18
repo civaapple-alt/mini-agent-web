@@ -18,6 +18,14 @@ function formatTaskAge(startedAt) {
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 }
 
+function formatDueTime(dueAt) {
+  if (!Number.isFinite(dueAt) || dueAt <= 0) return '—';
+  const seconds = Math.max(0, Math.ceil((dueAt - Date.now()) / 1000));
+  if (seconds === 0) return '已到期';
+  if (seconds < 60) return `${seconds}s 后`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s 后`;
+}
+
 const taskStateLabels = {
   starting: '启动中',
   running: '运行中',
@@ -25,6 +33,12 @@ const taskStateLabels = {
   stopped: '已停止',
   failed: '失败',
   lost: '已丢失',
+};
+
+const scheduledTaskStateLabels = {
+  scheduled: '已安排',
+  ready: '可继续',
+  cancelled: '已取消',
 };
 
 export default function StatusDetailsPane({
@@ -36,6 +50,8 @@ export default function StatusDetailsPane({
 }) {
   const [backgroundTasks, setBackgroundTasks] = useState([]);
   const [backgroundTaskError, setBackgroundTaskError] = useState(null);
+  const [scheduledTasks, setScheduledTasks] = useState([]);
+  const [scheduledTaskError, setScheduledTaskError] = useState(null);
   const [expandedLogs, setExpandedLogs] = useState({});
   const isChild = Boolean(sessionMeta?.parentSessionId);
   const hasSession = Boolean(sessionMeta?.sessionId);
@@ -58,6 +74,15 @@ export default function StatusDetailsPane({
       } catch (error) {
         if (active) setBackgroundTaskError(error.message || '无法读取后台任务');
       }
+      try {
+        const result = await threadApi.listScheduledTasks(threadId, { projectId });
+        if (active) {
+          setScheduledTasks(result?.data || []);
+          setScheduledTaskError(null);
+        }
+      } catch (error) {
+        if (active) setScheduledTaskError(error.message || '无法读取定时任务');
+      }
     };
     refresh();
     const timer = window.setInterval(refresh, 3000);
@@ -79,6 +104,20 @@ export default function StatusDetailsPane({
       await refreshBackgroundTasks();
     } catch (error) {
       setBackgroundTaskError(error.message || '后台任务操作失败');
+    }
+  };
+
+  const refreshScheduledTasks = async () => {
+    const result = await threadApi.listScheduledTasks(threadId, { projectId });
+    setScheduledTasks(result?.data || []);
+  };
+
+  const cancelScheduledTask = async (taskId) => {
+    try {
+      await threadApi.cancelScheduledTask(threadId, taskId, { projectId });
+      await refreshScheduledTasks();
+    } catch (error) {
+      setScheduledTaskError(error.message || '定时任务取消失败');
     }
   };
 
@@ -280,6 +319,48 @@ export default function StatusDetailsPane({
                 {logs && (
                   <pre className="background-task-logs">{logs.text || '暂无输出'}</pre>
                 )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="status-detail-section scheduled-tasks-section">
+        <div className="pane-section-header">
+          <span className="card-label">定时任务</span>
+          {isChild && <span className="background-task-readonly">Child 只读</span>}
+        </div>
+        <div className="scheduled-task-description">
+          只表示等待到点；到期后由下一轮显式查询远程状态，不在后台执行 Shell。
+        </div>
+        {scheduledTaskError && (
+          <div className="background-task-error">{scheduledTaskError}</div>
+        )}
+        {scheduledTasks.length === 0 && !scheduledTaskError && (
+          <div className="status-detail-event">暂无定时任务</div>
+        )}
+        <div className="background-task-list">
+          {scheduledTasks.map((task) => {
+            const state = task.state || 'scheduled';
+            return (
+              <div className="background-task-card scheduled-task-card" key={task.task_id}>
+                <div className="background-task-heading">
+                  <strong className="font-mono">{task.task_id}</strong>
+                  <span className={`background-task-state ${state}`}>
+                    {scheduledTaskStateLabels[state] || state}
+                  </span>
+                </div>
+                <div className="background-task-command">{task.summary || '—'}</div>
+                <div className="background-task-meta font-mono">
+                  {task.trigger_type || 'delay'} · {state === 'scheduled' ? formatDueTime(task.due_at) : '—'}
+                </div>
+                <div className="background-task-actions">
+                  {!isChild && state === 'scheduled' && (
+                    <button type="button" className="btn-action-small" onClick={() => cancelScheduledTask(task.task_id)}>
+                      取消
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}

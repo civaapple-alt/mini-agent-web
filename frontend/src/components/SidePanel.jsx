@@ -37,6 +37,7 @@ const BUILTIN_TOOL_INFO = {
   shell: { name: 'shell', label: '终端命令', desc: '执行命令行检查与自动化测试' },
   web_fetch: { name: 'web_fetch', label: '网页抓取', desc: '抓取外部 HTTP 与静态文档' },
   read_image: { name: 'read_image', label: '图像读取', desc: '读取并解析视觉/图像资源' },
+  scheduled_task: { name: 'scheduled_task', label: '定时唤醒', desc: '安排有界延时，让下一轮继续查询远程状态' },
 };
 
 function PlanModeCard({ planActive, onTogglePlan }) {
@@ -449,6 +450,7 @@ export default function SidePanel({
     'apply_patch',
     'shell',
     'read_image',
+    'scheduled_task',
   ]);
   const [availableBuiltinTools, setAvailableBuiltinTools] = useState([
     'read_file',
@@ -456,6 +458,7 @@ export default function SidePanel({
     'shell',
     'web_fetch',
     'read_image',
+    'scheduled_task',
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRetryingMcp, setIsRetryingMcp] = useState(false);

@@ -26,8 +26,8 @@ describe('SidePanel plan viewer', () => {
       content: '# Implementation plan\n\n- [ ] Keep the plan readable',
     });
     api.getWorkflowState.mockResolvedValue({
-      builtin_tools: ['read_file', 'apply_patch', 'shell', 'read_image'],
-      available_builtin_tools: ['read_file', 'apply_patch', 'shell', 'read_image'],
+      builtin_tools: ['read_file', 'apply_patch', 'shell', 'read_image', 'scheduled_task'],
+      available_builtin_tools: ['read_file', 'apply_patch', 'shell', 'read_image', 'scheduled_task'],
       goal: null,
     });
   });

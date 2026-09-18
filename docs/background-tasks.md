@@ -13,7 +13,8 @@ Child Session 可以读取父 Thread 的后台任务，但不能创建、停止�
 是否重启由模型或用户显式决定，第一版不会从文件变更自动猜测。
 
 GitHub Actions、云端构建、部署状态和其他没有本地进程的长时间等待不属于后台
-Shell 任务。它们应使用独立的远程等待操作；停止轮询不等于取消远程操作。
+Shell 任务。第一版使用有界 `ScheduledTask` 标记让下一轮模型继续查询；停止标记
+不等于取消远程操作。详见 [`scheduled-tasks.md`](scheduled-tasks.md)。
 
 相关 REST 接口：
 

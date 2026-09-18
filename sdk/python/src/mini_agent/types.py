@@ -75,6 +75,7 @@ BackgroundTaskState = Literal[
     "failed",
     "lost",
 ]
+ScheduledTaskState = Literal["scheduled", "ready", "cancelled"]
 
 CollaborationModeKind = Literal["default", "plan"]
 ContinuationMode = Literal["manual", "continuous"]
@@ -403,6 +404,40 @@ class BackgroundTaskLogs:
 
 
 @dataclass
+class ScheduledTask:
+    """A bounded wake-up marker for a later model turn."""
+
+    task_id: str
+    owner_thread_id: str
+    state: ScheduledTaskState
+    trigger_type: str
+    summary: str
+    created_at: int = 0
+    due_at: int = 0
+    ready_at: int | None = None
+    cancelled_at: int | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ScheduledTask:
+        val = data.get("value", data) if isinstance(data, dict) else data
+        return cls(
+            task_id=val.get("taskId") or val.get("task_id", ""),
+            owner_thread_id=val.get("ownerThreadId") or val.get("owner_thread_id", ""),
+            state=val.get("state", "scheduled"),
+            trigger_type=val.get("triggerType") or val.get("trigger_type", "delay"),
+            summary=val.get("summary", ""),
+            created_at=val.get("createdAt", val.get("created_at", 0)),
+            due_at=val.get("dueAt", val.get("due_at", 0)),
+            ready_at=val.get("readyAt") if "readyAt" in val else val.get("ready_at"),
+            cancelled_at=val.get("cancelledAt")
+            if "cancelledAt" in val
+            else val.get("cancelled_at"),
+            raw=data,
+        )
+
+
+@dataclass
 class TurnEventsResult:
     """Bounded replay page of ordered ``turn/event`` notifications."""
 
@@ -605,6 +640,7 @@ DEFAULT_BUILTIN_TOOLS: list[str] = [
     "apply_patch",
     "shell",
     "read_image",
+    "scheduled_task",
 ]
 
 

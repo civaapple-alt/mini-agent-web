@@ -54,6 +54,7 @@ async def test_advanced_thread_and_workflow_apis(tmp_path: Path):
             "apply_patch",
             "shell",
             "read_image",
+            "scheduled_task",
         ]
 
         plan_res = await client.update_thread_settings(
@@ -278,6 +279,59 @@ async def test_sdk_session_fork_api_mapping():
                 "contextPolicy": "exact",
             },
         )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sdk_scheduled_task_api_mapping():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        if method == "scheduled-task/list":
+            return {
+                "value": {
+                    "data": [
+                        {
+                            "taskId": "check-action",
+                            "ownerThreadId": "thread-1",
+                            "state": "ready",
+                            "triggerType": "delay",
+                            "summary": "Check GitHub Action",
+                            "createdAt": 100,
+                            "dueAt": 130,
+                            "readyAt": 131,
+                        }
+                    ]
+                }
+            }
+        return {
+            "value": {
+                "taskId": "check-action",
+                "ownerThreadId": "thread-1",
+                "state": "cancelled",
+                "triggerType": "delay",
+                "summary": "Check GitHub Action",
+                "createdAt": 100,
+                "dueAt": 130,
+                "cancelledAt": 140,
+            }
+        }
+
+    client._send_request = fake_send
+    listed = await client.list_scheduled_tasks("thread-1")
+    cancelled = await client.cancel_scheduled_task("check-action", "thread-1")
+
+    assert listed[0].state == "ready"
+    assert listed[0].summary == "Check GitHub Action"
+    assert cancelled.state == "cancelled"
+    assert calls == [
+        ("scheduled-task/list", {"threadId": "thread-1"}),
+        (
+            "scheduled-task/cancel",
+            {"threadId": "thread-1", "taskId": "check-action"},
+        ),
     ]
 
 

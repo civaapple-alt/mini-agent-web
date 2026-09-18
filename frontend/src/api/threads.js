@@ -262,6 +262,37 @@ export const threadApi = {
     return res.json();
   },
 
+  async listScheduledTasks(threadId = 'default', options = {}) {
+    const targetThread = threadId || 'default';
+    const res = await request(
+      `/api/threads/${encodeURIComponent(targetThread)}/scheduled-tasks`,
+      requestSignal(options),
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to list scheduled tasks for ${targetThread}`);
+    return res.json();
+  },
+
+  async readScheduledTask(threadId, taskId, options = {}) {
+    const res = await request(
+      `/api/threads/${encodeURIComponent(threadId || 'default')}/scheduled-tasks/${encodeURIComponent(taskId)}`,
+      requestSignal(options),
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to read scheduled task ${taskId}`);
+    return res.json();
+  },
+
+  async cancelScheduledTask(threadId, taskId, options = {}) {
+    const res = await request(
+      `/api/threads/${encodeURIComponent(threadId || 'default')}/scheduled-tasks/${encodeURIComponent(taskId)}/cancel`,
+      { method: 'POST', ...requestSignal(options) },
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to cancel scheduled task ${taskId}`);
+    return res.json();
+  },
+
   async interruptTurn(turnId, threadId = 'default', options = {}) {
     const projectId = resolveProjectId(options.projectId);
     const targetThread = threadId || 'default';

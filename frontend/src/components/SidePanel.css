@@ -306,6 +306,11 @@
 .background-task-meta { color: var(--text-muted); }
 .background-task-actions { justify-content: flex-start; }
 .background-task-logs { max-height: 180px; margin: 0; overflow: auto; padding: 8px; border-radius: 5px; background: var(--bg-app); color: var(--text-secondary); font: 10px/1.45 var(--font-mono); white-space: pre-wrap; word-break: break-word; }
+.scheduled-tasks-section { gap: 8px; }
+.scheduled-task-description { color: var(--text-muted); font-size: 10px; line-height: 1.45; }
+.background-task-state.scheduled { color: var(--status-approval); }
+.background-task-state.ready { color: var(--status-success); }
+.background-task-state.cancelled { color: var(--text-muted); }
 
 .tab-pane {
   display: flex;

@@ -33,6 +33,7 @@ from mini_agent.types import (
     McpRetryResult,
     McpStatusResult,
     RuntimeStatus,
+    ScheduledTask,
     SessionForkResult,
     SessionInfo,
     ThreadCheckpoint,
@@ -749,6 +750,34 @@ class MiniAgentClient:
             {"threadId": thread_id or self._active_thread_id, "taskId": task_id},
         )
         return BackgroundTask.from_dict(res)
+
+    async def list_scheduled_tasks(
+        self, thread_id: str | None = None
+    ) -> list[ScheduledTask]:
+        """List bounded wake-up markers for a Thread runtime."""
+        res = await self._send_request(
+            "scheduled-task/list", {"threadId": thread_id or self._active_thread_id}
+        )
+        value = res.get("value", res) if isinstance(res, dict) else res
+        return [ScheduledTask.from_dict(item) for item in value.get("data", [])]
+
+    async def read_scheduled_task(
+        self, task_id: str, thread_id: str | None = None
+    ) -> ScheduledTask:
+        res = await self._send_request(
+            "scheduled-task/read",
+            {"threadId": thread_id or self._active_thread_id, "taskId": task_id},
+        )
+        return ScheduledTask.from_dict(res)
+
+    async def cancel_scheduled_task(
+        self, task_id: str, thread_id: str | None = None
+    ) -> ScheduledTask:
+        res = await self._send_request(
+            "scheduled-task/cancel",
+            {"threadId": thread_id or self._active_thread_id, "taskId": task_id},
+        )
+        return ScheduledTask.from_dict(res)
 
     async def replay_events(
         self,

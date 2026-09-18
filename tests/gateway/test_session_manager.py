@@ -351,6 +351,17 @@ def test_session_manager_settings_persistence(mock_session_manager, tmp_path):
     assert new_mgr._settings["auto_scroll"] is False
 
 
+def test_subagent_settings_keep_capacity_only(mock_session_manager):
+    """Execution mode is not exposed as a global or project policy."""
+    mock_session_manager._settings["subagent"] = {
+        "max_concurrent_children": 3,
+        "default_execution_mode": "sequential",
+    }
+    settings = mock_session_manager.get_settings()
+
+    assert settings["subagent"] == {"max_concurrent_children": 3}
+
+
 @pytest.mark.asyncio
 async def test_continuation_preference_waits_for_goal_runtime_to_settle(
     mock_session_manager, monkeypatch
@@ -1710,7 +1721,12 @@ async def test_start_child_task_runs_on_an_independent_client(
     monkeypatch.setattr(mock_session_manager, "get_client_for_thread", get_client)
 
     result = await mock_session_manager.start_child_task(
-        "parent", "child", "inspect the boundary"
+        "parent",
+        "child",
+        "inspect the boundary",
+        group_id="review",
+        execution_mode="sequential",
+        sequence=1,
     )
 
     assert result["parent_thread_id"] == "parent"
@@ -1719,7 +1735,17 @@ async def test_start_child_task_runs_on_an_independent_client(
     assert result["operation_id"] == "child:child"
     assert result["operation_attempt"] == 1
     fork_thread.assert_awaited_once_with(
-        "parent", "child", None, "default", "exact", "child:child", 1
+        "parent",
+        "child",
+        None,
+        "default",
+        "exact",
+        "child:child",
+        1,
+        "inspect the boundary",
+        "review",
+        "sequential",
+        1,
     )
     child_client.start_turn.assert_awaited_once_with(
         prompt="inspect the boundary",
@@ -1728,6 +1754,9 @@ async def test_start_child_task_runs_on_an_independent_client(
         effort="high",
         operation_id="child:child",
         operation_attempt=1,
+        operation_group_id="review",
+        execution_mode="sequential",
+        group_sequence=1,
     )
     assert mock_session_manager.get_active_turn("child", "default") == (
         "child-turn-1"

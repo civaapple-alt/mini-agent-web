@@ -79,7 +79,7 @@ class UpdateProjectRequest(BaseModel):
     )
     subagent: dict[str, Any] | None = Field(
         default=None,
-        description="Child Session concurrency and execution mode",
+        description="Project Child Session concurrency limit; execution mode is per delegation",
     )
     notebook: dict[str, Any] | None = Field(
         default=None,

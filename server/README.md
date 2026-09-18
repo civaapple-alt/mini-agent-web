@@ -55,8 +55,11 @@ client 中启动一个 Turn。父 Turn 可以继续运行；child 的历史、�
 status 和 `turn/event` 都保持自己的 Thread/Session 身份。`GET` 同一路径从
 SessionStore 的 `forked_from` lineage 和 live runtime projection 组合读取 child，
 而不是维护第二份 child history。Child 最多一层，每个父 Thread 的 active children
-受 `1..=8` 配置限制，默认两个；`parallel` 按槽位启动，`sequential` 按 operation
-group 排队。compact fork 仍要求父 Thread idle。
+受 `1..=8` 配置限制，默认两个。项目配置只保存这个并发上限；Main Thread 在
+每次委派时通过 `execution_mode`、可选 `group_id` 和 `sequence` 表达当前任务的
+调度意图。`parallel` 按槽位启动，`sequential` 按 operation group 排队。
+旧客户端不传 `execution_mode` 时由 Host 兼容回退为 `parallel`。compact fork
+仍要求父 Thread idle。
 
 Child 的 `operation_id`、attempt 和 `queued`/`running`/`awaiting_approval`/
 `completed`/`failed`/`cancelled` 状态来自 SessionStore 的 append-only

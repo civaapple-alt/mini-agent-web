@@ -39,6 +39,20 @@ class ProjectRegistry:
         self._projects_file = base_dir / "projects.json"
         self._projects_dir = base_dir / "projects"
 
+    @staticmethod
+    def _normalize_subagent_config(raw: Any) -> dict[str, int]:
+        """Keep only the persisted project capacity policy."""
+        if not isinstance(raw, dict):
+            return {}
+        max_children = raw.get("max_concurrent_children")
+        if (
+            isinstance(max_children, int)
+            and not isinstance(max_children, bool)
+            and 1 <= max_children <= 8
+        ):
+            return {"max_concurrent_children": max_children}
+        return {}
+
     def load_state(self) -> None:
         """Load settings, projects and partitioned Thread metadata."""
         owner = self._owner
@@ -54,6 +68,9 @@ class ProjectRegistry:
                             if key in allowed_settings
                         }
                     )
+                    owner._settings["subagent"] = self._normalize_subagent_config(
+                        owner._settings.get("subagent")
+                    )
             except Exception as err:  # noqa: BLE001
                 logger.warning(
                     "Failed to parse settings from %s: %s", self._settings_file, err
@@ -68,7 +85,9 @@ class ProjectRegistry:
                     project.pop("approval", None)
                     project.setdefault("policy", "interactive")
                     project.setdefault("builtin_skill_groups", ["pstack"])
-                    project.setdefault("subagent", {})
+                    project["subagent"] = self._normalize_subagent_config(
+                        project.get("subagent")
+                    )
                     project.setdefault("notebook", {})
                     project_path = project.get("primary_path", "")
                     if (
@@ -373,19 +392,9 @@ class ProjectRegistry:
             ):
                 project["builtin_skill_groups"] = list(dict.fromkeys(groups))
         if isinstance(updates.get("subagent"), dict):
-            raw = updates["subagent"]
-            max_children = raw.get("max_concurrent_children")
-            mode = raw.get("default_execution_mode")
-            if (
-                isinstance(max_children, int)
-                and not isinstance(max_children, bool)
-                and 1 <= max_children <= 8
-                and mode in ("parallel", "sequential")
-            ):
-                project["subagent"] = {
-                    "max_concurrent_children": max_children,
-                    "default_execution_mode": mode,
-                }
+            project["subagent"] = self._normalize_subagent_config(
+                updates["subagent"]
+            )
         if isinstance(updates.get("notebook"), dict):
             raw = updates["notebook"]
             max_entries = raw.get("max_entries")

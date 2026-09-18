@@ -5,7 +5,7 @@ Manages UI preferences; execution access and approval live with the Project.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
@@ -18,7 +18,6 @@ router = APIRouter(prefix="/api/settings", tags=["Settings"])
 class UpdateSettingsRequest(BaseModel):
     class SubagentSettings(BaseModel):
         max_concurrent_children: int = Field(default=2, ge=1, le=8)
-        default_execution_mode: Literal["parallel", "sequential"] = "parallel"
 
     default_mode: str | None = Field(
         default=None, description="Default workflow mode (chat, plan, goal)"
@@ -35,7 +34,7 @@ class UpdateSettingsRequest(BaseModel):
     word_wrap: bool | None = Field(default=None, description="Wrap code and text")
     font_size: int | None = Field(default=None, description="Editor and chat font size")
     subagent: SubagentSettings | None = Field(
-        default=None, description="Child Session concurrency and scheduling mode"
+        default=None, description="Child Session concurrency limit"
     )
 
     class NotebookSettings(BaseModel):

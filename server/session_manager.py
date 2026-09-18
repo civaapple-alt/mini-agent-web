@@ -32,6 +32,7 @@ logger = logging.getLogger("mini_agent.server")
 MAX_INTERRUPTED_TURNS = 256
 MAX_CHILD_TASKS_PER_PARENT = 2
 MAX_CONFIGURED_CHILD_TASKS_PER_PARENT = 8
+DEFAULT_CHILD_EXECUTION_MODE = "parallel"
 MAX_CHILD_TASK_PROMPT_BYTES = 32 * 1024
 MAX_NOTEBOOK_ENTRIES = 64
 MAX_NOTEBOOK_ENTRY_CHARS = 4096
@@ -116,7 +117,6 @@ class SessionManager:
             "font_size": 13,
             "subagent": {
                 "max_concurrent_children": MAX_CHILD_TASKS_PER_PARENT,
-                "default_execution_mode": "parallel",
             },
             "notebook": {
                 "max_entries": MAX_NOTEBOOK_ENTRIES,
@@ -376,9 +376,10 @@ class SessionManager:
         group_id = group_id.strip() if group_id else None
         if group_id and len(group_id.encode("utf-8")) > 128:
             raise ValueError("child task group id is too long")
-        execution_mode = execution_mode or str(
-            subagent.get("default_execution_mode", "parallel")
-        )
+        # Scheduling intent belongs to this delegation, not to the project
+        # policy. Keep parallel as the compatibility fallback for older
+        # callers that do not send the optional field.
+        execution_mode = execution_mode or DEFAULT_CHILD_EXECUTION_MODE
         if execution_mode not in {"parallel", "sequential"}:
             raise ValueError("child execution mode must be parallel or sequential")
         if execution_mode == "sequential" and not group_id:
@@ -1245,14 +1246,10 @@ class SessionManager:
             )
         except (TypeError, ValueError):
             max_children = MAX_CHILD_TASKS_PER_PARENT
-        mode = subagent.get("default_execution_mode", "parallel")
-        if mode not in {"parallel", "sequential"}:
-            mode = "parallel"
         subagent = {
             "max_concurrent_children": max(
                 1, min(max_children, MAX_CONFIGURED_CHILD_TASKS_PER_PARENT)
             ),
-            "default_execution_mode": mode,
         }
         notebook = dict(self._settings.get("notebook") or {})
         project_notebook = project.get("notebook")
@@ -1412,18 +1409,14 @@ class SessionManager:
                 )
             except (TypeError, ValueError) as error:
                 raise ValueError("invalid subagent concurrency") from error
-            mode = incoming.get("default_execution_mode", "parallel")
             if not 1 <= max_children <= MAX_CONFIGURED_CHILD_TASKS_PER_PARENT:
                 raise ValueError(
                     f"subagent concurrency must be between 1 and {MAX_CONFIGURED_CHILD_TASKS_PER_PARENT}"
                 )
-            if mode not in {"parallel", "sequential"}:
-                raise ValueError("subagent execution mode must be parallel or sequential")
             updates = {
                 **updates,
                 "subagent": {
                     "max_concurrent_children": max_children,
-                    "default_execution_mode": mode,
                 },
             }
         if isinstance(updates.get("notebook"), dict):
@@ -1603,10 +1596,19 @@ class SessionManager:
         parent_thread_id = str(payload.get("threadId") or "")
         child_thread_id = arguments.get("child_thread_id")
         prompt = arguments.get("prompt")
+        group_id = arguments.get("group_id")
+        execution_mode = arguments.get("execution_mode")
+        sequence = arguments.get("sequence")
         if not parent_thread_id or not isinstance(child_thread_id, str) or not isinstance(
             prompt, str
         ):
             return
+        if not isinstance(group_id, str):
+            group_id = None
+        if not isinstance(execution_mode, str):
+            execution_mode = None
+        if not isinstance(sequence, int) or isinstance(sequence, bool):
+            sequence = None
         asyncio.create_task(
             self._start_delegated_child(
                 parent_thread_id,
@@ -1614,6 +1616,9 @@ class SessionManager:
                 prompt,
                 arguments.get("title"),
                 project_id,
+                group_id,
+                execution_mode,
+                sequence,
             )
         )
 
@@ -1624,6 +1629,9 @@ class SessionManager:
         prompt: str,
         title: Any,
         project_id: str | None,
+        group_id: str | None,
+        execution_mode: str | None,
+        sequence: int | None,
     ) -> None:
         try:
             await self.start_child_task(
@@ -1632,6 +1640,9 @@ class SessionManager:
                 prompt,
                 title if isinstance(title, str) else None,
                 project_id,
+                group_id,
+                execution_mode,
+                sequence,
             )
         except Exception:
             logger.exception(

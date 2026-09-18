@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Make Child scheduling intent per delegation: project/global settings retain only
+  `max_concurrent_children`, while Main Thread `delegate_task` requests choose
+  `parallel` or `sequential` with optional group and sequence metadata.
 - Bundle the ChatGPT-compatible `pstack` skills with WebStudio and synchronize
   them idempotently into the Mini Agent per-user builtin skill directory.
 - Add project-scoped builtin skill group settings, the `/api/skills` catalog,

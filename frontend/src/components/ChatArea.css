@@ -252,54 +252,6 @@
   animation: turnFocusHighlight 1.4s ease-out;
 }
 
-.turn-activity-group summary {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding-top: 6px;
-  cursor: pointer;
-  list-style: none;
-}
-
-.turn-activity-group summary::-webkit-details-marker {
-  display: none;
-}
-
-.turn-activity-group {
-  margin: 2px 0 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 7px;
-  background: var(--bg-app);
-  color: var(--text-muted);
-  font-size: 10.5px;
-}
-
-.turn-activity-group summary {
-  padding: 6px 8px;
-}
-
-.turn-activity-group summary > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.turn-activity-group-chevron {
-  margin-left: auto;
-  transition: transform 0.15s ease;
-}
-
-.turn-activity-group[open] .turn-activity-group-chevron {
-  transform: rotate(180deg);
-}
-
-.turn-activity-group-items {
-  display: grid;
-  gap: 8px;
-  padding: 0 8px 8px;
-}
-
 .turn-status-banner {
   max-width: 860px;
   width: 100%;
@@ -712,10 +664,6 @@
   .turn-focus-highlight,
   .btn-scroll-bottom {
     animation: none;
-  }
-
-  .turn-activity-group-chevron {
-    transition: none;
   }
 }
 

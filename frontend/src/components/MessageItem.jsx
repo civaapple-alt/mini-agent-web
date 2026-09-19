@@ -14,9 +14,7 @@ import ThinkingBlock from './ThinkingBlock';
 import ToolCard from './ToolCard';
 import ContextCompactionGroup from './ContextCompactionGroup';
 import ErrorBoundary from './ErrorBoundary';
-import TurnActivityGroup from './TurnActivityGroup';
 import { groupCompactionBlocks, normalizeAssistantBlocks } from '../utils/messageState';
-import { groupSettledAssistantBlocks } from '../utils/turnHistory';
 import {
   extractFileAttachmentNames,
   extractTextAttachmentNames,
@@ -230,10 +228,7 @@ export default function MessageItem({
   const fullResponseText = blocks.length > 0
     ? blocks.filter((b) => b.type === 'text').map((b) => b.content).join('\n\n')
     : text;
-  const normalizedBlocks = groupCompactionBlocks(normalizeAssistantBlocks(blocks));
-  const renderedBlocks = isStreamingThis
-    ? normalizedBlocks
-    : groupSettledAssistantBlocks(normalizedBlocks);
+  const renderedBlocks = groupCompactionBlocks(normalizeAssistantBlocks(blocks));
 
   return (
     <div
@@ -246,21 +241,19 @@ export default function MessageItem({
         {/* Render sequential blocks if present */}
         {renderedBlocks.length > 0 ? (
           renderedBlocks.map((block, idx) => {
-            if (block.type === 'activityGroup') {
-              return (
-                <TurnActivityGroup
-                  key={block.id || `activity_${idx}`}
-                  items={block.items}
-                  policy={policy}
-                />
-              );
-            }
+            const status = String(block.status || '').toLowerCase();
+            const isCurrentBlock = isStreamingThis && (
+              idx === renderedBlocks.length - 1
+                || block.isStreaming
+                || ['running', 'inprogress'].includes(status)
+            );
             if (block.type === 'thinking') {
               return (
                 <ThinkingBlock
                   key={block.id || `thinking_${idx}`}
                   content={block.content}
                   isStreaming={Boolean(block.isStreaming && isStreamingThis)}
+                  isCurrentBlock={isCurrentBlock}
                 />
               );
             }
@@ -275,6 +268,7 @@ export default function MessageItem({
                     tool={block}
                     pendingApproval={isLast ? pendingApproval : null}
                     policy={policy}
+                    isCurrentBlock={isCurrentBlock}
                   />
                 </ErrorBoundary>
               );

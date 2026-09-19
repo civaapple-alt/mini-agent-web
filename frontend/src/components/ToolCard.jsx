@@ -178,9 +178,16 @@ function CommandPreview({ value }) {
 export default function ToolCard({
   tool,
   pendingApproval,
+  isCurrentBlock = false,
 }) {
   const [showOutput, setShowOutput] = useState(false);
   const [copied, setCopied] = useState(false);
+  const wasCurrentBlockRef = useRef(Boolean(isCurrentBlock));
+
+  useLayoutEffect(() => {
+    if (wasCurrentBlockRef.current && !isCurrentBlock) setShowOutput(false);
+    wasCurrentBlockRef.current = isCurrentBlock;
+  }, [isCurrentBlock]);
 
   const { status, error, id, outcome } = tool;
   const name = tool.name || tool.toolName || tool.tool || tool.tool_name || '';

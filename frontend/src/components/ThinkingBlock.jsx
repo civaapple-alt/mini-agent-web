@@ -2,16 +2,22 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Brain, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
 import './ThinkingBlock.css';
 
-export default function ThinkingBlock({ content, isStreaming }) {
-  // Keep the live reasoning visible while it is changing. Settled reasoning
-  // is supporting detail and starts collapsed so the answer stays readable.
-  const [isOpen, setIsOpen] = useState(Boolean(isStreaming));
+export default function ThinkingBlock({ content, isStreaming, isCurrentBlock = false }) {
+  // Keep the current block open and collapse it when execution advances.
+  const [isOpen, setIsOpen] = useState(Boolean(isStreaming || isCurrentBlock));
+  const wasCurrentBlockRef = useRef(Boolean(isCurrentBlock));
   const [copied, setCopied] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   const startTimeRef = useRef(Date.now());
   const finalTimeRef = useRef(null);
   const bodyRef = useRef(null);
   const followLatestRef = useRef(true);
+
+  useLayoutEffect(() => {
+    if (isCurrentBlock) setIsOpen(true);
+    else if (wasCurrentBlockRef.current) setIsOpen(false);
+    wasCurrentBlockRef.current = isCurrentBlock;
+  }, [isCurrentBlock]);
 
   useEffect(() => {
     let interval = null;

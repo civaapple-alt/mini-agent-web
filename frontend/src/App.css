@@ -24,7 +24,7 @@
   background: var(--bg-app);
 }
 
-.app-content > .chat-area {
+.app-content > .chat-area-frame {
   width: 100%;
 }
 

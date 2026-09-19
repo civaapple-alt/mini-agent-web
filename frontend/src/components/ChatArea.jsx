@@ -148,9 +148,9 @@ export default function ChatArea({
     if (focusTimerRef.current) window.clearTimeout(focusTimerRef.current);
   }, []);
 
-  return (
+  const chatContent = (
     <div
-      className={`chat-area custom-scrollbar ${wordWrap ? 'wrap-content' : 'nowrap-content'}`}
+      className={`chat-area custom-scrollbar ${wordWrap ? 'wrap-content' : 'nowrap-content'} ${(isScrolledUp || hasNewActivity) ? 'has-scroll-bottom-button' : ''}`}
       style={{ fontSize: fontSize ? `${fontSize}px` : undefined }}
       ref={scrollRef}
       onScroll={handleScroll}
@@ -197,13 +197,6 @@ export default function ChatArea({
         </div>
       ) : (
         <div className={`message-stream-layout ${turnEntries.length > 0 ? 'has-turn-rail' : ''}`}>
-          {turnEntries.length > 0 && (
-            <SessionTurnRail
-              entries={turnEntries}
-              onSelectTurn={selectTurn}
-              focusedTurnId={focusedTurnId}
-            />
-          )}
           <div className="messages-list">
             {displayMessages.map((msg, index) => {
               const messageId = String(msg.id || `msg_${index}`);
@@ -261,7 +254,21 @@ export default function ChatArea({
         </div>
       )}
 
-      {/* Floating Scroll-to-Bottom Pill Button */}
+    </div>
+  );
+
+  return (
+    <div className="chat-area-frame">
+      {turnEntries.length > 0 && (
+        <div className="session-turn-rail-viewport">
+          <SessionTurnRail
+            entries={turnEntries}
+            onSelectTurn={selectTurn}
+            focusedTurnId={focusedTurnId}
+          />
+        </div>
+      )}
+      {chatContent}
       {(isScrolledUp || hasNewActivity) && (
         <button
           className="btn-scroll-bottom"

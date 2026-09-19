@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Reduce the message-stream gap between consecutive compact activity summaries.
 - Show a durable in-stream checkpoint notice when manual continuation reaches a
   Turn step limit, even when the Session Turn rail is visible. Stabilize the
   rail's viewport anchor so streaming reasoning growth does not make it jump.

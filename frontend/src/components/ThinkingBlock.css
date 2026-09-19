@@ -16,6 +16,10 @@
   border-color: var(--border-subtle);
 }
 
+.thinking-container.collapsed {
+  background-color: var(--bg-card);
+}
+
 .thinking-header {
   display: flex;
   align-items: center;
@@ -24,6 +28,15 @@
   background-color: var(--bg-card-hover);
   cursor: pointer;
   user-select: none;
+}
+
+.thinking-container.collapsed .thinking-header {
+  padding: 4px 8px;
+  background-color: transparent;
+}
+
+.thinking-container.collapsed .thinking-header:hover {
+  background-color: var(--bg-card-hover);
 }
 
 .thinking-header:hover {
@@ -90,16 +103,6 @@
 .btn-toggle-micro:hover {
   background-color: var(--bg-card-hover);
   color: var(--text-primary);
-}
-
-.thinking-preview {
-  padding: 2px 10px 6px;
-  font-size: 11px;
-  color: var(--text-muted);
-  cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .thinking-body {

@@ -85,7 +85,8 @@ describe('AssistantTextBlock', () => {
     );
 
     expect(container.querySelector('.thinking-body')).toBeNull();
-    expect(container.querySelector('.thinking-preview')?.textContent).toContain('检查任务状态');
+    expect(container.querySelector('.thinking-container.collapsed')).toBeTruthy();
+    expect(container.querySelector('.thinking-preview')).toBeNull();
     expect(container.querySelector('.assistant-answer')?.textContent).toContain('任务已停止。');
 
     rerender(
@@ -102,7 +103,8 @@ describe('AssistantTextBlock', () => {
       />,
     );
 
-    expect(container.querySelector('.thinking-preview')?.textContent).toContain('检查任务状态');
+    expect(container.querySelector('.thinking-container.collapsed')).toBeTruthy();
+    expect(container.querySelector('.thinking-preview')).toBeNull();
     expect(container.querySelector('.assistant-answer')?.textContent).toContain('任务已停止。');
     expect(screen.queryByRole('button', { name: '展开已收起的助手内容' })).toBeNull();
   });

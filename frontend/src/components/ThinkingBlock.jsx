@@ -55,8 +55,6 @@ export default function ThinkingBlock({ content, isStreaming, isCurrentBlock = f
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const previewSnippet = (content || '').split('\n')[0].slice(0, 60);
-
   const handleBodyScroll = () => {
     const body = bodyRef.current;
     if (!body) return;
@@ -66,7 +64,7 @@ export default function ThinkingBlock({ content, isStreaming, isCurrentBlock = f
 
   return (
     <div
-      className={`thinking-container notranslate ${isStreaming ? 'streaming' : ''}`}
+      className={`thinking-container notranslate ${isStreaming ? 'streaming' : ''} ${isOpen ? 'expanded' : 'collapsed'}`}
       translate="no"
     >
       <div
@@ -103,12 +101,6 @@ export default function ThinkingBlock({ content, isStreaming, isCurrentBlock = f
           </button>
         </div>
       </div>
-
-      {!isOpen && previewSnippet && (
-        <div className="thinking-preview font-mono notranslate" translate="no" onClick={() => setIsOpen(true)}>
-          <span>{previewSnippet}...</span>
-        </div>
-      )}
 
       {isOpen && (
         <div

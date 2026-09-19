@@ -1,16 +1,23 @@
 import React from 'react';
 import { describe, expect, it } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import ThinkingBlock from '../components/ThinkingBlock';
 
 describe('ThinkingBlock', () => {
   it('collapses settled reasoning by default', () => {
-    render(
+    const { container } = render(
       <ThinkingBlock content="已完成的思考" isStreaming={false} />,
     );
 
-    expect(document.querySelector('.thinking-body')).toBeNull();
-    expect(document.querySelector('.thinking-preview')?.textContent).toContain('已完成的思考');
+    expect(container.querySelector('.thinking-body')).toBeNull();
+    expect(container.querySelector('.thinking-container.collapsed')).toBeTruthy();
+    expect(container.querySelector('.thinking-preview')).toBeNull();
+    expect(container.querySelector('.thinking-header')?.textContent).toContain('思考');
+    expect(container.querySelector('.thinking-header')?.textContent).toContain('6 字符');
+
+    fireEvent.click(container.querySelector('.thinking-header'));
+    expect(container.querySelector('.thinking-container.collapsed')).toBeNull();
+    expect(container.querySelector('.thinking-body')?.textContent).toContain('已完成的思考');
   });
 
   it('follows new reasoning content inside its bounded viewport', () => {

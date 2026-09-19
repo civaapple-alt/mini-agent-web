@@ -694,6 +694,44 @@ export function aggregateThreadItems(messages, entries) {
   return next;
 }
 
+function joinAssistantSegmentText(first, next) {
+  if (!first) return next || '';
+  if (!next) return first;
+  return `${first}\n\n${next}`;
+}
+
+/**
+ * A persisted checkpoint stores one assistant item for every model/tool loop.
+ * The message stream shows one contiguous assistant segment per Turn, so a
+ * restored Turn reads the same way as its live stream.
+ */
+export function coalesceAssistantTurnSegments(messages = []) {
+  const coalesced = [];
+  for (const message of messages) {
+    const previous = coalesced.at(-1);
+    const sameTurn = message?.role === 'assistant'
+      && previous?.role === 'assistant'
+      && message.turnId
+      && previous.turnId
+      && String(message.turnId) === String(previous.turnId);
+    if (!sameTurn) {
+      coalesced.push(message);
+      continue;
+    }
+
+    coalesced[coalesced.length - 1] = {
+      ...previous,
+      text: joinAssistantSegmentText(previous.text, message.text),
+      thinking: joinAssistantSegmentText(previous.thinking, message.thinking),
+      tools: [...(previous.tools || []), ...(message.tools || [])],
+      toolCallIds: [...(previous.toolCallIds || []), ...(message.toolCallIds || [])],
+      blocks: [...(previous.blocks || []), ...(message.blocks || [])],
+      usage: message.usage || previous.usage,
+    };
+  }
+  return coalesced;
+}
+
 /**
  * Restore the visible message order after checkpoint compaction.
  *

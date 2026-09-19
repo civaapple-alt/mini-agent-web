@@ -5,6 +5,7 @@ import {
   aggregateStreamEvent,
   aggregateThreadItems,
   assignHistoryTurnIds,
+  coalesceAssistantTurnSegments,
   approvalIdentity,
   filterEmptyMessages,
   groupCompactionBlocks,
@@ -956,6 +957,42 @@ test('thread item history keeps intermediate reasoning and maps tools to each re
   assert.equal(messages[2].blocks[2].id, 'call-2');
   assert.equal(messages[1].blocks.some((block) => block.content === 'Third thought'), true);
   assert.equal(messages[2].blocks.some((block) => block.content === 'Second thought'), true);
+});
+
+test('history coalesces adjacent assistant segments for the same Turn', () => {
+  const messages = coalesceAssistantTurnSegments([
+    { id: 'user-1', role: 'user', turnId: 'turn-history', text: 'Inspect' },
+    {
+      id: 'assistant-1',
+      role: 'assistant',
+      turnId: 'turn-history',
+      thinking: 'First thought',
+      blocks: [
+        { type: 'thinking', id: 'thinking-1', content: 'First thought' },
+        { type: 'tool', id: 'tool-1', name: 'read_file' },
+      ],
+    },
+    {
+      id: 'assistant-2',
+      role: 'assistant',
+      turnId: 'turn-history',
+      thinking: 'Second thought',
+      blocks: [
+        { type: 'thinking', id: 'thinking-2', content: 'Second thought' },
+        { type: 'tool', id: 'tool-2', name: 'shell' },
+      ],
+    },
+  ]);
+
+  assert.equal(messages.length, 2);
+  assert.equal(messages[1].id, 'assistant-1');
+  assert.equal(messages[1].thinking, 'First thought\n\nSecond thought');
+  assert.deepEqual(messages[1].blocks.map((block) => block.id), [
+    'thinking-1',
+    'tool-1',
+    'thinking-2',
+    'tool-2',
+  ]);
 });
 
 test('history filtering removes empty assistant placeholders but keeps visible blocks', () => {

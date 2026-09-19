@@ -7,6 +7,7 @@ import {
   aggregateStreamEvent,
   aggregateThreadItems,
   assignHistoryTurnIds,
+  coalesceAssistantTurnSegments,
   filterEmptyMessages,
   approvalIdentity,
   mergeApprovalEvent,
@@ -933,7 +934,9 @@ export default function App() {
         formatted.push(createGoalMessage(historyGoalObjective, `goal_hist_${threadId}`));
       }
       setMessages(
-        filterEmptyMessages(aggregateThreadItems(formatted, itemEntries)),
+        filterEmptyMessages(coalesceAssistantTurnSegments(
+          aggregateThreadItems(formatted, itemEntries),
+        )),
       );
     } catch (err) {
       if (isAbortError(err) || !isCurrentSessionRequest(requestContext)) return;

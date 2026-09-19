@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Show a durable in-stream checkpoint notice when manual continuation reaches a
+  Turn step limit, even when the Session Turn rail is visible. Stabilize the
+  rail's viewport anchor so streaming reasoning growth does not make it jump.
 - Hide synthetic context-compaction handoff summaries from the user input
   history and Session Turn rail while preserving the summary for the next model
   context and the structured compaction card.

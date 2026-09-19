@@ -230,10 +230,8 @@ export default function ChatArea({
         </div>
       )}
 
-      {lastTurnResult && !turnEntries.some((entry) => (
-        entry.turnId && String(entry.turnId) === String(lastTurnResult.turnId || lastTurnResult.turn_id)
-      )) && (
-        <div className="turn-status-banner" role="status">
+      {lastTurnResult && (
+        <div className="turn-status-banner" role="status" aria-live="polite">
           <strong>
             {lastTurnResult.status === 'step_limit'
               ? '本轮达到运行步数上限'
@@ -246,6 +244,10 @@ export default function ChatArea({
                 : '本轮未完整结束'}
           </strong>
           <span>
+            {lastTurnResult.status === 'step_limit'
+              && statusModel?.executionSettings?.continuationMode === 'manual'
+              ? '手动推进已暂停在当前检查点。'
+              : null}
             {lastTurnResult.steps
               ? `已执行 ${lastTurnResult.steps} 步。`
               : '已保留当前检查点。'}
@@ -254,7 +256,7 @@ export default function ChatArea({
                 {' '}原因：{lastTurnResult.error}
               </span>
             )}
-            {' '}当前回答可能不完整，可以继续发送指令。
+            {' '}当前回答可能不完整，可以继续发送指令推进下一轮。
           </span>
         </div>
       )}

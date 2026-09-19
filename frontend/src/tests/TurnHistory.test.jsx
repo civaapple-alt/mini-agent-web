@@ -126,4 +126,27 @@ describe('ChatArea direction cues', () => {
     HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
     expect(node).toBeDefined();
   });
+
+  it('keeps a manual step-limit notice in the message stream when the Turn rail is present', () => {
+    render(
+      <ChatArea
+        messages={[messages[0], messages[1]]}
+        threadItems={[]}
+        statusModel={{
+          scope: { turnId: 'turn-1' },
+          lifecycle: 'step_limit',
+          executionSettings: { continuationMode: 'manual' },
+        }}
+        isGenerating={false}
+        pendingApproval={null}
+        lastTurnResult={{ status: 'step_limit', turnId: 'turn-1', steps: 21 }}
+        traceScope={{ threadId: 'thread-1', projectId: 'project-1' }}
+      />,
+    );
+
+    expect(screen.getByRole('navigation', { name: 'Session Turn 导航' })).toBeDefined();
+    expect(screen.getByText('本轮达到运行步数上限')).toBeDefined();
+    expect(screen.getByText(/手动推进已暂停在当前检查点。已执行 21 步。/)).toBeDefined();
+    expect(screen.getByText(/可以继续发送指令推进下一轮/)).toBeDefined();
+  });
 });

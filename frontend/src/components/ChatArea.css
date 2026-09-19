@@ -88,6 +88,7 @@
   column-gap: 0;
   align-items: start;
   max-width: none;
+  min-height: 100%;
   width: 100%;
   box-sizing: border-box;
 }
@@ -103,12 +104,11 @@
 
 .session-turn-rail {
   position: sticky;
-  top: 50%;
+  top: calc(50% - 12px);
   align-self: start;
   width: 24px;
   min-height: 24px;
   z-index: 2;
-  transform: translateY(-50%);
 }
 
 .session-turn-node {

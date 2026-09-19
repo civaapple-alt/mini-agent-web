@@ -12,9 +12,14 @@ App Server 的权威结果，不维护自己的进程注册表。
 Child Session 可以读取父 Thread 的后台任务，但不能创建、停止或重启。修改代码后
 是否重启由模型或用户显式决定，第一版不会从文件变更自动猜测。
 
+运行面板和模型工具控制同一份任务状态。重启会替换当前 PID 和日志尾部，系统不保留
+每次运行的完整历史，也不记录由模型还是运行面板发起；仅凭 PID 或启动时间变化不能
+判断是谁重启的。
+
 GitHub Actions、云端构建、部署状态和其他没有本地进程的长时间等待不属于后台
-Shell 任务。第一版使用有界 `ScheduledTask` 标记让下一轮模型继续查询；停止标记
-不等于取消远程操作。详见 [`scheduled-tasks.md`](scheduled-tasks.md)。
+Shell 任务。`ScheduledTask` 只记录延时，不会自动启动下一轮模型；只有用户或 Host
+明确启动后续 Turn 时，它才可作为查询时间的提示。停止标记不等于取消远程操作。
+详见 [`scheduled-tasks.md`](scheduled-tasks.md)。
 
 相关 REST 接口：
 

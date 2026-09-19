@@ -754,7 +754,7 @@ class MiniAgentClient:
     async def list_scheduled_tasks(
         self, thread_id: str | None = None
     ) -> list[ScheduledTask]:
-        """List bounded wake-up markers for a Thread runtime."""
+        """List bounded delay markers for a Thread runtime."""
         res = await self._send_request(
             "scheduled-task/list", {"threadId": thread_id or self._active_thread_id}
         )

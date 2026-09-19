@@ -1,22 +1,31 @@
 # 定时任务
 
-“定时任务”是模型可见的、有界延时唤醒标记，不是后台 Shell，也不是通用
-Scheduler。模型调用 `scheduled_task` 创建一个 `task_id` 和延时；当前 Turn
-立即结束。到期后任务变为 `ready`，下一轮模型读取它，再执行一次远程状态查询，
-例如查询 GitHub Action。系统不会在到期时自动执行 Shell、自动发送模型 Turn，
-也不会凭空取消远程任务。
+`scheduled_task` 创建和读取的是 runtime 内存中的有界延时标记，不是会自动唤醒
+Agent 的 Scheduler。创建标记不会等待、不结束当前 Turn，也不会在到期时唤醒或续跑
+Thread、查询远程任务或执行 Shell。
 
-这解决了模型用 `sleep 30` 占住当前 Turn、导致 `steer` 或手动停止排队的问题，
-同时保持远程操作和本地进程的边界清晰：
+本地长驻进程（例如 Web 或 Tauri Dev Server）使用后台 Shell，并通过 `status` 和
+`logs` 查看；不要为后台 Shell 创建 `scheduled_task` 轮询标记。远程任务（例如 GitHub
+Action 或云端部署）只有在用户或 Host 会显式启动后续 Turn 时，才适合创建延时标记，
+供后续 Turn 知道何时读取状态并调用对应的远程查询工具。
 
-```text
-BackgroundShellTask = 本地进程及进程组生命周期
-ScheduledTask       = 下一轮可继续查询的有界时间标记
+```json
+{
+  "action": "create",
+  "task_id": "check-action",
+  "delay_seconds": 300,
+  "summary": "后续检查 GitHub Action 状态"
+}
 ```
 
-允许的动作是 `create`、`list`、`read` 和 `cancel`。第一版只支持 delay 触发，
-延时范围为 1 秒至 24 小时；取消只取消本地等待标记，不取消 GitHub Action、云端
-构建或部署。Child Session 可以读取父 Thread 的标记，但不能创建或取消。
+runtime 不运行计时 worker；标记的到期状态会在下一次 `create`、`list`、`read` 或
+`cancel` 时刷新为 `ready`。`ready` 只表示延迟已到，不代表远程任务完成，也不会触发
+新的 Turn。后续 Turn 必须由用户或 Host 显式启动。
+
+允许的动作是 `create`、`list`、`read` 和 `cancel`。延时范围为 1 秒至 24 小时；`create`
+必须提供 `task_id` 和 `delay_seconds`。同一 `task_id` 重复创建会返回原标记，不会修改
+已有的到期时间。`cancel` 只取消本地标记，不取消 GitHub Action、云端构建或部署。Child
+Session 可以读取父 Thread 的标记，但不能创建或取消。
 
 相关 REST 接口：
 
@@ -26,6 +35,6 @@ GET  /api/threads/{thread_id}/scheduled-tasks/{task_id}
 POST /api/threads/{thread_id}/scheduled-tasks/{task_id}/cancel
 ```
 
-运行面板展示任务状态、用途摘要和剩余时间。状态来自 App Server runtime 的权威
-记录；Gateway 和前端不维护第二份调度状态。runtime 关闭时，未完成的标记随该
-runtime 清理；第一版不做重启恢复、Webhook、供应商适配器或自动模型续跑。
+运行面板展示状态、用途摘要和剩余时间。状态来自 App Server runtime 的权威记录；Gateway
+和前端不维护第二份调度状态。runtime 关闭时，未完成的标记随该 runtime 清理；当前不做
+重启恢复、Webhook、供应商适配器或自动模型续跑。

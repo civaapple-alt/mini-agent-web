@@ -48,8 +48,8 @@ the source of truth for a Turn or Session.
 
 ## Long-running controls
 
-Child capacity, Notebook capacity, background Shell task state, scheduled wake
-up state, approval policy, and Goal budgets are runtime controls. Web Studio
+Child capacity, Notebook capacity, background Shell task state, scheduled delay
+marker state, approval policy, and Goal budgets are runtime controls. Web Studio
 can show them and submit user actions, but App Server and Host remain the
 owners. See [background Shell tasks](background-tasks.md) and [scheduled
 tasks](scheduled-tasks.md) for the Web-facing behavior.

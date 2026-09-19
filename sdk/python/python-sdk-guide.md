@@ -164,9 +164,10 @@ settled. Continue streaming or call `read_turn()` until the terminal result.
 `fork_thread()` creates an in-process logical branch. `fork_session()` creates
 an independent Session from a complete checkpoint. Neither copy an in-flight
 Turn or approval wait. Notebook entries, background Shell tasks, and scheduled
-wake-up markers remain App Server control-plane state. Read their bounded
+delay markers remain App Server control-plane state. Read their bounded
 projections through the SDK, but do not keep a second operation history or
-scheduler in a client.
+scheduler in a client. Scheduled tasks are delay markers only; they do not
+resume a Thread or start a later Turn.
 
 ## Handle timeouts and protocol changes
 

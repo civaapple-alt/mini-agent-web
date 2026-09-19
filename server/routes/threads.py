@@ -493,11 +493,11 @@ async def restart_background_task(
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.get("/{thread_id}/scheduled-tasks", summary="List scheduled wake-up tasks")
+@router.get("/{thread_id}/scheduled-tasks", summary="List scheduled delay markers")
 async def list_scheduled_tasks(
     thread_id: str, project_id: str | None = Query(default=None)
 ) -> dict[str, Any]:
-    """Read bounded wake-up markers owned by the Thread runtime."""
+    """Read bounded delay markers owned by the Thread runtime."""
     try:
         client, owner_thread_id, _ = await session_manager.get_scheduled_task_target(
             thread_id, project_id
@@ -541,7 +541,7 @@ async def _scheduled_task_action(
     }
 
 
-@router.get("/{thread_id}/scheduled-tasks/{task_id}", summary="Read a scheduled wake-up task")
+@router.get("/{thread_id}/scheduled-tasks/{task_id}", summary="Read a scheduled delay marker")
 async def read_scheduled_task(
     thread_id: str, task_id: str, project_id: str | None = Query(default=None)
 ) -> dict[str, Any]:
@@ -557,7 +557,7 @@ async def read_scheduled_task(
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.post("/{thread_id}/scheduled-tasks/{task_id}/cancel", summary="Cancel a scheduled wake-up task")
+@router.post("/{thread_id}/scheduled-tasks/{task_id}/cancel", summary="Cancel a scheduled delay marker")
 async def cancel_scheduled_task(
     thread_id: str, task_id: str, project_id: str | None = Query(default=None)
 ) -> dict[str, Any]:

@@ -388,7 +388,7 @@ class SessionManager:
     async def get_scheduled_task_target(
         self, thread_id: str, project_id: str | None = None
     ) -> tuple[MiniAgentClient, str, bool]:
-        """Resolve the owner runtime for a scheduled wake-up marker.
+        """Resolve the owner runtime for a scheduled delay marker.
 
         Scheduled tasks follow the same Thread ownership boundary as local
         background Shell tasks: a Child Session may read its parent's markers,

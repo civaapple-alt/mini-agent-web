@@ -405,7 +405,7 @@ class BackgroundTaskLogs:
 
 @dataclass
 class ScheduledTask:
-    """A bounded wake-up marker for a later model turn."""
+    """A bounded delay marker; it does not wake a Thread or start a Turn."""
 
     task_id: str
     owner_thread_id: str

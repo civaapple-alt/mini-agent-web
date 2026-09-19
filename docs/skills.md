@@ -117,6 +117,13 @@ trusted effective directory, applies the existing per-file bound, and limits
 the combined activated body to 32 KiB. A failed read or validation emits a
 failure event and prevents model execution.
 
+For new Sessions, the settled Turn also stores a bounded display projection of
+the selected workflow and emitted skill milestones. On restart, Web Studio uses
+that projection with the canonical item order to restore the same workflow chip
+and skill activity boundaries. The browser does not infer Skill use or write
+history; legacy Sessions without this projection keep their existing history
+shape.
+
 每个已启用 Skill 的根目录也是受信任的只读目录。模型可以在当前 Turn 中通过
 现有 `read_file` 按需查看该目录下的 `references/`、`scripts/`、`assets/` 和其他
 说明文件；发现阶段不会递归加载它们。Skill 目录的 `read_file` 输出合计最多

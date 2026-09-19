@@ -27,6 +27,9 @@ MAX_SESSION_BYTES = 32 * 1024 * 1024
 MAX_RECORD_BYTES = 64 * 1024
 MAX_ERROR_CHARS = 2048
 MAX_CHECKPOINT_MESSAGES = 64
+MAX_TURN_PRESENTATIONS = 64
+MAX_TURN_PRESENTATION_ACTIVITIES = 32
+MAX_TURN_PRESENTATION_SKILLS = 8
 MAX_CHECKPOINT_MESSAGE_CHARS = 16 * 1024
 MAX_ITEM_LIST_LIMIT = 128
 MAX_NOTEBOOK_ENTRIES = 64
@@ -359,6 +362,7 @@ def _item_projections(record: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "type": "reasoning",
                 "id": f"{item_id}:reasoning",
+                "segmentId": item_id,
                 "text": reasoning,
             }
         )
@@ -368,6 +372,7 @@ def _item_projections(record: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "type": "agentMessage",
                 "id": f"{item_id}:agent",
+                "segmentId": item_id,
                 "text": text,
             }
         )
@@ -376,6 +381,68 @@ def _item_projections(record: dict[str, Any]) -> list[dict[str, Any]]:
         for projection in projections:
             projection["capturedAt"] = captured_at
     return projections
+
+
+def _turn_presentation_projection(record: dict[str, Any]) -> dict[str, Any] | None:
+    """Project bounded, Host-owned workflow activity from a Turn record."""
+    presentation = record.get("presentation")
+    turn_id = _bounded_text(record.get("turn_id"), 128)
+    if not isinstance(presentation, dict) or not turn_id:
+        return None
+
+    projected: dict[str, Any] = {"turnId": turn_id, "activities": []}
+    workflow = presentation.get("workflow")
+    if isinstance(workflow, dict):
+        workflow_id = _bounded_text(workflow.get("id"), 256)
+        workflow_kind = _bounded_text(workflow.get("kind"), 64)
+        workflow_mode = _bounded_text(workflow.get("mode"), 64)
+        if workflow_id and workflow_kind and workflow_mode:
+            projected["workflow"] = {
+                "id": workflow_id,
+                "kind": workflow_kind,
+                "mode": workflow_mode,
+            }
+
+    activities = presentation.get("activities")
+    if not isinstance(activities, list):
+        return projected
+    for activity in activities[:MAX_TURN_PRESENTATION_ACTIVITIES]:
+        if not isinstance(activity, dict):
+            continue
+        kind = _bounded_text(activity.get("kind"), 64)
+        after_segments = _bounded_int(activity.get("afterAssistantSegments"))
+        if kind not in {
+            "skill_group_activated",
+            "skills_loaded",
+            "skills_load_failed",
+        }:
+            continue
+        item: dict[str, Any] = {
+            "kind": kind,
+            "afterAssistantSegments": after_segments,
+        }
+        for source, target in (
+            ("group", "group"),
+            ("source", "source"),
+            ("phase", "phase"),
+            ("activation", "activation"),
+            ("reasonCode", "reasonCode"),
+        ):
+            value = _bounded_text(activity.get(source), 256)
+            if value:
+                item[target] = value
+        skills = activity.get("skills")
+        if isinstance(skills, list):
+            item["skills"] = [
+                value
+                for value in (
+                    _bounded_text(skill, 256)
+                    for skill in skills[:MAX_TURN_PRESENTATION_SKILLS]
+                )
+                if value
+            ]
+        projected["activities"].append(item)
+    return projected
 
 
 def _checkpoint_projection(record: dict[str, Any]) -> dict[str, Any]:
@@ -594,6 +661,7 @@ class SessionCatalog:
             "next_turn_number": entry["turn_count"] + 1,
             "messages": entry.get("messages", []),
             "items": entry.get("items", []),
+            "presentations": entry.get("presentations", []),
             "session": entry,
         }
 
@@ -982,6 +1050,13 @@ class SessionCatalog:
                 if record.get("kind") == "item"
                 for projected in _item_projections(record)
             ][-256:]
+            entry["presentations"] = [
+                projection
+                for record in records
+                if record.get("kind") == "turn_started"
+                for projection in [_turn_presentation_projection(record)]
+                if projection is not None
+            ][-MAX_TURN_PRESENTATIONS:]
         return entry
 
 

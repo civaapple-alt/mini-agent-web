@@ -694,42 +694,180 @@ export function aggregateThreadItems(messages, entries) {
   return next;
 }
 
-function joinAssistantSegmentText(first, next) {
-  if (!first) return next || '';
-  if (!next) return first;
-  return `${first}\n\n${next}`;
+function presentationActivityNames(activity) {
+  return (activity?.skills || []).filter((name) => typeof name === 'string' && name);
+}
+
+function appendPresentationActivity(blocks, activity, turnId) {
+  if (!activity?.kind) return;
+  if (activity.kind === 'skill_group_activated') {
+    const id = `workflow_${turnId}`;
+    const index = blocks.findIndex((block) => block.type === 'skills' && block.id === id);
+    const next = {
+      type: 'skills',
+      id,
+      workflow: activity.group || null,
+      skills: [],
+      loading: [],
+      loaded: [],
+      failed: [],
+      reasonCode: null,
+    };
+    if (index === -1) blocks.push(next);
+    else blocks[index] = { ...blocks[index], ...next };
+    return;
+  }
+  if (activity.kind !== 'skills_loaded' && activity.kind !== 'skills_load_failed') return;
+
+  const id = `skills_${turnId}`;
+  const index = blocks.findIndex((block) => block.type === 'skills' && block.id === id);
+  const existing = index === -1 ? {} : blocks[index];
+  const loading = new Set(existing.loading || []);
+  const loaded = new Set(existing.loaded || existing.skills || []);
+  const failed = new Set(existing.failed || []);
+  const names = presentationActivityNames(activity);
+  if (activity.kind === 'skills_load_failed') {
+    names.forEach((name) => {
+      loading.delete(name);
+      failed.add(name);
+    });
+  } else if (activity.phase === 'started') {
+    names.forEach((name) => {
+      if (!loaded.has(name)) loading.add(name);
+      failed.delete(name);
+    });
+  } else {
+    names.forEach((name) => {
+      loading.delete(name);
+      failed.delete(name);
+      loaded.add(name);
+    });
+  }
+  const next = {
+    ...existing,
+    type: 'skills',
+    id,
+    workflow: null,
+    activation: activity.activation || existing.activation || 'on_demand',
+    loading: [...loading],
+    loaded: [...loaded],
+    failed: [...failed],
+    skills: [...loaded],
+    reasonCode: activity.reasonCode || existing.reasonCode || null,
+  };
+  if (index === -1) blocks.push(next);
+  else blocks[index] = next;
+}
+
+function restoredToolBlock(item) {
+  const output = projectedToolOutput(item);
+  const status = projectedStatus(item.status);
+  return {
+    type: 'tool',
+    id: item.id || '',
+    call_id: item.id || '',
+    name: item.name || item.toolName || item.tool || 'tool',
+    toolName: item.name || item.toolName || item.tool || 'tool',
+    arguments: item.arguments ?? {},
+    args: item.arguments ?? {},
+    status,
+    outcome: projectedToolOutcome(item),
+    output,
+    error: status === 'failed' ? output ?? 'Tool failed' : null,
+  };
+}
+
+function replayPersistedTurnBlocks(turnId, entries, presentation) {
+  const blocks = [];
+  const activities = presentation?.activities || [];
+  let activityIndex = 0;
+  let assistantSegments = 0;
+  let activeSegmentId = null;
+  const appendThrough = (segmentCount) => {
+    while (
+      activityIndex < activities.length
+      && Number(activities[activityIndex]?.afterAssistantSegments || 0) <= segmentCount
+    ) {
+      appendPresentationActivity(blocks, activities[activityIndex], turnId);
+      activityIndex += 1;
+    }
+  };
+  const finishSegment = () => {
+    if (activeSegmentId === null) return;
+    activeSegmentId = null;
+    assistantSegments += 1;
+    appendThrough(assistantSegments);
+  };
+
+  appendThrough(0);
+  for (const entry of entries) {
+    const item = entry?.item || {};
+    if (item.type === 'reasoning' || item.type === 'agentMessage') {
+      const segmentId = item.segmentId || item.id || `${turnId}:${assistantSegments}`;
+      if (activeSegmentId !== null && activeSegmentId !== segmentId) finishSegment();
+      activeSegmentId = segmentId;
+      blocks.push(item.type === 'reasoning'
+        ? { type: 'thinking', id: item.id, content: item.text || '', isStreaming: false }
+        : { type: 'text', id: item.id, content: item.text || '' });
+      continue;
+    }
+    finishSegment();
+    if (item.type === 'toolCall' || item.type === 'tool_call') {
+      blocks.push(restoredToolBlock(item));
+    } else if (item.type === 'contextCompaction' || item.type === 'context_compaction') {
+      blocks.push({ ...item, type: 'compaction', id: item.id || `compaction_${blocks.length}` });
+    }
+  }
+  finishSegment();
+  appendThrough(Number.MAX_SAFE_INTEGER);
+  return blocks;
 }
 
 /**
- * A persisted checkpoint stores one assistant item for every model/tool loop.
- * The message stream shows one contiguous assistant segment per Turn, so a
- * restored Turn reads the same way as its live stream.
+ * Rebuild a settled Turn from its durable item order and bounded presentation
+ * metadata. New SessionStore records carry that metadata, so restored UI has
+ * the same workflow and skill boundaries as the live event stream.
  */
-export function coalesceAssistantTurnSegments(messages = []) {
-  const coalesced = [];
-  for (const message of messages) {
-    const previous = coalesced.at(-1);
-    const sameTurn = message?.role === 'assistant'
-      && previous?.role === 'assistant'
-      && message.turnId
-      && previous.turnId
-      && String(message.turnId) === String(previous.turnId);
-    if (!sameTurn) {
-      coalesced.push(message);
-      continue;
-    }
+export function restorePersistedTurnPresentation(messages = [], entries = [], presentations = []) {
+  const presentationByTurn = new Map(
+    (presentations || [])
+      .filter((presentation) => presentation?.turnId)
+      .map((presentation) => [String(presentation.turnId), presentation]),
+  );
+  if (presentationByTurn.size === 0) return messages;
 
-    coalesced[coalesced.length - 1] = {
-      ...previous,
-      text: joinAssistantSegmentText(previous.text, message.text),
-      thinking: joinAssistantSegmentText(previous.thinking, message.thinking),
-      tools: [...(previous.tools || []), ...(message.tools || [])],
-      toolCallIds: [...(previous.toolCallIds || []), ...(message.toolCallIds || [])],
-      blocks: [...(previous.blocks || []), ...(message.blocks || [])],
-      usage: message.usage || previous.usage,
-    };
+  const entriesByTurn = new Map();
+  for (const entry of entries || []) {
+    const turnId = entry?.turnId || entry?.turn_id;
+    if (!turnId) continue;
+    const key = String(turnId);
+    if (!entriesByTurn.has(key)) entriesByTurn.set(key, []);
+    entriesByTurn.get(key).push(entry);
   }
-  return coalesced;
+
+  const restoredTurns = new Set();
+  return (messages || []).flatMap((message) => {
+    if (message?.role !== 'assistant' || !message.turnId) return [message];
+    const key = String(message.turnId);
+    const presentation = presentationByTurn.get(key);
+    if (!presentation) return [message];
+    if (restoredTurns.has(key)) return [];
+    restoredTurns.add(key);
+    const blocks = replayPersistedTurnBlocks(
+      key,
+      entriesByTurn.get(key) || [],
+      presentation,
+    );
+    if (blocks.length === 0) return [message];
+    return [{
+      ...message,
+      text: blocks.filter((block) => block.type === 'text').map((block) => block.content).join('\n\n'),
+      thinking: blocks.filter((block) => block.type === 'thinking').map((block) => block.content).join('\n\n'),
+      tools: blocks.filter((block) => block.type === 'tool'),
+      toolCallIds: blocks.filter((block) => block.type === 'tool').map((block) => block.call_id),
+      blocks,
+    }];
+  });
 }
 
 /**

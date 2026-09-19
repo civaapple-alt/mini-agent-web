@@ -5,10 +5,9 @@ import {
   shouldAcceptEventForThread,
   aggregateItemLifecycle,
   aggregateStreamEvent,
-  aggregateThreadItems,
   assignHistoryTurnIds,
-  coalesceAssistantTurnSegments,
   filterEmptyMessages,
+  restorePersistedTurnPresentation,
   approvalIdentity,
   mergeApprovalEvent,
   shouldIgnoreApprovalWhileInterrupting,
@@ -855,6 +854,12 @@ export default function App() {
         setLastTurnResult(null);
       }
       const rawMessages = assignHistoryTurnIds(cp.messages || [], itemEntries);
+      const presentations = cp.presentations || cp.session?.presentations || [];
+      const workflowByTurn = new Map(
+        presentations
+          .filter((presentation) => presentation?.turnId && presentation.workflow?.id)
+          .map((presentation) => [String(presentation.turnId), presentation.workflow]),
+      );
       const persistedGoalObjective = cp.session?.goal?.objective?.trim() || '';
       let historyGoalObjective = persistedGoalObjective;
       let goalMessageAdded = false;
@@ -886,6 +891,9 @@ export default function App() {
             ? m.toolCalls
             : [];
         const isUserMessage = m.role === 'user';
+        const workflow = isUserMessage && m.turnId
+          ? workflowByTurn.get(String(m.turnId)) || null
+          : null;
         const displayText = isUserMessage ? cleanInputText(m.text) : m.text;
         const textAttachmentNames = isUserMessage
           ? extractTextAttachmentNames(m.text)
@@ -895,6 +903,7 @@ export default function App() {
           role: m.role,
           turnId: m.turnId || null,
           text: displayText || '',
+          ...(workflow ? { workflow } : {}),
           ...(isUserMessage && textAttachmentNames.length > 0
             ? { textAttachments: textAttachmentNames.map((name) => ({ name })) }
             : {}),
@@ -934,9 +943,9 @@ export default function App() {
         formatted.push(createGoalMessage(historyGoalObjective, `goal_hist_${threadId}`));
       }
       setMessages(
-        filterEmptyMessages(coalesceAssistantTurnSegments(
-          aggregateThreadItems(formatted, itemEntries),
-        )),
+        filterEmptyMessages(
+          restorePersistedTurnPresentation(formatted, itemEntries, presentations),
+        ),
       );
     } catch (err) {
       if (isAbortError(err) || !isCurrentSessionRequest(requestContext)) return;

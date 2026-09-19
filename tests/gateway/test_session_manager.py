@@ -1293,14 +1293,72 @@ def test_session_catalog_projects_assistant_reasoning_and_text_items():
         {
             "type": "reasoning",
             "id": "assistant-1:reasoning",
+            "segmentId": "assistant-1",
             "text": "Inspect the relevant modules first.",
         },
         {
             "type": "agentMessage",
             "id": "assistant-1:agent",
+            "segmentId": "assistant-1",
             "text": "I found the relevant workflow path.",
         },
     ]
+
+
+def test_session_catalog_projects_bounded_turn_presentation():
+    from server.session_catalog import _turn_presentation_projection
+
+    projected = _turn_presentation_projection(
+        {
+            "turn_id": "turn-1",
+            "presentation": {
+                "workflow": {
+                    "kind": "skill_group",
+                    "id": "knowledge-work",
+                    "mode": "auto",
+                },
+                "activities": [
+                    {
+                        "kind": "skill_group_activated",
+                        "afterAssistantSegments": 0,
+                        "group": "knowledge-work",
+                        "source": "builtin",
+                    },
+                    {
+                        "kind": "skills_loaded",
+                        "afterAssistantSegments": 1,
+                        "phase": "loaded",
+                        "activation": "on_demand",
+                        "skills": ["knowledge-work:product-management"],
+                    },
+                ],
+            },
+        }
+    )
+
+    assert projected == {
+        "turnId": "turn-1",
+        "workflow": {
+            "kind": "skill_group",
+            "id": "knowledge-work",
+            "mode": "auto",
+        },
+        "activities": [
+            {
+                "kind": "skill_group_activated",
+                "afterAssistantSegments": 0,
+                "group": "knowledge-work",
+                "source": "builtin",
+            },
+            {
+                "kind": "skills_loaded",
+                "afterAssistantSegments": 1,
+                "phase": "loaded",
+                "activation": "on_demand",
+                "skills": ["knowledge-work:product-management"],
+            },
+        ],
+    }
 
 
 def test_session_catalog_skips_oversized_checkpoint_but_keeps_goal_state(

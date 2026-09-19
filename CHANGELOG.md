@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Merge contiguous persisted assistant segments from the same Turn before
-  rendering history, so a restarted Web Studio does not repeat compact activity
-  cards for each model and tool loop.
+- Restore new Sessions from their bounded Turn presentation projection instead
+  of merging assistant segments. Workflow selection, skill-group activation,
+  and skill-load milestones retain their original boundaries and placement
+  after a Web Studio or App Server restart.
 - Reduce the message-stream gap between consecutive compact activity summaries.
 - Show a durable in-stream checkpoint notice when manual continuation reaches a
   Turn step limit, even when the Session Turn rail is visible. Stabilize the

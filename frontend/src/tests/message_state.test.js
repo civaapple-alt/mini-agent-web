@@ -5,13 +5,13 @@ import {
   aggregateStreamEvent,
   aggregateThreadItems,
   assignHistoryTurnIds,
-  coalesceAssistantTurnSegments,
   approvalIdentity,
   filterEmptyMessages,
   groupCompactionBlocks,
   mergeApprovalEvent,
   normalizeAssistantBlocks,
   orderMessagesByTurnHistory,
+  restorePersistedTurnPresentation,
   shouldAcceptEventForThread,
   shouldIgnoreApprovalWhileInterrupting,
   shouldIgnoreStreamEventWhileInterrupting,
@@ -959,8 +959,8 @@ test('thread item history keeps intermediate reasoning and maps tools to each re
   assert.equal(messages[2].blocks.some((block) => block.content === 'Second thought'), true);
 });
 
-test('history coalesces adjacent assistant segments for the same Turn', () => {
-  const messages = coalesceAssistantTurnSegments([
+test('history replays persisted workflow and skill boundaries in item order', () => {
+  const messages = restorePersistedTurnPresentation([
     { id: 'user-1', role: 'user', turnId: 'turn-history', text: 'Inspect' },
     {
       id: 'assistant-1',
@@ -982,15 +982,43 @@ test('history coalesces adjacent assistant segments for the same Turn', () => {
         { type: 'tool', id: 'tool-2', name: 'shell' },
       ],
     },
+  ], [
+    {
+      turnId: 'turn-history',
+      item: { type: 'reasoning', id: 'assistant-1:reasoning', segmentId: 'assistant-1', text: 'First thought' },
+    },
+    {
+      turnId: 'turn-history',
+      item: { type: 'toolCall', id: 'tool-1', name: 'read_file', status: 'completed' },
+    },
+    {
+      turnId: 'turn-history',
+      item: { type: 'reasoning', id: 'assistant-2:reasoning', segmentId: 'assistant-2', text: 'Second thought' },
+    },
+    {
+      turnId: 'turn-history',
+      item: { type: 'toolCall', id: 'tool-2', name: 'shell', status: 'completed' },
+    },
+  ], [
+    {
+      turnId: 'turn-history',
+      workflow: { kind: 'skill_group', id: 'knowledge-work', mode: 'auto' },
+      activities: [
+        { kind: 'skill_group_activated', afterAssistantSegments: 0, group: 'knowledge-work' },
+        { kind: 'skills_loaded', afterAssistantSegments: 1, phase: 'loaded', skills: ['knowledge-work:product-management'] },
+      ],
+    },
   ]);
 
   assert.equal(messages.length, 2);
   assert.equal(messages[1].id, 'assistant-1');
   assert.equal(messages[1].thinking, 'First thought\n\nSecond thought');
   assert.deepEqual(messages[1].blocks.map((block) => block.id), [
-    'thinking-1',
+    'workflow_turn-history',
+    'assistant-1:reasoning',
+    'skills_turn-history',
     'tool-1',
-    'thinking-2',
+    'assistant-2:reasoning',
     'tool-2',
   ]);
 });

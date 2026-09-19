@@ -196,7 +196,7 @@ export default function ChatArea({
           </div>
         </div>
       ) : (
-        <div className={`message-stream-layout ${turnEntries.length > 0 ? 'has-turn-rail' : ''}`}>
+        <div className="message-stream-layout">
           <div className="messages-list">
             {displayMessages.map((msg, index) => {
               const messageId = String(msg.id || `msg_${index}`);

@@ -103,18 +103,6 @@
   width: 100%;
 }
 
-.message-stream-layout.has-turn-rail {
-  position: relative;
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
-  column-gap: 0;
-  align-items: start;
-  max-width: none;
-  min-height: 100%;
-  width: 100%;
-  box-sizing: border-box;
-}
-
 .messages-list {
   max-width: 860px;
   margin: 0 auto;
@@ -632,18 +620,8 @@
     gap: 12px;
   }
 
-  .message-stream-layout.has-turn-rail {
-    max-width: 860px;
-    display: block;
-    padding-left: 0;
-  }
-
   .session-turn-rail-viewport {
     display: none;
-  }
-
-  .message-stream-layout.has-turn-rail > .messages-list {
-    max-width: 860px;
   }
 
   .user-bubble-container {

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep the message stream at its normal centered width when the Session Turn rail is visible.
 - Keep the active block expanded until the next block starts or the Turn settles.
   Collapse each past block independently while later reasoning and tool blocks
   continue in order.

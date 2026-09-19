@@ -1,16 +1,16 @@
 # Python SDK guide
 
 The `mini-agent` package is the zero-dependency asynchronous client for
-`mini-agent-app-server`. It starts or connects to the App Server process,
-speaks JSON-RPC over stdio, parses bounded events, and forwards control
-requests. It does not own an Agent Loop, Session history, approval grants, or
-recovery policy.
+`mini-agent-app-server`. It starts one local App Server process, exchanges
+JSON-RPC over stdio, parses bounded projections, and forwards control requests.
+The client does not implement an Agent Loop or keep Session history, approval
+grants, or recovery state.
 
-## Start a client
+## Start and initialize a client
 
-The SDK requires Python 3.10 or later. In this workspace, install its
-development dependencies with `uv sync`. Ensure that `mini-agent-app-server`
-is on `PATH`, or set `MINI_AGENT_APP_SERVER_PATH`.
+Use the context manager so the SDK always releases its child process. After
+the process starts, negotiate the protocol and select a Thread before you
+submit a Turn:
 
 ```python
 import asyncio
@@ -34,13 +34,16 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-`MiniAgentClient` loads `.env` files while it walks from `cwd` toward the
-filesystem root. Explicit `env` values override process environment values,
-which override values from `.env`. The client does not modify the parent
-process environment.
+The SDK requires Python 3.10 or later. It finds `mini-agent-app-server` on
+`PATH`, or you can set `MINI_AGENT_APP_SERVER_PATH` or pass `executable=`.
 
-Pass `log_dir` or `log_file` to enable SDK file logging. Logging is optional;
-the default client does not create a log file.
+The constructor merges configuration in this order: explicit `env`, process
+environment, then the first value found in its bounded `.env` search. That
+search checks `cwd`, its parent, SDK paths, the Web workspace, and
+`~/.mini-agent`. The SDK never changes the parent process environment.
+
+Logging is disabled by default. Pass `log_dir` or `log_file`, or set
+`MINI_AGENT_LOG_DIR` or `MINI_AGENT_LOG_FILE`, to write SDK logs.
 
 ```python
 client = MiniAgentClient(
@@ -50,34 +53,43 @@ client = MiniAgentClient(
 )
 ```
 
-## Use the runtime boundary
+## Call the public boundary
 
 App Server owns Thread, Turn, Goal, Session, approval, and recovery semantics.
-The SDK exposes those public methods directly:
+The SDK exposes its supported controls directly:
 
 | Task | SDK method |
 | --- | --- |
 | Create or attach a Thread | `start_thread()` |
-| Submit a turn | `start_turn()` or `stream_turn()` |
-| Read a settled checkpoint | `read_thread()` |
-| Read live state | `get_runtime_status()` |
-| Steer or stop a Turn | `steer_turn()` or `interrupt_turn()` |
-| Read bounded history | `list_thread_items()` or `replay_events()` |
-| Create a logical branch | `fork_thread()` |
+| List or read Threads | `list_threads()`, `read_thread()` |
+| Submit a Turn | `start_turn()` or `stream_turn()` |
+| Read or wait for settlement | `read_turn()` or `wait_for_turn()` |
+| Steer or stop a running Turn | `steer_turn()` or `interrupt_turn()` |
+| Read live or replayable state | `get_runtime_status()`, `replay_events()`, `list_thread_items()` |
+| Create a logical Thread branch | `fork_thread()` |
 | Create an independent persisted Session | `fork_session()` |
-| Restore serialized Thread state | `resume_thread()` |
-| Manage Plan and Goal | `update_thread_settings()`, `set_goal()`, `get_goal()`, `clear_goal()` |
-| Read or update environment controls | `get_world_state()`, `refresh_world()`, `set_world_execution()` |
+| Restore a serialized checkpoint | `resume_thread()` |
+| Configure Plan or a Goal | `update_thread_settings()`, `set_goal()`, `get_goal()`, `clear_goal()` |
+| Read or modify a Notebook | `read_notebook()`, `write_notebook()`, `forget_notebook()` |
+| Inspect execution environment | `get_world_state()`, `refresh_world()`, `set_world_execution()` |
+| Inspect or retry MCP | `get_mcp_status()`, `retry_mcp()` |
+| Inspect local tasks | `list_background_tasks()` and `list_scheduled_tasks()` |
 
-The SDK's `get_workflow_state()` is a local, read-only convenience projection.
-It combines cached Thread settings with `thread/goal/get`. It does not send a
-legacy `workflow/state` RPC.
+`get_workflow_state()` is an SDK-only read-only convenience projection. It
+combines cached Thread settings with `thread/goal/get`; it does not send the
+removed `workflow/state` RPC.
 
-## Stream events and items
+Protocol version 1 has no public Notebook search method. Although the current
+SDK implementation exposes `search_notebook()`, compatibility code must not
+use it. Use `read_notebook()` and search the returned bounded projection.
 
-`stream_turn()` yields events for its requested Thread and Turn until the
-runtime settles. It keeps unknown event types as `GenericEvent`, so a newer App
-Server event does not break an older consumer.
+## Stream events without losing identity
+
+`stream_turn()` submits a Turn and yields its correlated envelopes until that
+Turn settles. The first envelope has type `_turn_submission`; subsequent
+envelopes include `event`, `approval`, and lifecycle notifications. Unknown
+Core event types remain `GenericEvent`, so a newer App Server event does not
+break an older SDK consumer.
 
 ```python
 async for envelope in client.stream_turn("Inspect the workspace"):
@@ -88,13 +100,13 @@ async for envelope in client.stream_turn("Inspect the workspace"):
             print(item.id, item.name, item.status, item.outcome)
 ```
 
-`ThreadItem.status` is an item lifecycle value. `ThreadItem.outcome` is the
-structured tool outcome. Keep those fields separate. Do not infer approval,
-retry, or success from tool output text.
+`ThreadItem.status` describes item lifecycle. `ThreadItem.outcome` describes
+the structured tool result. Do not infer approval, retry, or success from tool
+output text.
 
-For reconnects, read `get_runtime_status()` and request a bounded event page.
-If `has_gap` is true, reload canonical Thread and item projections before
-accepting the replay as complete.
+For a reconnect, use the latest per-Thread event sequence with
+`replay_events()`. If the page has `has_gap=True`, load canonical history
+before accepting replay as complete:
 
 ```python
 page = await client.replay_events("default", after_sequence=last_sequence, limit=128)
@@ -103,10 +115,36 @@ if page.has_gap:
     items = await client.list_thread_items("default", limit=128)
 ```
 
-## Set execution and workflow controls
+## Receive notifications and approvals
 
-Access scope and approval policy are independent controls. They are enforced by
-Host and Capabilities, not by the SDK:
+`notification_handler` receives `turn/event`, item lifecycle, runtime, and
+transport-error notifications. The SDK awaits the handler for `turn/event`,
+so put slow work on your own queue rather than block the reader loop.
+
+```python
+async def approve_once(request: dict) -> dict:
+    return {"decision": "approve", "grantScope": "once"}
+
+
+async def observe(notification: dict) -> None:
+    print(notification["type"])
+
+
+client = MiniAgentClient(
+    approval_handler=approve_once,
+    notification_handler=observe,
+)
+```
+
+`approval_handler` receives only requests that the runtime has not already
+resolved. It must return a decision and, for approval, a grant scope allowed
+by the request. Without a handler, the SDK denies the request. The SDK reports
+the same approval record through `stream_turn()`.
+
+## Set execution and lifecycle controls
+
+Access scope and approval policy are independent. Host and Capabilities
+enforce both controls, not the SDK:
 
 ```python
 await client.set_world_execution(access="full_machine", policy="interactive")
@@ -118,43 +156,29 @@ await client.update_thread_settings(
 await client.set_goal("Review the repository and report verified findings.")
 ```
 
-`full_machine` expands candidate filesystem scope. It does not bypass deny
+`full_machine` expands candidate filesystem scope. It does not bypass Deny
 rules, Plan locks, tool availability, sandbox checks, or high-risk approval.
-An `approval_handler` receives only approval requests that the runtime has not
-already resolved. Without a handler, the SDK denies those pending requests.
+An accepted `interrupt_turn()` request also does not mean that the Turn is
+settled. Continue streaming or call `read_turn()` until the terminal result.
 
-```python
-async def approve_once(request: dict) -> dict:
-    return {"decision": "approve", "grantScope": "once"}
+`fork_thread()` creates an in-process logical branch. `fork_session()` creates
+an independent Session from a complete checkpoint. Neither copy an in-flight
+Turn or approval wait. Notebook entries, background Shell tasks, and scheduled
+wake-up markers remain App Server control-plane state. Read their bounded
+projections through the SDK, but do not keep a second operation history or
+scheduler in a client.
 
+## Handle timeouts and protocol changes
 
-client = MiniAgentClient(approval_handler=approve_once)
-```
+The default request timeout is 30 seconds. A positive `request_timeout`
+changes that value for one client. On timeout, the SDK removes the pending
+request and raises `ServerProcessError`. `AppServerError` retains the JSON-RPC
+error `code`, `message`, and `data`. `session/fork` identity or context-policy
+conflicts use `SESSION_FORK_CONFLICT_CODE` (`-32001`).
 
-## Branches, sessions, and child work
-
-`fork_thread()` branches an in-process Thread history. `fork_session()` creates
-an independent Session from a complete checkpoint and returns its lineage and
-context-policy result. Neither method copies an in-flight Turn or approval
-wait. `resume_thread()` accepts a serialized `ThreadCheckpoint` when a caller
-needs to restore it through the public protocol.
-
-Child operations, Notebook entries, background Shell tasks, and scheduled
-wake-up markers are App Server control-plane features. The SDK can read their
-bounded projections, but it must not keep a second operation history or task
-scheduler.
-
-## Verify a protocol change
-
-Run the deterministic compatibility fixture when changing event models or SDK
-types:
+When event models, public types, or wire fields change, run:
 
 ```bash
 uv run python cookbook/python-demo/06_protocol_compatibility.py
-uv run pytest tests/test_sdk_events.py tests/test_cookbook_validation.py -q
+uv run pytest tests/sdk/test_sdk_events.py tests/cookbook/test_cookbook_validation.py -q
 ```
-
-The default request timeout is 30 seconds. Configure a different positive
-`request_timeout` only for the caller's local environment. The SDK removes a
-timed-out pending request and raises `ServerProcessError` instead of waiting
-indefinitely.

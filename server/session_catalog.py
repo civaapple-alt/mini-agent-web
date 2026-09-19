@@ -32,6 +32,7 @@ MAX_TURN_PRESENTATION_ACTIVITIES = 32
 MAX_TURN_PRESENTATION_SKILLS = 8
 MAX_CHECKPOINT_MESSAGE_CHARS = 16 * 1024
 MAX_ITEM_LIST_LIMIT = 128
+MAX_OPERATION_LIFECYCLE_ENTRIES = 32
 MAX_NOTEBOOK_ENTRIES = 64
 MAX_NOTEBOOK_CONTENT_BYTES = 4096
 MAX_NOTEBOOK_ENTRY_BYTES = MAX_NOTEBOOK_CONTENT_BYTES
@@ -599,6 +600,38 @@ class SessionCatalog:
         )
         return {"data": data, "next_cursor": next_cursor}
 
+    def list_child_sessions(
+        self,
+        workspace: Path,
+        project_id: str,
+        parent_session_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Read every persisted delegated child, optionally for one parent."""
+        base = _session_base(workspace)
+        entries = []
+        if base.is_dir():
+            for path in base.iterdir():
+                if not path.is_dir() or not (path / "session.jsonl").is_file():
+                    continue
+                entry = self._read_session(path, project_id, include_history=False)
+                if not entry or entry.get("is_child_task") is not True:
+                    continue
+                if (
+                    parent_session_id is not None
+                    and entry.get("parent_session_id") != parent_session_id
+                ):
+                    continue
+                entries.append(entry)
+        entries.sort(
+            key=lambda item: (
+                item.get("updated_at") or "",
+                str(item.get("session_id") or ""),
+                str(item.get("thread_id") or ""),
+            ),
+            reverse=True,
+        )
+        return entries
+
     def find_by_thread(
         self, workspace: Path, project_id: str, thread_id: str
     ) -> dict[str, Any] | None:
@@ -733,7 +766,9 @@ class SessionCatalog:
         if not entry:
             return None
         base = _session_base(workspace)
-        session_path = self._valid_session_path(base, str(entry.get("session_id") or ""))
+        session_path = self._valid_session_path(
+            base, str(entry.get("session_id") or "")
+        )
         if not session_path:
             return None
         if scope == "parent":
@@ -760,7 +795,9 @@ class SessionCatalog:
         raw_entries = notebook.get("entries")
         entries = []
         if isinstance(raw_entries, list):
-            for raw_entry in raw_entries[: max(1, min(max_entries, MAX_NOTEBOOK_ENTRIES))]:
+            for raw_entry in raw_entries[
+                : max(1, min(max_entries, MAX_NOTEBOOK_ENTRIES))
+            ]:
                 if not isinstance(raw_entry, dict):
                     continue
                 key = _bounded_text(raw_entry.get("key"), 96)
@@ -791,11 +828,13 @@ class SessionCatalog:
                                     "project": _bounded_text(item.get("project"), 256),
                                     "commit": _bounded_text(item.get("commit"), 256),
                                     "path": _bounded_text(item.get("path"), 256),
-                                    "subject": _bounded_text(
-                                        item.get("subject"), 160
-                                    ),
+                                    "subject": _bounded_text(item.get("subject"), 160),
                                     "subject_truncated": bool(
-                                        _field(item, "subject_truncated", "subjectTruncated")
+                                        _field(
+                                            item,
+                                            "subject_truncated",
+                                            "subjectTruncated",
+                                        )
                                     ),
                                     "author_at": _bounded_text(
                                         _field(item, "author_at", "authorAt"), 256
@@ -851,9 +890,13 @@ class SessionCatalog:
         latest_turn_steps = 0
         latest_turn_settled = False
         latest_turn_timestamp = 0
+        latest_turn_started_at = 0
+        latest_turn_prompt: str | None = None
         turn_count = 0
         forked_from: dict[str, Any] | None = None
         latest_operation: dict[str, Any] | None = None
+        child_task_operation: dict[str, Any] | None = None
+        child_task_lifecycle: list[dict[str, int | str | None]] = []
         first_user_prompt = _first_user_prompt(records)
         for record in records:
             kind = record.get("kind")
@@ -866,6 +909,8 @@ class SessionCatalog:
             elif kind == "turn_started":
                 turn_count += 1
                 latest_turn_id = record.get("turn_id")
+                latest_turn_started_at = _bounded_int(record.get("timestamp_ms"))
+                latest_turn_prompt = _bounded_text(record.get("prompt"), 32 * 1024)
                 latest_turn_status = None
                 latest_stop_reason = None
                 latest_turn_error = None
@@ -888,7 +933,9 @@ class SessionCatalog:
                 operation_kind = _bounded_text(record.get("operation_kind"), 64)
                 operation_status = _bounded_text(record.get("status"), 32)
                 if operation_id and operation_kind and operation_status:
-                    latest_operation = {
+                    attempt = _bounded_int(record.get("attempt")) or 1
+                    timestamp_ms = _bounded_int(record.get("timestamp_ms")) or None
+                    operation_projection = {
                         "operation_id": operation_id,
                         "operation_kind": operation_kind,
                         "operation_status": operation_status,
@@ -896,7 +943,7 @@ class SessionCatalog:
                             record.get("parent_thread_id"), 128
                         ),
                         "operation_turn_id": _bounded_text(record.get("turn_id"), 128),
-                        "operation_attempt": _bounded_int(record.get("attempt")),
+                        "operation_attempt": attempt,
                         "operation_prompt": _bounded_text(
                             record.get("prompt"), 32 * 1024
                         ),
@@ -906,19 +953,208 @@ class SessionCatalog:
                         "execution_mode": _bounded_text(
                             record.get("execution_mode"), 16
                         ),
-                        "group_sequence": _bounded_int(
-                            record.get("group_sequence")
-                        )
+                        "group_sequence": _bounded_int(record.get("group_sequence"))
                         if record.get("group_sequence") is not None
                         else None,
                         "operation_result": _bounded_text(
                             record.get("result"), 16 * 1024
                         ),
                         "operation_error": _bounded_text(record.get("error")),
-                        "operation_updated_at": _timestamp(
-                            record.get("timestamp_ms")
-                        ),
+                        "operation_updated_at": _timestamp(timestamp_ms),
                     }
+                    # Keep the generic projection faithful to the last persisted
+                    # operation. Child-task state is projected separately below.
+                    latest_operation = operation_projection
+                    if operation_kind == "child_task":
+                        if (
+                            child_task_operation is None
+                            or child_task_operation.get("operation_id") != operation_id
+                        ):
+                            child_task_lifecycle = []
+                        lifecycle_entry: dict[str, int | str | None] = {
+                            "status": operation_status,
+                            "timestamp_ms": timestamp_ms,
+                            "attempt": attempt,
+                        }
+                        previous_attempt_entry = next(
+                            (
+                                item
+                                for item in reversed(child_task_lifecycle)
+                                if item.get("attempt") == attempt
+                            ),
+                            None,
+                        )
+                        terminal_statuses = {"completed", "failed", "cancelled"}
+                        stale_regression = bool(
+                            previous_attempt_entry
+                            and (
+                                previous_attempt_entry.get("status")
+                                in terminal_statuses
+                                or (
+                                    operation_status == "queued"
+                                    and previous_attempt_entry.get("status") != "queued"
+                                )
+                            )
+                        )
+                        if not stale_regression and (
+                            not previous_attempt_entry
+                            or any(
+                                previous_attempt_entry.get(key) != lifecycle_entry[key]
+                                for key in ("status", "attempt")
+                            )
+                        ):
+                            child_task_lifecycle.append(lifecycle_entry)
+                            child_task_lifecycle = child_task_lifecycle[
+                                -MAX_OPERATION_LIFECYCLE_ENTRIES:
+                            ]
+                        if not stale_regression:
+                            previous_child_task_operation = child_task_operation
+                            child_task_operation = dict(operation_projection)
+                            child_task_operation["operation_timestamp_ms"] = (
+                                timestamp_ms
+                            )
+                            if (
+                                not child_task_operation.get(
+                                    "operation_parent_thread_id"
+                                )
+                                and previous_child_task_operation
+                                and previous_child_task_operation.get("operation_id")
+                                == operation_id
+                            ):
+                                child_task_operation["operation_parent_thread_id"] = (
+                                    previous_child_task_operation.get(
+                                        "operation_parent_thread_id"
+                                    )
+                                )
+        operation_matches_settled_turn = bool(
+            child_task_operation
+            and latest_turn_settled
+            and latest_turn_id
+            and (
+                child_task_operation.get("operation_turn_id") == latest_turn_id
+                or (
+                    child_task_operation.get("operation_status") == "queued"
+                    and not child_task_operation.get("operation_turn_id")
+                    and child_task_operation.get("operation_prompt")
+                    and child_task_operation.get("operation_prompt")
+                    == latest_turn_prompt
+                    and latest_turn_started_at
+                    and child_task_operation.get("operation_timestamp_ms") is not None
+                    and _bounded_int(child_task_operation.get("operation_timestamp_ms"))
+                    <= latest_turn_started_at
+                )
+            )
+            and child_task_operation.get("operation_status")
+            in {"queued", "running", "awaiting_approval"}
+        )
+        if operation_matches_settled_turn and child_task_operation:
+            settled_operation_status = {
+                "completed": "completed",
+                "cancelled": "cancelled",
+                "interrupted": "cancelled",
+                "failed": "failed",
+                "step_limit": "failed",
+            }.get(str(latest_turn_status))
+            if settled_operation_status:
+                latest_attempt = (
+                    _bounded_int(child_task_operation.get("operation_attempt")) or 1
+                )
+                current_lifecycle = [
+                    item
+                    for item in child_task_lifecycle
+                    if item.get("attempt") == latest_attempt
+                ]
+                has_start_stage = any(
+                    item.get("status") in {"running", "awaiting_approval"}
+                    for item in current_lifecycle
+                )
+                if (
+                    not has_start_stage
+                    and latest_turn_started_at
+                    and child_task_operation.get("operation_prompt")
+                    == latest_turn_prompt
+                ):
+                    child_task_lifecycle.append(
+                        {
+                            "status": "running",
+                            "timestamp_ms": latest_turn_started_at,
+                            "attempt": latest_attempt,
+                        }
+                    )
+                child_task_operation["operation_status"] = settled_operation_status
+                child_task_operation["operation_updated_at"] = _timestamp(
+                    latest_turn_timestamp
+                )
+                child_task_operation["operation_timestamp_ms"] = (
+                    latest_turn_timestamp or None
+                )
+                terminal_entry: dict[str, int | str | None] = {
+                    "status": settled_operation_status,
+                    "timestamp_ms": latest_turn_timestamp or None,
+                    "attempt": latest_attempt,
+                }
+                if not child_task_lifecycle or any(
+                    child_task_lifecycle[-1].get(key) != terminal_entry[key]
+                    for key in ("status", "attempt")
+                ):
+                    child_task_lifecycle.append(terminal_entry)
+                    child_task_lifecycle = child_task_lifecycle[
+                        -MAX_OPERATION_LIFECYCLE_ENTRIES:
+                    ]
+        child_task_state: dict[str, Any] | None = None
+        if child_task_operation:
+            latest_attempt = (
+                _bounded_int(child_task_operation.get("operation_attempt")) or 1
+            )
+            current_lifecycle = [
+                item
+                for item in child_task_lifecycle
+                if item.get("attempt") == latest_attempt
+            ]
+            started_at_ms = next(
+                (
+                    _bounded_int(item.get("timestamp_ms"))
+                    for item in current_lifecycle
+                    if item.get("status") in {"running", "awaiting_approval"}
+                    and _bounded_int(item.get("timestamp_ms"))
+                ),
+                0,
+            )
+            finished_at_ms = next(
+                (
+                    _bounded_int(item.get("timestamp_ms"))
+                    for item in reversed(current_lifecycle)
+                    if item.get("status") in {"completed", "failed", "cancelled"}
+                    and _bounded_int(item.get("timestamp_ms"))
+                ),
+                0,
+            )
+            duration_ms = (
+                max(0, finished_at_ms - started_at_ms)
+                if started_at_ms and finished_at_ms
+                else None
+            )
+            child_task_state = {
+                "operation_id": child_task_operation.get("operation_id"),
+                "parent_thread_id": child_task_operation.get(
+                    "operation_parent_thread_id"
+                ),
+                "turn_id": child_task_operation.get("operation_turn_id"),
+                "attempt": latest_attempt,
+                "status": child_task_operation.get("operation_status"),
+                "prompt": child_task_operation.get("operation_prompt"),
+                "group_id": child_task_operation.get("operation_group_id"),
+                "execution_mode": child_task_operation.get("execution_mode"),
+                "sequence": child_task_operation.get("group_sequence"),
+                "result": child_task_operation.get("operation_result"),
+                "error": child_task_operation.get("operation_error"),
+                "updated_at": child_task_operation.get("operation_updated_at"),
+                "timestamp_ms": child_task_operation.get("operation_timestamp_ms"),
+                "lifecycle": child_task_lifecycle,
+                "started_at_ms": started_at_ms or None,
+                "finished_at_ms": finished_at_ms or None,
+                "duration_ms": duration_ms,
+            }
         if not thread_id:
             return None
 
@@ -996,6 +1232,7 @@ class SessionCatalog:
             ),
             "goal_status": goal_status,
             "goal": _goal_projection(goal, thread_id, goal_status),
+            "is_child_task": child_task_operation is not None,
             "plan_active": bool(plan.get("active", False)),
             "plan_review_pending": bool(
                 plan.get("active", False) and plan.get("review_pending", False)
@@ -1021,6 +1258,8 @@ class SessionCatalog:
         }
         if latest_operation:
             entry.update(latest_operation)
+        if child_task_state:
+            entry["child_task_state"] = child_task_state
         if forked_from:
             parent_session_id = forked_from.get("parent_session_id")
             if isinstance(parent_session_id, str) and parent_session_id:

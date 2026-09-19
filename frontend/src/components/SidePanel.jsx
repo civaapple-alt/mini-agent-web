@@ -429,6 +429,10 @@ export default function SidePanel({
   onToggleSkillGroup,
   onInsertSkill,
   onOpenThread,
+  childTasks = [],
+  childTasksLoading = false,
+  childTasksError = null,
+  onRefreshChildTasks,
 }) {
   const [activeTab, setActiveTab] = useState(() => normalizePanelTab(initialTab));
   const [worldData, setWorldData] = useState(null);
@@ -951,6 +955,10 @@ export default function SidePanel({
               threadId={threadId}
               projectId={projectId}
               onOpenThread={onOpenThread}
+              childTasks={childTasks}
+              childTasksLoading={childTasksLoading}
+              childTasksError={childTasksError}
+              onRefreshChildTasks={onRefreshChildTasks}
             />
           )}
 

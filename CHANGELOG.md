@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Show delegated children as a per-Turn batch in the message stream with each
+  task's lifecycle, keep the Runtime child list authoritative and openable, and
+  hide delegated child Sessions from the project session tree while preserving
+  ordinary forks.
 - Sort each project's session list by the canonical Session activity time and
   show a relative age under each session title.
 - Keep the message stream at its normal centered width when the Session Turn rail is visible.

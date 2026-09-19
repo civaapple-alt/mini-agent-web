@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,8 @@ MAX_INTERRUPTED_TURNS = 256
 MAX_CHILD_TASKS_PER_PARENT = 2
 MAX_CONFIGURED_CHILD_TASKS_PER_PARENT = 8
 MAX_CHILD_TASK_PROMPT_BYTES = 32 * 1024
+MAX_CHILD_TASK_LIFECYCLE = 32
+MAX_DELEGATION_FAILURES_PER_PARENT = 32
 MAX_NOTEBOOK_ENTRIES = 64
 MAX_NOTEBOOK_ENTRY_BYTES = 4096
 __all__ = ["SessionManager", "session_manager", "to_json_serializable"]
@@ -42,6 +45,14 @@ __all__ = ["SessionManager", "session_manager", "to_json_serializable"]
 def _attachment_storage_key(value: str) -> str:
     """Create a bounded, stable filesystem key for a Project or Thread identity."""
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:32]
+
+
+def _nonnegative_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        return max(0, int(value))
+    return 0
 
 
 class SessionManager:
@@ -149,7 +160,10 @@ class SessionManager:
         self._delegation_receipts_path = self._state_dir / "delegation_receipts.json"
         atomic_write_json(
             self._delegation_receipts_path,
-            {key: value for key, value in list(self._delegation_receipts.items())[-256:]},
+            {
+                key: value
+                for key, value in list(self._delegation_receipts.items())[-256:]
+            },
         )
 
     def _record_delegation_receipt(
@@ -157,6 +171,8 @@ class SessionManager:
     ) -> dict[str, Any]:
         receipt = {
             **payload,
+            "timestamp_ms": _nonnegative_int(payload.get("timestamp_ms"))
+            or int(time.time() * 1000),
             "status": status,
             "receipt_key": key,
         }
@@ -164,31 +180,68 @@ class SessionManager:
         self._save_delegation_receipts()
         return receipt
 
-    def _update_delegation_receipt(self, key: str, status: str) -> None:
+    def _update_delegation_receipt(
+        self, key: str, status: str, *, error: str | None = None
+    ) -> None:
         receipt = self._delegation_receipts.get(key)
         if receipt is None:
             return
         receipt["status"] = status
+        updated_at_ms = int(time.time() * 1000)
+        receipt["updated_at_ms"] = updated_at_ms
+        if status == "failed":
+            receipt["failed_at_ms"] = updated_at_ms
+            if error:
+                receipt["error"] = error[:2048]
         self._save_delegation_receipts()
 
     async def _broadcast_child_operation(
         self, child: dict[str, Any], status: str | None = None
     ) -> None:
         """Publish only the bounded parent projection of a Child operation."""
+        child_status = status or child.get("status")
+        lifecycle = child.get("lifecycle")
+        if not isinstance(lifecycle, list):
+            lifecycle = []
+        parent_thread_id = child.get("parent_thread_id")
+        project_id = child.get("project")
+        child_thread_id = child.get("child_thread_id")
+        parent_turn_id = child.get("parent_turn_id")
+        if (
+            not parent_turn_id
+            and isinstance(parent_thread_id, str)
+            and isinstance(project_id, str)
+            and isinstance(child_thread_id, str)
+        ):
+            parent_turn_id = self._delegated_child_parent_turn_id(
+                parent_thread_id, project_id, child_thread_id
+            )
         await self.broadcast_ws(
             {
                 "type": "child_operation_updated",
-                "threadId": child.get("parent_thread_id"),
-                "projectId": child.get("project"),
+                "threadId": parent_thread_id,
+                "projectId": project_id,
                 "data": {
                     "operation_id": child.get("operation_id"),
-                    "child_thread_id": child.get("child_thread_id"),
-                    "status": status or child.get("status"),
+                    "child_thread_id": child_thread_id,
+                    "title": child.get("title"),
+                    "status": child_status,
                     "execution_mode": child.get("execution_mode"),
                     "operation_group_id": child.get("operation_group_id"),
                     "group_sequence": child.get("group_sequence"),
+                    "parent_turn_id": parent_turn_id,
+                    "child_session_available": bool(
+                        child.get("child_session_available")
+                        or child.get("session_id")
+                        or child.get("session")
+                    ),
+                    "lifecycle": lifecycle[-MAX_CHILD_TASK_LIFECYCLE:],
+                    "started_at_ms": child.get("started_at_ms"),
+                    "finished_at_ms": child.get("finished_at_ms"),
+                    "duration_ms": child.get("duration_ms"),
+                    "error": str(child.get("operation_error") or "")[:2048] or None,
                     "error_code": "child_operation_failed"
-                    if (status or child.get("status")) == "failed"
+                    if child_status == "failed"
                     else None,
                 },
             }
@@ -369,9 +422,9 @@ class SessionManager:
             parent = next(
                 (
                     item
-                    for item in self.list_project_sessions(resolved_project_id, limit=128)[
-                        "data"
-                    ]
+                    for item in self.list_project_sessions(
+                        resolved_project_id, limit=128
+                    )["data"]
                     if item.get("session_id") == parent_session_id
                 ),
                 None,
@@ -471,21 +524,15 @@ class SessionManager:
                 f"child task prompt exceeds {MAX_CHILD_TASK_PROMPT_BYTES} bytes"
             )
 
-        resolved_project_id = self.resolve_thread_project(
-            source_thread_id, project_id
-        )
+        resolved_project_id = self.resolve_thread_project(source_thread_id, project_id)
         subagent = self.get_settings(resolved_project_id).get("subagent") or {}
         try:
             max_children = int(
-                subagent.get(
-                    "max_concurrent_children", MAX_CHILD_TASKS_PER_PARENT
-                )
+                subagent.get("max_concurrent_children", MAX_CHILD_TASKS_PER_PARENT)
             )
         except (TypeError, ValueError):
             max_children = MAX_CHILD_TASKS_PER_PARENT
-        max_children = max(
-            1, min(max_children, MAX_CONFIGURED_CHILD_TASKS_PER_PARENT)
-        )
+        max_children = max(1, min(max_children, MAX_CONFIGURED_CHILD_TASKS_PER_PARENT))
         group_id = group_id.strip() if group_id else None
         if group_id and len(group_id.encode("utf-8")) > 128:
             raise ValueError("child task group id is too long")
@@ -505,16 +552,17 @@ class SessionManager:
             if parent.get("session", {}).get("parent_session_id"):
                 raise RuntimeError("child task depth is limited to one level")
 
-            children = self.list_project_sessions(resolved_project_id, limit=128)[
-                "data"
-            ]
+            children = self.list_project_child_sessions(
+                resolved_project_id, parent_session_id
+            )
             active_children = sum(
                 1
                 for child in children
                 if child.get("parent_session_id") == parent_session_id
+                and child.get("is_child_task") is True
                 and (
                     child.get("turn_active")
-                    or child.get("operation_status")
+                    or (child.get("child_task_state") or {}).get("status")
                     in {"queued", "running", "awaiting_approval"}
                     or (
                         resolved_project_id,
@@ -524,18 +572,16 @@ class SessionManager:
                 )
             )
             if self._canonical_thread(new_thread_id, resolved_project_id):
-                raise RuntimeError(
-                    f"child Thread '{new_thread_id}' already exists"
-                )
+                raise RuntimeError(f"child Thread '{new_thread_id}' already exists")
 
             operation_id = f"child:{new_thread_id}"
             operation_attempt = 1
             same_group_active = any(
-                child.get("operation_group_id") == group_id
-                and (child.get("operation_status") or child.get("status"))
+                (child.get("child_task_state") or {}).get("group_id") == group_id
+                and (child.get("child_task_state") or {}).get("status")
                 in {"queued", "running", "awaiting_approval", "in_progress"}
                 for child in children
-                if group_id
+                if group_id and child.get("is_child_task") is True
             )
             queued = active_children >= max_children or (
                 execution_mode == "sequential" and same_group_active
@@ -549,7 +595,12 @@ class SessionManager:
                 operation_id,
                 operation_attempt,
             )
-            if queued or group_id or execution_mode != "parallel" or sequence is not None:
+            if (
+                queued
+                or group_id
+                or execution_mode != "parallel"
+                or sequence is not None
+            ):
                 fork = await self.fork_thread(
                     *fork_args,
                     prompt,
@@ -563,6 +614,7 @@ class SessionManager:
                 result = {
                     "parent_thread_id": source_thread_id,
                     "child_thread_id": new_thread_id,
+                    "title": title or new_thread_id,
                     "project": resolved_project_id,
                     "session": fork,
                     "turn_id": None,
@@ -601,6 +653,7 @@ class SessionManager:
             result: dict[str, Any] = {
                 "parent_thread_id": source_thread_id,
                 "child_thread_id": new_thread_id,
+                "title": title or new_thread_id,
                 "project": resolved_project_id,
                 "session": fork,
                 "turn_id": turn_id or None,
@@ -639,31 +692,24 @@ class SessionManager:
     ) -> None:
         """Keep the child turn registered until its canonical result settles."""
         task = asyncio.current_task()
-        settlement_status = "completed"
         try:
-            result = await client.wait_for_turn(turn_id)
-            result_status = getattr(result, "status", None)
-            if result_status == "cancelled":
-                settlement_status = "cancelled"
-            elif result_status in {"failed", "step_limit"}:
-                settlement_status = "failed"
+            await client.wait_for_turn(turn_id)
         except asyncio.CancelledError:
-            settlement_status = "cancelled"
             raise
         except Exception:
-            settlement_status = "failed"
             logger.exception("Child Turn %s failed while settling", turn_id)
         finally:
-            for key, receipt in self._delegation_receipts.items():
-                if receipt.get("child_thread_id") == thread_id:
-                    self._update_delegation_receipt(key, settlement_status)
             self.clear_active_turn(thread_id, project_id, turn_id, task)
             try:
                 children = await self.list_child_tasks(
                     parent_thread_id or thread_id, project_id
                 )
                 child = next(
-                    (item for item in children if item.get("child_thread_id") == thread_id),
+                    (
+                        item
+                        for item in children
+                        if item.get("child_thread_id") == thread_id
+                    ),
                     None,
                 )
                 if child:
@@ -679,9 +725,7 @@ class SessionManager:
             except Exception:
                 logger.exception("Unable to drain queued child tasks for %s", thread_id)
 
-    async def _drain_child_queue(
-        self, source_thread_id: str, project_id: str
-    ) -> None:
+    async def _drain_child_queue(self, source_thread_id: str, project_id: str) -> None:
         """Start durable queued child operations while configured slots exist."""
         async with self._child_task_lock:
             parent = self._canonical_thread(source_thread_id, project_id)
@@ -690,9 +734,7 @@ class SessionManager:
             subagent = self.get_settings(project_id).get("subagent") or {}
             try:
                 limit = int(
-                    subagent.get(
-                        "max_concurrent_children", MAX_CHILD_TASKS_PER_PARENT
-                    )
+                    subagent.get("max_concurrent_children", MAX_CHILD_TASKS_PER_PARENT)
                 )
             except (TypeError, ValueError):
                 limit = MAX_CHILD_TASKS_PER_PARENT
@@ -770,9 +812,7 @@ class SessionManager:
                             "reasoning_effort", "high"
                         ),
                         operation_id=candidate.get("operation_id"),
-                        operation_attempt=int(
-                            candidate.get("operation_attempt") or 1
-                        ),
+                        operation_attempt=int(candidate.get("operation_attempt") or 1),
                         operation_group_id=candidate.get("operation_group_id"),
                         execution_mode=candidate.get("execution_mode"),
                         group_sequence=candidate.get("group_sequence"),
@@ -795,7 +835,9 @@ class SessionManager:
                     await self._broadcast_child_operation(
                         {**candidate, "status": "running", "turn_id": started_turn_id}
                     )
-                    active.append({**candidate, "turn_id": started_turn_id, "status": "running"})
+                    active.append(
+                        {**candidate, "turn_id": started_turn_id, "status": "running"}
+                    )
                     queued.remove(candidate)
                     capacity -= 1
                 except Exception:
@@ -804,14 +846,28 @@ class SessionManager:
 
     async def reconcile_child_operations(self, project_id: str) -> None:
         """Reattach live Child Turns and drain durable queued operations."""
-        sessions = self.list_project_sessions(project_id, limit=128).get("data", [])
+        sessions = self.list_project_child_sessions(project_id)
+        parent_threads_by_session_id = {
+            str(session.get("session_id")): str(session.get("thread_id"))
+            for session in sessions
+            if session.get("session_id") and session.get("thread_id")
+        }
         parents: set[str] = set()
         for session in sessions:
-            parent = session.get("operation_parent_thread_id")
-            status = session.get("operation_status") or session.get("status")
+            child_task_state = session.get("child_task_state") or {}
+            parent = child_task_state.get("parent_thread_id") or (
+                parent_threads_by_session_id.get(
+                    str(session.get("parent_session_id") or "")
+                )
+            )
+            status = child_task_state.get("status") or session.get("status")
             thread_id = str(session.get("thread_id") or "")
-            turn_id = str(session.get("operation_turn_id") or "")
-            if not isinstance(parent, str) or not parent:
+            turn_id = str(child_task_state.get("turn_id") or "")
+            if (
+                session.get("is_child_task") is not True
+                or not isinstance(parent, str)
+                or not parent
+            ):
                 continue
             parents.add(parent)
             if (
@@ -845,6 +901,7 @@ class SessionManager:
 
     def _schedule_child_reconciliation(self, project_id: str) -> None:
         """Schedule recovery after the manager lock has been released."""
+
         async def recover() -> None:
             await self.reconcile_delegation_receipts(project_id)
             await self.reconcile_child_operations(project_id)
@@ -894,7 +951,9 @@ class SessionManager:
             child = next(
                 (
                     item
-                    for item in await self.list_child_tasks(source_thread_id, project_id)
+                    for item in await self.list_child_tasks(
+                        source_thread_id, project_id
+                    )
                     if item.get("child_thread_id") == child_thread_id
                 ),
                 None,
@@ -906,11 +965,11 @@ class SessionManager:
             prompt = str(child.get("last_turn_prompt") or "").strip()
             if not prompt:
                 raise ValueError("child task prompt is unavailable for retry")
-            operation_id = str(
-                child.get("operation_id") or f"child:{child_thread_id}"
-            )
+            operation_id = str(child.get("operation_id") or f"child:{child_thread_id}")
             attempt = int(child.get("operation_attempt") or 1) + 1
-            client = await self.get_client_for_thread(child_thread_id, resolved_project_id)
+            client = await self.get_client_for_thread(
+                child_thread_id, resolved_project_id
+            )
             retry_kwargs: dict[str, Any] = {
                 "prompt": prompt,
                 "mode": "start",
@@ -945,7 +1004,9 @@ class SessionManager:
                         source_thread_id,
                     )
                 )
-                self.set_active_turn(child_thread_id, turn_id, task, resolved_project_id)
+                self.set_active_turn(
+                    child_thread_id, turn_id, task, resolved_project_id
+                )
             return {
                 **child,
                 "operation_id": operation_id,
@@ -959,9 +1020,7 @@ class SessionManager:
     ) -> list[dict[str, Any]]:
         """Project child Sessions and live runtime status for one parent."""
         source_thread_id = source_thread_id or "default"
-        resolved_project_id = self.resolve_thread_project(
-            source_thread_id, project_id
-        )
+        resolved_project_id = self.resolve_thread_project(source_thread_id, project_id)
         parent = self._canonical_thread(source_thread_id, resolved_project_id)
         if not parent:
             raise KeyError(f"Thread '{source_thread_id}' not found")
@@ -970,43 +1029,50 @@ class SessionManager:
             return []
 
         children: list[dict[str, Any]] = []
-        for session in self.list_project_sessions(resolved_project_id, limit=128)[
-            "data"
-        ]:
-            if session.get("parent_session_id") != parent_session_id:
-                continue
+        sessions = self.list_project_child_sessions(
+            resolved_project_id, parent_session_id
+        )
+        child_thread_ids: set[str] = set()
+        for session in sessions:
             child_thread_id = str(session.get("thread_id") or "")
             if not child_thread_id:
                 continue
-            active_turn_id = session.get("active_turn_id")
-            persisted_status = session.get("operation_status")
+            child_thread_ids.add(child_thread_id)
+            child_task_state = session.get("child_task_state") or {}
+            active_turn_id = session.get("active_turn_id") or child_task_state.get(
+                "turn_id"
+            )
+            persisted_status = child_task_state.get("status")
             status = persisted_status or (
-                "running" if session.get("turn_active") else (
-                    session.get("last_turn_status") or "idle"
-                )
+                "running"
+                if session.get("turn_active")
+                else (session.get("last_turn_status") or "idle")
             )
-            operation_id = session.get("operation_id")
+            operation_id = child_task_state.get("operation_id")
             phase = None
-            client = self._project_clients.get(
-                (resolved_project_id, child_thread_id)
-            )
+            client = self._project_clients.get((resolved_project_id, child_thread_id))
             if client is not None:
                 try:
                     runtime = await client.get_runtime_status(child_thread_id)
-                    active_turn_id = runtime.turn_id or active_turn_id
-                    operation_id = operation_id or runtime.operation_id
-                    phase = runtime.phase
-                    if runtime.phase == "waiting_approval":
-                        status = "awaiting_approval"
-                    elif runtime.phase not in (None, "idle") and status not in {
+                    persisted_terminal = status in {
                         "completed",
                         "failed",
                         "cancelled",
-                    }:
-                        status = "running"
+                        "step_limit",
+                    }
+                    if not persisted_terminal:
+                        active_turn_id = runtime.turn_id or active_turn_id
+                        operation_id = operation_id or runtime.operation_id
+                        phase = runtime.phase
+                        if runtime.phase == "waiting_approval":
+                            status = "awaiting_approval"
+                        elif runtime.phase not in (None, "idle"):
+                            status = "running"
                 except Exception:
                     logger.debug(
-                        "Unable to read child runtime %s", child_thread_id, exc_info=True
+                        "Unable to read child runtime %s",
+                        child_thread_id,
+                        exc_info=True,
                     )
             children.append(
                 {
@@ -1023,13 +1089,13 @@ class SessionManager:
                     "phase": phase,
                     "turn_id": active_turn_id,
                     "operation_id": operation_id,
-                    "operation_attempt": session.get("operation_attempt") or 1,
-                    "operation_group_id": session.get("operation_group_id"),
-                    "execution_mode": session.get("execution_mode"),
-                    "group_sequence": session.get("group_sequence"),
-                    "operation_prompt": session.get("operation_prompt"),
-                    "operation_result": session.get("operation_result"),
-                    "operation_error": session.get("operation_error"),
+                    "operation_attempt": child_task_state.get("attempt") or 1,
+                    "operation_group_id": child_task_state.get("group_id"),
+                    "execution_mode": child_task_state.get("execution_mode"),
+                    "group_sequence": child_task_state.get("sequence"),
+                    "operation_prompt": child_task_state.get("prompt"),
+                    "operation_result": child_task_state.get("result"),
+                    "operation_error": child_task_state.get("error"),
                     "recovery_required": status
                     in {"queued", "running", "awaiting_approval"}
                     and not session.get("process_online", False)
@@ -1037,9 +1103,113 @@ class SessionManager:
                     "last_turn_status": session.get("last_turn_status"),
                     "last_turn_error": session.get("last_turn_error"),
                     "last_turn_prompt": session.get("summary"),
+                    "child_session_available": bool(session.get("session_id")),
+                    "parent_turn_id": self._delegated_child_parent_turn_id(
+                        source_thread_id, resolved_project_id, child_thread_id
+                    ),
+                    "lifecycle": list(child_task_state.get("lifecycle") or [])[
+                        -MAX_CHILD_TASK_LIFECYCLE:
+                    ],
+                    "started_at_ms": child_task_state.get("started_at_ms"),
+                    "finished_at_ms": child_task_state.get("finished_at_ms"),
+                    "duration_ms": child_task_state.get("duration_ms"),
+                }
+            )
+        failed_receipts = sorted(
+            (
+                receipt
+                for receipt in self._delegation_receipts.values()
+                if receipt.get("parent_thread_id") == source_thread_id
+                and receipt.get("project_id") == resolved_project_id
+                and receipt.get("status") == "failed"
+                and receipt.get("child_thread_id") not in child_thread_ids
+            ),
+            key=lambda receipt: (
+                _nonnegative_int(receipt.get("timestamp_ms")),
+                str(receipt.get("receipt_key") or ""),
+            ),
+        )[-MAX_DELEGATION_FAILURES_PER_PARENT:]
+        for receipt in failed_receipts:
+            timestamp_ms = _nonnegative_int(
+                receipt.get("failed_at_ms")
+                or receipt.get("updated_at_ms")
+                or receipt.get("timestamp_ms")
+            )
+            child_thread_id = str(receipt.get("child_thread_id") or "")
+            if not child_thread_id:
+                continue
+            attempt = _nonnegative_int(receipt.get("operation_attempt")) or 1
+            lifecycle = [
+                {
+                    "status": "queued",
+                    "timestamp_ms": _nonnegative_int(receipt.get("timestamp_ms")),
+                    "attempt": attempt,
+                }
+            ]
+            lifecycle.append(
+                {
+                    "status": "failed",
+                    "timestamp_ms": timestamp_ms,
+                    "attempt": attempt,
+                }
+            )
+            title = receipt.get("title")
+            children.append(
+                {
+                    "parent_thread_id": source_thread_id,
+                    "child_thread_id": child_thread_id,
+                    "project": resolved_project_id,
+                    "session_id": None,
+                    "parent_session_id": parent_session_id,
+                    "parent_checkpoint_seq": None,
+                    "title": title
+                    if isinstance(title, str) and title
+                    else child_thread_id,
+                    "status": "failed",
+                    "phase": None,
+                    "turn_id": None,
+                    "parent_turn_id": receipt.get("parent_turn_id"),
+                    "operation_id": receipt.get("operation_id")
+                    or f"child:{child_thread_id}",
+                    "operation_attempt": attempt,
+                    "operation_group_id": receipt.get("group_id"),
+                    "execution_mode": receipt.get("execution_mode"),
+                    "group_sequence": receipt.get("sequence"),
+                    "operation_prompt": None,
+                    "operation_result": None,
+                    "operation_error": str(receipt.get("error") or "")[:2048] or None,
+                    "recovery_required": False,
+                    "last_turn_status": None,
+                    "last_turn_error": None,
+                    "last_turn_prompt": None,
+                    "child_session_available": False,
+                    "lifecycle": lifecycle,
+                    "started_at_ms": None,
+                    "finished_at_ms": timestamp_ms or None,
+                    "duration_ms": None,
                 }
             )
         return children
+
+    def _delegated_child_parent_turn_id(
+        self, parent_thread_id: str, project_id: str, child_thread_id: str
+    ) -> str | None:
+        """Return correlation metadata without using receipts as child state."""
+        matches = [
+            receipt
+            for receipt in self._delegation_receipts.values()
+            if receipt.get("parent_thread_id") == parent_thread_id
+            and receipt.get("project_id") == project_id
+            and receipt.get("child_thread_id") == child_thread_id
+            and isinstance(receipt.get("parent_turn_id"), str)
+        ]
+        if not matches:
+            return None
+        latest = max(
+            matches,
+            key=lambda receipt: _nonnegative_int(receipt.get("timestamp_ms")),
+        )
+        return str(latest["parent_turn_id"])
 
     async def start_thread(
         self, thread_id: str = "default", project_id: str | None = None
@@ -1274,6 +1444,22 @@ class SessionManager:
         """Read the canonical SessionStore projection for one registered Project."""
         return self._thread_registry.list_project_sessions(project_id, limit, cursor)
 
+    def list_project_child_sessions(
+        self, project_id: str | None = None, parent_session_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Read all delegated child Sessions, including those outside sidebar pages."""
+        return self._thread_registry.list_project_child_sessions(
+            project_id, parent_session_id
+        )
+
+    def list_all_project_child_sessions(self) -> list[dict[str, Any]]:
+        """Return every delegated child Session across registered Projects."""
+        return [
+            child
+            for project_id in self._projects_registry
+            for child in self.list_project_child_sessions(project_id)
+        ]
+
     def list_all_project_sessions(self, limit: int = 128) -> list[dict[str, Any]]:
         """Return a bounded cross-project SessionStore view for the sidebar."""
         return self._thread_registry.list_all_project_sessions(limit)
@@ -1324,12 +1510,12 @@ class SessionManager:
             resolved_project_id,
             thread_id,
             scope,
-            max_entries=(self.get_settings(resolved_project_id).get("notebook") or {}).get(
-                "max_entries", MAX_NOTEBOOK_ENTRIES
-            ),
-            max_entry_bytes=(self.get_settings(resolved_project_id).get("notebook") or {}).get(
-                "max_entry_bytes", MAX_NOTEBOOK_ENTRY_BYTES
-            ),
+            max_entries=(
+                self.get_settings(resolved_project_id).get("notebook") or {}
+            ).get("max_entries", MAX_NOTEBOOK_ENTRIES),
+            max_entry_bytes=(
+                self.get_settings(resolved_project_id).get("notebook") or {}
+            ).get("max_entry_bytes", MAX_NOTEBOOK_ENTRY_BYTES),
         )
 
     def search_thread_notebook(
@@ -1476,9 +1662,14 @@ class SessionManager:
             notebook.update(project_notebook)
         try:
             max_entries = int(notebook.get("max_entries", MAX_NOTEBOOK_ENTRIES))
-            max_entry_bytes = int(notebook.get("max_entry_bytes", MAX_NOTEBOOK_ENTRY_BYTES))
+            max_entry_bytes = int(
+                notebook.get("max_entry_bytes", MAX_NOTEBOOK_ENTRY_BYTES)
+            )
         except (TypeError, ValueError):
-            max_entries, max_entry_bytes = MAX_NOTEBOOK_ENTRIES, MAX_NOTEBOOK_ENTRY_BYTES
+            max_entries, max_entry_bytes = (
+                MAX_NOTEBOOK_ENTRIES,
+                MAX_NOTEBOOK_ENTRY_BYTES,
+            )
         notebook = {
             "max_entries": max(1, min(max_entries, MAX_NOTEBOOK_ENTRIES)),
             "max_entry_bytes": max(256, min(max_entry_bytes, MAX_NOTEBOOK_ENTRY_BYTES)),
@@ -1502,9 +1693,9 @@ class SessionManager:
 
     def project_has_active_turn(self, project_id: str) -> bool:
         """Return whether a project currently owns a running turn/task."""
-        return any(key[0] == project_id for key in self._active_turns_by_project) or any(
-            key[0] == project_id for key in self._active_tasks_by_project
-        )
+        return any(
+            key[0] == project_id for key in self._active_turns_by_project
+        ) or any(key[0] == project_id for key in self._active_tasks_by_project)
 
     def project_has_pending_approval(self, project_id: str) -> bool:
         """Return whether a project has an approval wait that must not be orphaned."""
@@ -1620,9 +1811,7 @@ class SessionManager:
             incoming = updates["subagent"]
             try:
                 max_children = int(
-                    incoming.get(
-                        "max_concurrent_children", MAX_CHILD_TASKS_PER_PARENT
-                    )
+                    incoming.get("max_concurrent_children", MAX_CHILD_TASKS_PER_PARENT)
                 )
             except (TypeError, ValueError) as error:
                 raise ValueError("invalid subagent concurrency") from error
@@ -1816,8 +2005,10 @@ class SessionManager:
         group_id = arguments.get("group_id")
         execution_mode = arguments.get("execution_mode")
         sequence = arguments.get("sequence")
-        if not parent_thread_id or not isinstance(child_thread_id, str) or not isinstance(
-            prompt, str
+        if (
+            not parent_thread_id
+            or not isinstance(child_thread_id, str)
+            or not isinstance(prompt, str)
         ):
             return
         if not isinstance(group_id, str):
@@ -1838,16 +2029,36 @@ class SessionManager:
             return
         if self._delegation_receipts.get(receipt_key, {}).get("status") in {
             "materialized",
-            "completed",
         }:
             return
+        parent_turn_id = payload.get("turnId") or payload.get("turn_id")
+        if not isinstance(parent_turn_id, str):
+            parent_turn_id = None
+        project_id = project_id or self._current_project_id
+        event_timestamp = (
+            event.get("timestamp_ms")
+            or event.get("timestampMs")
+            or payload.get("timestamp_ms")
+            or payload.get("timestampMs")
+        )
+        timestamp_ms = (
+            int(event_timestamp)
+            if isinstance(event_timestamp, (int, float))
+            and not isinstance(event_timestamp, bool)
+            and event_timestamp > 0
+            else int(time.time() * 1000)
+        )
         self._record_delegation_receipt(
             receipt_key,
             {
                 "parent_thread_id": parent_thread_id,
                 "child_thread_id": child_thread_id,
+                "operation_id": f"child:{child_thread_id}",
+                "operation_attempt": 1,
+                "parent_turn_id": parent_turn_id,
+                "timestamp_ms": timestamp_ms,
                 "prompt": prompt,
-                "title": arguments.get("title"),
+                "title": str(arguments.get("title") or child_thread_id)[:160],
                 "project_id": project_id,
                 "group_id": group_id,
                 "execution_mode": execution_mode,
@@ -1885,7 +2096,9 @@ class SessionManager:
             if existing:
                 if receipt_key:
                     self._update_delegation_receipt(receipt_key, "materialized")
-                await self.reconcile_child_operations(project_id or self._current_project_id)
+                await self.reconcile_child_operations(
+                    project_id or self._current_project_id
+                )
                 return
             await self.start_child_task(
                 parent_thread_id,
@@ -1899,9 +2112,69 @@ class SessionManager:
             )
             if receipt_key:
                 self._update_delegation_receipt(receipt_key, "materialized")
-        except Exception:
+        except Exception as err:
+            existing = self._canonical_thread(child_thread_id, project_id)
+            if existing:
+                if receipt_key:
+                    self._update_delegation_receipt(receipt_key, "materialized")
+                try:
+                    children = await self.list_child_tasks(parent_thread_id, project_id)
+                    child = next(
+                        (
+                            item
+                            for item in children
+                            if item.get("child_thread_id") == child_thread_id
+                        ),
+                        None,
+                    )
+                    if child:
+                        await self._broadcast_child_operation(child)
+                except Exception:
+                    logger.debug(
+                        "Unable to publish existing Child projection for %s",
+                        child_thread_id,
+                        exc_info=True,
+                    )
+                logger.exception(
+                    "Unable to start delegated child %s from %s after Session creation",
+                    child_thread_id,
+                    parent_thread_id,
+                )
+                return
             if receipt_key:
-                self._update_delegation_receipt(receipt_key, "failed")
+                self._update_delegation_receipt(receipt_key, "failed", error=str(err))
+                receipt = self._delegation_receipts.get(receipt_key) or {}
+                await self._broadcast_child_operation(
+                    {
+                        "parent_thread_id": parent_thread_id,
+                        "child_thread_id": child_thread_id,
+                        "project": project_id or self._current_project_id,
+                        "operation_id": receipt.get("operation_id")
+                        or f"child:{child_thread_id}",
+                        "operation_attempt": receipt.get("operation_attempt") or 1,
+                        "parent_turn_id": receipt.get("parent_turn_id"),
+                        "title": receipt.get("title"),
+                        "status": "failed",
+                        "execution_mode": execution_mode,
+                        "operation_group_id": group_id,
+                        "group_sequence": sequence,
+                        "child_session_available": False,
+                        "lifecycle": [
+                            {
+                                "status": "queued",
+                                "timestamp_ms": receipt.get("timestamp_ms"),
+                                "attempt": receipt.get("operation_attempt") or 1,
+                            },
+                            {
+                                "status": "failed",
+                                "timestamp_ms": receipt.get("failed_at_ms"),
+                                "attempt": receipt.get("operation_attempt") or 1,
+                            },
+                        ],
+                        "finished_at_ms": receipt.get("failed_at_ms"),
+                        "operation_error": str(err),
+                    }
+                )
             logger.exception(
                 "Unable to start delegated child %s from %s",
                 child_thread_id,

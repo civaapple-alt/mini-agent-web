@@ -314,4 +314,29 @@ describe('Sidebar session actions', () => {
     expect(rows.map((row) => row.querySelector('.nested-thread-updated-at').textContent))
       .toEqual(['20 分钟前', '2 小时前', '4 天前', '时间未知']);
   });
+
+  it('hides delegated child sessions but keeps ordinary user forks in the project list', async () => {
+    renderSessionSidebar({
+      threads: [
+        { ...thread, thread_id: 't-parent', title: '父会话' },
+        {
+          ...thread,
+          thread_id: 't-user-fork',
+          title: '用户派生会话',
+          parent_session_id: 's-parent',
+        },
+        {
+          ...thread,
+          thread_id: 't-delegated-child',
+          title: '委派子任务会话',
+          is_child_task: true,
+          parent_session_id: 's-parent',
+        },
+      ],
+    });
+
+    await waitFor(() => expect(screen.getByText('用户派生会话')).toBeTruthy());
+    expect(screen.getByText('父会话')).toBeTruthy();
+    expect(screen.queryByText('委派子任务会话')).toBeNull();
+  });
 });

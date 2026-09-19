@@ -8,6 +8,7 @@ import StatusRail from './StatusRail';
 import SettingsModal from './SettingsModal';
 import Toast from './Toast';
 import ErrorBoundary from './ErrorBoundary';
+import useChildTasks from '../hooks/useChildTasks';
 
 export default function AppLayout({
   currentThread,
@@ -86,6 +87,7 @@ export default function AppLayout({
   onSkillInsertionApplied,
 }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const childTasks = useChildTasks(currentThread, currentThreadProject);
 
   return (
     <div className="app-container">
@@ -166,6 +168,7 @@ export default function AppLayout({
               wordWrap={userSettings.word_wrap}
               fontSize={userSettings.font_size}
               isLoadingHistory={isLoadingHistory}
+              childTasks={childTasks.children}
             />
           </ErrorBoundary>
 
@@ -224,6 +227,10 @@ export default function AppLayout({
           onToggleSkillGroup={onToggleSkillGroup}
           onInsertSkill={onInsertSkill}
           onOpenThread={onOpenThread}
+          childTasks={childTasks.children}
+          childTasksLoading={childTasks.loading}
+          childTasksError={childTasks.error}
+          onRefreshChildTasks={childTasks.refresh}
         />
       </ErrorBoundary>
 

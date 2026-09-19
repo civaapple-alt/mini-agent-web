@@ -208,6 +208,10 @@ async def list_threads(
             (str(session["project_id"]), str(session["thread_id"])): session
             for session in session_manager.list_all_project_sessions()
         }
+        for session in session_manager.list_all_project_child_sessions():
+            catalog_entries[(str(session["project_id"]), str(session["thread_id"]))] = (
+                session
+            )
         all_bindings = set(live_bindings) | set(catalog_entries)
         for meta_project, tid in session_manager._thread_metadata_by_project:
             all_bindings.add((str(meta_project), str(tid)))
@@ -231,9 +235,11 @@ async def list_threads(
                 "created_at": meta.get("created_at"),
                 "updated_at": meta.get("updated_at"),
                 "pinned": meta.get("pinned", False),
+                "is_child_task": False,
             }
             catalog_entry = catalog_entries.get((project_id, tid))
             if catalog_entry:
+                item["is_child_task"] = bool(catalog_entry.get("is_child_task"))
                 item["updated_at"] = (
                     catalog_entry.get("updated_at") or item["updated_at"]
                 )
@@ -432,9 +438,11 @@ async def _background_task_action(
     project_id: str | None,
     action: str,
 ) -> dict[str, Any]:
-    client, owner_thread_id, is_child = await session_manager.get_background_task_target(
-        thread_id, project_id
-    )
+    (
+        client,
+        owner_thread_id,
+        is_child,
+    ) = await session_manager.get_background_task_target(thread_id, project_id)
     if is_child and action in {"stop", "restart"}:
         raise HTTPException(
             status_code=403,
@@ -455,7 +463,9 @@ async def _background_task_action(
     }
 
 
-@router.get("/{thread_id}/background-tasks/{task_id}", summary="Read a background Shell task")
+@router.get(
+    "/{thread_id}/background-tasks/{task_id}", summary="Read a background Shell task"
+)
 async def read_background_task(
     thread_id: str, task_id: str, project_id: str | None = Query(default=None)
 ) -> dict[str, Any]:
@@ -471,7 +481,9 @@ async def read_background_task(
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.get("/{thread_id}/background-tasks/{task_id}/logs", summary="Read background Shell logs")
+@router.get(
+    "/{thread_id}/background-tasks/{task_id}/logs", summary="Read background Shell logs"
+)
 async def read_background_task_logs(
     thread_id: str, task_id: str, project_id: str | None = Query(default=None)
 ) -> dict[str, Any]:
@@ -487,7 +499,10 @@ async def read_background_task_logs(
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.post("/{thread_id}/background-tasks/{task_id}/stop", summary="Stop a background Shell task")
+@router.post(
+    "/{thread_id}/background-tasks/{task_id}/stop",
+    summary="Stop a background Shell task",
+)
 async def stop_background_task(
     thread_id: str, task_id: str, project_id: str | None = Query(default=None)
 ) -> dict[str, Any]:
@@ -503,7 +518,10 @@ async def stop_background_task(
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.post("/{thread_id}/background-tasks/{task_id}/restart", summary="Restart a background Shell task")
+@router.post(
+    "/{thread_id}/background-tasks/{task_id}/restart",
+    summary="Restart a background Shell task",
+)
 async def restart_background_task(
     thread_id: str, task_id: str, project_id: str | None = Query(default=None)
 ) -> dict[str, Any]:
@@ -567,7 +585,9 @@ async def _scheduled_task_action(
     }
 
 
-@router.get("/{thread_id}/scheduled-tasks/{task_id}", summary="Read a scheduled delay marker")
+@router.get(
+    "/{thread_id}/scheduled-tasks/{task_id}", summary="Read a scheduled delay marker"
+)
 async def read_scheduled_task(
     thread_id: str, task_id: str, project_id: str | None = Query(default=None)
 ) -> dict[str, Any]:
@@ -583,7 +603,10 @@ async def read_scheduled_task(
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.post("/{thread_id}/scheduled-tasks/{task_id}/cancel", summary="Cancel a scheduled delay marker")
+@router.post(
+    "/{thread_id}/scheduled-tasks/{task_id}/cancel",
+    summary="Cancel a scheduled delay marker",
+)
 async def cancel_scheduled_task(
     thread_id: str, task_id: str, project_id: str | None = Query(default=None)
 ) -> dict[str, Any]:
@@ -645,9 +668,7 @@ async def list_child_tasks(
 
 
 @router.post("/{thread_id}/children", summary="Start a child task")
-async def start_child_task(
-    thread_id: str, req: ChildTaskRequest
-) -> dict[str, Any]:
+async def start_child_task(thread_id: str, req: ChildTaskRequest) -> dict[str, Any]:
     """Create an exact child Session and start one independent child Turn."""
     try:
         return await session_manager.start_child_task(
@@ -675,7 +696,9 @@ async def start_child_task(
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-@router.post("/{thread_id}/children/{child_thread_id}/cancel", summary="Cancel a child task")
+@router.post(
+    "/{thread_id}/children/{child_thread_id}/cancel", summary="Cancel a child task"
+)
 async def cancel_child_task(
     thread_id: str,
     child_thread_id: str,
@@ -693,7 +716,9 @@ async def cancel_child_task(
         raise HTTPException(status_code=503, detail=str(err)) from err
 
 
-@router.post("/{thread_id}/children/{child_thread_id}/retry", summary="Retry a child task")
+@router.post(
+    "/{thread_id}/children/{child_thread_id}/retry", summary="Retry a child task"
+)
 async def retry_child_task(
     thread_id: str,
     child_thread_id: str,
@@ -798,10 +823,7 @@ async def read_thread(
         if canonical:
             meta = session_manager.get_thread_meta(thread_id, project_id)
             catalog_title = canonical.get("session", {}).get("title")
-            if (
-                is_default_thread_title(meta.get("title"), thread_id)
-                and catalog_title
-            ):
+            if is_default_thread_title(meta.get("title"), thread_id) and catalog_title:
                 meta = {**meta, "title": catalog_title}
             return {
                 **canonical,

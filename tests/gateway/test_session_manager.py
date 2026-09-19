@@ -136,7 +136,9 @@ async def test_client_runtime_receives_only_thread_attachment_root(
     )
     session_roots = captured["env"]["MINI_AGENT_SESSION_READ_ROOTS"].split(os.pathsep)
     assert attachment_root in session_roots
-    assert attachment_root not in captured["env"]["MINI_AGENT_EXTRA_READ_ROOTS"].split(os.pathsep)
+    assert attachment_root not in captured["env"]["MINI_AGENT_EXTRA_READ_ROOTS"].split(
+        os.pathsep
+    )
     assert not Path(attachment_root).is_relative_to(Path(project["primary_path"]))
 
 
@@ -411,21 +413,25 @@ async def test_reconcile_child_operations_drains_each_persisted_parent(
     """Runtime attach scans durable child operations instead of waiting for a settlement."""
     monkeypatch.setattr(
         mock_session_manager,
-        "list_project_sessions",
-        lambda _project_id, limit=128: {
-            "data": [
-                {
-                    "operation_parent_thread_id": "parent-a",
-                    "operation_status": "queued",
-                    "thread_id": "child-a",
+        "list_project_child_sessions",
+        lambda _project_id, _parent_session_id=None: [
+            {
+                "is_child_task": True,
+                "child_task_state": {
+                    "parent_thread_id": "parent-a",
+                    "status": "queued",
                 },
-                {
-                    "operation_parent_thread_id": "parent-b",
-                    "operation_status": "queued",
-                    "thread_id": "child-b",
+                "thread_id": "child-a",
+            },
+            {
+                "is_child_task": True,
+                "child_task_state": {
+                    "parent_thread_id": "parent-b",
+                    "status": "queued",
                 },
-            ]
-        },
+                "thread_id": "child-b",
+            },
+        ],
     )
     drain = AsyncMock()
     monkeypatch.setattr(mock_session_manager, "_drain_child_queue", drain)
@@ -1121,8 +1127,631 @@ def test_session_catalog_projects_fork_lineage(tmp_path, monkeypatch):
     assert entry["thread_id"] == "t-child"
     assert entry["parent_session_id"] == "s-parent"
     assert entry["parent_checkpoint_seq"] == 7
+    assert entry["is_child_task"] is False
     assert entry["context_policy"] == "exact"
     assert entry["compaction_method"] == "exact"
+
+
+def test_session_catalog_lists_all_child_sessions_beyond_sidebar_page_limit(
+    tmp_path, monkeypatch
+):
+    """Child discovery filters before the bounded project-session page."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    session_base.mkdir()
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    monkeypatch.setattr("server.session_catalog._process_alive", lambda _pid: False)
+
+    def write_session(session_id, thread_id, updated_at_ms, *, child=False):
+        records = [
+            {
+                "seq": 1,
+                "kind": "session_created",
+                "schema_version": 1,
+                "session_id": session_id,
+                "timestamp_ms": updated_at_ms,
+                "forked_from": ({"parent_session_id": "s-parent"} if child else None),
+            },
+            {"seq": 2, "kind": "thread_started", "thread_id": thread_id},
+        ]
+        if child:
+            records.append(
+                {
+                    "seq": 3,
+                    "kind": "operation",
+                    "operation_id": f"child:{thread_id}",
+                    "operation_kind": "child_task",
+                    "status": "completed",
+                    "parent_thread_id": "t-parent",
+                    "turn_id": "turn-child",
+                    "attempt": 1,
+                    "timestamp_ms": updated_at_ms,
+                }
+            )
+        session_dir = session_base / session_id
+        session_dir.mkdir()
+        (session_dir / "session.jsonl").write_text(
+            "".join(json.dumps(record) + "\n" for record in records),
+            encoding="utf-8",
+        )
+        (session_dir / "summary.json").write_text(
+            json.dumps(
+                {
+                    "created_at_ms": updated_at_ms,
+                    "updated_at_ms": updated_at_ms,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    write_session("s-old-child", "t-old-child", 1, child=True)
+    write_session("s-old-fork", "t-old-fork", 2)
+    for index in range(130):
+        write_session(f"s-recent-{index}", f"t-recent-{index}", 1000 + index)
+
+    catalog = SessionCatalog()
+    assert len(catalog.list_sessions(workspace, "project-1", limit=128)["data"]) == 128
+    children = catalog.list_child_sessions(workspace, "project-1", "s-parent")
+
+    assert [child["thread_id"] for child in children] == ["t-old-child"]
+    assert children[0]["parent_session_id"] == "s-parent"
+
+
+@pytest.mark.parametrize(
+    ("turn_status", "child_status"),
+    [
+        ("completed", "completed"),
+        ("cancelled", "cancelled"),
+        ("interrupted", "cancelled"),
+        ("failed", "failed"),
+        ("step_limit", "failed"),
+    ],
+)
+def test_session_catalog_projects_child_operation_lifecycle_and_settled_status(
+    tmp_path, monkeypatch, turn_status, child_status
+):
+    """A settled Turn repairs stale operation state and completes its timeline."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    session_dir = session_base / "s-child"
+    session_dir.mkdir(parents=True)
+    records = [
+        {
+            "seq": 1,
+            "kind": "session_created",
+            "schema_version": 1,
+            "session_id": "s-child",
+            "timestamp_ms": 1000,
+            "forked_from": {"parent_session_id": "s-parent"},
+        },
+        {"seq": 2, "kind": "thread_started", "thread_id": "t-child"},
+        {
+            "seq": 3,
+            "kind": "operation",
+            "operation_id": "child:t-child",
+            "operation_kind": "child_task",
+            "status": "queued",
+            "attempt": 1,
+            "timestamp_ms": 1100,
+        },
+        {
+            "seq": 4,
+            "kind": "turn_started",
+            "thread_id": "t-child",
+            "turn_id": "turn-child",
+            "timestamp_ms": 2000,
+        },
+        {
+            "seq": 5,
+            "kind": "operation",
+            "operation_id": "child:t-child",
+            "operation_kind": "child_task",
+            "status": "running",
+            "turn_id": "turn-child",
+            "attempt": 1,
+            "timestamp_ms": 2100,
+        },
+        {
+            "seq": 6,
+            "kind": "operation",
+            "operation_id": "child:t-child",
+            "operation_kind": "child_task",
+            "status": "queued",
+            "turn_id": "turn-child",
+            "attempt": 1,
+            "timestamp_ms": 2200,
+        },
+        {
+            "seq": 7,
+            "kind": "turn_settled",
+            "thread_id": "t-child",
+            "turn_id": "turn-child",
+            "status": turn_status,
+            "timestamp_ms": 4000,
+        },
+        {
+            "seq": 8,
+            "kind": "operation",
+            "operation_id": "background:child",
+            "operation_kind": "background_shell",
+            "status": "completed",
+            "timestamp_ms": 5000,
+        },
+    ]
+    (session_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_dir / "summary.json").write_text(
+        json.dumps({"created_at_ms": 1000, "updated_at_ms": 4000}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    monkeypatch.setattr("server.session_catalog._process_alive", lambda _pid: False)
+
+    entry = SessionCatalog().list_sessions(workspace, "project-1")["data"][0]
+
+    assert entry["is_child_task"] is True
+    assert entry["operation_kind"] == "background_shell"
+    assert entry["operation_status"] == "completed"
+    assert "operation_timestamp_ms" not in entry
+    child_task_state = entry["child_task_state"]
+    assert child_task_state["operation_id"] == "child:t-child"
+    assert child_task_state["status"] == child_status
+    assert child_task_state["lifecycle"] == [
+        {"status": "queued", "timestamp_ms": 1100, "attempt": 1},
+        {"status": "running", "timestamp_ms": 2100, "attempt": 1},
+        {"status": child_status, "timestamp_ms": 4000, "attempt": 1},
+    ]
+    assert child_task_state["started_at_ms"] == 2100
+    assert child_task_state["finished_at_ms"] == 4000
+    assert child_task_state["duration_ms"] == 1900
+
+
+def test_session_catalog_keeps_missing_child_operation_times_unknown(
+    tmp_path, monkeypatch
+):
+    """Legacy operation records without timestamps stay explicitly undated."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    session_dir = session_base / "s-child"
+    session_dir.mkdir(parents=True)
+    records = [
+        {
+            "seq": 1,
+            "kind": "session_created",
+            "schema_version": 1,
+            "session_id": "s-child",
+            "forked_from": {"parent_session_id": "s-parent"},
+        },
+        {"seq": 2, "kind": "thread_started", "thread_id": "t-child"},
+        {
+            "seq": 3,
+            "kind": "operation",
+            "operation_id": "child:t-child",
+            "operation_kind": "child_task",
+            "status": "queued",
+            "attempt": 1,
+        },
+    ]
+    (session_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_dir / "summary.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    monkeypatch.setattr("server.session_catalog._process_alive", lambda _pid: False)
+
+    entry = SessionCatalog().list_sessions(workspace, "project-1")["data"][0]
+
+    state = entry["child_task_state"]
+    assert state["lifecycle"] == [
+        {"status": "queued", "timestamp_ms": None, "attempt": 1}
+    ]
+    assert state["started_at_ms"] is None
+    assert state["finished_at_ms"] is None
+    assert state["duration_ms"] is None
+
+
+def test_session_catalog_ignores_late_queued_operation_regression(
+    tmp_path, monkeypatch
+):
+    """A late queue snapshot cannot hide a child operation already running."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    session_dir = session_base / "s-child"
+    session_dir.mkdir(parents=True)
+    records = [
+        {
+            "seq": 1,
+            "kind": "session_created",
+            "schema_version": 1,
+            "session_id": "s-child",
+            "timestamp_ms": 1000,
+            "forked_from": {"parent_session_id": "s-parent"},
+        },
+        {"seq": 2, "kind": "thread_started", "thread_id": "t-child"},
+        {
+            "seq": 3,
+            "kind": "operation",
+            "operation_id": "child:t-child",
+            "operation_kind": "child_task",
+            "status": "queued",
+            "attempt": 1,
+            "timestamp_ms": 1100,
+        },
+        {
+            "seq": 4,
+            "kind": "operation",
+            "operation_id": "child:t-child",
+            "operation_kind": "child_task",
+            "status": "running",
+            "turn_id": "turn-child",
+            "attempt": 1,
+            "timestamp_ms": 2100,
+        },
+        {
+            "seq": 5,
+            "kind": "operation",
+            "operation_id": "child:t-child",
+            "operation_kind": "child_task",
+            "status": "queued",
+            "turn_id": "turn-child",
+            "attempt": 1,
+            "timestamp_ms": 2200,
+        },
+    ]
+    (session_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_dir / "summary.json").write_text(
+        json.dumps({"created_at_ms": 1000, "updated_at_ms": 2200}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    monkeypatch.setattr("server.session_catalog._process_alive", lambda _pid: False)
+
+    entry = SessionCatalog().list_sessions(workspace, "project-1")["data"][0]
+
+    assert entry["operation_status"] == "queued"
+    assert entry["child_task_state"]["status"] == "running"
+    assert entry["child_task_state"]["lifecycle"] == [
+        {"status": "queued", "timestamp_ms": 1100, "attempt": 1},
+        {"status": "running", "timestamp_ms": 2100, "attempt": 1},
+    ]
+
+
+def test_session_catalog_repairs_unlinked_queue_only_for_its_matching_turn(
+    tmp_path, monkeypatch
+):
+    """A missed operation update is repaired only by its matching child Turn."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+
+    def write_session(
+        session_id,
+        thread_id,
+        operation_timestamp,
+        turn_started_at,
+        operation_attempt=1,
+        settled_timestamp=4000,
+    ):
+        session_dir = session_base / session_id
+        session_dir.mkdir(parents=True)
+        records = [
+            {
+                "seq": 1,
+                "kind": "session_created",
+                "schema_version": 1,
+                "session_id": session_id,
+                "timestamp_ms": 1000,
+                "forked_from": {"parent_session_id": "s-parent"},
+            },
+            {"seq": 2, "kind": "thread_started", "thread_id": thread_id},
+            {
+                "seq": 3,
+                "kind": "operation",
+                "operation_id": f"child:{thread_id}",
+                "operation_kind": "child_task",
+                "status": "queued",
+                "attempt": operation_attempt,
+                "prompt": "same child prompt",
+                "timestamp_ms": operation_timestamp,
+            },
+            {
+                "seq": 4,
+                "kind": "turn_started",
+                "thread_id": thread_id,
+                "turn_id": f"turn:{thread_id}",
+                "prompt": "same child prompt",
+                "timestamp_ms": turn_started_at,
+            },
+            {
+                "seq": 5,
+                "kind": "turn_settled",
+                "thread_id": thread_id,
+                "turn_id": f"turn:{thread_id}",
+                "status": "completed",
+                "timestamp_ms": settled_timestamp,
+            },
+        ]
+        (session_dir / "session.jsonl").write_text(
+            "".join(json.dumps(record) + "\n" for record in records),
+            encoding="utf-8",
+        )
+        (session_dir / "summary.json").write_text(
+            json.dumps({"created_at_ms": 1000, "updated_at_ms": 4000}),
+            encoding="utf-8",
+        )
+
+    write_session("s-matching", "t-matching", 1100, 2000)
+    write_session(
+        "s-newer-attempt",
+        "t-newer-attempt",
+        3500,
+        2000,
+        operation_attempt=2,
+        settled_timestamp=3000,
+    )
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    monkeypatch.setattr("server.session_catalog._process_alive", lambda _pid: False)
+
+    entries = {
+        entry["thread_id"]: entry
+        for entry in SessionCatalog().list_sessions(workspace, "project-1")["data"]
+    }
+
+    matching = entries["t-matching"]
+    assert matching["operation_status"] == "queued"
+    assert matching["child_task_state"]["status"] == "completed"
+    assert matching["child_task_state"]["lifecycle"] == [
+        {"status": "queued", "timestamp_ms": 1100, "attempt": 1},
+        {"status": "running", "timestamp_ms": 2000, "attempt": 1},
+        {"status": "completed", "timestamp_ms": 4000, "attempt": 1},
+    ]
+    assert matching["child_task_state"]["duration_ms"] == 2000
+    newer = entries["t-newer-attempt"]
+    assert newer["operation_status"] == "queued"
+    assert newer["child_task_state"]["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_list_child_tasks_uses_canonical_child_state_and_failed_receipts(
+    mock_session_manager, monkeypatch
+):
+    """Failed pre-Session intents supplement children without overriding Sessions."""
+    monkeypatch.setattr(
+        mock_session_manager,
+        "resolve_thread_project",
+        lambda _thread_id, _project_id=None: "default",
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_canonical_thread",
+        lambda thread_id, _project_id=None: (
+            {"session": {"session_id": "s-parent"}} if thread_id == "parent" else None
+        ),
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "list_project_child_sessions",
+        lambda _project_id, _parent_session_id=None: [
+            {
+                "thread_id": "child-created",
+                "session_id": "s-child-created",
+                "parent_session_id": "s-parent",
+                "is_child_task": True,
+                "operation_kind": "background_shell",
+                "operation_status": "failed",
+                "child_task_state": {
+                    "operation_id": "child:child-created",
+                    "turn_id": "turn-child-created",
+                    "status": "completed",
+                    "attempt": 1,
+                    "lifecycle": [
+                        {"status": "queued", "timestamp_ms": 100, "attempt": 1},
+                        {"status": "running", "timestamp_ms": 200, "attempt": 1},
+                        {
+                            "status": "completed",
+                            "timestamp_ms": 500,
+                            "attempt": 1,
+                        },
+                    ],
+                    "started_at_ms": 200,
+                    "finished_at_ms": 500,
+                    "duration_ms": 300,
+                },
+                "last_turn_status": "completed",
+                "process_online": False,
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_thread_meta",
+        lambda thread_id, _project_id=None: {"title": f"Title {thread_id}"},
+    )
+    mock_session_manager._delegation_receipts = {
+        "parent:turn-1:call-1": {
+            "parent_thread_id": "parent",
+            "child_thread_id": "child-created",
+            "project_id": "default",
+            "parent_turn_id": "turn-1",
+            "title": "Created task",
+            "status": "failed",
+            "error": "stale gateway receipt",
+            "timestamp_ms": 100,
+            "failed_at_ms": 150,
+        },
+        "parent:turn-2:call-2": {
+            "parent_thread_id": "parent",
+            "child_thread_id": "child-missing",
+            "operation_id": "child:child-missing",
+            "operation_attempt": 1,
+            "project_id": "default",
+            "parent_turn_id": "turn-2",
+            "title": "Missing task",
+            "execution_mode": "parallel",
+            "status": "failed",
+            "error": "Session creation failed",
+            "timestamp_ms": 200,
+            "failed_at_ms": 300,
+        },
+    }
+
+    children = await mock_session_manager.list_child_tasks("parent", "default")
+
+    assert [child["child_thread_id"] for child in children] == [
+        "child-created",
+        "child-missing",
+    ]
+    created = children[0]
+    assert created["status"] == "completed"
+    assert created["child_session_available"] is True
+    assert created["parent_turn_id"] == "turn-1"
+    assert created["lifecycle"][-1]["status"] == "completed"
+    assert created["started_at_ms"] == 200
+    assert created["finished_at_ms"] == 500
+    assert created["duration_ms"] == 300
+    failed = children[1]
+    assert failed["status"] == "failed"
+    assert failed["child_session_available"] is False
+    assert failed["parent_turn_id"] == "turn-2"
+    assert failed["finished_at_ms"] == 300
+    assert failed["operation_error"] == "Session creation failed"
+    assert [stage["status"] for stage in failed["lifecycle"]] == [
+        "queued",
+        "failed",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_list_child_tasks_keeps_persisted_terminal_state_over_stale_runtime(
+    mock_session_manager, monkeypatch
+):
+    """A stale approval phase cannot override the durable terminal operation."""
+    monkeypatch.setattr(
+        mock_session_manager,
+        "resolve_thread_project",
+        lambda _thread_id, _project_id=None: "default",
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_canonical_thread",
+        lambda thread_id, _project_id=None: (
+            {"session": {"session_id": "s-parent"}} if thread_id == "parent" else None
+        ),
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "list_project_child_sessions",
+        lambda _project_id, _parent_session_id=None: [
+            {
+                "thread_id": "child",
+                "session_id": "s-child",
+                "parent_session_id": "s-parent",
+                "is_child_task": True,
+                "child_task_state": {
+                    "operation_id": "child:child",
+                    "status": "completed",
+                    "lifecycle": [
+                        {"status": "queued", "timestamp_ms": 100, "attempt": 1},
+                        {"status": "running", "timestamp_ms": 200, "attempt": 1},
+                        {"status": "completed", "timestamp_ms": 500, "attempt": 1},
+                    ],
+                    "started_at_ms": 200,
+                    "finished_at_ms": 500,
+                    "duration_ms": 300,
+                },
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_thread_meta",
+        lambda _thread_id, _project_id=None: {"title": "Completed child"},
+    )
+    stale_runtime = AsyncMock()
+    stale_runtime.get_runtime_status.return_value = SimpleNamespace(
+        phase="waiting_approval",
+        turn_id="stale-turn",
+        operation_id="child:child",
+    )
+    mock_session_manager._project_clients[("default", "child")] = stale_runtime
+
+    children = await mock_session_manager.list_child_tasks("parent", "default")
+
+    assert len(children) == 1
+    assert children[0]["status"] == "completed"
+    assert children[0]["phase"] is None
+    assert children[0]["turn_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_pre_session_delegation_failure_retains_error_and_broadcasts(
+    mock_session_manager, monkeypatch
+):
+    """An orphaned delegated intent remains visible with its failure cause."""
+    monkeypatch.setattr(mock_session_manager, "_canonical_thread", lambda *_args: None)
+    monkeypatch.setattr(
+        mock_session_manager,
+        "start_child_task",
+        AsyncMock(side_effect=RuntimeError("fork unavailable")),
+    )
+    broadcast = AsyncMock()
+    monkeypatch.setattr(mock_session_manager, "_broadcast_child_operation", broadcast)
+    mock_session_manager._record_delegation_receipt(
+        "parent:turn-1:call-1",
+        {
+            "parent_thread_id": "parent",
+            "child_thread_id": "child-missing",
+            "operation_id": "child:child-missing",
+            "project_id": "default",
+            "parent_turn_id": "turn-1",
+            "title": "Missing task",
+            "timestamp_ms": 100,
+            "execution_mode": "parallel",
+        },
+    )
+
+    await mock_session_manager._start_delegated_child(
+        "parent",
+        "child-missing",
+        "inspect something",
+        "Missing task",
+        "default",
+        None,
+        "parallel",
+        None,
+        "parent:turn-1:call-1",
+    )
+
+    receipt = mock_session_manager._delegation_receipts["parent:turn-1:call-1"]
+    assert receipt["status"] == "failed"
+    assert receipt["parent_turn_id"] == "turn-1"
+    assert receipt["title"] == "Missing task"
+    assert receipt["error"] == "fork unavailable"
+    projection = broadcast.await_args.args[0]
+    assert projection["status"] == "failed"
+    assert projection["child_session_available"] is False
+    assert projection["operation_error"] == "fork unavailable"
+    assert [stage["status"] for stage in projection["lifecycle"]] == [
+        "queued",
+        "failed",
+    ]
 
 
 def test_session_catalog_does_not_mark_dead_unsettled_turn_as_active(
@@ -1983,15 +2612,13 @@ async def test_start_child_task_runs_on_an_independent_client(
         mock_session_manager,
         "_canonical_thread",
         lambda thread_id, _project_id=None: (
-            {"session": {"session_id": "s-parent"}}
-            if thread_id == "parent"
-            else None
+            {"session": {"session_id": "s-parent"}} if thread_id == "parent" else None
         ),
     )
     monkeypatch.setattr(
         mock_session_manager,
-        "list_project_sessions",
-        lambda _project_id, limit=128: {"data": []},
+        "list_project_child_sessions",
+        lambda _project_id, _parent_session_id=None: [],
     )
     fork = {
         "thread_id": "child",
@@ -2042,9 +2669,7 @@ async def test_start_child_task_runs_on_an_independent_client(
         execution_mode="sequential",
         group_sequence=1,
     )
-    assert mock_session_manager.get_active_turn("child", "default") == (
-        "child-turn-1"
-    )
+    assert mock_session_manager.get_active_turn("child", "default") == ("child-turn-1")
 
     release_child.set()
     task = mock_session_manager._active_tasks_by_project[("default", "child")]

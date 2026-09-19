@@ -3,8 +3,9 @@ import { Sparkles, Terminal, Compass, TestTube2, ArrowDown } from 'lucide-react'
 import MessageItem from './MessageItem';
 import SessionTurnRail from './SessionTurnRail';
 import { collectInputMessages } from '../utils/inputTrace';
-import { orderMessagesByTurnHistory } from '../utils/messageState';
+import { normalizeAssistantBlocks, orderMessagesByTurnHistory } from '../utils/messageState';
 import { buildTurnHistoryEntries } from '../utils/turnHistory';
+import { buildTurnChildTaskBatch, getDelegateTaskAssignments } from '../utils/childTasks';
 import './ChatArea.css';
 
 export default function ChatArea({
@@ -22,6 +23,7 @@ export default function ChatArea({
   wordWrap = true,
   fontSize = 13,
   isLoadingHistory = false,
+  childTasks = [],
 }) {
   const scrollRef = useRef(null);
   const messageRefs = useRef(new Map());
@@ -61,6 +63,47 @@ export default function ChatArea({
     });
     return orderMessagesByTurnHistory(result, threadItems);
   }, [messages, threadItems, traceScope]);
+
+  const childTaskBatchByMessage = useMemo(() => {
+    const turnGroups = new Map();
+    displayMessages.forEach((message, index) => {
+      if (message.role !== 'assistant') return;
+      const normalizedMessage = {
+        ...message,
+        blocks: normalizeAssistantBlocks(message.blocks || []),
+      };
+      if (getDelegateTaskAssignments(normalizedMessage).length === 0) return;
+      const turnKey = message.turnId
+        ? `turn:${message.turnId}`
+        : `message:${message.id || index}`;
+      const existing = turnGroups.get(turnKey);
+      if (existing) existing.messages.push(normalizedMessage);
+      else {
+        turnGroups.set(turnKey, {
+          turnId: message.turnId || null,
+          firstMessageKey: String(message.id || `msg_${index}`),
+          messageKeys: [String(message.id || `msg_${index}`)],
+          messages: [normalizedMessage],
+        });
+      }
+      if (existing) existing.messageKeys.push(String(message.id || `msg_${index}`));
+    });
+
+    const batches = new Map();
+    const delegateMessageKeys = new Set();
+    turnGroups.forEach((group) => {
+      group.messageKeys.forEach((key) => delegateMessageKeys.add(key));
+      batches.set(
+        group.firstMessageKey,
+        buildTurnChildTaskBatch({
+          children: childTasks,
+          turnId: group.turnId,
+          messages: group.messages,
+        }),
+      );
+    });
+    return { batches, delegateMessageKeys };
+  }, [childTasks, displayMessages]);
 
   const entryByMessageId = useMemo(
     () => new Map(turnEntries.map((entry) => [String(entry.messageId), entry])),
@@ -216,6 +259,8 @@ export default function ChatArea({
                   turnEntry={turnEntry}
                   isTurnFocused={Boolean(turnEntry && focusedTurnId && focusedTurnId === (turnEntry.turnId || turnEntry.id))}
                   anchorRef={(node) => setMessageRef(messageId, node)}
+                  childTaskBatch={childTaskBatchByMessage.batches.get(messageId) || null}
+                  isChildTaskTurn={childTaskBatchByMessage.delegateMessageKeys.has(messageId)}
                 />
               );
             })}

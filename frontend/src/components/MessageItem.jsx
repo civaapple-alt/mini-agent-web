@@ -15,6 +15,7 @@ import ToolCard from './ToolCard';
 import AssistantTextBlock from './AssistantTextBlock';
 import ContextCompactionGroup from './ContextCompactionGroup';
 import ErrorBoundary from './ErrorBoundary';
+import ChildTaskBatchCard from './ChildTaskBatchCard';
 import { groupCompactionBlocks, normalizeAssistantBlocks } from '../utils/messageState';
 import {
   extractFileAttachmentNames,
@@ -31,6 +32,8 @@ export default function MessageItem({
   turnEntry = null,
   isTurnFocused = false,
   anchorRef = null,
+  childTaskBatch = null,
+  isChildTaskTurn = false,
 }) {
   const { role, text, thinking, tools = [], blocks = [], usage } = message;
   const [copied, setCopied] = useState(false);
@@ -239,6 +242,16 @@ export default function MessageItem({
   const currentBlockIndex = activeBlockIndex === -1
     ? renderedBlocks.length - 1
     : activeBlockIndex;
+  let childTaskBatchRendered = false;
+
+  const renderDelegateBatch = (tool, key) => {
+    if ((tool.name || tool.toolName || tool.tool) !== 'delegate_task' || !childTaskBatch?.length) {
+      return null;
+    }
+    if (childTaskBatchRendered) return null;
+    childTaskBatchRendered = true;
+    return <ChildTaskBatchCard key={key} tasks={childTaskBatch} />;
+  };
 
   return (
     <div
@@ -263,6 +276,11 @@ export default function MessageItem({
               );
             }
             if (block.type === 'tool') {
+              const delegateBatch = renderDelegateBatch(block, block.id || `delegate_${idx}`);
+              if (delegateBatch) return delegateBatch;
+              if ((block.name || block.toolName || block.tool) === 'delegate_task' && isChildTaskTurn) {
+                return null;
+              }
               return (
                 <ErrorBoundary
                   key={block.id || `tool_${idx}`}
@@ -332,19 +350,26 @@ export default function MessageItem({
 
             {tools.length > 0 && (
               <div className="tools-list">
-                {tools.map((t, idx) => (
-                  <ErrorBoundary
-                    key={t.id || idx}
-                    compact
-                    title={`工具 [${t.name || 'tool'}] 渲染异常`}
-                  >
-                    <ToolCard
-                      tool={t}
-                      pendingApproval={isLast ? pendingApproval : null}
-                      policy={policy}
-                    />
-                  </ErrorBoundary>
-                ))}
+                {tools.map((t, idx) => {
+                  const delegateBatch = renderDelegateBatch(t, t.id || `delegate_${idx}`);
+                  if (delegateBatch) return delegateBatch;
+                  if ((t.name || t.toolName || t.tool) === 'delegate_task' && isChildTaskTurn) {
+                    return null;
+                  }
+                  return (
+                    <ErrorBoundary
+                      key={t.id || idx}
+                      compact
+                      title={`工具 [${t.name || 'tool'}] 渲染异常`}
+                    >
+                      <ToolCard
+                        tool={t}
+                        pendingApproval={isLast ? pendingApproval : null}
+                        policy={policy}
+                      />
+                    </ErrorBoundary>
+                  );
+                })}
               </div>
             )}
 

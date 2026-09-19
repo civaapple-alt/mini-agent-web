@@ -353,7 +353,9 @@ export default function Sidebar({
     currentProject?.name || currentProject?.id || 'mini-agent-web';
 
   const normalizedThreads = useMemo(() => {
-    return (threads || []).map((t) => {
+    return (threads || []).filter((t) => (
+      typeof t === 'string' || t?.is_child_task !== true
+    )).map((t) => {
       if (typeof t === 'string') {
         return {
           thread_id: t,

@@ -47,6 +47,10 @@ export default function StatusDetailsPane({
   threadId = 'default',
   projectId = null,
   onOpenThread,
+  childTasks = [],
+  childTasksLoading = false,
+  childTasksError = null,
+  onRefreshChildTasks,
 }) {
   const [backgroundTasks, setBackgroundTasks] = useState([]);
   const [backgroundTaskError, setBackgroundTaskError] = useState(null);
@@ -371,6 +375,10 @@ export default function StatusDetailsPane({
         threadId={threadId}
         projectId={projectId}
         onOpenThread={onOpenThread}
+        children={childTasks}
+        loading={childTasksLoading}
+        error={childTasksError}
+        onRefresh={onRefreshChildTasks}
       />
     </div>
   );

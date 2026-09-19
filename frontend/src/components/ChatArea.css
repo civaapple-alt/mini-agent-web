@@ -103,6 +103,46 @@
   width: 100%;
 }
 
+.delegate-task-batch {
+  width: 100%;
+  margin: 8px 0;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+
+.delegate-task-batch-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  color: var(--text-secondary);
+  background: var(--bg-subtle, var(--bg-card-hover));
+  font-size: 11px;
+}
+
+.delegate-task-batch-header strong { color: var(--text-primary); }
+.delegate-task-batch-header > span { color: var(--text-muted); font-family: var(--font-mono); }
+.delegate-task-batch-list { display: flex; flex-direction: column; margin: 0; padding: 0 10px; list-style: none; }
+
+.delegate-task-row {
+  padding: 9px 0;
+  border-top: 1px solid var(--border-color);
+}
+.delegate-task-row:first-child { border-top: 0; }
+.delegate-task-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 9px; }
+.delegate-task-heading strong { min-width: 0; flex: 1 1 180px; overflow-wrap: anywhere; font-size: 12px; }
+.delegate-task-mode { color: var(--text-muted); font-size: 10px; }
+.delegate-task-status { font-size: 11px; color: var(--text-secondary); }
+.delegate-task-status.running, .delegate-task-status.in_progress { color: var(--text-sky, #0284c7); }
+.delegate-task-status.awaiting_approval { color: var(--text-amber, #b45309); }
+.delegate-task-status.failed { color: var(--text-danger, #dc2626); }
+.delegate-task-status.completed { color: var(--text-success, #059669); }
+.delegate-task-lifecycle { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 5px 0 0; padding: 0; color: var(--text-muted); font-size: 10px; list-style: none; }
+.delegate-task-lifecycle li { display: flex; align-items: center; gap: 5px; }
+.delegate-task-lifecycle time { font-family: var(--font-mono); }
+
 .messages-list {
   max-width: 860px;
   margin: 0 auto;

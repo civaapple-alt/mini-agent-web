@@ -1,52 +1,20 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React from 'react';
 import { ExternalLink, GitBranch, RefreshCw } from 'lucide-react';
-import { api } from '../api';
-
-const STATUS_LABELS = {
-  queued: '排队中',
-  running: '运行中',
-  in_progress: '运行中',
-  awaiting_approval: '等待审批',
-  cancelling: '正在取消',
-  completed: '已完成',
-  failed: '失败',
-  cancelled: '已取消',
-  step_limit: '达到步数限制',
-};
+import {
+  childTaskLifecycleLabels,
+  childTaskStatusLabels,
+  formatChildTaskDuration,
+  formatChildTaskTimestamp,
+} from '../utils/childTasks';
 
 export default function ChildTasksPane({
-  threadId,
   projectId,
   onOpenThread,
+  children = [],
+  loading = false,
+  error = null,
+  onRefresh,
 }) {
-  const [children, setChildren] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const load = useCallback(async () => {
-    try {
-      const result = await api.listChildTasks(threadId, { projectId });
-      setChildren(Array.isArray(result) ? result : result?.children || []);
-      setError(null);
-    } catch (err) {
-      setError(err.message || '子任务状态加载失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId, threadId]);
-
-  useEffect(() => {
-    setLoading(true);
-    void load();
-    const timer = window.setInterval(load, 3000);
-    const handleUpdate = () => void load();
-    window.addEventListener('mini-agent:child-operation-updated', handleUpdate);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener('mini-agent:child-operation-updated', handleUpdate);
-    };
-  }, [load]);
-
   const activeCount = children.filter((child) => (
     ['queued', 'running', 'in_progress', 'awaiting_approval', 'cancelling']
       .includes(child.status)
@@ -60,7 +28,7 @@ export default function ChildTasksPane({
           子任务
           {children.length > 0 && <span className="child-task-count">{activeCount}/{children.length}</span>}
         </span>
-        <button type="button" className="btn-action-small" onClick={load} title="刷新子任务状态">
+        <button type="button" className="btn-action-small" onClick={onRefresh} title="刷新子任务状态">
           <RefreshCw size={12} />
           <span>刷新</span>
         </button>
@@ -74,21 +42,47 @@ export default function ChildTasksPane({
         <div className="child-task-empty">当前 Turn 没有子任务</div>
       ) : (
         <div className="child-task-list">
-          {children.map((child) => {
+          {children.map((child, index) => {
             const status = child.status || 'queued';
+            const failureDetail = child.error || child.operation_error || child.last_turn_error;
             return (
-              <div className="child-task-row" key={child.operation_id || child.child_thread_id}>
+              <div className="child-task-row" key={child.operation_id || child.child_thread_id || `child-task-${index}`}>
                 <div className="child-task-main">
                   <strong title={child.child_thread_id}>{child.title || child.child_thread_id}</strong>
                   <span className={`child-task-status ${status}`}>
-                    {STATUS_LABELS[status] || status}
+                  {childTaskStatusLabels[status] || status}
                   </span>
                 </div>
                 <div className="child-task-meta font-mono">
                   {child.execution_mode || 'parallel'}
                   {child.operation_group_id ? ` · ${child.operation_group_id}` : ''}
+                  {formatChildTaskDuration(child.duration_ms)
+                    ? ` · ${formatChildTaskDuration(child.duration_ms)}`
+                    : ''}
                 </div>
-                {onOpenThread && child.child_thread_id && (
+                {child.status === 'failed' && failureDetail && (
+                  <div
+                    className="child-task-error"
+                    title={failureDetail}
+                  >
+                    {failureDetail}
+                  </div>
+                )}
+                {Array.isArray(child.lifecycle) && child.lifecycle.length > 0 && (
+                  <ol className="child-task-lifecycle" aria-label={`${child.title || '子任务'}生命周期`}>
+                    {child.lifecycle.map((stage, index) => {
+                      const timestamp = formatChildTaskTimestamp(stage.timestamp_ms);
+                      const label = childTaskLifecycleLabels[stage.status] || stage.status;
+                      return (
+                        <li key={`${stage.status}-${stage.attempt ?? 0}-${index}`}>
+                          <span>{label}</span>
+                          {timestamp && <time>{timestamp}</time>}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
+                {onOpenThread && child.child_thread_id && child.child_session_available === true && (
                   <button
                     type="button"
                     className="btn-action-small"

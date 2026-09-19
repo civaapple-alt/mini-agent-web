@@ -175,6 +175,26 @@ class ThreadRegistry:
             session["summary"] = meta.get("summary") or session["summary"]
         return result
 
+    def list_project_child_sessions(
+        self, project_id: str | None = None, parent_session_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Read all delegated child Sessions without the sidebar page limit."""
+        owner = self._owner
+        target_id = project_id or owner._current_project_id
+        project = owner._projects_registry.get(target_id)
+        if not project:
+            raise KeyError(f"Project '{target_id}' not found")
+        sessions = session_catalog.list_child_sessions(
+            Path(project["primary_path"]), target_id, parent_session_id
+        )
+        for session in sessions:
+            meta = self.get_thread_meta(session["thread_id"], target_id)
+            metadata_title = meta.get("title")
+            if not is_default_thread_title(metadata_title, session["thread_id"]):
+                session["title"] = metadata_title
+            session["summary"] = meta.get("summary") or session["summary"]
+        return sessions
+
     def list_all_project_sessions(self, limit: int = 128) -> list[dict[str, Any]]:
         owner = self._owner
         sessions_by_key: dict[tuple[str, str], dict[str, Any]] = {}

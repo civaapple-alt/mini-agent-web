@@ -175,6 +175,11 @@
 .child-task-status.failed { color: var(--text-danger, #dc2626); }
 .child-task-status.completed { color: var(--text-success, #059669); }
 .child-task-meta { color: var(--text-muted); font-size: 10px; white-space: nowrap; }
+.child-task-lifecycle { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0; padding: 0; list-style: none; color: var(--text-muted); font-size: 10px; }
+.child-task-lifecycle li { display: flex; align-items: center; gap: 4px; }
+.child-task-lifecycle time { font-family: var(--font-mono); }
+.child-task-row > .btn-action-small { grid-column: 3; grid-row: 1 / span 2; }
+.child-task-error { grid-column: 1 / -1; color: var(--text-danger, #dc2626); font-size: 10px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .child-task-empty { padding: 9px 0; color: var(--text-muted); font-size: 12px; }
 .btn-icon-small { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; padding: 3px; }
 .btn-icon-small:hover { color: var(--text-danger, #c2410c); }

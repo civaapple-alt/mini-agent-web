@@ -69,6 +69,8 @@ async def test_gateway_thread_list_uses_catalog_activity_and_sorts_newest_first(
             "project_id": "project-1",
             "thread_id": "newer",
             "session_id": "s-newer",
+            "is_child_task": True,
+            "operation_kind": "child_task",
             "updated_at": now,
             "session_status": "historical",
             "runtime_status": "historical",
@@ -77,12 +79,29 @@ async def test_gateway_thread_list_uses_catalog_activity_and_sorts_newest_first(
             "resumable": True,
         },
     ]
+    child_beyond_sidebar_page = {
+        "project_id": "project-1",
+        "thread_id": "old-child",
+        "session_id": "s-old-child",
+        "is_child_task": True,
+        "updated_at": "2019-01-01T08:00:00+00:00",
+        "session_status": "historical",
+        "runtime_status": "historical",
+        "goal_status": "none",
+        "cleanup_pending": False,
+        "resumable": True,
+    }
     monkeypatch.setattr(session_manager, "_client", None)
     monkeypatch.setattr(session_manager, "_project_clients", {})
     monkeypatch.setattr(session_manager, "_current_project_id", "project-1")
     monkeypatch.setattr(session_manager, "live_thread_bindings", list)
     monkeypatch.setattr(
         session_manager, "list_all_project_sessions", lambda: catalog_entries
+    )
+    monkeypatch.setattr(
+        session_manager,
+        "list_all_project_child_sessions",
+        lambda: [child_beyond_sidebar_page],
     )
     monkeypatch.setattr(session_manager, "_thread_metadata_by_project", {})
     monkeypatch.setattr(session_manager, "_thread_metadata", {})
@@ -101,8 +120,17 @@ async def test_gateway_thread_list_uses_catalog_activity_and_sorts_newest_first(
 
     assert response.status_code == 200
     threads = response.json()["threads"]
-    assert [thread["thread_id"] for thread in threads] == ["newer", "older"]
-    assert [thread["updated_at"] for thread in threads] == [now, older]
+    assert [thread["thread_id"] for thread in threads] == [
+        "newer",
+        "older",
+        "old-child",
+    ]
+    assert [thread["updated_at"] for thread in threads] == [
+        now,
+        older,
+        child_beyond_sidebar_page["updated_at"],
+    ]
+    assert [thread["is_child_task"] for thread in threads] == [True, False, True]
 
 
 @pytest.mark.asyncio

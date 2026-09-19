@@ -1,0 +1,57 @@
+.assistant-text-folded {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 2px 0 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.assistant-text-folded:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+
+.assistant-text-folded-preview {
+  display: -webkit-box;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.assistant-text-folded-action {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 6px;
+}
+
+.assistant-text-fold-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.assistant-text-fold-toggle:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}

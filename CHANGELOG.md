@@ -10,9 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Keep the message stream at its normal centered width when the Session Turn rail is visible.
-- Keep the active block expanded until the next block starts or the Turn settles.
-  Collapse each past block independently while later reasoning and tool blocks
-  continue in order.
+- Keep only the current block expanded as a Turn advances. Fold completed
+  reasoning and assistant text one block at a time while later reasoning and
+  tool blocks continue in order.
 - Parse `+ <group> task` as a workflow shorthand only at the start of a message,
   so ordinary prose such as `+ Enter` no longer blocks submission as an unknown
   plugin group.

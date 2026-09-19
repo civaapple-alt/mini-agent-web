@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import ThinkingBlock from './ThinkingBlock';
 import ToolCard from './ToolCard';
+import AssistantTextBlock from './AssistantTextBlock';
 import ContextCompactionGroup from './ContextCompactionGroup';
 import ErrorBoundary from './ErrorBoundary';
 import { groupCompactionBlocks, normalizeAssistantBlocks } from '../utils/messageState';
@@ -229,6 +230,15 @@ export default function MessageItem({
     ? blocks.filter((b) => b.type === 'text').map((b) => b.content).join('\n\n')
     : text;
   const renderedBlocks = groupCompactionBlocks(normalizeAssistantBlocks(blocks));
+  const activeBlockIndex = renderedBlocks.findLastIndex((block) => {
+    const status = String(block.status || '').toLowerCase();
+    return Boolean(block.isStreaming)
+      || ['running', 'inprogress'].includes(status)
+      || (block.type === 'skills' && (block.loading || []).length > 0);
+  });
+  const currentBlockIndex = activeBlockIndex === -1
+    ? renderedBlocks.length - 1
+    : activeBlockIndex;
 
   return (
     <div
@@ -241,18 +251,13 @@ export default function MessageItem({
         {/* Render sequential blocks if present */}
         {renderedBlocks.length > 0 ? (
           renderedBlocks.map((block, idx) => {
-            const status = String(block.status || '').toLowerCase();
-            const isCurrentBlock = isStreamingThis && (
-              idx === renderedBlocks.length - 1
-                || block.isStreaming
-                || ['running', 'inprogress'].includes(status)
-            );
+            const isCurrentBlock = isStreamingThis && idx === currentBlockIndex;
             if (block.type === 'thinking') {
               return (
                 <ThinkingBlock
                   key={block.id || `thinking_${idx}`}
                   content={block.content}
-                  isStreaming={Boolean(block.isStreaming && isStreamingThis)}
+                  isStreaming={Boolean(block.isStreaming && isCurrentBlock)}
                   isCurrentBlock={isCurrentBlock}
                 />
               );
@@ -305,14 +310,12 @@ export default function MessageItem({
             }
             if (block.type === 'text') {
               return (
-                <div
+                <AssistantTextBlock
                   key={`text_${idx}`}
-                  className={`markdown-content assistant-answer ${isStreamingThis && idx === renderedBlocks.length - 1 ? 'cursor-blink' : ''}`}
-                >
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {block.content || ''}
-                  </ReactMarkdown>
-                </div>
+                  content={block.content || ''}
+                  isCurrentBlock={isCurrentBlock}
+                  isRunActive={isStreamingThis}
+                />
               );
             }
             return null;

@@ -987,6 +987,15 @@ export function aggregateStreamEvent(messages, data) {
     }
     if (messages.length === 0 || targetIndex === -1) return messages;
 
+    if (
+      type === 'tool_started' ||
+      type === 'skill_group_activated' ||
+      type === 'skills_loaded' ||
+      type === 'skills_load_failed'
+    ) {
+      messages = settleThinkingBlocks(messages, targetIndex);
+    }
+
     if (type === 'skill_group_activated') {
       const copy = [...messages];
       const last = { ...copy[targetIndex] };
@@ -1098,6 +1107,10 @@ export function aggregateStreamEvent(messages, data) {
     );
     if (projectedReasonings.length > 0) {
       messages = mergeProjectedReasoningItems(messages, projectedReasonings, targetIndex);
+    }
+
+    if (type === 'assistant_text_delta' || type === 'context_compaction_finished') {
+      messages = settleThinkingBlocks(messages, targetIndex);
     }
 
     const copy = [...messages];

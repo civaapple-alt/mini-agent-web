@@ -415,6 +415,7 @@ export default function SidePanel({
   planActive,
   onTogglePlan,
   goalState,
+  lastTurnResult = null,
   status = null,
   sessionMeta = null,
   threadId = 'default',
@@ -515,6 +516,7 @@ export default function SidePanel({
     projectId,
     goalState?.verification_status,
     goalState?.updated_at,
+    lastTurnResult?.turnId,
   ]);
 
   const beginRequest = () => {
@@ -662,19 +664,20 @@ export default function SidePanel({
       if (!isCurrentRequest(requestContext)) return;
       const files = (res.files || []).filter(filter);
       setWorkflowFiles(files);
-      if (
-        files.length > 0
-        && (
-          !selectedFileRef.current
-          || !files.some((file) => file.path === selectedFileRef.current)
-        )
-      ) {
-        handleSelectFile(files[0].path, requestContext);
-      } else if (!files.some((file) => file.path === selectedFileRef.current)) {
-        selectedFileRef.current = null;
-        setSelectedFile(null);
-        setSelectedFileContent('');
+      const preferredSessionPlan = filter === isPlanArtifact
+        ? files.find((file) => file.path.replaceAll('\\', '/').toLowerCase() === 'plan/plan.md')
+        : null;
+      const selected = files.find((file) => file.path === selectedFileRef.current);
+      const nextFile = preferredSessionPlan
+        || selected
+        || files[0];
+      if (nextFile) {
+        handleSelectFile(nextFile.path, requestContext);
+        return;
       }
+      selectedFileRef.current = null;
+      setSelectedFile(null);
+      setSelectedFileContent('');
     } catch (err) {
       if (isAbortError(err) || !isCurrentRequest(requestContext)) return;
       console.error('Failed to load workflow files:', err);

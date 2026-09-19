@@ -210,6 +210,7 @@ export default function AppLayout({
           planActive={planActive}
           goalState={goalState}
           status={statusModel}
+          lastTurnResult={lastTurnResult}
           sessionMeta={sessionMeta}
           threadId={currentThread}
           projectId={currentThreadProject}

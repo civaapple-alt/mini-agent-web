@@ -1,5 +1,5 @@
 const SKILL_TOKEN_RE = /(^|[\s])(\$[A-Za-z0-9-]+(?::[A-Za-z0-9-]+)?)(?=$|[\s.,!?;:)])/g;
-const WORKFLOW_TOKEN_RE = /(^|[\s])\+\s*([A-Za-z0-9-]+)(?=$|[\s])/gi;
+const WORKFLOW_TOKEN_RE = /^\s*\+\s*([A-Za-z0-9-]+)(?=$|\s)/i;
 
 function enabledSkills(availableSkills = []) {
   return availableSkills.filter((skill) => skill?.enabled !== false && skill?.name);
@@ -72,32 +72,19 @@ export function parseWorkflowPrompt(text, skillGroups = []) {
   const groups = new Map(
     (skillGroups || []).map((group) => [String(group?.id || '').toLowerCase(), group]),
   );
-  let workflow = null;
-  const unknownWorkflows = [];
-  let cleaned = '';
-  let lastEnd = 0;
-  for (const match of text.matchAll(WORKFLOW_TOKEN_RE)) {
-    const prefix = match[1] || '';
-    const id = match[2].toLowerCase();
-    const tokenStart = match.index + prefix.length;
-    const tokenEnd = tokenStart + match[0].length - prefix.length;
-    if (text[tokenStart - 1] === '\\') continue;
-    cleaned += text.slice(lastEnd, tokenStart);
-    const group = groups.get(id);
-    if (!group || group.enabled === false) {
-      unknownWorkflows.push(id);
-      cleaned += text.slice(tokenStart, tokenEnd);
-    } else if (!workflow) {
-      workflow = { kind: 'skill_group', id, mode: 'auto' };
-    }
-    lastEnd = tokenEnd;
+  const match = text.match(WORKFLOW_TOKEN_RE);
+  if (!match) {
+    return { prompt: text.trim(), workflow: null, unknownWorkflows: [] };
   }
-  cleaned += text.slice(lastEnd);
-  cleaned = cleaned.replace(/\\(\+[A-Za-z0-9-]+)/g, '$1');
+  const id = match[1].toLowerCase();
+  const group = groups.get(id);
+  if (!group || group.enabled === false) {
+    return { prompt: text.trim(), workflow: null, unknownWorkflows: [id] };
+  }
   return {
-    prompt: cleaned.replace(/[ \t]{2,}/g, ' ').trim(),
-    workflow,
-    unknownWorkflows: [...new Set(unknownWorkflows)],
+    prompt: text.slice(match[0].length).trim(),
+    workflow: { kind: 'skill_group', id, mode: 'auto' },
+    unknownWorkflows: [],
   };
 }
 

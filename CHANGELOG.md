@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Parse `+ <group> task` as a workflow shorthand only at the start of a message,
+  so ordinary prose such as `+ Enter` no longer blocks submission as an unknown
+  plugin group.
 - Restore new Sessions from their bounded Turn presentation projection instead
   of merging assistant segments. Workflow selection, skill-group activation,
   and skill-load milestones retain their original boundaries and placement

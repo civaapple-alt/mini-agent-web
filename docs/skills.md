@@ -189,8 +189,10 @@ retain names such as `pstack:how` and `knowledge-work:data`.
 
 ## Plugin workflow activation
 
-The plus menu and `+ <group> task` shorthand set a turn-local workflow without
-changing Project settings:
+The plus menu and a leading `+ <group> task` shorthand set a turn-local
+workflow without changing Project settings. The shorthand is recognized only
+at the start of the message, so ordinary `+ word` text remains part of the
+prompt:
 
 ```json
 {

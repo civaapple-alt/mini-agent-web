@@ -12,7 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep the message stream at its normal centered width when the Session Turn rail is visible.
 - Keep only the current block expanded as a Turn advances. Fold completed
   reasoning and assistant text one block at a time while later reasoning and
-  tool blocks continue in order.
+  tool blocks continue in order. Treat streamed assistant text as the current
+  block so the previous block folds when the final reply starts; keep that reply
+  expanded after Turn settlement.
 - Parse `+ <group> task` as a workflow shorthand only at the start of a message,
   so ordinary prose such as `+ Enter` no longer blocks submission as an unknown
   plugin group.

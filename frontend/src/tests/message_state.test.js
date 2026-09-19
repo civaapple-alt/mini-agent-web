@@ -124,6 +124,7 @@ test('message stream aggregation cleanly sequences thinking, text, and tools', (
   assert.equal(messages[0].blocks[0].isStreaming, false);
   assert.equal(messages[0].blocks[1].type, 'text');
   assert.equal(messages[0].blocks[1].content, 'Here is the plan.');
+  assert.equal(messages[0].blocks[1].isStreaming, true);
 
   // 4. Tool started
   messages = aggregateStreamEvent(messages, {
@@ -134,6 +135,7 @@ test('message stream aggregation cleanly sequences thinking, text, and tools', (
   assert.equal(messages[0].blocks.length, 3);
   assert.equal(messages[0].blocks[2].type, 'tool');
   assert.equal(messages[0].blocks[2].status, 'running');
+  assert.equal(messages[0].blocks[1].isStreaming, false);
 
   // 5. Tool finished
   messages = aggregateStreamEvent(messages, {

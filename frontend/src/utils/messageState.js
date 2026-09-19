@@ -271,6 +271,23 @@ function settleThinkingBlocks(messages, targetIndex) {
   return copy;
 }
 
+function settleAssistantTextBlocks(messages, targetIndex) {
+  if (targetIndex < 0 || targetIndex >= messages.length) return messages;
+  const current = messages[targetIndex];
+  const blocks = current.blocks || [];
+  if (!blocks.some((block) => block.type === 'text' && block.isStreaming)) {
+    return messages;
+  }
+  const copy = [...messages];
+  copy[targetIndex] = {
+    ...current,
+    blocks: blocks.map((block) => (
+      block.type === 'text' ? { ...block, isStreaming: false } : block
+    )),
+  };
+  return copy;
+}
+
 function hasAssistantBlockBoundary(blocks) {
   return blocks.some(
     (block) => block.type === 'tool' || block.type === 'compaction'
@@ -994,6 +1011,7 @@ export function aggregateStreamEvent(messages, data) {
       type === 'skills_load_failed'
     ) {
       messages = settleThinkingBlocks(messages, targetIndex);
+      messages = settleAssistantTextBlocks(messages, targetIndex);
     }
 
     if (type === 'skill_group_activated') {
@@ -1112,6 +1130,9 @@ export function aggregateStreamEvent(messages, data) {
     if (type === 'assistant_text_delta' || type === 'context_compaction_finished') {
       messages = settleThinkingBlocks(messages, targetIndex);
     }
+    if (type === 'context_compaction_finished') {
+      messages = settleAssistantTextBlocks(messages, targetIndex);
+    }
 
     const copy = [...messages];
     const last = { ...copy[targetIndex] };
@@ -1202,11 +1223,13 @@ export function aggregateStreamEvent(messages, data) {
         blocks.push({
           type: 'text',
           content: evt.delta || '',
+          isStreaming: true,
         });
       } else {
         blocks[blocks.length - 1] = {
           ...activeText,
           content: (activeText.content || '') + (evt.delta || ''),
+          isStreaming: true,
         };
       }
       last.text = (last.text || '') + (evt.delta || '');
@@ -1217,7 +1240,7 @@ export function aggregateStreamEvent(messages, data) {
 
     if (type === 'tool_started') {
       const lastBlock = blocks[blocks.length - 1];
-      if (lastBlock && lastBlock.type === 'thinking') {
+      if (lastBlock && (lastBlock.type === 'thinking' || lastBlock.type === 'text')) {
         blocks[blocks.length - 1] = { ...lastBlock, isStreaming: false };
       }
       const toolName = evt.tool || evt.name || evt.toolName || '';
@@ -1263,7 +1286,7 @@ export function aggregateStreamEvent(messages, data) {
 
     if (type === 'turn_finished' || type === 'run_finished' || type === 'run_failed') {
       last.blocks = blocks.map((b) => {
-        if (b.type === 'thinking') return { ...b, isStreaming: false };
+        if (b.type === 'thinking' || b.type === 'text') return { ...b, isStreaming: false };
         if (b.type === 'tool' && b.status === 'running') return { ...b, status: 'completed' };
         return b;
       });

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep the active Turn's reasoning and tool cards in stream order while it runs.
+  Collapse settled activity into a summary only after the Turn finishes, and
+  keep running or pending tools visible.
 - Parse `+ <group> task` as a workflow shorthand only at the start of a message,
   so ordinary prose such as `+ Enter` no longer blocks submission as an unknown
   plugin group.

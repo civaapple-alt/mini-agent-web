@@ -230,9 +230,10 @@ export default function MessageItem({
   const fullResponseText = blocks.length > 0
     ? blocks.filter((b) => b.type === 'text').map((b) => b.content).join('\n\n')
     : text;
-  const renderedBlocks = groupSettledAssistantBlocks(
-    groupCompactionBlocks(normalizeAssistantBlocks(blocks)),
-  );
+  const normalizedBlocks = groupCompactionBlocks(normalizeAssistantBlocks(blocks));
+  const renderedBlocks = isStreamingThis
+    ? normalizedBlocks
+    : groupSettledAssistantBlocks(normalizedBlocks);
 
   return (
     <div
@@ -257,7 +258,7 @@ export default function MessageItem({
             if (block.type === 'thinking') {
               return (
                 <ThinkingBlock
-                  key={`thinking_${idx}`}
+                  key={block.id || `thinking_${idx}`}
                   content={block.content}
                   isStreaming={Boolean(block.isStreaming && isStreamingThis)}
                 />

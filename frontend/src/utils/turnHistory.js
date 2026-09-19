@@ -199,7 +199,9 @@ export function blocksCanBeGrouped(blocks) {
     if (block.type !== 'tool') return false;
     const outcome = String(block.outcome || '').toLowerCase();
     const approvalState = String(block.approval?.state || '').toLowerCase();
+    const status = String(block.status || '').toLowerCase();
     return !block.isStreaming
+      && !['running', 'inprogress', 'pending', 'queued'].includes(status)
       && !block.error
       && !['failed', 'error', 'needs_approval', 'deferred'].includes(outcome)
       && !['pending', 'denied', 'expired'].includes(approvalState);

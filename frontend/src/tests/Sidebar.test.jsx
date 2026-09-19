@@ -274,4 +274,44 @@ describe('Sidebar session actions', () => {
     expect(screen.queryByText('已完成')).toBeNull();
     expect(screen.queryByText('待命')).toBeNull();
   });
+
+  it('orders project sessions by activity and shows relative activity time', async () => {
+    const now = Date.now();
+    const { container } = renderSessionSidebar({
+      threads: [
+        {
+          ...thread,
+          thread_id: 't-oldest',
+          title: '最早的会话',
+          updated_at: new Date(now - 4 * 86_400_000).toISOString(),
+        },
+        {
+          ...thread,
+          thread_id: 't-newest',
+          title: '最近的会话',
+          updated_at: new Date(now - 20 * 60_000).toISOString(),
+        },
+        {
+          ...thread,
+          thread_id: 't-middle',
+          title: '中间的会话',
+          updated_at: new Date(now - 2 * 3_600_000).toISOString(),
+        },
+        {
+          ...thread,
+          thread_id: 't-unknown',
+          title: '时间未知的会话',
+          updated_at: null,
+        },
+      ],
+    });
+
+    await waitFor(() => expect(screen.getByText('最近的会话')).toBeTruthy());
+
+    const rows = [...container.querySelectorAll('.nested-thread-item')];
+    expect(rows.map((row) => row.querySelector('.nested-thread-title').textContent))
+      .toEqual(['最近的会话', '中间的会话', '最早的会话', '时间未知的会话']);
+    expect(rows.map((row) => row.querySelector('.nested-thread-updated-at').textContent))
+      .toEqual(['20 分钟前', '2 小时前', '4 天前', '时间未知']);
+  });
 });

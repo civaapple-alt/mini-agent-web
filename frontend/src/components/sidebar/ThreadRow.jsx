@@ -8,9 +8,11 @@ import {
   Trash2,
 } from 'lucide-react';
 import { getThreadStatusPresentation } from '../../utils/threadStatus';
+import { formatRelativeTime, parseActivityTime } from '../../utils/relativeTime';
 
 export default function ThreadRow({
   thread,
+  now,
   currentThread,
   currentThreadProject,
   isGenerating,
@@ -25,12 +27,21 @@ export default function ThreadRow({
     (!currentThreadProject || thread.project === currentThreadProject);
   const isRunning = status.isRunning || (isSelected && isGenerating);
   const threadKey = `${thread.project || 'unknown'}:${thread.thread_id}`;
+  const relativeTime = formatRelativeTime(thread.updated_at, now);
+  const activityTimestamp = parseActivityTime(thread.updated_at);
+  const rowTitle = [
+    thread.title,
+    thread.session_id ? `Session ID: ${thread.session_id}` : null,
+    activityTimestamp !== null
+      ? `最近活动：${new Date(activityTimestamp).toLocaleString()}`
+      : '最近活动时间未知',
+  ].filter(Boolean).join('\n');
 
   return (
     <div
       className={`nested-thread-item ${isSelected ? 'selected' : ''} ${isRunning ? 'is-running' : ''}`}
       onClick={() => onSelectThread(thread.thread_id, thread.project)}
-      title={thread.session_id ? `${thread.title}\nSession ID: ${thread.session_id}` : thread.title}
+      title={rowTitle}
     >
       <div className="nested-thread-copy">
         <span className="nested-thread-title">{thread.title}</span>
@@ -42,6 +53,7 @@ export default function ThreadRow({
             {thread.session_id}
           </span>
         )}
+        <span className="nested-thread-updated-at">{relativeTime}</span>
       </div>
 
       {isRunning && (

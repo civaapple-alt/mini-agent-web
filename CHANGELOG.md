@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Sort each project's session list by the canonical Session activity time and
+  show a relative age under each session title.
 - Keep the message stream at its normal centered width when the Session Turn rail is visible.
 - Keep only the current block expanded as a Turn advances. Fold completed
   reasoning and assistant text one block at a time while later reasoning and

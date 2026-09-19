@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 import ThreadRow from './sidebar/ThreadRow';
+import { compareThreadActivity } from '../utils/relativeTime';
 import './Sidebar.css';
 
 const sessionConfirmationDetails = {
@@ -52,6 +53,7 @@ export default function Sidebar({
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchBox, setShowSearchBox] = useState(false);
+  const [relativeTimeNow, setRelativeTimeNow] = useState(() => Date.now());
   const [activeMenuThread, setActiveMenuThread] = useState(null);
   const [sessionModal, setSessionModal] = useState(null);
 
@@ -87,6 +89,13 @@ export default function Sidebar({
       projectRequestControllerRef.current?.abort();
       projectRequestEpochRef.current += 1;
     };
+  }, []);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setRelativeTimeNow(Date.now());
+    }, 30_000);
+    return () => window.clearInterval(intervalId);
   }, []);
 
   // Close project popover on window click
@@ -351,7 +360,7 @@ export default function Sidebar({
           title: t === 'default' ? '默认会话' : t,
           project: currentProjectName,
           summary: '',
-          updated_at: new Date().toISOString(),
+          updated_at: null,
         };
       }
       return {
@@ -359,7 +368,7 @@ export default function Sidebar({
         title: t.title || (t.thread_id === 'default' ? '默认会话' : t.thread_id),
         project: t.project || currentProjectName,
         summary: t.summary || '',
-        updated_at: t.updated_at || new Date().toISOString(),
+        updated_at: t.updated_at || null,
         runtime_status: t.runtime_status || null,
         session_status: t.session_status || null,
         goal_status: t.goal_status || null,
@@ -382,17 +391,22 @@ export default function Sidebar({
     });
   }, [threads, currentProjectName]);
 
+  const sortedThreads = useMemo(
+    () => [...normalizedThreads].sort(compareThreadActivity),
+    [normalizedThreads],
+  );
+
   const filteredThreads = useMemo(() => {
-    if (!searchQuery.trim()) return normalizedThreads;
+    if (!searchQuery.trim()) return sortedThreads;
     const q = searchQuery.toLowerCase();
-    return normalizedThreads.filter(
+    return sortedThreads.filter(
       (t) =>
         t.title.toLowerCase().includes(q) ||
         t.thread_id.toLowerCase().includes(q) ||
         (t.session_id || '').toLowerCase().includes(q) ||
         t.summary.toLowerCase().includes(q)
     );
-  }, [normalizedThreads, searchQuery]);
+  }, [sortedThreads, searchQuery]);
 
   const allProjects = useMemo(() => {
     if (projectsData?.projects && projectsData.projects.length > 0) {
@@ -469,14 +483,6 @@ export default function Sidebar({
       onToast?.('复制 Session ID 失败', 'error');
     }
   };
-
-  const recentSortedThreads = useMemo(() => {
-    return [...normalizedThreads].sort((a, b) => {
-      const dateA = new Date(a.updated_at || 0).getTime();
-      const dateB = new Date(b.updated_at || 0).getTime();
-      return dateB - dateA;
-    });
-  }, [normalizedThreads]);
 
   const handleOpenNewSession = () => {
     setActiveProjectPopover(null);
@@ -754,6 +760,7 @@ export default function Sidebar({
                       <ThreadRow
                         key={`${thread.project || 'unknown'}:${thread.thread_id}`}
                         thread={thread}
+                        now={relativeTimeNow}
                         currentThread={currentThread}
                         currentThreadProject={currentThreadProject}
                         isGenerating={isGenerating}
@@ -800,7 +807,7 @@ export default function Sidebar({
 
           {showRecentSection && (
             <div className="recent-items-list">
-              {recentSortedThreads.slice(0, 8).map((t) => (
+              {sortedThreads.slice(0, 8).map((t) => (
                 <div
                   key={`${t.project || 'unknown'}:${t.thread_id}`}
                   className={`recent-thread-item ${t.thread_id === currentThread && (!currentThreadProject || t.project === currentThreadProject) ? 'active' : ''}`}

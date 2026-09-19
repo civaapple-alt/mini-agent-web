@@ -48,6 +48,64 @@ async def test_gateway_lists_catalog_when_runtime_is_read_only(test_app):
 
 
 @pytest.mark.asyncio
+async def test_gateway_thread_list_uses_catalog_activity_and_sorts_newest_first(
+    test_app, monkeypatch
+):
+    now = "2026-09-20T08:00:00+00:00"
+    older = "2026-09-19T08:00:00+00:00"
+    catalog_entries = [
+        {
+            "project_id": "project-1",
+            "thread_id": "older",
+            "session_id": "s-older",
+            "updated_at": older,
+            "session_status": "historical",
+            "runtime_status": "historical",
+            "goal_status": "none",
+            "cleanup_pending": False,
+            "resumable": True,
+        },
+        {
+            "project_id": "project-1",
+            "thread_id": "newer",
+            "session_id": "s-newer",
+            "updated_at": now,
+            "session_status": "historical",
+            "runtime_status": "historical",
+            "goal_status": "none",
+            "cleanup_pending": False,
+            "resumable": True,
+        },
+    ]
+    monkeypatch.setattr(session_manager, "_client", None)
+    monkeypatch.setattr(session_manager, "_project_clients", {})
+    monkeypatch.setattr(session_manager, "_current_project_id", "project-1")
+    monkeypatch.setattr(session_manager, "live_thread_bindings", list)
+    monkeypatch.setattr(
+        session_manager, "list_all_project_sessions", lambda: catalog_entries
+    )
+    monkeypatch.setattr(session_manager, "_thread_metadata_by_project", {})
+    monkeypatch.setattr(session_manager, "_thread_metadata", {})
+    monkeypatch.setattr(
+        session_manager,
+        "get_thread_meta",
+        lambda thread_id, _project_id: {
+            "title": thread_id,
+            "updated_at": "2020-01-01T00:00:00+00:00",
+        },
+    )
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/threads", params={"project_id": "project-1"})
+
+    assert response.status_code == 200
+    threads = response.json()["threads"]
+    assert [thread["thread_id"] for thread in threads] == ["newer", "older"]
+    assert [thread["updated_at"] for thread in threads] == [now, older]
+
+
+@pytest.mark.asyncio
 async def test_gateway_skill_catalog_is_bounded_and_skill_toggle_rejects_active_turn(
     test_app, monkeypatch
 ):

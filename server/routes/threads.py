@@ -4,6 +4,7 @@ Thread management endpoints with metadata enrichment (title, summary, date group
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -37,6 +38,27 @@ def _scheduled_task_json(value: Any) -> dict[str, Any]:
     if isinstance(payload, dict):
         payload.pop("raw", None)
     return payload
+
+
+def _thread_activity_sort_key(thread: dict[str, Any]) -> tuple[bool, float, str, str]:
+    updated_at = thread.get("updated_at")
+    timestamp = 0.0
+    has_timestamp = isinstance(updated_at, str) and bool(updated_at)
+    if has_timestamp:
+        try:
+            parsed = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            timestamp = parsed.timestamp()
+        except (OSError, OverflowError, ValueError):
+            has_timestamp = False
+
+    return (
+        has_timestamp,
+        timestamp,
+        str(thread.get("project") or ""),
+        str(thread.get("thread_id") or ""),
+    )
 
 
 @router.get("/project/{project_id}/sessions", summary="List Project Sessions")
@@ -212,9 +234,11 @@ async def list_threads(
             }
             catalog_entry = catalog_entries.get((project_id, tid))
             if catalog_entry:
-                if (
-                    is_default_thread_title(item["title"], tid)
-                    and catalog_entry.get("title")
+                item["updated_at"] = (
+                    catalog_entry.get("updated_at") or item["updated_at"]
+                )
+                if is_default_thread_title(item["title"], tid) and catalog_entry.get(
+                    "title"
                 ):
                     item["title"] = catalog_entry["title"]
                 item.update(
@@ -253,6 +277,8 @@ async def list_threads(
                 if field in meta:
                     item[field] = meta[field]
             enriched_threads.append(item)
+
+        enriched_threads.sort(key=_thread_activity_sort_key, reverse=True)
 
         return {
             "threads": enriched_threads,

@@ -24,6 +24,49 @@ describe('ChatArea turn status', () => {
     expect(screen.getByText(/原因：model request failed: transport error/)).toBeDefined();
     expect(screen.queryByText('本轮未完整结束')).toBeNull();
   });
+
+  it('hides a previous incomplete result while a steer continuation is active', () => {
+    const baseProps = {
+      messages: [{
+        id: 'steer-1',
+        role: 'user',
+        text: '继续核对',
+        isSteer: true,
+        steerTurnId: 'turn-1',
+      }],
+      pendingApproval: null,
+      lastTurnResult: {
+        status: 'step_limit',
+        steps: 6,
+        turnId: 'turn-1',
+      },
+      onQuickPrompt: () => {},
+      onRetryPrompt: () => {},
+    };
+    const { rerender } = render(<ChatArea {...baseProps} isGenerating />);
+
+    expect(screen.queryByText('本轮达到运行步数上限')).toBeNull();
+
+    rerender(<ChatArea {...baseProps} isGenerating={false} />);
+    expect(screen.getByText('本轮达到运行步数上限')).toBeTruthy();
+    expect(screen.getByText(/已执行 6 步/)).toBeTruthy();
+  });
+
+  it('hides an incomplete result while runtime status says the Turn is active', () => {
+    render(
+      <ChatArea
+        messages={[]}
+        isGenerating={false}
+        pendingApproval={null}
+        statusModel={{ lifecycle: 'running', process: { turnActive: true } }}
+        lastTurnResult={{ status: 'failed', turnId: 'turn-2', error: 'old failure' }}
+        onQuickPrompt={() => {}}
+        onRetryPrompt={() => {}}
+      />,
+    );
+
+    expect(screen.queryByText('本轮执行失败')).toBeNull();
+  });
 });
 
 describe('ChatArea delegated child task batch', () => {

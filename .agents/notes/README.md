@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [Steer 期间隐藏过期结果并弱化标识](implemented/bug-fix/2026-09-20-steer-turn-result-banner-and-visual-weight.zh.md)
 - [活动摘要等待执行段结束](implemented/bug-fix/2026-09-20-active-execution-segment-summary-boundary.zh.md)
 - [Workspace Root、Session 附件根与 Prompt Context](implemented/architecture/2026-09-18-workspace-roots-session-attachments-and-prompt-context.zh.md)
 - [Child Session operation、恢复与 Session notebook](implemented/architecture/2026-09-17-child-operation-recovery-and-notebook.zh.md)

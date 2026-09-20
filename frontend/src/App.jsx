@@ -1428,6 +1428,7 @@ export default function App() {
           setMessages((prev) => appendGoalMessageToMessages(prev, goalObjective));
         }
         if (!stoppedTurn) {
+          setLastTurnResult(null);
           setIsGenerating(true);
           setIsInterrupting(false);
           setPlanReviewPending(false);

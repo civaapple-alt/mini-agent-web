@@ -32,6 +32,10 @@ export default function ChatArea({
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const [hasNewActivity, setHasNewActivity] = useState(false);
   const [focusedTurnId, setFocusedTurnId] = useState(null);
+  const hasActiveTurn = isGenerating
+    || Boolean(pendingApproval)
+    || Boolean(statusModel?.process?.turnActive)
+    || ['running', 'approval', 'stopping'].includes(statusModel?.lifecycle);
 
   const turnEntries = useMemo(() => buildTurnHistoryEntries({
     messages,
@@ -273,7 +277,7 @@ export default function ChatArea({
         </div>
       )}
 
-      {lastTurnResult && (
+      {lastTurnResult && !hasActiveTurn && (
         <div className="turn-status-banner" role="status" aria-live="polite">
           <strong>
             {lastTurnResult.status === 'step_limit'

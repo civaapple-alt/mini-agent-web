@@ -481,9 +481,14 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--accent-purple);
+  color: var(--text-muted);
   font-size: 10.5px;
-  font-weight: 600;
+  font-weight: 500;
+}
+
+.steer-message-label svg {
+  color: var(--accent-purple);
+  opacity: 0.55;
 }
 
 .steer-message-label-separator {
@@ -492,8 +497,8 @@
 }
 
 .steer-bubble {
-  border-color: var(--accent-purple);
-  background: var(--accent-purple-soft);
+  border-color: var(--border-color);
+  background: var(--bg-card-hover);
   border-radius: 12px 12px 4px 12px;
 }
 

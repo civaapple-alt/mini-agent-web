@@ -5,6 +5,8 @@ import {
   childTaskStatusLabels,
   formatChildTaskDuration,
   formatChildTaskTimestamp,
+  getChildTaskWaitingReason,
+  getLatestChildTaskReport,
 } from '../utils/childTasks';
 
 function getLifecycle(task) {
@@ -24,6 +26,8 @@ function ChildTaskRow({ task }) {
   const lifecycle = getLifecycle(task);
   const duration = formatChildTaskDuration(task.duration_ms);
   const isTerminal = ['completed', 'failed', 'cancelled', 'step_limit'].includes(status);
+  const waitingReason = getChildTaskWaitingReason(task);
+  const latestReport = getLatestChildTaskReport(task);
 
   return (
     <li className={`delegate-task-row ${status}`}>
@@ -46,6 +50,17 @@ function ChildTaskRow({ task }) {
           );
         })}
       </ol>
+      {waitingReason && (
+        <p className="delegate-task-waiting"><strong>等待：</strong>{waitingReason}</p>
+      )}
+      {latestReport && (
+        <p className="delegate-task-report">
+          <strong>进展：</strong>{latestReport.text}
+          {latestReport.timestamp_ms && (
+            <time>{formatChildTaskTimestamp(latestReport.timestamp_ms)}</time>
+          )}
+        </p>
+      )}
     </li>
   );
 }

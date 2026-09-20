@@ -972,6 +972,36 @@ class MiniAgentClient:
             },
         )
 
+    async def child_task_action(
+        self,
+        thread_id: str,
+        parent_thread_id: str,
+        operation_id: str,
+        attempt: int,
+        action: str,
+        *,
+        report: str | None = None,
+        report_id: str | None = None,
+        prompt: str | None = None,
+    ) -> dict[str, Any]:
+        """Persist one parent-authorized child-task action in its Session."""
+        params: dict[str, Any] = {
+            "threadId": thread_id,
+            "parentThreadId": parent_thread_id,
+            "operationId": operation_id,
+            "attempt": attempt,
+            "action": action,
+        }
+        if report is not None:
+            params["report"] = report
+        if report_id is not None:
+            params["reportId"] = report_id
+        if prompt is not None:
+            params["prompt"] = prompt
+        result = await self._send_request("child/task", params)
+        value = result.get("value", result) if isinstance(result, dict) else result
+        return value if isinstance(value, dict) else {}
+
     async def read_turn(self, turn_id: str) -> TurnReadResult:
         """Read settled result and history of a turn."""
         res = await self._send_request("turn/read", {"turnId": turn_id})

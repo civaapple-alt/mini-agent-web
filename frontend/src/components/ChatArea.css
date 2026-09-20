@@ -142,6 +142,10 @@
 .delegate-task-lifecycle { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 5px 0 0; padding: 0; color: var(--text-muted); font-size: 10px; list-style: none; }
 .delegate-task-lifecycle li { display: flex; align-items: center; gap: 5px; }
 .delegate-task-lifecycle time { font-family: var(--font-mono); }
+.delegate-task-waiting, .delegate-task-report { margin: 5px 0 0; color: var(--text-secondary); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.delegate-task-waiting { color: var(--text-amber, #b45309); }
+.delegate-task-report { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.delegate-task-report time { margin-left: 6px; color: var(--text-muted); font-family: var(--font-mono); font-size: 10px; }
 
 .messages-list {
   max-width: 860px;

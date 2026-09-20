@@ -27,6 +27,29 @@ uv run pytest tests/smoke/ -q
 - 模拟 Prompt 提交、流式 Chunk、ThreadItem 生命周期与最终结算；
 - 线程历史投影完整性校验。
 
+### 子代理报告跨仓场景
+
+`test_child_agent_report_scenario.py` 使用真实 SDK 和本地 App Server 子进程，验证
+父 Session fork 出子任务后，`task_report` 的 `tool_finished` 事件经 Gateway 写入
+子 Session、触发空闲父会话续行，并从 `/children` 还原报告投影。场景还验证重复
+报告幂等和过期 attempt 被拒绝。它只替换父续行的模型入口，不发送模型请求；App
+Server 和 Gateway 的会话、JSON-RPC、持久化及投影路径均真实运行。
+
+先从 `mini-codex` 构建当前 App Server：
+
+```powershell
+cargo build -p mini-agent-app-server
+```
+
+再从 `mini-agent-web` 在 PowerShell 显式设置二进制路径并运行：
+
+```powershell
+$env:MINI_AGENT_APP_SERVER_PATH = "..\mini-codex\target\debug\mini-agent-app-server.exe"
+uv run pytest tests/smoke/test_child_agent_report_scenario.py -q
+```
+
+没有配置可执行文件时该场景会跳过；默认测试不启动真实 App Server。
+
 ---
 
 ## 2. 运行 Tier 2 全栈真实 LLM 冒烟测试

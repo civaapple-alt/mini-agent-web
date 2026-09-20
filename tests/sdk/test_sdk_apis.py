@@ -16,6 +16,58 @@ from mini_agent.errors import ServerProcessError
 from tests.conftest import has_app_server
 
 
+@pytest.mark.asyncio
+async def test_sdk_child_task_action_unwraps_action_result():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {
+            "value": {
+                "threadId": "child-1",
+                "parentThreadId": "parent-1",
+                "operationId": "child:child-1",
+                "action": "report",
+                "status": "reported",
+                "cursor": 27,
+                "attempt": 2,
+                "timestampMs": 1_700_000_000_000,
+            },
+            "actionId": "action-27",
+            "actionSequence": 27,
+        }
+
+    client._send_request = fake_send
+
+    result = await client.child_task_action(
+        "child-1",
+        "parent-1",
+        "child:child-1",
+        2,
+        "report",
+        report="Finished the audit pass.",
+        report_id="call-27",
+    )
+
+    assert result["cursor"] == 27
+    assert result["attempt"] == 2
+    assert calls == [
+        (
+            "child/task",
+            {
+                "threadId": "child-1",
+                "parentThreadId": "parent-1",
+                "operationId": "child:child-1",
+                "attempt": 2,
+                "action": "report",
+                "report": "Finished the audit pass.",
+                "reportId": "call-27",
+            },
+        )
+    ]
+
+
 @pytest.mark.skipif(
     not has_app_server(),
     reason="Live SDK test requires mini-agent-app-server binary (set MINI_AGENT_APP_SERVER_PATH)",

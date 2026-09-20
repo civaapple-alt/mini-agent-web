@@ -897,6 +897,7 @@ class SessionCatalog:
         latest_operation: dict[str, Any] | None = None
         child_task_operation: dict[str, Any] | None = None
         child_task_lifecycle: list[dict[str, int | str | None]] = []
+        child_task_reports: list[dict[str, int | str]] = []
         first_user_prompt = _first_user_prompt(records)
         for record in records:
             kind = record.get("kind")
@@ -1026,6 +1027,27 @@ class SessionCatalog:
                                         "operation_parent_thread_id"
                                     )
                                 )
+            elif kind == "child_report" and child_task_operation:
+                report = _bounded_text(record.get("report"), 4096)
+                operation_id = _bounded_text(record.get("operation_id"), 128)
+                cursor = _bounded_int(record.get("seq"))
+                report_id = _bounded_text(record.get("report_id"), 128)
+                if (
+                    report
+                    and operation_id == child_task_operation.get("operation_id")
+                    and report_id
+                    and cursor
+                ):
+                    child_task_reports.append(
+                        {
+                            "cursor": cursor,
+                            "report_id": report_id,
+                            "attempt": _bounded_int(record.get("attempt")) or 1,
+                            "timestamp_ms": _bounded_int(record.get("timestamp_ms")),
+                            "report": report,
+                        }
+                    )
+                    child_task_reports = child_task_reports[-32:]
         operation_matches_settled_turn = bool(
             child_task_operation
             and latest_turn_settled
@@ -1154,6 +1176,10 @@ class SessionCatalog:
                 "started_at_ms": started_at_ms or None,
                 "finished_at_ms": finished_at_ms or None,
                 "duration_ms": duration_ms,
+                "reports": child_task_reports,
+                "next_cursor": child_task_reports[-1]["cursor"]
+                if child_task_reports
+                else 0,
             }
         if not thread_id:
             return None

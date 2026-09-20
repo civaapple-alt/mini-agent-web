@@ -57,6 +57,8 @@ describe('ChatArea delegated child task batch', () => {
       title: 'Trace event ordering',
       execution_mode: 'parallel',
       status: 'queued',
+      waiting_reason: '等待并发槽位',
+      reports: [{ text: '先检查事件排序', timestamp_ms: 1_700_000_000_100 }],
       lifecycle: [{ status: 'queued', timestamp_ms: 1_700_000_000_000, attempt: 1 }],
       child_session_available: true,
     },
@@ -98,6 +100,8 @@ describe('ChatArea delegated child task batch', () => {
     expect(screen.getByText('已开始')).toBeTruthy();
     expect(screen.getByText('排队中')).toBeTruthy();
     expect(screen.getByText('运行中')).toBeTruthy();
+    expect(screen.getByText('等待并发槽位')).toBeTruthy();
+    expect(screen.getByText('先检查事件排序')).toBeTruthy();
   });
 
   it('updates the replayed batch as child lifecycle reaches a terminal state', () => {

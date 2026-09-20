@@ -36,6 +36,9 @@ MAX_CHILD_TASKS_PER_PARENT = 2
 MAX_CONFIGURED_CHILD_TASKS_PER_PARENT = 8
 MAX_CHILD_TASK_PROMPT_BYTES = 32 * 1024
 MAX_CHILD_TASK_LIFECYCLE = 32
+MAX_CHILD_CONTROL_WAKE_EVENTS = 8
+MAX_CHILD_CONTROL_WAKE_IDS = 8
+MAX_CHILD_CONTROL_WAKE_CHILD_IDS = 16
 MAX_DELEGATION_FAILURES_PER_PARENT = 32
 MAX_NOTEBOOK_ENTRIES = 64
 MAX_NOTEBOOK_ENTRY_BYTES = 4096
@@ -108,6 +111,9 @@ class SessionManager:
         self._active_tasks: dict[str, asyncio.Task[Any]] = {}
         self._active_turns_by_project: dict[tuple[str, str], str] = {}
         self._active_tasks_by_project: dict[tuple[str, str], asyncio.Task[Any]] = {}
+        self._child_wake_jobs: dict[tuple[str, str], asyncio.Task[Any]] = {}
+        self._child_wake_pending: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+        self._child_wake_seen: OrderedDict[tuple[str, str, str, str], None] = OrderedDict()
         # Serializes child creation admission without serializing the child
         # runtimes themselves. Each child still owns an independent client and
         # App Server process after this short control-plane critical section.
@@ -504,6 +510,7 @@ class SessionManager:
         sequence: int | None = None,
         *,
         execution_mode: str,
+        operation_attempt: int = 1,
     ) -> dict[str, Any]:
         """Create an exact child Session and run one detached child Turn.
 
@@ -540,6 +547,12 @@ class SessionManager:
             raise ValueError("child execution mode must be parallel or sequential")
         if execution_mode == "sequential" and not group_id:
             raise ValueError("sequential child tasks require a group id")
+        if execution_mode == "sequential" and sequence is None:
+            raise ValueError("sequential child tasks require a sequence")
+        if sequence is not None and (
+            isinstance(sequence, bool) or not isinstance(sequence, int)
+        ):
+            raise ValueError("child task sequence must be an integer")
         if sequence is not None and sequence < 0:
             raise ValueError("child task sequence must be non-negative")
         async with self._child_task_lock:
@@ -563,7 +576,7 @@ class SessionManager:
                 and (
                     child.get("turn_active")
                     or (child.get("child_task_state") or {}).get("status")
-                    in {"queued", "running", "awaiting_approval"}
+                    in {"running", "awaiting_approval", "in_progress"}
                     or (
                         resolved_project_id,
                         str(child.get("thread_id") or ""),
@@ -575,16 +588,101 @@ class SessionManager:
                 raise RuntimeError(f"child Thread '{new_thread_id}' already exists")
 
             operation_id = f"child:{new_thread_id}"
-            operation_attempt = 1
-            same_group_active = any(
-                (child.get("child_task_state") or {}).get("group_id") == group_id
-                and (child.get("child_task_state") or {}).get("status")
-                in {"queued", "running", "awaiting_approval", "in_progress"}
-                for child in children
-                if group_id and child.get("is_child_task") is True
+            if (
+                isinstance(operation_attempt, bool)
+                or not isinstance(operation_attempt, int)
+                or operation_attempt < 1
+            ):
+                raise ValueError("child task attempt must be a positive integer")
+            parent_turn_id = self._delegated_child_parent_turn_id(
+                source_thread_id, resolved_project_id, new_thread_id
             )
+            group_scope = parent_turn_id or f"session:{parent_session_id}"
+
+            def belongs_to_current_group(child: dict[str, Any]) -> bool:
+                state = child.get("child_task_state") or {}
+                child_thread_id = str(child.get("thread_id") or "")
+                child_parent_turn_id = self._delegated_child_parent_turn_id(
+                    source_thread_id, resolved_project_id, child_thread_id
+                )
+                return (
+                    child.get("is_child_task") is True
+                    and state.get("group_id") == group_id
+                    and (child_parent_turn_id or f"session:{parent_session_id}")
+                    == group_scope
+                )
+
+            same_group_children = [
+                child
+                for child in children
+                if group_id and belongs_to_current_group(child)
+            ]
+            same_group_states = [
+                (child.get("child_task_state") or {}) for child in same_group_children
+            ]
+            existing_sequences: dict[int, list[str]] = {}
+            for state in same_group_states:
+                existing_sequence = state.get("sequence")
+                if not isinstance(existing_sequence, int) or isinstance(
+                    existing_sequence, bool
+                ):
+                    continue
+                existing_sequences.setdefault(existing_sequence, []).append(
+                    str(state.get("status") or "queued")
+                )
+
+            # Failed pre-Session intents are the only task state the Gateway
+            # supplements from receipts. Canonical Session operations remain the
+            # source of truth for every materialized child.
+            materialized_child_ids = {
+                str(child.get("thread_id") or "") for child in same_group_children
+            }
+            for receipt in self._delegation_receipts.values():
+                receipt_child_id = str(receipt.get("child_thread_id") or "")
+                receipt_sequence = receipt.get("sequence")
+                receipt_scope = receipt.get("parent_turn_id") or (
+                    f"session:{parent_session_id}"
+                )
+                if (
+                    receipt.get("parent_thread_id") == source_thread_id
+                    and receipt.get("project_id") == resolved_project_id
+                    and receipt.get("group_id") == group_id
+                    and receipt.get("execution_mode") == "sequential"
+                    and receipt_scope == group_scope
+                    and receipt_child_id not in materialized_child_ids
+                    and receipt_child_id != new_thread_id
+                    and isinstance(receipt_sequence, int)
+                    and not isinstance(receipt_sequence, bool)
+                ):
+                    existing_sequences.setdefault(receipt_sequence, []).append(
+                        str(receipt.get("status") or "queued")
+                    )
+
+            if execution_mode == "sequential" and sequence in existing_sequences:
+                raise ValueError(
+                    f"sequential child task sequence {sequence} is already assigned"
+                )
+
+            same_group_active = any(
+                child.get("turn_active")
+                or (child.get("child_task_state") or {}).get("status")
+                in {"running", "awaiting_approval", "in_progress"}
+                or (
+                    resolved_project_id,
+                    str(child.get("thread_id") or ""),
+                )
+                in self._active_turns_by_project
+                for child in same_group_children
+            )
+            predecessors_completed = True
+            if execution_mode == "sequential" and sequence:
+                predecessors_completed = len(existing_sequences) >= sequence and all(
+                    existing_sequences.get(predecessor) == ["completed"]
+                    for predecessor in range(sequence)
+                )
             queued = active_children >= max_children or (
-                execution_mode == "sequential" and same_group_active
+                execution_mode == "sequential"
+                and (same_group_active or not predecessors_completed)
             )
             fork_args = (
                 source_thread_id,
@@ -714,6 +812,20 @@ class SessionManager:
                 )
                 if child:
                     await self._broadcast_child_operation(child)
+                    if parent_thread_id and child.get("status") in {
+                        "completed",
+                        "failed",
+                        "cancelled",
+                        "step_limit",
+                    }:
+                        self._queue_child_parent_wakeup(
+                            parent_thread_id,
+                            thread_id,
+                            project_id,
+                            "settled:"
+                            f"{child.get('operation_id')}:{child.get('operation_attempt')}:{child.get('status')}:{child.get('finished_at_ms')}",
+                            status=str(child.get("status")),
+                        )
             except Exception:
                 logger.debug(
                     "Unable to publish settled Child projection for %s",
@@ -744,7 +856,7 @@ class SessionManager:
                 child
                 for child in children
                 if child.get("status")
-                in {"running", "awaiting_approval", "in_progress", "queued"}
+                in {"running", "awaiting_approval", "in_progress"}
                 and child.get("turn_id")
             ]
             capacity = limit - len(active)
@@ -772,24 +884,52 @@ class SessionManager:
                         )
                         continue
                     if mode == "sequential" and group_id:
+                        sequence = child.get("group_sequence")
+                        if not isinstance(sequence, int) or isinstance(sequence, bool):
+                            continue
+
+                        parent_turn_id = child.get("parent_turn_id")
+                        parent_session_id = str(
+                            parent.get("session", {}).get("session_id") or ""
+                        )
+                        group_scope = parent_turn_id or f"session:{parent_session_id}"
+                        siblings = [
+                            item
+                            for item in children
+                            if item.get("operation_group_id") == group_id
+                            and (
+                                item.get("parent_turn_id")
+                                or f"session:{parent_session_id}"
+                            )
+                            == group_scope
+                        ]
                         if any(
-                            item.get("operation_group_id") == group_id
-                            and item.get("turn_id")
-                            and item.get("status")
-                            in {"running", "awaiting_approval", "in_progress", "queued"}
-                            for item in active
+                            item.get("status")
+                            in {"running", "awaiting_approval", "in_progress"}
+                            or (item.get("status") == "queued" and item.get("turn_id"))
+                            for item in siblings
                         ):
                             continue
-                        earlier = [
-                            item
-                            for item in queued
-                            if item is not child
-                            and item.get("operation_group_id") == group_id
-                            and item.get("group_sequence") is not None
-                            and child.get("group_sequence") is not None
-                            and item.get("group_sequence") < child.get("group_sequence")
-                        ]
-                        if earlier:
+
+                        sequence_statuses: dict[int, list[str]] = {}
+                        for item in siblings:
+                            item_sequence = item.get("group_sequence")
+                            if not isinstance(item_sequence, int) or isinstance(
+                                item_sequence, bool
+                            ):
+                                continue
+                            sequence_statuses.setdefault(item_sequence, []).append(
+                                str(item.get("status") or "queued")
+                            )
+                        if any(
+                            len(statuses) != 1
+                            for statuses in sequence_statuses.values()
+                        ):
+                            continue
+                        if len(sequence_statuses) < sequence or any(
+                            sequence_statuses.get(predecessor) != ["completed"]
+                            for predecessor in range(sequence)
+                        ):
                             continue
                     candidate = child
                     break
@@ -947,6 +1087,59 @@ class SessionManager:
         """Resume a failed/cancelled child Session with a bounded new attempt."""
         source_thread_id = source_thread_id or "default"
         resolved_project_id = self.resolve_thread_project(source_thread_id, project_id)
+        unmaterialized = next(
+            (
+                (key, receipt)
+                for key, receipt in self._delegation_receipts.items()
+                if receipt.get("parent_thread_id") == source_thread_id
+                and receipt.get("project_id") == resolved_project_id
+                and receipt.get("child_thread_id") == child_thread_id
+                and receipt.get("status") == "failed"
+            ),
+            None,
+        )
+        if unmaterialized and not self._canonical_thread(
+            child_thread_id, resolved_project_id
+        ):
+            receipt_key, receipt = unmaterialized
+            async with self._child_task_lock:
+                if receipt.get("status") != "failed":
+                    raise ValueError("unmaterialized child failure is no longer retryable")
+                attempt = _nonnegative_int(receipt.get("operation_attempt")) + 1
+                receipt["operation_attempt"] = attempt
+                receipt["timestamp_ms"] = int(time.time() * 1000)
+                receipt["status"] = "pending"
+                receipt.pop("failed_at_ms", None)
+                receipt.pop("error", None)
+                self._save_delegation_receipts()
+            await self._start_delegated_child(
+                source_thread_id,
+                child_thread_id,
+                str(receipt.get("prompt") or ""),
+                receipt.get("title"),
+                resolved_project_id,
+                receipt.get("group_id"),
+                receipt.get("execution_mode"),
+                receipt.get("sequence"),
+                receipt_key,
+            )
+            return next(
+                (
+                    item
+                    for item in await self.list_child_tasks(
+                        source_thread_id, resolved_project_id
+                    )
+                    if item.get("child_thread_id") == child_thread_id
+                ),
+                {
+                    "parent_thread_id": source_thread_id,
+                    "child_thread_id": child_thread_id,
+                    "operation_id": receipt.get("operation_id"),
+                    "operation_attempt": attempt,
+                    "status": "pending",
+                    "child_session_available": False,
+                },
+            )
         async with self._child_task_lock:
             child = next(
                 (
@@ -1110,6 +1303,13 @@ class SessionManager:
                     "lifecycle": list(child_task_state.get("lifecycle") or [])[
                         -MAX_CHILD_TASK_LIFECYCLE:
                     ],
+                    "reports": list(child_task_state.get("reports") or [])[-32:],
+                    "next_cursor": child_task_state.get("next_cursor") or 0,
+                    "latest_report": (
+                        (child_task_state.get("reports") or [])[-1]
+                        if child_task_state.get("reports")
+                        else None
+                    ),
                     "started_at_ms": child_task_state.get("started_at_ms"),
                     "finished_at_ms": child_task_state.get("finished_at_ms"),
                     "duration_ms": child_task_state.get("duration_ms"),
@@ -1377,6 +1577,7 @@ class SessionManager:
             for task in [
                 *self._active_tasks.values(),
                 *self._active_tasks_by_project.values(),
+                *self._child_wake_jobs.values(),
             ]:
                 if id(task) in seen_tasks:
                     continue
@@ -1395,6 +1596,8 @@ class SessionManager:
             self._active_turns.clear()
             self._active_tasks_by_project.clear()
             self._active_turns_by_project.clear()
+            self._child_wake_jobs.clear()
+            self._child_wake_pending.clear()
             self._client = None
             for client in set(clients):
                 try:
@@ -1961,6 +2164,8 @@ class SessionManager:
             return
         if payload.get("type") == "event":
             self._schedule_delegated_child(payload, project_id)
+            self._schedule_child_report(payload, project_id)
+            self._schedule_child_control(payload, project_id)
         await self.broadcast_ws(payload)
         if payload.get("type") == "event":
             return
@@ -2079,6 +2284,705 @@ class SessionManager:
             )
         )
 
+    def _schedule_child_report(
+        self, payload: dict[str, Any], project_id: str | None
+    ) -> None:
+        event = payload.get("event")
+        if not isinstance(event, dict) or event.get("type") != "tool_finished":
+            return
+        if event.get("name") != "task_report" or event.get("is_error") is True:
+            return
+        if event.get("truncated") is True:
+            return
+        content = event.get("content")
+        if not isinstance(content, str):
+            return
+        try:
+            intent = json.loads(content)
+        except (TypeError, ValueError):
+            return
+        if (
+            not isinstance(intent, dict)
+            or intent.get("status") != "requested"
+            or intent.get("action") != "report"
+        ):
+            return
+        report = intent.get("report")
+        parent_thread_id = intent.get("parent_thread_id")
+        operation_id = intent.get("operation_id")
+        attempt = intent.get("attempt")
+        if (
+            not isinstance(report, str)
+            or not report.strip()
+            or len(report.encode("utf-8")) > 4096
+            or not isinstance(parent_thread_id, str)
+            or not parent_thread_id
+            or not isinstance(operation_id, str)
+            or not operation_id
+            or isinstance(attempt, bool)
+            or not isinstance(attempt, int)
+            or attempt < 1
+        ):
+            return
+        child_thread_id = str(payload.get("threadId") or "")
+        report_id = event.get("call_id") or event.get("callId")
+        if not child_thread_id or not isinstance(report_id, str) or not report_id:
+            return
+        asyncio.create_task(
+            self._persist_child_report(
+                child_thread_id,
+                parent_thread_id,
+                operation_id,
+                attempt,
+                report_id,
+                report.strip(),
+                project_id or self._current_project_id,
+            )
+        )
+
+    def _child_parent_context(
+        self, child_thread_id: str, project_id: str
+    ) -> tuple[str, dict[str, Any]] | None:
+        canonical = self._canonical_thread(child_thread_id, project_id)
+        session = (canonical or {}).get("session") or {}
+        state = session.get("child_task_state") or {}
+        parent_thread_id = state.get("parent_thread_id")
+        if isinstance(parent_thread_id, str) and parent_thread_id:
+            return parent_thread_id, state
+        parent_session_id = session.get("parent_session_id")
+        if not isinstance(parent_session_id, str) or not parent_session_id:
+            return None
+        parent = next(
+            (
+                item
+                for item in self.list_project_sessions(project_id, limit=128)["data"]
+                if item.get("session_id") == parent_session_id
+            ),
+            None,
+        )
+        if not parent or not parent.get("thread_id"):
+            return None
+        return str(parent["thread_id"]), state
+
+    async def _persist_child_report(
+        self,
+        child_thread_id: str,
+        parent_thread_id: str,
+        operation_id: str,
+        attempt: int,
+        report_id: str,
+        report: str,
+        project_id: str,
+    ) -> None:
+        context = self._child_parent_context(child_thread_id, project_id)
+        if not context:
+            logger.warning(
+                "Cannot resolve parent for child report from %s", child_thread_id
+            )
+            return
+        canonical_parent_thread_id, state = context
+        if (
+            canonical_parent_thread_id != parent_thread_id
+            or state.get("operation_id") != operation_id
+        ):
+            logger.warning(
+                "Ignoring child report with stale lineage from %s", child_thread_id
+            )
+            return
+        try:
+            client = await self.get_client_for_thread(child_thread_id, project_id)
+            persisted = await client.child_task_action(
+                child_thread_id,
+                parent_thread_id,
+                operation_id,
+                attempt,
+                "report",
+                report=report,
+                report_id=report_id,
+            )
+            children = await self.list_child_tasks(parent_thread_id, project_id)
+            child = next(
+                (
+                    item
+                    for item in children
+                    if item.get("child_thread_id") == child_thread_id
+                ),
+                None,
+            )
+            if child:
+                await self._broadcast_child_operation(child)
+            self._queue_child_parent_wakeup(
+                parent_thread_id,
+                child_thread_id,
+                project_id,
+                f"report:{persisted.get('cursor') or report_id}",
+                status="report",
+            )
+        except Exception:
+            logger.warning(
+                "Unable to persist child report from %s", child_thread_id, exc_info=True
+            )
+
+    def _schedule_child_control(
+        self, payload: dict[str, Any], project_id: str | None
+    ) -> None:
+        event = payload.get("event")
+        if not isinstance(event, dict) or event.get("type") != "tool_started":
+            return
+        call = event.get("call")
+        if not isinstance(call, dict) or call.get("name") != "task_control":
+            return
+        arguments = call.get("arguments")
+        if not isinstance(arguments, dict):
+            return
+        parent_thread_id = str(payload.get("threadId") or "")
+        if not parent_thread_id:
+            return
+        parent_turn_id = payload.get("turnId") or payload.get("turn_id")
+        if not isinstance(parent_turn_id, str):
+            parent_turn_id = None
+        call_id = event.get("item_id") or event.get("itemId") or call.get("id")
+        if not isinstance(call_id, str) or not call_id:
+            call_id = str(time.monotonic_ns())
+        control_event_id = f"{parent_turn_id or 'turn'}:{call_id}"[:192]
+        asyncio.create_task(
+            self._apply_child_control(
+                parent_thread_id,
+                dict(arguments),
+                project_id or self._current_project_id,
+                parent_turn_id,
+                control_event_id,
+            )
+        )
+
+    async def _apply_child_control(
+        self,
+        parent_thread_id: str,
+        request: dict[str, Any],
+        project_id: str,
+        parent_turn_id: str | None = None,
+        control_event_id: str | None = None,
+    ) -> None:
+        action = request.get("action")
+        try:
+            children = await self.list_child_tasks(parent_thread_id, project_id)
+        except Exception:
+            logger.warning(
+                "Unable to resolve child control targets for %s",
+                parent_thread_id,
+                exc_info=True,
+            )
+            requested_child_id = request.get("child_thread_id")
+            self._queue_child_control_outcome(
+                parent_thread_id,
+                project_id,
+                control_event_id,
+                {
+                    "action": action,
+                    "outcome": "failed",
+                    "requested_child_ids": (
+                        [requested_child_id]
+                        if isinstance(requested_child_id, str)
+                        else []
+                    ),
+                },
+            )
+            return
+        if action == "cancel_group":
+            group_id = request.get("group_id")
+            targets = [
+                child
+                for child in children
+                if group_id
+                and child.get("operation_group_id") == group_id
+                and child.get("execution_mode") == "sequential"
+                and parent_turn_id
+                and child.get("parent_turn_id") == parent_turn_id
+            ]
+        else:
+            child_thread_id = request.get("child_thread_id")
+            operation_id = request.get("operation_id")
+            targets = [
+                child
+                for child in children
+                if child.get("child_thread_id") == child_thread_id
+                and child.get("operation_id") == operation_id
+            ]
+        if not targets:
+            logger.warning(
+                "Ignoring stale or unowned child control request from %s",
+                parent_thread_id,
+            )
+            requested_child_id = request.get("child_thread_id")
+            self._queue_child_control_outcome(
+                parent_thread_id,
+                project_id,
+                control_event_id,
+                {
+                    "action": action,
+                    "outcome": "stale",
+                    "requested_child_ids": (
+                        [requested_child_id]
+                        if isinstance(requested_child_id, str)
+                        else []
+                    ),
+                },
+            )
+            return
+        applied_ids: list[str] = []
+        failed_ids: list[str] = []
+        skipped_ids: list[str] = []
+        stale_ids: list[str] = []
+        for child in targets:
+            child_thread_id = str(child.get("child_thread_id") or "")
+            operation_id = str(child.get("operation_id") or "")
+            status = child.get("status")
+            applied = False
+            try:
+                if action == "update_queued":
+                    prompt = request.get("prompt")
+                    if status != "queued" or not isinstance(prompt, str):
+                        skipped_ids.append(child_thread_id)
+                        continue
+                    client = await self.get_client_for_thread(
+                        child_thread_id, project_id
+                    )
+                    await client.child_task_action(
+                        child_thread_id,
+                        parent_thread_id,
+                        operation_id,
+                        int(child.get("operation_attempt") or 1),
+                        "update_queued",
+                        prompt=prompt,
+                    )
+                    applied = True
+                elif action == "steer":
+                    turn_id = str(child.get("turn_id") or "")
+                    text = request.get("text")
+                    if (
+                        status not in {"running", "awaiting_approval", "in_progress"}
+                        or not turn_id
+                        or not isinstance(text, str)
+                    ):
+                        skipped_ids.append(child_thread_id)
+                        continue
+                    client = await self.get_client_for_thread(
+                        child_thread_id, project_id
+                    )
+                    await client.steer_turn(turn_id, text, child_thread_id)
+                    applied = True
+                elif action == "cancel":
+                    if status == "queued":
+                        client = await self.get_client_for_thread(
+                            child_thread_id, project_id
+                        )
+                        await client.child_task_action(
+                            child_thread_id,
+                            parent_thread_id,
+                            operation_id,
+                            int(child.get("operation_attempt") or 1),
+                            "cancel_queued",
+                        )
+                    elif status in {"running", "awaiting_approval", "in_progress"}:
+                        await self.cancel_child_task(
+                            parent_thread_id, child_thread_id, project_id
+                        )
+                    else:
+                        skipped_ids.append(child_thread_id)
+                        continue
+                    applied = True
+                elif action == "retry" and status in {
+                    "failed",
+                    "cancelled",
+                    "step_limit",
+                }:
+                    await self.retry_child_task(
+                        parent_thread_id, child_thread_id, project_id
+                    )
+                    applied = True
+                elif action == "cancel_group":
+                    if status == "queued":
+                        client = await self.get_client_for_thread(
+                            child_thread_id, project_id
+                        )
+                        await client.child_task_action(
+                            child_thread_id,
+                            parent_thread_id,
+                            operation_id,
+                            int(child.get("operation_attempt") or 1),
+                            "cancel_queued",
+                        )
+                    elif status in {"running", "awaiting_approval", "in_progress"}:
+                        await self.cancel_child_task(
+                            parent_thread_id, child_thread_id, project_id
+                        )
+                    else:
+                        skipped_ids.append(child_thread_id)
+                        continue
+                    applied = True
+                else:
+                    skipped_ids.append(child_thread_id)
+                    continue
+            except Exception:
+                logger.warning(
+                    "Unable to apply child control %s to %s",
+                    action,
+                    child_thread_id,
+                    exc_info=True,
+                )
+                try:
+                    latest = await self.list_child_tasks(parent_thread_id, project_id)
+                    current = next(
+                        (
+                            item
+                            for item in latest
+                            if item.get("child_thread_id") == child_thread_id
+                        ),
+                        None,
+                    )
+                    if (
+                        current is None
+                        or current.get("operation_id") != operation_id
+                        or current.get("operation_attempt")
+                        != child.get("operation_attempt")
+                        or current.get("status") != status
+                    ):
+                        stale_ids.append(child_thread_id)
+                    else:
+                        failed_ids.append(child_thread_id)
+                except Exception:  # noqa: BLE001
+                    failed_ids.append(child_thread_id)
+                continue
+            if applied:
+                applied_ids.append(child_thread_id)
+
+        outcome = self._child_control_outcome(
+            applied_ids, failed_ids, skipped_ids, stale_ids
+        )
+        if applied_ids:
+            try:
+                await self._drain_child_queue(parent_thread_id, project_id)
+            except Exception:
+                logger.warning(
+                    "Unable to drain child queue after control %s for %s",
+                    action,
+                    parent_thread_id,
+                    exc_info=True,
+                )
+            try:
+                current_children = await self.list_child_tasks(
+                    parent_thread_id, project_id
+                )
+            except Exception:
+                logger.warning(
+                    "Unable to refresh child projection after control %s for %s",
+                    action,
+                    parent_thread_id,
+                    exc_info=True,
+                )
+                current_children = []
+            for child in current_children:
+                if child.get("child_thread_id") in set(applied_ids):
+                    try:
+                        await self._broadcast_child_operation(child)
+                    except Exception:
+                        logger.warning(
+                            "Unable to broadcast child control update for %s",
+                            child.get("child_thread_id"),
+                            exc_info=True,
+                        )
+        self._queue_child_control_outcome(
+            parent_thread_id,
+            project_id,
+            control_event_id,
+            {
+                "action": action,
+                "outcome": outcome,
+                "applied_child_ids": applied_ids,
+                "failed_child_ids": failed_ids,
+                "skipped_child_ids": skipped_ids,
+                "stale_child_ids": stale_ids,
+            },
+        )
+
+    @staticmethod
+    def _child_control_outcome(
+        applied_ids: list[str],
+        failed_ids: list[str],
+        skipped_ids: list[str],
+        stale_ids: list[str],
+    ) -> str:
+        if stale_ids and not applied_ids and not failed_ids and not skipped_ids:
+            return "stale"
+        if applied_ids and (failed_ids or skipped_ids or stale_ids):
+            return "partial"
+        if applied_ids:
+            return "applied"
+        if failed_ids:
+            return "failed"
+        if stale_ids:
+            return "stale"
+        return "skipped"
+
+    def _queue_child_control_outcome(
+        self,
+        parent_thread_id: str,
+        project_id: str,
+        event_id: str | None,
+        outcome: dict[str, Any],
+    ) -> None:
+        if not event_id:
+            return
+        self._queue_child_parent_wakeup(
+            parent_thread_id,
+            "@control",
+            project_id,
+            f"control:{event_id}",
+            status="control",
+            details=outcome,
+        )
+
+    def _queue_child_parent_wakeup(
+        self,
+        parent_thread_id: str,
+        child_thread_id: str,
+        project_id: str,
+        event_id: str,
+        *,
+        status: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        # Report cursors are local to each child Session, so distinct children
+        # can legitimately produce the same event id (for example report:27).
+        identity = (project_id, parent_thread_id, child_thread_id, event_id)
+        if identity in self._child_wake_seen:
+            return
+        self._child_wake_seen[identity] = None
+        while len(self._child_wake_seen) > 512:
+            self._child_wake_seen.popitem(last=False)
+        key = (project_id, parent_thread_id)
+        pending = self._child_wake_pending.setdefault(key, {})
+        if details is None:
+            pending[child_thread_id] = {"status": status}
+        else:
+            self._merge_child_control_wakeup(pending, details)
+        if key not in self._child_wake_jobs:
+            self._child_wake_jobs[key] = asyncio.create_task(
+                self._drain_child_parent_wakeups(project_id, parent_thread_id)
+            )
+
+    @staticmethod
+    def _merge_child_control_wakeup(
+        pending: dict[str, dict[str, Any]], details: dict[str, Any]
+    ) -> None:
+        bucket = pending.setdefault(
+            "@control",
+            {
+                "kind": "control",
+                "notifications": [],
+                "omitted": 0,
+                "outcome_counts": {},
+                "child_ids": [],
+                "child_ids_truncated": False,
+            },
+        )
+        action = str(details.get("action") or "unknown")[:40]
+        outcome = str(details.get("outcome") or "failed")[:16]
+
+        def ids(field: str) -> list[str]:
+            raw = details.get(field)
+            if not isinstance(raw, list):
+                return []
+            return [item[:64] for item in raw if isinstance(item, str)][
+                :MAX_CHILD_CONTROL_WAKE_IDS
+            ]
+
+        notification = {
+            "action": action,
+            "outcome": outcome,
+            "applied_child_ids": ids("applied_child_ids"),
+            "failed_child_ids": ids("failed_child_ids"),
+            "skipped_child_ids": ids("skipped_child_ids"),
+            "stale_child_ids": ids("stale_child_ids"),
+            "requested_child_ids": ids("requested_child_ids"),
+        }
+        counts = bucket.setdefault("outcome_counts", {})
+        counts[outcome] = int(counts.get(outcome) or 0) + 1
+        known_child_ids = bucket.setdefault("child_ids", [])
+        for child_id in (
+            notification["applied_child_ids"]
+            + notification["failed_child_ids"]
+            + notification["skipped_child_ids"]
+            + notification["stale_child_ids"]
+        ):
+            if child_id in known_child_ids:
+                continue
+            if len(known_child_ids) < MAX_CHILD_CONTROL_WAKE_CHILD_IDS:
+                known_child_ids.append(child_id)
+            else:
+                bucket["child_ids_truncated"] = True
+
+        notifications = bucket.setdefault("notifications", [])
+        if len(notifications) >= MAX_CHILD_CONTROL_WAKE_EVENTS:
+            notifications.pop(0)
+            bucket["omitted"] = int(bucket.get("omitted") or 0) + 1
+        notifications.append(notification)
+
+    async def _drain_child_parent_wakeups(
+        self, project_id: str, parent_thread_id: str
+    ) -> None:
+        key = (project_id, parent_thread_id)
+        delivery_failed = False
+        batch: dict[str, dict[str, Any]] = {}
+        try:
+            while self._child_wake_pending.get(key):
+                batch = self._child_wake_pending.pop(key)
+                task_descriptions: list[str] = []
+                read_child_ids: set[str] = set()
+                control_bucket = batch.get("@control")
+                for child_id, value in batch.items():
+                    if value.get("kind") == "control":
+                        read_child_ids.update(
+                            str(item)
+                            for item in value.get("child_ids", [])
+                            if isinstance(item, str)
+                        )
+                        continue
+                    task_descriptions.append(f"{child_id} ({value['status']})")
+                    read_child_ids.add(child_id)
+
+                prompt_parts = [
+                    "Delegated child updates are available: "
+                    + (", ".join(task_descriptions) or "task control outcomes")
+                    + "."
+                ]
+                if isinstance(control_bucket, dict):
+                    for notification in control_bucket.get("notifications", []):
+                        if not isinstance(notification, dict):
+                            continue
+
+                        def display_ids(
+                            field: str, notification: dict[str, Any] = notification
+                        ) -> str:
+                            values = notification.get(field)
+                            if not isinstance(values, list) or not values:
+                                return "[]"
+                            return "[" + ", ".join(
+                                str(item)[:64]
+                                for item in values[:MAX_CHILD_CONTROL_WAKE_IDS]
+                                if isinstance(item, str)
+                            ) + "]"
+
+                        prompt_parts.append(
+                            "task_control "
+                            f"{str(notification.get('action') or 'unknown')[:40]} "
+                            f"outcome={str(notification.get('outcome') or 'failed')[:16]}; "
+                            f"applied={display_ids('applied_child_ids')}; "
+                            f"failed={display_ids('failed_child_ids')}; "
+                            f"skipped={display_ids('skipped_child_ids')}; "
+                            f"stale={display_ids('stale_child_ids')}; "
+                            f"requested={display_ids('requested_child_ids')}"
+                        )
+                    omitted = int(control_bucket.get("omitted") or 0)
+                    if omitted:
+                        counts = control_bucket.get("outcome_counts") or {}
+                        count_summary = ", ".join(
+                            f"{str(name)[:16]}={int(count or 0)}"
+                            for name, count in list(counts.items())[:5]
+                        )
+                        prompt_parts.append(
+                            f"{omitted} older control outcome detail(s) were coalesced "
+                            f"({count_summary}); affected child IDs: "
+                            + ", ".join(control_bucket.get("child_ids", []))
+                        )
+                    if control_bucket.get("child_ids_truncated"):
+                        prompt_parts.append(
+                            "The affected child ID list was truncated; inspect the "
+                            "current App Server child projection before taking action."
+                        )
+                if read_child_ids:
+                    prompt_parts.append(
+                        "Use task_read for each affected child_thread_id to inspect "
+                        "the latest lifecycle and reports; omit after_cursor for the "
+                        "first page and follow next_cursor for additional report pages."
+                    )
+                if isinstance(control_bucket, dict):
+                    prompt_parts.append(
+                        "Control notifications describe the Gateway RPC outcome. "
+                        "The App Server child operation projection remains authoritative; "
+                        "re-read it before deciding whether to retry, steer, cancel, "
+                        "or delegate more work."
+                    )
+                prompt_parts.append(
+                    "Then decide whether to wait, steer, cancel, retry, or delegate more work."
+                )
+                prompt = " ".join(prompt_parts)
+                client = await self.get_client_for_thread(parent_thread_id, project_id)
+                turn_id = self.get_active_turn(parent_thread_id, project_id)
+                if not turn_id:
+                    runtime = await client.get_runtime_status(parent_thread_id)
+                    phase = str(getattr(runtime, "phase", "idle") or "idle")
+                    turn_id = getattr(runtime, "turn_id", None)
+                    if phase not in {"idle", "completed", "failed"} and turn_id:
+                        await client.steer_turn(str(turn_id), prompt, parent_thread_id)
+                        continue
+                    submission = await client.start_turn(
+                        prompt=prompt,
+                        mode="start",
+                        thread_id=parent_thread_id,
+                        effort=self.get_settings(project_id).get(
+                            "reasoning_effort", "high"
+                        ),
+                    )
+                    turn_id = str(getattr(submission, "turn_id", None) or "")
+                    if not turn_id:
+                        raise RuntimeError(
+                            "Parent wake-up Turn submission returned no turn ID"
+                        )
+                    task = asyncio.create_task(
+                        self._wait_for_parent_child_wakeup_turn(
+                            client, parent_thread_id, project_id, turn_id
+                        )
+                    )
+                    self.set_active_turn(parent_thread_id, turn_id, task, project_id)
+                    continue
+                await client.steer_turn(turn_id, prompt, parent_thread_id)
+        except Exception:
+            delivery_failed = True
+            logger.warning(
+                "Unable to deliver child updates to parent %s",
+                parent_thread_id,
+                exc_info=True,
+            )
+            # Keep failed updates available for a later wake event to retry.
+            # Prefer entries queued during delivery if they contain newer state.
+            pending = self._child_wake_pending.setdefault(key, {})
+            for child_thread_id, value in batch.items():
+                pending.setdefault(child_thread_id, value)
+        finally:
+            self._child_wake_jobs.pop(key, None)
+            if self._child_wake_pending.get(key) and not delivery_failed:
+                self._child_wake_jobs[key] = asyncio.create_task(
+                    self._drain_child_parent_wakeups(project_id, parent_thread_id)
+                )
+
+    async def _wait_for_parent_child_wakeup_turn(
+        self,
+        client: MiniAgentClient,
+        parent_thread_id: str,
+        project_id: str,
+        turn_id: str,
+    ) -> None:
+        task = asyncio.current_task()
+        try:
+            await client.wait_for_turn(turn_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("Parent wake-up Turn %s failed", turn_id, exc_info=True)
+        finally:
+            self.clear_active_turn(parent_thread_id, project_id, turn_id, task)
+
     async def _start_delegated_child(
         self,
         parent_thread_id: str,
@@ -2109,6 +3013,14 @@ class SessionManager:
                 group_id,
                 sequence,
                 execution_mode=execution_mode,
+                operation_attempt=(
+                    _nonnegative_int(
+                        (self._delegation_receipts.get(receipt_key) or {}).get(
+                            "operation_attempt"
+                        )
+                    )
+                    or 1
+                ),
             )
             if receipt_key:
                 self._update_delegation_receipt(receipt_key, "materialized")

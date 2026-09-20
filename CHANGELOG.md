@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Let child agents report bounded progress, let the parent steer or cancel
+  queued/running work, retry failures, cancel a sequential group, and add new
+  tasks. Persist reports with child operation identity and cursor; coalesce
+  parent wakeups and resume the parent safely when progress arrives. Keep the
+  message stream, Runtime panel, and project-session filter on the same child
+  lifecycle projection.
 - Show delegated children as a per-Turn batch in the message stream with each
   task's lifecycle, keep the Runtime child list authoritative and openable, and
   hide delegated child Sessions from the project session tree while preserving

@@ -22,6 +22,76 @@ export const childTaskLifecycleLabels = {
   step_limit: '达到步数限制',
 };
 
+const collapsedChildTaskStatuses = new Set(['completed', 'cancelled', 'step_limit']);
+const prioritizedChildTaskStatuses = new Set([
+  'running',
+  'in_progress',
+  'awaiting_approval',
+  'queued',
+  'cancelling',
+]);
+
+export function getChildTaskStatus(task) {
+  return typeof task?.status === 'string' && task.status ? task.status : 'queued';
+}
+
+export function orderChildTasksForRuntime(children) {
+  return children
+    .map((child, index) => ({ child, index }))
+    .sort((left, right) => {
+      const leftStatus = getChildTaskStatus(left.child);
+      const rightStatus = getChildTaskStatus(right.child);
+      const leftPriority = prioritizedChildTaskStatuses.has(leftStatus) ? 0 : 1;
+      const rightPriority = prioritizedChildTaskStatuses.has(rightStatus) ? 0 : 1;
+      return leftPriority - rightPriority || left.index - right.index;
+    })
+    .map(({ child }) => child);
+}
+
+export function isCollapsedChildTask(task) {
+  return collapsedChildTaskStatuses.has(getChildTaskStatus(task));
+}
+
+function nonEmptyText(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function reportText(report) {
+  if (typeof report === 'string') return report.trim();
+  if (!report || typeof report !== 'object' || Array.isArray(report)) return '';
+  return nonEmptyText(report.text)
+    || nonEmptyText(report.report)
+    || nonEmptyText(report.message)
+    || nonEmptyText(report.summary)
+    || nonEmptyText(report.content);
+}
+
+export function getLatestChildTaskReport(task) {
+  const reports = Array.isArray(task?.reports) ? task.reports : [];
+  const candidate = task?.latest_report || reports[reports.length - 1];
+  const text = reportText(candidate);
+  if (!text) return null;
+  const timestamp = candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+    ? candidate.timestamp_ms ?? candidate.reported_at_ms
+    : null;
+  return {
+    text,
+    timestamp_ms: Number.isFinite(timestamp) ? timestamp : null,
+  };
+}
+
+export function getChildTaskWaitingReason(task) {
+  const reason = nonEmptyText(task?.waiting_reason)
+    || nonEmptyText(task?.blocked_reason)
+    || nonEmptyText(task?.reason);
+  if (reason) return reason;
+  const waiting = task?.waiting;
+  if (waiting && typeof waiting === 'object' && !Array.isArray(waiting)) {
+    return nonEmptyText(waiting.reason) || nonEmptyText(waiting.message) || null;
+  }
+  return null;
+}
+
 export function formatChildTaskTimestamp(value) {
   if (!Number.isFinite(value) || value <= 0) return null;
   return new Date(value).toLocaleTimeString([], {

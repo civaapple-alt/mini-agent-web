@@ -160,100 +160,66 @@ describe('Turn history projection', () => {
 });
 
 describe('ChatArea direction cues', () => {
-  it('jumps new activity to the latest assistant message in the current Turn', () => {
-    const originalScrollIntoView = Object.getOwnPropertyDescriptor(
-      HTMLElement.prototype,
-      'scrollIntoView',
-    );
+  it('jumps new activity to the end of the current Turn instead of its input bubble', () => {
     const calls = [];
-    HTMLElement.prototype.scrollIntoView = vi.fn(function scrollIntoView(options) {
-      calls.push({ messageId: this.getAttribute('data-message-id'), options });
-    });
 
-    try {
-      const props = {
-        messages: [
-          { id: 'input-current', role: 'user', text: 'current prompt', turnId: 'turn-current' },
-          { id: 'assistant-first', role: 'assistant', text: 'first segment', turnId: 'turn-current' },
-        ],
-        statusModel: { scope: { turnId: 'turn-current' }, lifecycle: 'running', summary: 'first' },
-        isGenerating: true,
-        pendingApproval: null,
-        lastTurnResult: null,
-      };
-      const { container, rerender } = render(<ChatArea {...props} />);
-      const scrollContainer = container.querySelector('.chat-area');
-      Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1200 });
-      Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 500 });
-      scrollContainer.scrollTop = 0;
-      fireEvent.scroll(scrollContainer);
+    const props = {
+      messages: [
+        { id: 'input-current', role: 'user', text: 'current prompt', turnId: 'turn-current' },
+        { id: 'assistant-first', role: 'assistant', text: 'first segment', turnId: 'turn-current' },
+      ],
+      statusModel: { scope: { turnId: 'turn-current' }, lifecycle: 'running', summary: 'first' },
+      isGenerating: true,
+      pendingApproval: null,
+      lastTurnResult: null,
+    };
+    const { container, rerender } = render(<ChatArea {...props} />);
+    const scrollContainer = container.querySelector('.chat-area');
+    Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1200 });
+    Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 500 });
+    scrollContainer.scrollTo = vi.fn((options) => calls.push(options));
+    scrollContainer.scrollTop = 0;
+    fireEvent.scroll(scrollContainer);
 
-      rerender(
-        <ChatArea
-          {...props}
-          messages={[
-            ...props.messages,
-            { id: 'assistant-latest', role: 'assistant', text: 'latest activity', turnId: 'turn-current' },
-          ]}
-          statusModel={{ ...props.statusModel, summary: 'updated' }}
-        />,
-      );
-      calls.length = 0;
-      fireEvent.click(screen.getByText('有新活动 · 查看当前 Turn'));
+    rerender(
+      <ChatArea
+        {...props}
+        messages={[
+          ...props.messages,
+          { id: 'assistant-latest', role: 'assistant', text: 'latest activity', turnId: 'turn-current' },
+        ]}
+        statusModel={{ ...props.statusModel, summary: 'updated' }}
+      />,
+    );
+    calls.length = 0;
+    fireEvent.click(screen.getByText('有新活动 · 查看当前 Turn'));
 
-      expect(calls).toEqual([{
-        messageId: 'assistant-latest',
-        options: expect.objectContaining({ block: 'end' }),
-      }]);
-    } finally {
-      if (originalScrollIntoView) {
-        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScrollIntoView);
-      } else {
-        delete HTMLElement.prototype.scrollIntoView;
-      }
-    }
+    expect(calls).toEqual([{ top: 1200, behavior: 'smooth' }]);
   });
 
-  it('falls back to the current Turn input when no assistant activity exists', () => {
-    const originalScrollIntoView = Object.getOwnPropertyDescriptor(
-      HTMLElement.prototype,
-      'scrollIntoView',
-    );
+  it('still scrolls to the conversation end when the current Turn has no assistant block yet', () => {
     const calls = [];
-    HTMLElement.prototype.scrollIntoView = vi.fn(function scrollIntoView(options) {
-      calls.push({ messageId: this.getAttribute('data-message-id'), options });
-    });
 
-    try {
-      const props = {
-        messages: [{ id: 'input-only', role: 'user', text: 'waiting for work', turnId: 'turn-current' }],
-        statusModel: { scope: { turnId: 'turn-current' }, lifecycle: 'running', summary: 'first' },
-        isGenerating: true,
-        pendingApproval: null,
-        lastTurnResult: null,
-      };
-      const { container, rerender } = render(<ChatArea {...props} />);
-      const scrollContainer = container.querySelector('.chat-area');
-      Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1200 });
-      Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 500 });
-      scrollContainer.scrollTop = 0;
-      fireEvent.scroll(scrollContainer);
-      rerender(<ChatArea {...props} statusModel={{ ...props.statusModel, summary: 'updated' }} />);
-      calls.length = 0;
+    const props = {
+      messages: [{ id: 'input-only', role: 'user', text: 'waiting for work', turnId: 'turn-current' }],
+      statusModel: { scope: { turnId: 'turn-current' }, lifecycle: 'running', summary: 'first' },
+      isGenerating: true,
+      pendingApproval: null,
+      lastTurnResult: null,
+    };
+    const { container, rerender } = render(<ChatArea {...props} />);
+    const scrollContainer = container.querySelector('.chat-area');
+    Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1200 });
+    Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 500 });
+    scrollContainer.scrollTo = vi.fn((options) => calls.push(options));
+    scrollContainer.scrollTop = 0;
+    fireEvent.scroll(scrollContainer);
+    rerender(<ChatArea {...props} statusModel={{ ...props.statusModel, summary: 'updated' }} />);
+    calls.length = 0;
 
-      fireEvent.click(screen.getByText('有新活动 · 查看当前 Turn'));
+    fireEvent.click(screen.getByText('有新活动 · 查看当前 Turn'));
 
-      expect(calls).toEqual([{
-        messageId: 'input-only',
-        options: expect.objectContaining({ block: 'center' }),
-      }]);
-    } finally {
-      if (originalScrollIntoView) {
-        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScrollIntoView);
-      } else {
-        delete HTMLElement.prototype.scrollIntoView;
-      }
-    }
+    expect(calls).toEqual([{ top: 1200, behavior: 'smooth' }]);
   });
 
   it('anchors a projected older input before newer checkpoint content', () => {

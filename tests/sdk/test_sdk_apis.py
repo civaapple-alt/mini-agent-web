@@ -48,6 +48,7 @@ async def test_sdk_child_task_action_unwraps_action_result():
         "report",
         report="Finished the audit pass.",
         report_id="call-27",
+        request_id="parent-turn:control-1",
     )
 
     assert result["cursor"] == 27
@@ -63,6 +64,7 @@ async def test_sdk_child_task_action_unwraps_action_result():
                 "action": "report",
                 "report": "Finished the audit pass.",
                 "reportId": "call-27",
+                "requestId": "parent-turn:control-1",
             },
         )
     ]

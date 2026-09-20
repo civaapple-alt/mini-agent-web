@@ -38,6 +38,7 @@ import {
   scopedThreadKey,
 } from './utils/sessionState.js';
 import { getStatusViewModel, normalizeTheme } from './utils/statusModel.js';
+import { isIncompleteTurnStatus } from './utils/turnHistory.js';
 import { parseSkillPrompt, parseWorkflowPrompt } from './utils/skillTokens.js';
 import { buildAutoThreadTitle, isDefaultThreadTitle } from './utils/threadTitle.js';
 import {
@@ -843,7 +844,7 @@ export default function App() {
       activeTurnIdRef.current = restoredTurnId;
       setActiveTurnId(restoredTurnId);
       const persistedTurn = cp.last_turn_status || cp.session?.last_turn_status;
-      if (!turnActive && persistedTurn && persistedTurn !== 'completed') {
+      if (!turnActive && isIncompleteTurnStatus(persistedTurn)) {
         setLastTurnResult({
           status: persistedTurn,
           stopReason: cp.last_stop_reason || cp.session?.last_stop_reason || null,
@@ -1147,6 +1148,13 @@ export default function App() {
     }
 
     if (data.type === 'steer_ack') {
+      // A confirmed steer supersedes any stale incomplete-result banner from
+      // the prior checkpoint while the continuation events are settling.
+      setLastTurnResult((previous) => (
+        previous?.turnId && data.turnId && String(previous.turnId) !== String(data.turnId)
+          ? previous
+          : null
+      ));
       showToast('✓ 纠偏指令已下发，模型正在安全结算转向...', 'info', 2000);
       return;
     }

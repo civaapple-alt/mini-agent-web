@@ -4,7 +4,7 @@ import MessageItem from './MessageItem';
 import SessionTurnRail from './SessionTurnRail';
 import { collectInputMessages, getChildWakeupTurnIds } from '../utils/inputTrace';
 import { normalizeAssistantBlocks, orderMessagesByTurnHistory } from '../utils/messageState';
-import { buildTurnHistoryEntries } from '../utils/turnHistory';
+import { buildTurnHistoryEntries, isIncompleteTurnStatus } from '../utils/turnHistory';
 import { buildTurnChildTaskBatch, getDelegateTaskAssignments } from '../utils/childTasks';
 import './ChatArea.css';
 
@@ -179,12 +179,13 @@ export default function ChatArea({
       || turnEntries[turnEntries.length - 1];
     const currentTurnId = currentEntry?.turnId ? String(currentEntry.turnId) : null;
     if (currentTurnId) {
-      const latestAssistant = [...displayMessages].reverse().find((message) => (
-        message?.role === 'assistant' && String(message.turnId || '') === currentTurnId
-      ));
-      if (latestAssistant && scrollToMessage(latestAssistant.id, currentTurnId, 'end')) return;
+      setFocusedTurnId(currentTurnId);
+      if (focusTimerRef.current) window.clearTimeout(focusTimerRef.current);
+      focusTimerRef.current = window.setTimeout(() => setFocusedTurnId(null), 1400);
     }
-    if (currentEntry && scrollToEntry(currentEntry)) return;
+    // The current Turn is the newest conversation activity. Scrolling to the
+    // container end avoids anchoring on its input bubble while later tool or
+    // assistant activity has already arrived.
     scrollToBottom();
   };
 
@@ -314,7 +315,8 @@ export default function ChatArea({
         </div>
       )}
 
-      {lastTurnResult && !hasActiveTurn && (
+      {(isIncompleteTurnStatus(lastTurnResult?.status)
+        || isIncompleteTurnStatus(lastTurnResult?.stopReason)) && !hasActiveTurn && (
         <div className="turn-status-banner" role="status" aria-live="polite">
           <strong>
             {lastTurnResult.status === 'step_limit'

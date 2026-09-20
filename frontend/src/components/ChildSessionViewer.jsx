@@ -3,15 +3,16 @@ import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { api } from '../api';
 import MessageItem from './MessageItem';
 import {
-  aggregateThreadItems,
   filterEmptyMessages,
   orderMessagesByTurnHistory,
+  restorePersistedTurnPresentation,
 } from '../utils/messageState';
 import { collectInputMessages } from '../utils/inputTrace';
 import {
   childTaskStatusLabels,
   formatChildTaskDuration,
   formatChildTaskTimestamp,
+  getChildTaskPhaseLabel,
   getChildTaskStatus,
   getLatestChildTaskReport,
 } from '../utils/childTasks';
@@ -24,6 +25,7 @@ const ACTIVE_CHILD_STATUSES = new Set([
   'awaiting_approval',
   'cancelling',
 ]);
+const QUEUED_CHILD_STATUSES = new Set(['pending', 'queued', 'starting', 'not_started']);
 
 function itemKey(entry) {
   const item = entry?.item || {};
@@ -39,7 +41,7 @@ function mergeEntries(earlier, later) {
 function projectChildMessages(entries, child, projectId) {
   const scope = { threadId: child.child_thread_id, projectId };
   const inputs = collectInputMessages([], entries, scope);
-  const hydrated = aggregateThreadItems(inputs, entries);
+  const hydrated = restorePersistedTurnPresentation(inputs, entries);
   return filterEmptyMessages(orderMessagesByTurnHistory(hydrated, entries));
 }
 
@@ -61,6 +63,23 @@ function getTaskResultText(result) {
 function isRunning(checkpoint, child) {
   return Boolean(checkpoint?.turn_active ?? checkpoint?.session?.turn_active)
     || ACTIVE_CHILD_STATUSES.has(String(child.status || '').toLowerCase());
+}
+
+function groupMessagesByTurn(messages) {
+  const groups = [];
+  const groupsByKey = new Map();
+  for (const [index, message] of messages.entries()) {
+    const turnId = message.turnId ? String(message.turnId) : null;
+    const key = turnId ? `turn:${turnId}` : `message:${message.id || index}`;
+    let group = groupsByKey.get(key);
+    if (!group) {
+      group = { key, turnId, messages: [] };
+      groupsByKey.set(key, group);
+      groups.push(group);
+    }
+    group.messages.push({ message, index });
+  }
+  return groups;
 }
 
 export default function ChildSessionViewer({
@@ -180,6 +199,7 @@ export default function ChildSessionViewer({
     () => projectChildMessages(entries, child, childProjectId),
     [entries, child, childProjectId],
   );
+  const turnGroups = useMemo(() => groupMessagesByTurn(messages), [messages]);
   const lastAssistantIndexByTurn = useMemo(() => {
     const indexByTurn = new Map();
     messages.forEach((message, index) => {
@@ -191,8 +211,15 @@ export default function ChildSessionViewer({
   }, [messages]);
   const running = isRunning(checkpoint, child);
   const status = getChildTaskStatus(child);
+  const queued = QUEUED_CHILD_STATUSES.has(status);
+  const activeTurnId = checkpoint?.active_turn_id
+    || checkpoint?.session?.active_turn_id
+    || child.current_turn_id
+    || child.turn_id
+    || null;
+  const phase = getChildTaskPhaseLabel(child);
   const failure = checkpoint?.last_turn_error || checkpoint?.session?.last_turn_error;
-  const failed = !running && (status === 'failed' || ['failed', 'error'].includes(String(
+  const failed = !running && (['failed', 'step_limit'].includes(status) || ['failed', 'error'].includes(String(
     checkpoint?.last_turn_status || checkpoint?.session?.last_turn_status || '',
   ).toLowerCase()));
   const latestReport = getLatestChildTaskReport(child);
@@ -274,10 +301,18 @@ export default function ChildSessionViewer({
         </button>
       </header>
 
-      <section className={`child-session-overview ${running ? 'running' : failed ? 'failed' : 'finished'}`}>
+      <section className={`child-session-overview ${running ? 'running' : queued ? 'queued' : failed ? 'failed' : 'finished'}`}>
         <div className="child-session-overview-heading">
-          <strong>{running ? '子代理正在执行' : failed ? '子代理执行失败' : '子代理已结束'}</strong>
-          {duration && <span className="font-mono">{running ? '已运行' : '耗时'} {duration}</span>}
+          <strong>{running
+            ? '子代理正在执行'
+            : queued
+              ? '等待调度'
+              : status === 'step_limit'
+                ? '子代理达到步数上限'
+                : failed ? '子代理执行失败' : status === 'cancelled'
+                  ? '子代理已取消'
+                  : '子代理已完成'}</strong>
+          {duration && <span className="font-mono">{running ? '已运行' : '累计耗时'} {duration}</span>}
         </div>
         {parentThreadId && (
           <div className="child-session-source">
@@ -286,7 +321,7 @@ export default function ChildSessionViewer({
             {' · '}这里只显示子会话自己的活动
           </div>
         )}
-        {running && latestReport && (
+        {(running || queued) && latestReport && (
           <div className="child-session-latest-report">
             <span>最新进展</span>
             <p>{latestReport.text}</p>
@@ -295,7 +330,7 @@ export default function ChildSessionViewer({
             )}
           </div>
         )}
-        {!running && !failed && finalReply && (
+        {!running && !queued && !failed && finalReply && (
           <div className="child-session-final-reply">
             <span>最终回复</span>
             <p>{finalReply}</p>
@@ -335,19 +370,47 @@ export default function ChildSessionViewer({
           </div>
         ) : (
           <div className="child-session-messages">
-            {messages.map((message, index) => (
-              <MessageItem
-                key={message.id || `child-message-${index}`}
-                message={message}
-                isLast={index === messages.length - 1}
-                isLastInTurn={message.turnId
-                  ? lastAssistantIndexByTurn.get(String(message.turnId)) === index
-                  : index === messages.length - 1}
-                isGenerating={running}
-                pendingApproval={null}
-                policy="read_only"
-              />
-            ))}
+            {turnGroups.map((group, groupIndex) => {
+              const roundLabel = `Turn ${groupIndex + 1}`;
+              const isCurrentTurn = running && (activeTurnId
+                ? group.turnId === String(activeTurnId)
+                : groupIndex === turnGroups.length - 1);
+              const lastIndex = group.messages.at(-1)?.index;
+              const turnStatusLabel = isCurrentTurn
+                ? (phase || '当前执行')
+                : groupIndex === turnGroups.length - 1 && status !== 'running'
+                  ? (childTaskStatusLabels[status] || status)
+                  : '已结束';
+
+              return (
+                <section
+                  key={group.key}
+                  className={`child-session-turn ${isCurrentTurn ? 'current' : 'settled'}`}
+                  aria-label={`${roundLabel} · ${turnStatusLabel}`}
+                  data-turn-id={group.turnId || undefined}
+                >
+                  <header className="child-session-turn-heading">
+                    <strong>{roundLabel}</strong>
+                    <span className={isCurrentTurn ? 'current' : ''}>{turnStatusLabel}</span>
+                  </header>
+                  <div className="child-session-turn-messages">
+                    {group.messages.map(({ message, index }) => (
+                      <MessageItem
+                        key={message.id || `child-message-${index}`}
+                        message={message}
+                        isLast={index === messages.length - 1}
+                        isLastInTurn={message.turnId
+                          ? lastAssistantIndexByTurn.get(String(message.turnId)) === index
+                          : index === lastIndex}
+                        isGenerating={isCurrentTurn}
+                        pendingApproval={null}
+                        policy="read_only"
+                      />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
           </div>
         )}
       </div>

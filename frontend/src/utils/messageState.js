@@ -707,17 +707,15 @@ export function aggregateThreadItems(messages, entries) {
         targetIndex,
       );
     } else if (item.type === 'reasoning') {
-      const alreadyHydrated = next.some((message) =>
-        (message.blocks || []).some(
-          (block) => block.type === 'thinking' && block.content === item.text,
-        ),
+      const alreadyHydrated = (next[targetIndex]?.blocks || []).some(
+        (block) => block.type === 'thinking'
+          && ((item.id && block.id === item.id) || block.content === item.text),
       );
       if (!alreadyHydrated) next = mergeProjectedReasoningItems(next, [item], targetIndex);
     } else if (item.type === 'agentMessage' && item.text) {
-      const alreadyHydrated = next.some((message) =>
-        (message.blocks || []).some(
-          (block) => block.type === 'text' && block.content === item.text,
-        ),
+      const alreadyHydrated = (next[targetIndex]?.blocks || []).some(
+        (block) => block.type === 'text'
+          && ((item.id && block.id === item.id) || block.content === item.text),
       );
       if (alreadyHydrated) continue;
       const copy = [...next];

@@ -57,6 +57,17 @@ const childTaskPhaseLabels = {
   idle: '空闲',
 };
 
+const childTaskAttemptLabels = {
+  initial: '初始执行',
+  retry: '重试',
+  follow_up: '后续委托',
+};
+
+function currentAttemptKind(task) {
+  return task?.attempt_kind || task?.attemptKind
+    || task?.operation_attempt_kind || task?.operationAttemptKind || null;
+}
+
 export function getChildTaskStatus(task) {
   return typeof task?.status === 'string' && task.status ? task.status : 'queued';
 }
@@ -102,19 +113,34 @@ export function getChildTaskCounts(children = []) {
   }, { running: 0, queued: 0, needsAttention: 0, completed: 0 });
 }
 
-export function getChildTaskAttemptGroups(task, maxGroups = 2) {
+export function getChildTaskAttemptGroups(task, maxGroups = null) {
   const fallbackAttempt = Number.isInteger(task?.operation_attempt) && task.operation_attempt > 0
     ? task.operation_attempt
     : 1;
   let lifecycle = Array.isArray(task?.lifecycle) ? task.lifecycle : [];
   if (lifecycle.length === 0) {
     lifecycle = [];
-    if (task?.assigned_at_ms) lifecycle.push({ status: 'queued', timestamp_ms: task.assigned_at_ms });
-    if (task?.started_at_ms) lifecycle.push({ status: 'running', timestamp_ms: task.started_at_ms });
+    if (task?.assigned_at_ms) lifecycle.push({
+      status: 'queued',
+      timestamp_ms: task.assigned_at_ms,
+      attempt_kind: currentAttemptKind(task),
+    });
+    if (task?.started_at_ms) lifecycle.push({
+      status: 'running',
+      timestamp_ms: task.started_at_ms,
+      attempt_kind: currentAttemptKind(task),
+    });
     if (task?.finished_at_ms && task?.status) {
-      lifecycle.push({ status: task.status, timestamp_ms: task.finished_at_ms });
+      lifecycle.push({
+        status: task.status,
+        timestamp_ms: task.finished_at_ms,
+        attempt_kind: currentAttemptKind(task),
+      });
     }
-    if (lifecycle.length === 0 && task?.status) lifecycle.push({ status: task.status });
+    if (lifecycle.length === 0 && task?.status) lifecycle.push({
+      status: task.status,
+      attempt_kind: currentAttemptKind(task),
+    });
   }
 
   const groups = new Map();
@@ -122,11 +148,23 @@ export function getChildTaskAttemptGroups(task, maxGroups = 2) {
     const attempt = Number.isInteger(stage?.attempt) && stage.attempt > 0
       ? stage.attempt
       : fallbackAttempt;
-    if (!groups.has(attempt)) groups.set(attempt, { attempt, stages: [] });
-    groups.get(attempt).stages.push(stage);
+    if (!groups.has(attempt)) groups.set(attempt, { attempt, kind: null, stages: [] });
+    const group = groups.get(attempt);
+    const stageKind = stage?.attempt_kind || stage?.attemptKind
+      || ((attempt === fallbackAttempt) ? currentAttemptKind(task) : null);
+    if (typeof stageKind === 'string' && stageKind) group.kind = stageKind;
+    group.stages.push(stage);
   }
-  const limit = Number.isInteger(maxGroups) && maxGroups > 0 ? maxGroups : 2;
+  const limit = Number.isInteger(maxGroups) && maxGroups > 0 ? maxGroups : groups.size;
   return [...groups.values()].sort((left, right) => left.attempt - right.attempt).slice(-limit);
+}
+
+export function getChildTaskAttemptLabel(group) {
+  if (!group || !Number.isInteger(group.attempt)) return null;
+  const kindLabel = childTaskAttemptLabels[group.kind];
+  if (!kindLabel) return `第 ${group.attempt} 轮`;
+  if (group.kind === 'initial') return kindLabel;
+  return `${kindLabel} · 第 ${group.attempt} 轮`;
 }
 
 export function getChildTaskPhaseLabel(task) {

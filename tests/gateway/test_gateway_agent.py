@@ -336,7 +336,13 @@ async def test_successful_interrupt_keeps_stream_registered_until_terminal_event
 async def test_agent_steer_and_interrupt_endpoints(agent_test_app):
     """Test POST /api/agent/steer and POST /api/agent/interrupt REST endpoints."""
     mock_client = AsyncMock()
-    mock_client.steer_turn = AsyncMock(return_value={"actionId": "act-steer-10"})
+    mock_client.steer_turn = AsyncMock(
+        return_value={
+            "value": {"status": "steered"},
+            "actionId": "act-steer-10",
+            "actionSequence": 10,
+        }
+    )
     mock_client.interrupt_turn = AsyncMock(return_value={"status": "interrupted"})
     session_manager._client = mock_client
     session_manager._clients["default"] = mock_client

@@ -35,6 +35,11 @@ uv run pytest tests/smoke/ -q
 报告幂等和过期 attempt 被拒绝。它只替换父续行的模型入口，不发送模型请求；App
 Server 和 Gateway 的会话、JSON-RPC、持久化及投影路径均真实运行。
 
+同一文件中的 completed-child assign 场景使用 JSONL Session fixture 提供已完成的
+child operation，再验证 Gateway 通过真实 `child/task` RPC 分配后续 attempt、App
+Server 持久化 `follow_up` 轮次；随后重启同一 child Session，由真实队列调度恢复该
+attempt 并在原 child Thread 启动。测试只拦截终端 `turn/start`，不调用模型。
+
 先从 `mini-codex` 构建当前 App Server：
 
 ```powershell

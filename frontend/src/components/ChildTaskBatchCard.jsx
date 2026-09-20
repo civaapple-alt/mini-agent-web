@@ -4,6 +4,7 @@ import {
   childTaskStatusLabels,
   formatChildTaskDuration,
   formatChildTaskTimestamp,
+  getChildTaskAttemptLabel,
   getChildTaskAttemptGroups,
   getChildTaskPhaseLabel,
   getChildTaskWaitingReason,
@@ -17,6 +18,10 @@ function ChildTaskRow({ task }) {
   const currentAttempt = Number.isInteger(task.operation_attempt)
     ? task.operation_attempt
     : (attempts.at(-1)?.attempt || 1);
+  const currentAttemptLabel = getChildTaskAttemptLabel(
+    attempts.find((attempt) => attempt.attempt === currentAttempt)
+      || { attempt: currentAttempt },
+  );
   const duration = formatChildTaskDuration(task.duration_ms);
   const phase = getChildTaskPhaseLabel(task);
   const waitingReason = getChildTaskWaitingReason(task);
@@ -35,7 +40,7 @@ function ChildTaskRow({ task }) {
             ? '顺序'
             : task.execution_mode === 'parallel' ? '并行' : '模式未知'}
           {sequenceLabel ? ` · ${sequenceLabel}` : ''}
-          {` · 第 ${currentAttempt} 次`}
+          {` · ${currentAttemptLabel}`}
         </span>
         <span className={`delegate-task-status ${status}`}>
           {childTaskStatusLabels[status] || status}
@@ -50,7 +55,9 @@ function ChildTaskRow({ task }) {
       )}
       {latestReport && (
         <p className="delegate-task-report">
-          <strong>{latestReport.attempt ? `第 ${latestReport.attempt} 次进展：` : '最新进展：'}</strong>{latestReport.text}
+          <strong>{latestReport.attempt
+            ? `${getChildTaskAttemptLabel(attempts.find((attempt) => attempt.attempt === latestReport.attempt) || { attempt: latestReport.attempt })}进展：`
+            : '最新进展：'}</strong>{latestReport.text}
           {latestReport.timestamp_ms && (
             <time>{formatChildTaskTimestamp(latestReport.timestamp_ms)}</time>
           )}

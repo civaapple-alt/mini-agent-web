@@ -10,8 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Clear stale turn results when an execution segment starts and show incomplete-turn banners only after the active Turn settles. Tone down steer messages with neutral bubble colors and a muted label.
-- Keep every activity block in the current running assistant segment visible. Fold a settled segment into an activity summary only after a later segment becomes current; fold the final settled segment when its Turn ends.
-- While a Turn is live, fold completed earlier segments within the same assistant message and keep the current segment expanded.
+- Keep the current execution segment expanded while it runs; only fold an earlier segment into an activity summary when a later segment starts. Preserve progress explanations, failures, approvals, delegation, and the final reply as separate visible content, with the same defaults after reload.
 - Restore restarted Sessions from ordered items so assistant execution segments keep separate summaries and steer inputs keep separate message bubbles. Recover a missing input item from the persisted `turn_started.prompt`, and keep one Turn rail node when a Turn has multiple inputs.
 - Restore earlier assistant replies from durable ThreadItems when checkpoint compaction omits their Turns; preserve item order and avoid duplicating Turns already present in the checkpoint.
 - Make the `有新活动 · 查看当前 Turn` action scroll to the last assistant message in the current Turn. Fall back to the Turn input when no assistant activity exists.
@@ -44,14 +43,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Resolve every child fork and client binding through its parent's canonical
   Project identity, and hide delegated child Sessions from the project session
   tree while preserving ordinary forks.
+- Let a parent assign review feedback to a successfully completed child Session
+  as a new Turn on that same Session. Route assignments to a live child as an
+  idempotent steer, persist follow-up work when concurrency is full, and show
+  initial, retry, and follow-up rounds in one stable child card.
+- Recover a durable follow-up after a lost `child/task` response by matching
+  its operation, attempt, and `control_request_id`. Retry transient queue start
+  failures with coalesced backoff and reconcile queued work after restart.
+- Report uncertain steer reservations as `steer_pending` with the server reason.
+  Do not automatically resend the same request ID; refresh authoritative child
+  and Turn state before deciding on another control action.
 - Sort each project's session list by the canonical Session activity time and
   show a relative age under each session title.
 - Keep the message stream at its normal centered width when the Session Turn rail is visible.
-- Keep the current activity expanded while a Turn runs. After settlement, group
-  adjacent successful thinking and tool activity into expandable summaries.
-  Keep progress explanations visible, and keep failures, approvals, delegation,
-  and the expanded final reply separate. Derive defaults from stable Turn and
-  block order so live completion and reloaded history render consistently.
 - Parse `+ <group> task` as a workflow shorthand only at the start of a message,
   so ordinary prose such as `+ Enter` no longer blocks submission as an unknown
   plugin group.

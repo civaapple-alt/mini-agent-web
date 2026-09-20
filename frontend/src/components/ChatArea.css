@@ -481,14 +481,14 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 10.5px;
   font-weight: 500;
 }
 
 .steer-message-label svg {
-  color: var(--accent-purple);
-  opacity: 0.55;
+  color: var(--text-muted);
+  opacity: 0.7;
 }
 
 .steer-message-label-separator {

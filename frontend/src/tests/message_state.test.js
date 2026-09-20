@@ -975,6 +975,24 @@ test('thread item history keeps intermediate reasoning and maps tools to each re
   assert.equal(messages[2].blocks.some((block) => block.content === 'Second thought'), true);
 });
 
+test('thread item hydration keeps identical assistant text in separate child Turns', () => {
+  const messages = aggregateThreadItems(
+    [
+      { id: 'turn-one', role: 'assistant', turnId: 'turn-one', blocks: [] },
+      { id: 'turn-two', role: 'assistant', turnId: 'turn-two', blocks: [] },
+    ],
+    [
+      { turnId: 'turn-one', item: { type: 'agentMessage', id: 'answer-one', text: 'same response' } },
+      { turnId: 'turn-two', item: { type: 'agentMessage', id: 'answer-two', text: 'same response' } },
+    ],
+  );
+
+  assert.deepEqual(messages.map((message) => message.blocks.map((block) => block.id)), [
+    ['answer-one'],
+    ['answer-two'],
+  ]);
+});
+
 test('history restores assistant segments and presentation activity in item order', () => {
   const messages = restorePersistedTurnPresentation([
     { id: 'user-1', role: 'user', turnId: 'turn-history', text: 'Inspect' },

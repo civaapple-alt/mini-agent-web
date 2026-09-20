@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   childTaskLifecycleLabels,
+  getChildTaskAttemptLabel,
   formatChildTaskTimestamp,
   getChildTaskAttemptGroups,
 } from '../utils/childTasks';
@@ -15,9 +16,9 @@ export default function ChildTaskAttemptHistory({ task, className = '' }) {
       className={`child-task-attempt-history ${className}`.trim()}
       aria-label={`${task.title || '子任务'}最近尝试阶段`}
     >
-      {attempts.map(({ attempt, stages }) => (
+      {attempts.map(({ attempt, kind, stages }) => (
         <li key={attempt} className="child-task-attempt">
-          <strong>第 {attempt} 次</strong>
+          <strong>{getChildTaskAttemptLabel({ attempt, kind })}</strong>
           <span className="child-task-attempt-stages">
             {stages.map((stage, index) => {
               const timestamp = formatChildTaskTimestamp(stage.timestamp_ms);

@@ -912,6 +912,7 @@ class MiniAgentClient:
         operation_group_id: str | None = None,
         execution_mode: str | None = None,
         group_sequence: int | None = None,
+        operation_attempt_kind: str | None = None,
         turn_source: str | None = None,
     ) -> TurnSubmissionResult:
         """Submit a turn prompt to the App Server with optional reasoning effort ('low', 'medium', 'high')."""
@@ -932,6 +933,12 @@ class MiniAgentClient:
             payload["operationId"] = operation_id
         if operation_attempt is not None:
             payload["operationAttempt"] = operation_attempt
+        if operation_attempt_kind is not None:
+            if operation_attempt_kind not in {"initial", "retry", "follow_up"}:
+                raise ValueError(
+                    "operation_attempt_kind must be initial, retry, or follow_up"
+                )
+            payload["operationAttemptKind"] = operation_attempt_kind
         if operation_group_id:
             payload["operationGroupId"] = operation_group_id
         if execution_mode:
@@ -952,16 +959,17 @@ class MiniAgentClient:
         turn_id: str,
         text: str,
         thread_id: str | None = None,
+        request_id: str | None = None,
     ) -> dict[str, Any]:
         """Steer an active turn with a corrective instruction."""
-        return await self._send_request(
-            "turn/steer",
-            {
-                "threadId": thread_id or self._active_thread_id,
-                "turnId": turn_id,
-                "text": text,
-            },
-        )
+        params: dict[str, Any] = {
+            "threadId": thread_id or self._active_thread_id,
+            "turnId": turn_id,
+            "text": text,
+        }
+        if request_id is not None:
+            params["requestId"] = request_id
+        return await self._send_request("turn/steer", params)
 
     async def interrupt_turn(
         self,
@@ -988,6 +996,7 @@ class MiniAgentClient:
         report: str | None = None,
         report_id: str | None = None,
         prompt: str | None = None,
+        request_id: str | None = None,
     ) -> dict[str, Any]:
         """Persist one parent-authorized child-task action in its Session."""
         params: dict[str, Any] = {
@@ -1003,6 +1012,8 @@ class MiniAgentClient:
             params["reportId"] = report_id
         if prompt is not None:
             params["prompt"] = prompt
+        if request_id is not None:
+            params["requestId"] = request_id
         result = await self._send_request("child/task", params)
         value = result.get("value", result) if isinstance(result, dict) else result
         return value if isinstance(value, dict) else {}

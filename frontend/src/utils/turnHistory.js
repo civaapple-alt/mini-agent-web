@@ -29,6 +29,20 @@ const TERMINAL_STATUS_MAP = {
   step_limit: 'step_limit',
 };
 
+const INCOMPLETE_TURN_STATUSES = new Set([
+  'failed',
+  'error',
+  'interrupted',
+  'cancelled',
+  'canceled',
+  'step_limit',
+  'in_progress',
+]);
+
+export function isIncompleteTurnStatus(value) {
+  return INCOMPLETE_TURN_STATUSES.has(String(value || '').toLowerCase());
+}
+
 function normalizedTurnId(value) {
   return value === null || value === undefined || value === '' ? null : String(value);
 }

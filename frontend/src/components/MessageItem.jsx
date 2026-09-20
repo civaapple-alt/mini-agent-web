@@ -274,7 +274,7 @@ export default function MessageItem({
         : []),
     ];
   const normalizedBlocks = groupCompactionBlocks(normalizeAssistantBlocks(sourceBlocks));
-  const activeBlockIndex = normalizedBlocks.findLastIndex((block) => {
+  const detectedActiveBlockIndex = normalizedBlocks.findLastIndex((block) => {
     const status = String(block.status || '').toLowerCase();
     return Boolean(block.isStreaming)
       || Boolean(block.approval)
@@ -282,16 +282,29 @@ export default function MessageItem({
         .includes(status)
       || (block.type === 'skills' && (block.loading || []).length > 0);
   });
+  const activeBlockIndex = detectedActiveBlockIndex >= 0
+    ? detectedActiveBlockIndex
+    : isLast && isGenerating ? normalizedBlocks.length - 1 : -1;
   const isCurrentExecutionSegmentActive = isLast && (
     isGenerating || pendingApproval || activeBlockIndex !== -1
   );
-  const currentExecutionSegmentStartIndex = isCurrentExecutionSegmentActive
-    ? getCurrentExecutionSegmentStartIndex(normalizedBlocks, activeBlockIndex)
+  const segmentCursorIndex = activeBlockIndex >= 0 ? activeBlockIndex : normalizedBlocks.length - 1;
+  const lastExecutionSegmentStartIndex = normalizedBlocks.length > 0
+    ? getCurrentExecutionSegmentStartIndex(normalizedBlocks, segmentCursorIndex)
     : -1;
-  const renderedBlocks = isCurrentExecutionSegmentActive
+  const preservesLastSegment = isCurrentExecutionSegmentActive || isLastInTurn;
+  const uncompressedSegmentStartIndex = preservesLastSegment
+    ? lastExecutionSegmentStartIndex
+    : -1;
+  const uncompressedExecutionSegmentBlocks = new Set(
+    uncompressedSegmentStartIndex >= 0
+      ? normalizedBlocks.slice(uncompressedSegmentStartIndex)
+      : [],
+  );
+  const renderedBlocks = uncompressedSegmentStartIndex >= 0
     ? [
-      ...groupSettledAssistantBlocks(normalizedBlocks.slice(0, currentExecutionSegmentStartIndex)),
-      ...normalizedBlocks.slice(currentExecutionSegmentStartIndex),
+      ...groupSettledAssistantBlocks(normalizedBlocks.slice(0, uncompressedSegmentStartIndex)),
+      ...normalizedBlocks.slice(uncompressedSegmentStartIndex),
     ]
     : groupSettledAssistantBlocks(normalizedBlocks);
   const turnScope = String(turnEntry?.turnId || message.turnId || message.id || 'assistant');
@@ -318,7 +331,8 @@ export default function MessageItem({
         {/* Render sequential blocks if present */}
         {renderedBlocks.length > 0 ? (
           renderedBlocks.map((block, idx) => {
-            const isCurrentBlock = isStreamingThis && block === currentBlock;
+            const isCurrentBlock = isCurrentExecutionSegmentActive && block === currentBlock;
+            const isCurrentSegmentBlock = uncompressedExecutionSegmentBlocks.has(block);
             if (block.type === 'activityGroup') {
               return (
                 <AssistantActivityGroup
@@ -366,7 +380,7 @@ export default function MessageItem({
                   key={block.id || `thinking_${idx}`}
                   content={block.content}
                   isStreaming={Boolean(block.isStreaming && isCurrentBlock)}
-                  isCurrentBlock={isCurrentBlock}
+                  isCurrentBlock={isCurrentSegmentBlock}
                   presentationId={`${turnScope}:thinking:${block.id || idx}`}
                 />
               );

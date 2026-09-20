@@ -36,6 +36,7 @@ MAX_CHILD_TASKS_PER_PARENT = 2
 MAX_CONFIGURED_CHILD_TASKS_PER_PARENT = 8
 MAX_CHILD_TASK_PROMPT_BYTES = 32 * 1024
 MAX_CHILD_TASK_LIFECYCLE = 32
+CHILD_QUEUE_RETRY_DELAYS_SECONDS = (0.25, 0.75, 1.5, 3.0)
 MAX_CHILD_CONTROL_WAKE_EVENTS = 8
 MAX_CHILD_CONTROL_WAKE_IDS = 8
 MAX_CHILD_CONTROL_WAKE_CHILD_IDS = 16
@@ -127,6 +128,7 @@ class SessionManager:
         # runtimes themselves. Each child still owns an independent client and
         # App Server process after this short control-plane critical section.
         self._child_task_lock = asyncio.Lock()
+        self._child_queue_retry_jobs: dict[tuple[str, str], asyncio.Task[Any]] = {}
         self._thread_builtin_tools: dict[str, list[str]] = {}
         self._thread_builtin_tools_by_project: dict[tuple[str, str], list[str]] = {}
         self._turn_registry = TurnRegistry(self)
@@ -245,6 +247,8 @@ class SessionManager:
                     "execution_mode": child.get("execution_mode"),
                     "operation_group_id": child.get("operation_group_id"),
                     "group_sequence": child.get("group_sequence"),
+                    "operation_attempt": child.get("operation_attempt"),
+                    "attempt_kind": child.get("attempt_kind"),
                     "parent_turn_id": parent_turn_id,
                     "child_session_available": bool(
                         child.get("child_session_available")
@@ -252,6 +256,7 @@ class SessionManager:
                         or child.get("session")
                     ),
                     "lifecycle": lifecycle[-MAX_CHILD_TASK_LIFECYCLE:],
+                    "latest_report": child.get("latest_report"),
                     "started_at_ms": child.get("started_at_ms"),
                     "finished_at_ms": child.get("finished_at_ms"),
                     "duration_ms": child.get("duration_ms"),
@@ -851,11 +856,55 @@ class SessionManager:
                 logger.exception("Unable to drain queued child tasks for %s", thread_id)
 
     async def _drain_child_queue(self, source_thread_id: str, project_id: str) -> None:
-        """Start durable queued child operations while configured slots exist."""
+        """Start queued child operations and retry transient start failures."""
+        try:
+            should_retry = await self._drain_child_queue_once(
+                source_thread_id, project_id
+            )
+        except Exception:
+            self._schedule_child_queue_retry(source_thread_id, project_id)
+            raise
+        if should_retry:
+            self._schedule_child_queue_retry(source_thread_id, project_id)
+
+    def _schedule_child_queue_retry(self, source_thread_id: str, project_id: str) -> None:
+        """Coalesce bounded retries for one parent's durable child queue."""
+        key = (project_id, source_thread_id)
+        current = self._child_queue_retry_jobs.get(key)
+        if current is not None and not current.done():
+            return
+
+        async def retry() -> None:
+            try:
+                for delay in CHILD_QUEUE_RETRY_DELAYS_SECONDS:
+                    await asyncio.sleep(delay)
+                    try:
+                        should_retry = await self._drain_child_queue_once(
+                            source_thread_id, project_id
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Unable to retry queued child operations for %s",
+                            source_thread_id,
+                            exc_info=True,
+                        )
+                        should_retry = True
+                    if not should_retry:
+                        return
+            finally:
+                if self._child_queue_retry_jobs.get(key) is asyncio.current_task():
+                    self._child_queue_retry_jobs.pop(key, None)
+
+        self._child_queue_retry_jobs[key] = asyncio.create_task(retry())
+
+    async def _drain_child_queue_once(
+        self, source_thread_id: str, project_id: str
+    ) -> bool:
+        """Drain queued work once; return whether a transient start should retry."""
         async with self._child_task_lock:
             parent = self._canonical_thread(source_thread_id, project_id)
             if not parent:
-                return
+                return False
             subagent = self.get_settings(project_id).get("subagent") or {}
             try:
                 limit = int(
@@ -874,7 +923,7 @@ class SessionManager:
             ]
             capacity = limit - len(active)
             if capacity <= 0:
-                return
+                return False
             queued = [child for child in children if child.get("status") == "queued"]
             queued.sort(
                 key=lambda child: (
@@ -947,12 +996,12 @@ class SessionManager:
                     candidate = child
                     break
                 if candidate is None:
-                    return
+                    return False
                 prompt = str(candidate.get("operation_prompt") or "").strip()
                 child_thread_id = str(candidate.get("child_thread_id") or "")
                 turn_id = str(candidate.get("turn_id") or "")
                 if not prompt or not child_thread_id or turn_id:
-                    return
+                    return False
                 try:
                     client = await self.get_client_for_thread(
                         child_thread_id, project_id
@@ -966,13 +1015,14 @@ class SessionManager:
                         ),
                         operation_id=candidate.get("operation_id"),
                         operation_attempt=int(candidate.get("operation_attempt") or 1),
+                        operation_attempt_kind=candidate.get("attempt_kind"),
                         operation_group_id=candidate.get("operation_group_id"),
                         execution_mode=candidate.get("execution_mode"),
                         group_sequence=candidate.get("group_sequence"),
                     )
                     started_turn_id = str(getattr(submission, "turn_id", None) or "")
                     if not started_turn_id:
-                        return
+                        return True
                     task = asyncio.create_task(
                         self._wait_for_child_turn(
                             client,
@@ -995,7 +1045,8 @@ class SessionManager:
                     capacity -= 1
                 except Exception:
                     logger.exception("Unable to start queued child %s", child_thread_id)
-                    return
+                    return True
+            return False
 
     async def reconcile_child_operations(self, project_id: str) -> None:
         """Reattach live Child Turns and drain durable queued operations."""
@@ -1187,6 +1238,7 @@ class SessionManager:
                 ),
                 "operation_id": operation_id,
                 "operation_attempt": attempt,
+                "operation_attempt_kind": "retry",
             }
             if (
                 child.get("operation_group_id")
@@ -1299,6 +1351,10 @@ class SessionManager:
                     "turn_id": active_turn_id,
                     "operation_id": operation_id,
                     "operation_attempt": child_task_state.get("attempt") or 1,
+                    "attempt_kind": child_task_state.get("attempt_kind"),
+                    "control_request_id": child_task_state.get(
+                        "control_request_id"
+                    ),
                     "operation_group_id": child_task_state.get("group_id"),
                     "execution_mode": child_task_state.get("execution_mode"),
                     "group_sequence": child_task_state.get("sequence"),
@@ -1595,6 +1651,7 @@ class SessionManager:
                 *self._active_tasks.values(),
                 *self._active_tasks_by_project.values(),
                 *self._child_wake_jobs.values(),
+                *self._child_queue_retry_jobs.values(),
             ]:
                 if id(task) in seen_tasks:
                     continue
@@ -1616,6 +1673,7 @@ class SessionManager:
             self._child_wake_jobs.clear()
             self._child_wake_pending.clear()
             self._child_wake_deferred.clear()
+            self._child_queue_retry_jobs.clear()
             self._client = None
             for client in set(clients):
                 try:
@@ -2560,6 +2618,56 @@ class SessionManager:
         failed_ids: list[str] = []
         skipped_ids: list[str] = []
         stale_ids: list[str] = []
+        replayed_ids: list[str] = []
+        pending_ids: list[str] = []
+        routes: dict[str, str] = {}
+        route_reasons: dict[str, str] = {}
+        should_drain_child_queue = False
+        broadcast_ids: set[str] = set()
+
+        def turn_steer_value(response: Any) -> dict[str, Any]:
+            value = (
+                response.get("value", response)
+                if isinstance(response, dict)
+                else response
+            )
+            return value if isinstance(value, dict) else {}
+
+        def record_assignment_route(
+            child_id: str, result: dict[str, Any], fallback_route: str
+        ) -> bool:
+            nonlocal should_drain_child_queue
+            request_action = result.get("requestAction") or result.get(
+                "request_action"
+            )
+            route = (
+                request_action
+                if request_action in {"steer", "queue_follow_up"}
+                else fallback_route
+            )
+            duplicate = result.get("duplicate") is True
+            if duplicate and child_id not in replayed_ids:
+                replayed_ids.append(child_id)
+            if result.get("status") == "pending":
+                if child_id not in pending_ids:
+                    pending_ids.append(child_id)
+                routes[child_id] = "steer_pending"
+                reason = result.get("reason")
+                if isinstance(reason, str) and reason.strip():
+                    route_reasons[child_id] = reason.strip()[:256]
+                return False
+            if route == "queue_follow_up":
+                # The accepted follow-up intent is durable even if the RPC is a
+                # replay. Drain it so recovery covers a crash before turn/start.
+                should_drain_child_queue = True
+                broadcast_ids.add(child_id)
+                routes[child_id] = "follow_up_queued"
+            else:
+                routes[child_id] = "steer"
+                if not duplicate:
+                    broadcast_ids.add(child_id)
+            return not duplicate
+
         for child in targets:
             child_thread_id = str(child.get("child_thread_id") or "")
             operation_id = str(child.get("operation_id") or "")
@@ -2596,8 +2704,119 @@ class SessionManager:
                     client = await self.get_client_for_thread(
                         child_thread_id, project_id
                     )
-                    await client.steer_turn(turn_id, text, child_thread_id)
-                    applied = True
+                    steer_result = turn_steer_value(
+                        await client.steer_turn(
+                            turn_id,
+                            text,
+                            child_thread_id,
+                            request_id=control_event_id,
+                        )
+                    )
+                    if steer_result.get("status") == "not_submitted":
+                        stale_ids.append(child_thread_id)
+                        continue
+                    applied = record_assignment_route(
+                        child_thread_id,
+                        steer_result if isinstance(steer_result, dict) else {},
+                        "steer",
+                    )
+                elif action == "assign":
+                    prompt = request.get("prompt")
+                    if (
+                        not isinstance(prompt, str)
+                        or not prompt.strip()
+                        or len(prompt.encode("utf-8")) > MAX_CHILD_TASK_PROMPT_BYTES
+                    ):
+                        failed_ids.append(child_thread_id)
+                        continue
+                    if status in {"running", "awaiting_approval", "in_progress"}:
+                        turn_id = str(child.get("turn_id") or "")
+                        if not turn_id or not control_event_id:
+                            skipped_ids.append(child_thread_id)
+                            continue
+                        client = await self.get_client_for_thread(
+                            child_thread_id, project_id
+                        )
+                        steer_result = turn_steer_value(
+                            await client.steer_turn(
+                                turn_id,
+                                prompt.strip(),
+                                child_thread_id,
+                                request_id=control_event_id,
+                            )
+                        )
+                        result_status = steer_result.get("status")
+                        if result_status == "not_submitted":
+                            latest = await self.list_child_tasks(
+                                parent_thread_id, project_id
+                            )
+                            current = next(
+                                (
+                                    item
+                                    for item in latest
+                                    if item.get("child_thread_id") == child_thread_id
+                                ),
+                                None,
+                            )
+                            if (
+                                current is not None
+                                and current.get("operation_id") == operation_id
+                                and current.get("status") == "completed"
+                            ):
+                                assignment_result = await client.child_task_action(
+                                    child_thread_id,
+                                    parent_thread_id,
+                                    operation_id,
+                                    int(current.get("operation_attempt") or 1),
+                                    "queue_follow_up",
+                                    prompt=prompt.strip(),
+                                    request_id=control_event_id,
+                                )
+                                applied = record_assignment_route(
+                                    child_thread_id,
+                                    assignment_result,
+                                    "queue_follow_up",
+                                )
+                                if applied:
+                                    applied_ids.append(child_thread_id)
+                            elif (
+                                current is not None
+                                and current.get("operation_id") == operation_id
+                                and current.get("status")
+                                in {"running", "awaiting_approval", "in_progress"}
+                                and current.get("turn_id") == turn_id
+                            ):
+                                stale_ids.append(child_thread_id)
+                            else:
+                                stale_ids.append(child_thread_id)
+                            continue
+                        applied = record_assignment_route(
+                            child_thread_id,
+                            steer_result,
+                            "steer",
+                        )
+                    elif status == "completed":
+                        if not control_event_id:
+                            failed_ids.append(child_thread_id)
+                            continue
+                        client = await self.get_client_for_thread(
+                            child_thread_id, project_id
+                        )
+                        assignment_result = await client.child_task_action(
+                            child_thread_id,
+                            parent_thread_id,
+                            operation_id,
+                            int(child.get("operation_attempt") or 1),
+                            "queue_follow_up",
+                            prompt=prompt.strip(),
+                            request_id=control_event_id,
+                        )
+                        applied = record_assignment_route(
+                            child_thread_id, assignment_result, "queue_follow_up"
+                        )
+                    else:
+                        skipped_ids.append(child_thread_id)
+                        continue
                 elif action == "cancel":
                     if status == "queued":
                         client = await self.get_client_for_thread(
@@ -2674,6 +2893,78 @@ class SessionManager:
                         != child.get("operation_attempt")
                         or current.get("status") != status
                     ):
+                        prompt = request.get("prompt")
+                        recovered_follow_up = (
+                            action == "assign"
+                            and status
+                            in {
+                                "running",
+                                "awaiting_approval",
+                                "in_progress",
+                                "completed",
+                            }
+                            and current is not None
+                            and current.get("operation_id") == operation_id
+                            and current.get("status") == "queued"
+                            and current.get("operation_attempt")
+                            == int(child.get("operation_attempt") or 1) + 1
+                            and current.get("attempt_kind") == "follow_up"
+                            and current.get("control_request_id") == control_event_id
+                            and isinstance(prompt, str)
+                            and current.get("operation_prompt") == prompt.strip()
+                            and bool(control_event_id)
+                        )
+                        if recovered_follow_up:
+                            record_assignment_route(
+                                child_thread_id,
+                                {
+                                    "status": "queued",
+                                    "requestAction": "queue_follow_up",
+                                    "duplicate": True,
+                                },
+                                "queue_follow_up",
+                            )
+                            continue
+                        if (
+                            action == "assign"
+                            and status
+                            in {"running", "awaiting_approval", "in_progress"}
+                            and current is not None
+                            and current.get("operation_id") == operation_id
+                            and current.get("status") == "completed"
+                            and isinstance(prompt, str)
+                            and prompt.strip()
+                            and len(prompt.encode("utf-8"))
+                            <= MAX_CHILD_TASK_PROMPT_BYTES
+                            and control_event_id
+                        ):
+                            try:
+                                client = await self.get_client_for_thread(
+                                    child_thread_id, project_id
+                                )
+                                assignment_result = await client.child_task_action(
+                                    child_thread_id,
+                                    parent_thread_id,
+                                    operation_id,
+                                    int(current.get("operation_attempt") or 1),
+                                    "queue_follow_up",
+                                    prompt=prompt.strip(),
+                                    request_id=control_event_id,
+                                )
+                                applied = record_assignment_route(
+                                    child_thread_id,
+                                    assignment_result,
+                                    "queue_follow_up",
+                                )
+                                if applied:
+                                    applied_ids.append(child_thread_id)
+                                continue
+                            except Exception:
+                                logger.warning(
+                                    "Unable to route raced assignment to follow-up for %s",
+                                    child_thread_id,
+                                    exc_info=True,
+                                )
                         stale_ids.append(child_thread_id)
                     else:
                         failed_ids.append(child_thread_id)
@@ -2682,20 +2973,27 @@ class SessionManager:
                 continue
             if applied:
                 applied_ids.append(child_thread_id)
+                broadcast_ids.add(child_thread_id)
 
         outcome = self._child_control_outcome(
-            applied_ids, failed_ids, skipped_ids, stale_ids
+            applied_ids,
+            failed_ids,
+            skipped_ids,
+            stale_ids,
+            replayed_ids,
+            pending_ids,
         )
-        if applied_ids:
-            try:
-                await self._drain_child_queue(parent_thread_id, project_id)
-            except Exception:
-                logger.warning(
-                    "Unable to drain child queue after control %s for %s",
-                    action,
-                    parent_thread_id,
-                    exc_info=True,
-                )
+        if applied_ids or broadcast_ids or should_drain_child_queue:
+            if should_drain_child_queue:
+                try:
+                    await self._drain_child_queue(parent_thread_id, project_id)
+                except Exception:
+                    logger.warning(
+                        "Unable to drain child queue after control %s for %s",
+                        action,
+                        parent_thread_id,
+                        exc_info=True,
+                    )
             try:
                 current_children = await self.list_child_tasks(
                     parent_thread_id, project_id
@@ -2709,7 +3007,12 @@ class SessionManager:
                 )
                 current_children = []
             for child in current_children:
-                if child.get("child_thread_id") in set(applied_ids):
+                if child.get("child_thread_id") in broadcast_ids:
+                    child_id = str(child.get("child_thread_id") or "")
+                    if routes.get(child_id) == "follow_up_queued" and child.get(
+                        "status"
+                    ) in {"running", "awaiting_approval", "in_progress"}:
+                        routes[child_id] = "follow_up_started"
                     try:
                         await self._broadcast_child_operation(child)
                     except Exception:
@@ -2729,6 +3032,13 @@ class SessionManager:
                 "failed_child_ids": failed_ids,
                 "skipped_child_ids": skipped_ids,
                 "stale_child_ids": stale_ids,
+                "replayed_child_ids": replayed_ids,
+                "pending_child_ids": pending_ids,
+                "route_reasons": route_reasons,
+                "routes": [
+                    {"child_thread_id": child_id, "route": route}
+                    for child_id, route in routes.items()
+                ],
             },
         )
 
@@ -2738,10 +3048,47 @@ class SessionManager:
         failed_ids: list[str],
         skipped_ids: list[str],
         stale_ids: list[str],
+        replayed_ids: list[str] | None = None,
+        pending_ids: list[str] | None = None,
     ) -> str:
-        if stale_ids and not applied_ids and not failed_ids and not skipped_ids:
+        replayed_ids = replayed_ids or []
+        pending_ids = pending_ids or []
+        if (
+            pending_ids
+            and not applied_ids
+            and not failed_ids
+            and not skipped_ids
+            and not stale_ids
+            and not replayed_ids
+        ):
+            return "pending"
+        if (
+            replayed_ids
+            and not applied_ids
+            and not failed_ids
+            and not skipped_ids
+            and not stale_ids
+            and not pending_ids
+        ):
+            return "replayed"
+        if (
+            stale_ids
+            and not applied_ids
+            and not failed_ids
+            and not skipped_ids
+            and not replayed_ids
+            and not pending_ids
+        ):
             return "stale"
-        if applied_ids and (failed_ids or skipped_ids or stale_ids):
+        if (applied_ids or replayed_ids) and (
+            failed_ids
+            or skipped_ids
+            or stale_ids
+            or pending_ids
+            or (applied_ids and replayed_ids)
+        ):
+            return "partial"
+        if pending_ids and (failed_ids or skipped_ids or stale_ids or replayed_ids):
             return "partial"
         if applied_ids:
             return "applied"
@@ -2908,6 +3255,28 @@ class SessionManager:
                 :MAX_CHILD_CONTROL_WAKE_IDS
             ]
 
+        raw_routes = details.get("routes")
+        routes = (
+            [
+                {
+                    "child_thread_id": item["child_thread_id"][:64],
+                    "route": item["route"][:24],
+                }
+                for item in raw_routes[:MAX_CHILD_CONTROL_WAKE_IDS]
+                if isinstance(item, dict)
+                and isinstance(item.get("child_thread_id"), str)
+                and isinstance(item.get("route"), str)
+            ]
+            if isinstance(raw_routes, list)
+            else []
+        )
+        raw_reasons = details.get("route_reasons")
+        if isinstance(raw_reasons, dict):
+            for route in routes:
+                reason = raw_reasons.get(route["child_thread_id"])
+                if isinstance(reason, str) and reason.strip():
+                    route["reason"] = reason.strip()[:256]
+
         notification = {
             "action": action,
             "outcome": outcome,
@@ -2915,7 +3284,10 @@ class SessionManager:
             "failed_child_ids": ids("failed_child_ids"),
             "skipped_child_ids": ids("skipped_child_ids"),
             "stale_child_ids": ids("stale_child_ids"),
+            "replayed_child_ids": ids("replayed_child_ids"),
+            "pending_child_ids": ids("pending_child_ids"),
             "requested_child_ids": ids("requested_child_ids"),
+            "routes": routes,
         }
         counts = bucket.setdefault("outcome_counts", {})
         counts[outcome] = int(counts.get(outcome) or 0) + 1
@@ -2925,6 +3297,9 @@ class SessionManager:
             + notification["failed_child_ids"]
             + notification["skipped_child_ids"]
             + notification["stale_child_ids"]
+            + notification["replayed_child_ids"]
+            + notification["pending_child_ids"]
+            + [item["child_thread_id"] for item in notification["routes"]]
         ):
             if child_id in known_child_ids:
                 continue
@@ -3033,6 +3408,25 @@ class SessionManager:
                             + "]"
                         )
 
+                    route_details = notification.get("routes")
+                    route_summary = (
+                        "["
+                        + ", ".join(
+                            f"{str(item.get('child_thread_id') or '')[:64]}:"
+                            f"{str(item.get('route') or '')[:24]}"
+                            + (
+                                f"({str(item.get('reason') or '')[:160]})"
+                                if item.get("reason")
+                                else ""
+                            )
+                            for item in route_details[:MAX_CHILD_CONTROL_WAKE_IDS]
+                            if isinstance(item, dict)
+                        )
+                        + "]"
+                        if isinstance(route_details, list) and route_details
+                        else "[]"
+                    )
+
                     prompt_parts.append(
                         "task_control "
                         f"{str(notification.get('action') or 'unknown')[:40]} "
@@ -3041,8 +3435,18 @@ class SessionManager:
                         f"failed={display_ids('failed_child_ids')}; "
                         f"skipped={display_ids('skipped_child_ids')}; "
                         f"stale={display_ids('stale_child_ids')}; "
-                        f"requested={display_ids('requested_child_ids')}"
+                        f"replayed={display_ids('replayed_child_ids')}; "
+                        f"pending={display_ids('pending_child_ids')}; "
+                        f"requested={display_ids('requested_child_ids')}; "
+                        f"routes={route_summary}"
                     )
+                    if notification.get("pending_child_ids"):
+                        prompt_parts.append(
+                            "A steer_pending route means the request outcome is unresolved "
+                            "and it may or may not have been submitted. Do not automatically "
+                            "resend it; refresh the authoritative child operation and Turn "
+                            "state before deciding what to do."
+                        )
                 omitted = int(control_bucket.get("omitted") or 0)
                 if omitted:
                     counts = control_bucket.get("outcome_counts") or {}

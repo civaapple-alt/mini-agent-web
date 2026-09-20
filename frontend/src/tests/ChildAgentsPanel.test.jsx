@@ -181,4 +181,73 @@ describe('child agents drawer tab', () => {
     expect(screen.getByText('已完成资料采集，正在核对来源')).toBeTruthy();
     expect(screen.queryByText('最终回复')).toBeNull();
   });
+
+  it('shows completed follow-up Turns under the same child Session card', async () => {
+    api.listThreadItems.mockResolvedValue({
+      data: [
+        { threadId: 'child-a', turnId: 'child-turn-1', historyOrder: 0,
+          item: { type: 'userMessage', id: 'input-1', text: '初次执行任务' } },
+        { threadId: 'child-a', turnId: 'child-turn-1', historyOrder: 1,
+          item: { type: 'agentMessage', id: 'answer-1', segmentId: 'segment-1', text: '相同的结果' } },
+        { threadId: 'child-a', turnId: 'child-turn-2', historyOrder: 2,
+          item: { type: 'userMessage', id: 'input-2', text: '根据评审意见继续修改', inputSource: 'user' } },
+        { threadId: 'child-a', turnId: 'child-turn-2', historyOrder: 3,
+          item: { type: 'agentMessage', id: 'answer-2', segmentId: 'segment-2', text: '相同的结果' } },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = render(
+      <ChildSessionViewer
+        child={{
+          ...child,
+          lifecycle: [
+            { status: 'queued', timestamp_ms: 1, attempt: 1, attempt_kind: 'initial' },
+            { status: 'completed', timestamp_ms: 2, attempt: 1, attempt_kind: 'initial' },
+            { status: 'queued', timestamp_ms: 3, attempt: 2, attempt_kind: 'follow_up' },
+            { status: 'completed', timestamp_ms: 4, attempt: 2, attempt_kind: 'follow_up' },
+          ],
+        }}
+        projectId="project-a"
+        onBack={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(container.querySelectorAll('.child-session-turn')).toHaveLength(2));
+    expect(screen.getByText('Turn 1')).toBeTruthy();
+    expect(screen.getByText('Turn 2')).toBeTruthy();
+    expect(screen.getAllByText('相同的结果')).toHaveLength(3);
+    expect(screen.getByText('根据评审意见继续修改')).toBeTruthy();
+  });
+
+  it('restores initial input and steer as separate messages around their own activity', async () => {
+    api.listThreadItems.mockResolvedValue({
+      data: [
+        { threadId: 'child-a', turnId: 'child-turn-1', historyOrder: 0,
+          item: { type: 'userMessage', id: 'child-input-1', text: 'initial work' } },
+        { threadId: 'child-a', turnId: 'child-turn-1', historyOrder: 1,
+          item: { type: 'reasoning', id: 'segment-1:reasoning', segmentId: 'segment-1', text: 'first segment' } },
+        { threadId: 'child-a', turnId: 'child-turn-1', historyOrder: 2,
+          item: { type: 'toolCall', id: 'tool-1', name: 'read_file', status: 'completed' } },
+        { threadId: 'child-a', turnId: 'child-turn-1', historyOrder: 3,
+          item: { type: 'userMessage', id: 'child-input-2', text: 'second steer', inputSource: 'steer' } },
+        { threadId: 'child-a', turnId: 'child-turn-1', historyOrder: 4,
+          item: { type: 'reasoning', id: 'segment-2:reasoning', segmentId: 'segment-2', text: 'second segment' } },
+        { threadId: 'child-a', turnId: 'child-turn-1', historyOrder: 5,
+          item: { type: 'agentMessage', id: 'segment-2:agent', segmentId: 'segment-2', text: 'child result' } },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = render(
+      <ChildSessionViewer child={child} projectId="project-a" onBack={vi.fn()} />,
+    );
+
+    await waitFor(() => expect(screen.getAllByText('child result').length).toBeGreaterThan(0));
+    expect(Array.from(container.querySelectorAll('.child-session-turn .message-row'))
+      .map((node) => node.getAttribute('data-message-id')))
+      .toEqual(['child-input-1', 'segment-1', 'tool-1', 'child-input-2', 'segment-2']);
+    expect(container.querySelector('[data-message-id="child-input-2"]')
+      ?.classList.contains('steer-message-row')).toBe(true);
+  });
 });

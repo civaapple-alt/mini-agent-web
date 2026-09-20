@@ -198,6 +198,82 @@ async def test_sdk_start_turn_sends_structured_child_wakeup_source():
 
 
 @pytest.mark.asyncio
+async def test_sdk_start_turn_sends_child_follow_up_attempt_kind():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {"status": "started", "turnId": "turn-follow-up"}
+
+    client._send_request = fake_send
+    await client.start_turn(
+        "Apply the review feedback.",
+        operation_id="child:child-1",
+        operation_attempt=2,
+        operation_attempt_kind="follow_up",
+    )
+
+    assert calls[0][0] == "turn/start"
+    assert calls[0][1]["operationId"] == "child:child-1"
+    assert calls[0][1]["operationAttempt"] == 2
+    assert calls[0][1]["operationAttemptKind"] == "follow_up"
+
+
+@pytest.mark.asyncio
+async def test_sdk_start_turn_rejects_unknown_child_attempt_kind():
+    client = MiniAgentClient()
+
+    with pytest.raises(ValueError, match="operation_attempt_kind"):
+        await client.start_turn("bad kind", operation_attempt_kind="replay")
+
+
+@pytest.mark.asyncio
+async def test_sdk_steer_turn_sends_request_id_for_idempotency():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {
+            "value": {
+                "status": "steered",
+                "requestAction": "steer",
+                "duplicate": False,
+            },
+            "actionId": "steer-action-1",
+        }
+
+    client._send_request = fake_send
+    result = await client.steer_turn(
+        "turn-child-1",
+        "Check the latest report.",
+        "child-1",
+        request_id="parent-turn:tool-call-1",
+    )
+
+    assert result == {
+        "value": {
+            "status": "steered",
+            "requestAction": "steer",
+            "duplicate": False,
+        },
+        "actionId": "steer-action-1",
+    }
+    assert calls == [
+        (
+            "turn/steer",
+            {
+                "threadId": "child-1",
+                "turnId": "turn-child-1",
+                "text": "Check the latest report.",
+                "requestId": "parent-turn:tool-call-1",
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_stream_turn_filters_events_by_thread_and_turn():
     client = MiniAgentClient()
 

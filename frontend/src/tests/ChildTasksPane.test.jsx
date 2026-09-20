@@ -170,12 +170,45 @@ describe('ChildTasksPane', () => {
 
     const retry = [...container.querySelectorAll('.child-task-row')]
       .find((row) => row.textContent.includes('Active retry'));
-    expect(retry.textContent).toContain('第 2 次');
+    expect(retry.textContent).toContain('第 2 轮');
     expect(retry.textContent).toContain('第 1/2 步');
     expect(retry.textContent).toContain('执行工具');
     expect(retry.textContent).toContain('正在修复评审指出的问题');
     expect(retry.querySelectorAll('.child-task-attempt')).toHaveLength(2);
     expect(screen.getByText(/需要重新连接/)).toBeTruthy();
+  });
+
+  it('labels initial, retry, and follow-up rounds from persisted attempt kinds', () => {
+    const { container } = render(
+      <ChildTasksPane
+        children={[{
+          operation_id: 'multi-round',
+          child_thread_id: 'child-rounds',
+          title: 'Review and revise output',
+          status: 'running',
+          operation_attempt: 3,
+          attempt_kind: 'follow_up',
+          lifecycle: [
+            { status: 'queued', attempt: 1, attempt_kind: 'initial' },
+            { status: 'completed', attempt: 1, attempt_kind: 'initial' },
+            { status: 'queued', attempt: 2, attempt_kind: 'retry' },
+            { status: 'failed', attempt: 2, attempt_kind: 'retry' },
+            { status: 'queued', attempt: 3, attempt_kind: 'follow_up' },
+            { status: 'running', attempt: 3, attempt_kind: 'follow_up' },
+          ],
+          reports: [{ attempt: 3, report: '正在处理评审意见' }],
+        }]}
+        loading={false}
+        error={null}
+      />,
+    );
+
+    const card = container.querySelector('.child-task-row');
+    expect(card.querySelectorAll('.child-task-attempt')).toHaveLength(3);
+    expect(card.textContent).toContain('初始执行');
+    expect(card.textContent).toContain('重试 · 第 2 轮');
+    expect(card.textContent).toContain('后续委托 · 第 3 轮');
+    expect(card.textContent).toContain('后续委托 · 第 3 轮进展：');
   });
 
   it('pages completed tasks in groups and can collapse the history again', () => {

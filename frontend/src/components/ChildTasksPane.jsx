@@ -4,6 +4,7 @@ import {
   childTaskStatusLabels,
   formatChildTaskDuration,
   formatChildTaskTimestamp,
+  getChildTaskAttemptLabel,
   getChildTaskAttemptGroups,
   getChildTaskCounts,
   getChildTaskPhaseLabel,
@@ -26,6 +27,10 @@ function ChildTaskRow({ child, projectId, onOpenThread, sequenceCount = null }) 
   const currentAttempt = Number.isInteger(child.operation_attempt)
     ? child.operation_attempt
     : (attempts.at(-1)?.attempt || 1);
+  const currentAttemptLabel = getChildTaskAttemptLabel(
+    attempts.find((attempt) => attempt.attempt === currentAttempt)
+      || { attempt: currentAttempt },
+  );
   const phase = getChildTaskPhaseLabel(child);
   const duration = formatChildTaskDuration(child.duration_ms);
   const sequenceLabel = child.execution_mode === 'sequential'
@@ -46,7 +51,7 @@ function ChildTaskRow({ child, projectId, onOpenThread, sequenceCount = null }) 
           ? '顺序'
           : child.execution_mode === 'parallel' ? '并行' : '模式未知'}</span>
         {sequenceLabel && <span title={child.operation_group_id || undefined}>{sequenceLabel}</span>}
-        <span>第 {currentAttempt} 次</span>
+        <span>{currentAttemptLabel}</span>
         {duration && <span>{duration}</span>}
       </div>
       {phase && <div className="child-task-phase">当前阶段：{phase}</div>}
@@ -62,7 +67,9 @@ function ChildTaskRow({ child, projectId, onOpenThread, sequenceCount = null }) 
       )}
       {latestReport && (
         <div className="child-task-report" aria-label="子代理进展">
-          <span>{latestReport.attempt ? `第 ${latestReport.attempt} 次进展：` : '最新进展：'}</span>
+          <span>{latestReport.attempt
+            ? `${getChildTaskAttemptLabel(attempts.find((attempt) => attempt.attempt === latestReport.attempt) || { attempt: latestReport.attempt })}进展：`
+            : '最新进展：'}</span>
           <span>{latestReport.text}</span>
           {latestReport.timestamp_ms && (
             <time>{formatChildTaskTimestamp(latestReport.timestamp_ms)}</time>

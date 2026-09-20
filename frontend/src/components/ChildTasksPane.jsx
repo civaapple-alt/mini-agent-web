@@ -71,8 +71,8 @@ function ChildTaskRow({ child, projectId, onOpenThread }) {
         <button
           type="button"
           className="btn-action-small"
-          onClick={() => onOpenThread(child.child_thread_id, projectId)}
-          title="打开子任务"
+          onClick={() => onOpenThread(child.child_thread_id, child.project_id || projectId)}
+          title="在运行详情中查看子代理消息流"
         >
           <ExternalLink size={12} />
           <span>打开</span>

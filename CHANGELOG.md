@@ -18,9 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep the Plan viewer on the current Session's `plan/plan.md`; refresh its file list and
   content after a Turn settles.
 - Show delegated children as a per-Turn batch in the message stream with each
-  task's lifecycle, keep the Runtime child list authoritative and openable, and
-  hide delegated child Sessions from the project session tree while preserving
-  ordinary forks.
+  task's lifecycle, keep the Runtime child list authoritative, and open each
+  materialized child in a read-only right-drawer transcript without switching
+  the parent stream. Refresh active child history and page older activity.
+  Resolve every child fork and client binding through its parent's canonical
+  Project identity, and hide delegated child Sessions from the project session
+  tree while preserving ordinary forks.
 - Sort each project's session list by the canonical Session activity time and
   show a relative age under each session title.
 - Keep the message stream at its normal centered width when the Session Turn rail is visible.

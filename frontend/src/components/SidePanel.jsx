@@ -27,6 +27,7 @@ import { readStateRevision, shouldApplyStateRevision } from '../utils/revisionSt
 import StatusDetailsPane from './StatusDetailsPane';
 import SkillPanel from './SkillPanel';
 import NotebookPane from './NotebookPane';
+import ChildSessionViewer from './ChildSessionViewer';
 import './SidePanel.css';
 
 const BUILTIN_TOOL_INFO = {
@@ -428,13 +429,13 @@ export default function SidePanel({
   skillsError = null,
   onToggleSkillGroup,
   onInsertSkill,
-  onOpenThread,
   childTasks = [],
   childTasksLoading = false,
   childTasksError = null,
   onRefreshChildTasks,
 }) {
   const [activeTab, setActiveTab] = useState(() => normalizePanelTab(initialTab));
+  const [selectedChild, setSelectedChild] = useState(null);
   const [worldData, setWorldData] = useState(null);
   const [mcpData, setMcpData] = useState(null);
   const [workflowState, setWorkflowState] = useState(goalState || null);
@@ -499,7 +500,12 @@ export default function SidePanel({
     setSelectedFileContent('');
     setWorkflowFiles([]);
     setWorkflowState(goalState || null);
+    setSelectedChild(null);
   }, [threadId, projectId]);
+
+  useEffect(() => {
+    if (!isOpen) setSelectedChild(null);
+  }, [isOpen]);
 
   useEffect(() => {
     requestControllerRef.current?.abort();
@@ -845,6 +851,20 @@ export default function SidePanel({
     }
   };
 
+  const handleOpenChildThread = (childThreadId, childProjectId) => {
+    const child = childTasks.find((item) => item.child_thread_id === childThreadId);
+    if (!child || child.child_session_available !== true) return;
+    setSelectedChild({
+      ...child,
+      project_id: childProjectId || child.project_id || projectId,
+    });
+    setActiveTab('status');
+  };
+
+  const activeChild = selectedChild
+    ? childTasks.find((child) => child.child_thread_id === selectedChild.child_thread_id) || selectedChild
+    : null;
+
   if (!isOpen) return null;
 
   return (
@@ -949,17 +969,26 @@ export default function SidePanel({
           )}
 
           {activeTab === 'status' && (
-            <StatusDetailsPane
-              status={status}
-              sessionMeta={sessionMeta}
-              threadId={threadId}
-              projectId={projectId}
-              onOpenThread={onOpenThread}
-              childTasks={childTasks}
-              childTasksLoading={childTasksLoading}
-              childTasksError={childTasksError}
-              onRefreshChildTasks={onRefreshChildTasks}
-            />
+            activeChild ? (
+              <ChildSessionViewer
+                key={`${activeChild.project_id || projectId || ''}:${activeChild.child_thread_id}`}
+                child={activeChild}
+                projectId={activeChild.project_id || projectId}
+                onBack={() => setSelectedChild(null)}
+              />
+            ) : (
+              <StatusDetailsPane
+                status={status}
+                sessionMeta={sessionMeta}
+                threadId={threadId}
+                projectId={projectId}
+                onOpenThread={handleOpenChildThread}
+                childTasks={childTasks}
+                childTasksLoading={childTasksLoading}
+                childTasksError={childTasksError}
+                onRefreshChildTasks={onRefreshChildTasks}
+              />
+            )
           )}
 
           {activeTab === 'plan_view' && (

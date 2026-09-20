@@ -372,7 +372,6 @@ export default function StatusDetailsPane({
       </div>
 
       <ChildTasksPane
-        threadId={threadId}
         projectId={projectId}
         onOpenThread={onOpenThread}
         children={childTasks}

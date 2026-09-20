@@ -113,7 +113,9 @@ class SessionManager:
         self._active_tasks_by_project: dict[tuple[str, str], asyncio.Task[Any]] = {}
         self._child_wake_jobs: dict[tuple[str, str], asyncio.Task[Any]] = {}
         self._child_wake_pending: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
-        self._child_wake_seen: OrderedDict[tuple[str, str, str, str], None] = OrderedDict()
+        self._child_wake_seen: OrderedDict[tuple[str, str, str, str], None] = (
+            OrderedDict()
+        )
         # Serializes child creation admission without serializing the child
         # runtimes themselves. Each child still owns an independent client and
         # App Server process after this short control-plane critical section.
@@ -230,6 +232,7 @@ class SessionManager:
                 "data": {
                     "operation_id": child.get("operation_id"),
                     "child_thread_id": child_thread_id,
+                    "project_id": project_id,
                     "title": child.get("title"),
                     "status": child_status,
                     "execution_mode": child.get("execution_mode"),
@@ -1104,7 +1107,9 @@ class SessionManager:
             receipt_key, receipt = unmaterialized
             async with self._child_task_lock:
                 if receipt.get("status") != "failed":
-                    raise ValueError("unmaterialized child failure is no longer retryable")
+                    raise ValueError(
+                        "unmaterialized child failure is no longer retryable"
+                    )
                 attempt = _nonnegative_int(receipt.get("operation_attempt")) + 1
                 receipt["operation_attempt"] = attempt
                 receipt["timestamp_ms"] = int(time.time() * 1000)
@@ -1272,6 +1277,7 @@ class SessionManager:
                     "parent_thread_id": source_thread_id,
                     "child_thread_id": child_thread_id,
                     "project": resolved_project_id,
+                    "project_id": resolved_project_id,
                     "session_id": session.get("session_id"),
                     "parent_session_id": parent_session_id,
                     "parent_checkpoint_seq": session.get("parent_checkpoint_seq"),
@@ -1359,6 +1365,7 @@ class SessionManager:
                     "parent_thread_id": source_thread_id,
                     "child_thread_id": child_thread_id,
                     "project": resolved_project_id,
+                    "project_id": resolved_project_id,
                     "session_id": None,
                     "parent_session_id": parent_session_id,
                     "parent_checkpoint_seq": None,
@@ -2867,11 +2874,15 @@ class SessionManager:
                             values = notification.get(field)
                             if not isinstance(values, list) or not values:
                                 return "[]"
-                            return "[" + ", ".join(
-                                str(item)[:64]
-                                for item in values[:MAX_CHILD_CONTROL_WAKE_IDS]
-                                if isinstance(item, str)
-                            ) + "]"
+                            return (
+                                "["
+                                + ", ".join(
+                                    str(item)[:64]
+                                    for item in values[:MAX_CHILD_CONTROL_WAKE_IDS]
+                                    if isinstance(item, str)
+                                )
+                                + "]"
+                            )
 
                         prompt_parts.append(
                             "task_control "

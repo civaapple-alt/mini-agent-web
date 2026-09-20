@@ -82,7 +82,6 @@ export default function AppLayout({
   skillsError = null,
   onToggleSkillGroup,
   onInsertSkill,
-  onOpenThread,
   skillInsertion,
   onSkillInsertionApplied,
 }) {
@@ -226,7 +225,6 @@ export default function AppLayout({
           skillsError={skillsError}
           onToggleSkillGroup={onToggleSkillGroup}
           onInsertSkill={onInsertSkill}
-          onOpenThread={onOpenThread}
           childTasks={childTasks.children}
           childTasksLoading={childTasks.loading}
           childTasksError={childTasks.error}

@@ -193,6 +193,25 @@
 .btn-icon-small { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; padding: 3px; }
 .btn-icon-small:hover { color: var(--text-danger, #c2410c); }
 
+.child-session-view { display: flex; flex-direction: column; height: 100%; min-height: 360px; gap: 9px; }
+.child-session-view-header { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color); }
+.child-session-view-header > .btn-action-small { flex: 0 0 auto; }
+.child-session-view-heading { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; }
+.child-session-view-heading strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); font-size: 12px; }
+.child-session-view-heading .child-task-status { flex: 0 0 auto; }
+.child-session-view-error { flex: 0 0 auto; padding: 8px 10px; border: 1px solid var(--status-failed-border); border-radius: 6px; background: var(--status-failed-soft); color: var(--status-failed); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.child-session-load-older { flex: 0 0 auto; align-self: center; padding: 5px 9px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-surface); color: var(--text-secondary); font-size: 10px; cursor: pointer; }
+.child-session-load-older:hover:not(:disabled) { border-color: var(--border-focus); color: var(--text-primary); }
+.child-session-load-older:disabled { opacity: .6; cursor: wait; }
+.child-session-transcript { flex: 1; min-height: 180px; overflow: auto; overscroll-behavior: contain; }
+.child-session-messages { display: flex; flex-direction: column; gap: 12px; padding: 4px 1px 14px; }
+.child-session-transcript .user-bubble-container { max-width: 92%; }
+.child-session-transcript .message-row { min-width: 0; }
+.child-session-transcript .assistant-container { min-width: 0; }
+.child-session-empty { padding: 20px 8px; color: var(--text-muted); font-size: 11px; text-align: center; }
+.child-session-view-footer { display: flex; justify-content: space-between; gap: 8px; padding-top: 7px; border-top: 1px solid var(--border-subtle); color: var(--text-muted); font-size: 9px; font-family: var(--font-mono); }
+.child-session-view-footer time { flex: 0 0 auto; }
+
 .sidepanel-content {
   flex: 1;
   overflow-y: auto;

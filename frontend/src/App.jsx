@@ -2505,7 +2505,6 @@ export default function App() {
       skillsError={skillsError}
       onToggleSkillGroup={handleToggleSkillGroup}
       onInsertSkill={handleInsertSkill}
-      onOpenThread={handleSelectThread}
       skillInsertion={skillInsertion}
       onSkillInsertionApplied={() => setSkillInsertion(null)}
     />

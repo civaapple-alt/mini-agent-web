@@ -335,16 +335,16 @@ class ClientPool:
         """Create and attach a child process backed by a new SessionStore."""
         owner = self.owner
         async with owner._lock:
-            client = await self.get_client_for_thread_locked(
+            # Resolve the source through its qualified identity first. The
+            # unqualified compatibility map cannot distinguish same-named
+            # ``default`` Threads in different Projects and may still point
+            # at the currently selected Project.
+            source_project = owner._project_for_thread(
                 source_thread_id, project_id
+            ).get("id")
+            client = await self.get_client_for_thread_locked(
+                source_thread_id, source_project
             )
-            source_project = owner._client_projects.get(source_thread_id)
-            if not source_project:
-                source_project = owner._active_thread_projects.get(source_thread_id)
-            if not source_project:
-                source_project = owner._project_for_thread(
-                    source_thread_id, project_id
-                ).get("id")
             existing_project = owner._active_thread_projects.get(new_thread_id)
             if existing_project and existing_project != source_project:
                 raise RuntimeError(

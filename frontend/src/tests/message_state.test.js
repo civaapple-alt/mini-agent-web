@@ -5,6 +5,7 @@ import {
   aggregateStreamEvent,
   aggregateThreadItems,
   assignHistoryTurnIds,
+  filterUnmatchedCheckpointInputs,
   approvalIdentity,
   filterEmptyMessages,
   groupCompactionBlocks,
@@ -40,6 +41,19 @@ test('history messages join their durable Turn by item content and call id', () 
   assert.equal(assigned[0].capturedAt, '2026-09-17T10:00:00.000Z');
   assert.equal(assigned[1].turnId, 'turn-2');
   assert.equal(assigned[2].turnId, 'turn-1');
+});
+
+test('durable user items replace checkpoint-rewritten input text after restart', () => {
+  const messages = filterUnmatchedCheckpointInputs([
+    { id: 'checkpoint-user', role: 'user', text: 'compacted merged input' },
+    { id: 'assistant', role: 'assistant', text: 'answer' },
+    { id: 'matched-user', role: 'user', inputItemId: 'input-1', text: 'original input' },
+  ], [
+    { turnId: 'turn-1', item: { type: 'userMessage', id: 'input-1', text: 'original input' } },
+    { turnId: 'turn-2', item: { type: 'userMessage', id: 'input-2', text: 'second steer' } },
+  ]);
+
+  assert.deepEqual(messages.map((message) => message.id), ['assistant', 'matched-user']);
 });
 
 test('unmatched legacy items create a Turn projection instead of using first assistant', () => {
@@ -961,7 +975,7 @@ test('thread item history keeps intermediate reasoning and maps tools to each re
   assert.equal(messages[2].blocks.some((block) => block.content === 'Second thought'), true);
 });
 
-test('history replays persisted workflow and skill boundaries in item order', () => {
+test('history restores assistant segments and presentation activity in item order', () => {
   const messages = restorePersistedTurnPresentation([
     { id: 'user-1', role: 'user', turnId: 'turn-history', text: 'Inspect' },
     {
@@ -1012,17 +1026,48 @@ test('history replays persisted workflow and skill boundaries in item order', ()
     },
   ]);
 
-  assert.equal(messages.length, 2);
+  assert.equal(messages.length, 3);
   assert.equal(messages[1].id, 'assistant-1');
-  assert.equal(messages[1].thinking, 'First thought\n\nSecond thought');
+  assert.equal(messages[1].thinking, 'First thought');
   assert.deepEqual(messages[1].blocks.map((block) => block.id), [
     'workflow_turn-history',
     'assistant-1:reasoning',
-    'skills_turn-history',
     'tool-1',
+    'skills_turn-history',
+  ]);
+  assert.equal(messages[2].id, 'assistant-2');
+  assert.equal(messages[2].thinking, 'Second thought');
+  assert.deepEqual(messages[2].blocks.map((block) => block.id), [
     'assistant-2:reasoning',
     'tool-2',
   ]);
+});
+
+test('history keeps a steer between its preceding and following assistant segments', () => {
+  const entries = [
+    { turnId: 'turn-steer', historyOrder: 0, item: { type: 'userMessage', id: 'input-1', text: 'initial' } },
+    { turnId: 'turn-steer', historyOrder: 1, item: { type: 'reasoning', id: 'segment-a:reasoning', segmentId: 'segment-a', text: 'first work' } },
+    { turnId: 'turn-steer', historyOrder: 2, item: { type: 'toolCall', id: 'call-a', name: 'shell', status: 'completed' } },
+    { turnId: 'turn-steer', historyOrder: 3, item: { type: 'userMessage', id: 'input-2', text: 'steer', inputSource: 'steer' } },
+    { turnId: 'turn-steer', historyOrder: 4, item: { type: 'reasoning', id: 'segment-b:reasoning', segmentId: 'segment-b', text: 'second work' } },
+    { turnId: 'turn-steer', historyOrder: 5, item: { type: 'agentMessage', id: 'segment-b:agent', segmentId: 'segment-b', text: 'finished' } },
+  ];
+  const restored = restorePersistedTurnPresentation([
+    { id: 'input-1', role: 'user', turnId: 'turn-steer', text: 'initial', historyOrder: 0 },
+    { id: 'assistant-a', role: 'assistant', turnId: 'turn-steer', thinking: 'first work' },
+    { id: 'input-2', role: 'user', turnId: 'turn-steer', text: 'steer', isSteer: true, historyOrder: 3 },
+    { id: 'assistant-b', role: 'assistant', turnId: 'turn-steer', thinking: 'second work' },
+  ], entries);
+
+  const ordered = orderMessagesByTurnHistory(restored, entries);
+  assert.deepEqual(ordered.map((message) => message.id), [
+    'input-1',
+    'segment-a',
+    'input-2',
+    'segment-b',
+  ]);
+  assert.deepEqual(ordered[1].blocks.map((block) => block.type), ['thinking', 'tool']);
+  assert.deepEqual(ordered[3].blocks.map((block) => block.type), ['thinking', 'text']);
 });
 
 test('history filtering removes empty assistant placeholders but keeps visible blocks', () => {

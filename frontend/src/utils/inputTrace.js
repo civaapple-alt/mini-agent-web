@@ -223,6 +223,8 @@ function entryTurnId(entry) {
 function entryInputMessage(entry, index, scope) {
   const item = entry?.item || {};
   const turnId = entryTurnId(entry);
+  const inputSource = item.inputSource || item.input_source || 'user';
+  const isSteer = String(inputSource).toLowerCase() === 'steer';
   return {
     id: item.id || `history_item_${index}`,
     role: 'user',
@@ -230,11 +232,14 @@ function entryInputMessage(entry, index, scope) {
     textAttachments: extractTextAttachmentNames(item.text).map((name) => ({ name })),
     fileAttachments: extractFileAttachmentNames(item.text).map((name) => ({ name })),
     turnId,
+    historyOrder: Number.isFinite(entry?.historyOrder) ? entry.historyOrder : index,
+    inputSource,
+    ...(isSteer ? { isSteer: true, messageKind: 'steer', steerTurnId: turnId } : {}),
     inputTrace: createInputTrace({
       threadId: scope.threadId || null,
       projectId: scope.projectId || null,
       turnId,
-      source: 'user',
+      source: isSteer ? 'steer' : 'user',
       capturedAt: entry.capturedAt || entry.captured_at || null,
       attachmentText: item.text,
       historical: true,
@@ -274,8 +279,12 @@ export function collectInputMessages(messages = [], entries = [], scope = {}) {
     const itemText = cleanInputText(entry.item?.text);
     const matchIndex = existing.findIndex((message, messageIndex) => {
       if (used.has(messageIndex)) return false;
-      if (turnId && message.turnId) return turnId === message.turnId;
-      return itemText && String(message.text || '').trim() === itemText;
+      const itemId = entry.item?.id;
+      if (itemId && (message.inputItemId || message.id)
+        && String(itemId) === String(message.inputItemId || message.id)) return true;
+      const messageText = String(message.text || '').trim();
+      if (!itemText || messageText !== itemText) return false;
+      return !turnId || !message.turnId || String(turnId) === String(message.turnId);
     });
     if (matchIndex >= 0) {
       used.add(matchIndex);

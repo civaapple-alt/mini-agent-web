@@ -80,6 +80,16 @@ App Server，避免停止、恢复或下一次请求继续等待一个已关闭�
 `history_truncated=true`，这表示展示层只保留了有界预览，原始 Session 日志仍由 App Server
 负责读取。若旧 Session 仍被其他进程锁定，页面会保持只读，需等待锁释放后再 attach。
 
+### 重启后输入或执行段合并
+
+如果重启后首次输入和后续 steer 出现在同一个气泡，或一个 Turn 的思考与工具活动只显示为一张摘要卡，
+请更新 Gateway 和 Web Studio 后重新打开 Session。历史投影按持久化 item ID 和顺序还原每条输入，
+并按 assistant segment 还原执行段。多个输入可以属于同一个 Turn，因此消息气泡分别显示，Turn 轨道仍只显示一个节点。
+
+旧 Session 缺少输入 item 时，Gateway 会从对应 `turn_started.prompt` 恢复输入；如果前一个 Turn 以
+`steered` 结算，则该输入标记为 steer。已存在持久输入 item 时，Studio 会忽略无法匹配的 checkpoint 用户消息，
+避免压缩后的合并文本遮住原始输入。`child_wakeup` 续行仍不会显示成用户输入。
+
 ### 长时间思考内容没有显示最新位置
 
 ThinkingBlock 超过可视高度后会使用内部滚动区域。只要用户没有手动向上滚动，

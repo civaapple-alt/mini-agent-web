@@ -6,6 +6,7 @@ import {
   aggregateItemLifecycle,
   aggregateStreamEvent,
   assignHistoryTurnIds,
+  filterUnmatchedCheckpointInputs,
   filterEmptyMessages,
   restorePersistedTurnPresentation,
   approvalIdentity,
@@ -85,7 +86,7 @@ async function listThreadItemsForHistory(threadId, projectId, options = {}) {
     seenCursors.add(nextCursor);
     cursor = nextCursor;
   }
-  return entries;
+  return entries.map((entry, historyOrder) => ({ ...entry, historyOrder }));
 }
 
 export default function App() {
@@ -853,7 +854,10 @@ export default function App() {
       } else {
         setLastTurnResult(null);
       }
-      const rawMessages = assignHistoryTurnIds(cp.messages || [], itemEntries);
+      const rawMessages = filterUnmatchedCheckpointInputs(
+        assignHistoryTurnIds(cp.messages || [], itemEntries),
+        itemEntries,
+      );
       const presentations = cp.presentations || cp.session?.presentations || [];
       const workflowByTurn = new Map(
         presentations
@@ -891,6 +895,8 @@ export default function App() {
             ? m.toolCalls
             : [];
         const isUserMessage = m.role === 'user';
+        const inputSource = String(m.inputSource || m.input_source || 'user').toLowerCase();
+        const isSteerMessage = isUserMessage && inputSource === 'steer';
         const workflow = isUserMessage && m.turnId
           ? workflowByTurn.get(String(m.turnId)) || null
           : null;
@@ -911,11 +917,21 @@ export default function App() {
           tools: [],
           ...(isUserMessage
             ? {
+              ...(isSteerMessage
+                ? {
+                  isSteer: true,
+                  messageKind: 'steer',
+                  steerTurnId: m.turnId || null,
+                  inputSource: 'steer',
+                }
+                : {}),
+              ...(m.inputItemId ? { inputItemId: m.inputItemId } : {}),
+              ...(Number.isFinite(m.historyOrder) ? { historyOrder: m.historyOrder } : {}),
               inputTrace: createInputTrace({
                 threadId,
                 projectId,
                 turnId: m.turnId || null,
-                source: 'user',
+                source: isSteerMessage ? 'steer' : 'user',
                 capturedAt: m.capturedAt || m.createdAt || m.created_at || null,
                 images: m.images,
                 textAttachments: textAttachmentNames,

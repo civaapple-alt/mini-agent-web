@@ -193,8 +193,17 @@ export function buildTurnHistoryEntries({
     });
   });
   projectedInputs.sort((left, right) => left.order - right.order || left.index - right.index);
+  const turnInputs = [];
+  const seenTurns = new Set();
+  projectedInputs.forEach((input) => {
+    const turnId = normalizedTurnId(input.message.turnId);
+    const key = turnId || `message:${input.message.id || input.index}`;
+    if (seenTurns.has(key)) return;
+    seenTurns.add(key);
+    turnInputs.push(input);
+  });
   const currentId = normalizedTurnId(activeTurnId || statusModel?.scope?.turnId);
-  return projectedInputs.map(({ message, index, childWakeup }) => {
+  return turnInputs.map(({ message, index, childWakeup }) => {
     const trace = getInputTrace(message, scope);
     const turnId = normalizedTurnId(message.turnId || trace.scope?.turnId);
     const isCurrent = Boolean(currentId && turnId && currentId === turnId);

@@ -76,6 +76,33 @@ describe('input trace presentation', () => {
     expect(getInputTrace(messages[0]).capturedAt).toBe('2026-09-17T10:00:00.000Z');
   });
 
+  it('keeps a later steer separate when it shares a turn with the first input', () => {
+    const messages = collectInputMessages(
+      [{ role: 'user', id: 'checkpoint-input', text: 'initial prompt', turnId: 'turn-1' }],
+      [
+        {
+          turnId: 'turn-1',
+          item: { type: 'userMessage', id: 'input-1', text: 'initial prompt', inputSource: 'user' },
+        },
+        {
+          turnId: 'turn-1',
+          item: { type: 'userMessage', id: 'input-2', text: 'second steer', inputSource: 'steer' },
+        },
+      ],
+      { threadId: 't-history', projectId: 'project-a' },
+    );
+
+    expect(messages.map((message) => message.text)).toEqual(['initial prompt', 'second steer']);
+    expect(messages[1]).toMatchObject({
+      id: 'input-2',
+      inputSource: 'steer',
+      isSteer: true,
+      messageKind: 'steer',
+      steerTurnId: 'turn-1',
+    });
+    expect(getInputTrace(messages[1]).source).toBe('steer');
+  });
+
   it('keeps the synthetic compaction summary out of input history', () => {
     const summary = {
       role: 'user',

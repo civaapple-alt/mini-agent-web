@@ -184,6 +184,52 @@ describe('ChatArea direction cues', () => {
     ))).toEqual(['turn-9', 'turn-11', 'turn-11']);
   });
 
+  it('renders a persisted steer between assistant execution segments in the same Turn', () => {
+    const { container } = render(
+      <ChatArea
+        messages={[
+          { id: 'input-1', role: 'user', text: 'initial prompt', turnId: 'turn-steer', historyOrder: 0 },
+          {
+            id: 'assistant-a', role: 'assistant', turnId: 'turn-steer', historyOrder: 1,
+            blocks: [{ type: 'text', id: 'answer-a', content: 'before steer' }],
+          },
+          {
+            id: 'assistant-b', role: 'assistant', turnId: 'turn-steer', historyOrder: 4,
+            blocks: [{ type: 'text', id: 'answer-b', content: 'after steer' }],
+          },
+        ]}
+        threadItems={[
+          { turnId: 'turn-steer', historyOrder: 0, item: { type: 'userMessage', id: 'input-1', text: 'initial prompt' } },
+          { turnId: 'turn-steer', historyOrder: 3, item: { type: 'userMessage', id: 'input-2', text: 'second steer', inputSource: 'steer' } },
+        ]}
+        statusModel={null}
+        isGenerating={false}
+        pendingApproval={null}
+        lastTurnResult={null}
+        traceScope={{ threadId: 'thread-1', projectId: 'project-1' }}
+      />,
+    );
+
+    expect(Array.from(container.querySelectorAll('.message-row')).map((node) => (
+      node.getAttribute('data-message-id')
+    ))).toEqual(['input-1', 'assistant-a', 'input-2', 'assistant-b']);
+    expect(container.querySelector('[data-message-id="input-2"]')?.classList.contains('steer-message-row'))
+      .toBe(true);
+  });
+
+  it('keeps one Turn rail entry when a Turn contains multiple input messages', () => {
+    const entries = buildTurnHistoryEntries({
+      messages: [
+        { id: 'input-1', role: 'user', text: 'initial prompt', turnId: 'turn-1', inputTrace: { source: 'user' } },
+        { id: 'input-2', role: 'user', text: 'second steer', turnId: 'turn-1', inputTrace: { source: 'steer' } },
+        { id: 'assistant-1', role: 'assistant', text: 'answer', turnId: 'turn-1' },
+      ],
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ id: 'turn:turn-1', summary: 'initial prompt', source: 'user' });
+  });
+
   it('renders a Turn rail, inline summary, and supports node navigation', () => {
     const user = { ...messages[0], inputTrace: { source: 'user', scope: { turnId: 'turn-1' } } };
     const node = document.createElement('div');

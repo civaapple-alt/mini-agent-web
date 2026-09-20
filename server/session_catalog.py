@@ -728,13 +728,94 @@ class SessionCatalog:
         if loaded is None:
             return None
         records, _skipped_oversized_records = loaded
-        entries = [
-            {"turnId": record.get("turn_id"), "item": projected}
+        user_turns = {
+            str(record.get("turn_id"))
             for record in records
             if record.get("kind") == "item"
-            and (turn_id is None or str(record.get("turn_id")) == str(turn_id))
-            for projected in _item_projections(record)
-        ]
+            and isinstance(record.get("message"), dict)
+            and record["message"].get("role") == "user"
+            and record.get("turn_id")
+        }
+        turn_input_sources: dict[str, str] = {}
+        turn_input_prompts: dict[str, tuple[str, str | None, str | None]] = {}
+        previous_turn_was_steered = False
+        for record in records:
+            record_kind = record.get("kind")
+            record_turn_id = record.get("turn_id")
+            if record_kind == "turn_settled":
+                previous_turn_was_steered = record.get("status") == "steered"
+            elif record_kind == "turn_started" and record_turn_id:
+                key = str(record_turn_id)
+                turn_input_sources[key] = (
+                    "steer" if previous_turn_was_steered else "user"
+                )
+                previous_turn_was_steered = False
+                prompt = _bounded_text(record.get("prompt"), 16 * 1024)
+                presentation = record.get("presentation")
+                turn_source = (
+                    presentation.get("turnSource") or presentation.get("turn_source")
+                    if isinstance(presentation, dict)
+                    else None
+                )
+                turn_input_prompts[key] = (
+                    prompt,
+                    _timestamp(record.get("timestamp_ms")),
+                    str(turn_source) if turn_source else None,
+                )
+
+        entries: list[dict[str, Any]] = []
+        user_index_by_turn: dict[str, int] = {}
+        for record in records:
+            record_turn_id = record.get("turn_id")
+            record_turn_key = str(record_turn_id) if record_turn_id else None
+            if record.get("kind") == "turn_started" and record_turn_key:
+                prompt, captured_at, turn_source = turn_input_prompts.get(
+                    record_turn_key, ("", None, None)
+                )
+                if (
+                    record_turn_key not in user_turns
+                    and prompt
+                    and turn_source != "child_wakeup"
+                    and (turn_id is None or record_turn_key == str(turn_id))
+                ):
+                    item = {
+                        "type": "userMessage",
+                        "id": f"{record_turn_key}:user",
+                        "text": prompt,
+                        "inputSource": turn_input_sources.get(record_turn_key, "user"),
+                    }
+                    if captured_at:
+                        item["capturedAt"] = captured_at
+                    projected_entry: dict[str, Any] = {
+                        "turnId": record_turn_key,
+                        "item": item,
+                        "turnSource": turn_source,
+                    }
+                    entries.append(projected_entry)
+
+            if record.get("kind") != "item":
+                continue
+            if turn_id is not None and record_turn_key != str(turn_id):
+                continue
+            for projected in _item_projections(record):
+                if projected.get("type") == "userMessage" and record_turn_key:
+                    input_index = user_index_by_turn.get(record_turn_key, 0)
+                    projected["inputSource"] = (
+                        "steer"
+                        if input_index > 0
+                        or turn_input_sources.get(record_turn_key) == "steer"
+                        else "user"
+                    )
+                    user_index_by_turn[record_turn_key] = input_index + 1
+                projected_entry = {
+                    "turnId": record_turn_id,
+                    "item": projected,
+                }
+                if record_turn_key:
+                    projected_entry["turnSource"] = turn_input_prompts.get(
+                        record_turn_key, ("", None, None)
+                    )[2]
+                entries.append(projected_entry)
         if sort_direction == "desc":
             entries.reverse()
 

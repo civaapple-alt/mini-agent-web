@@ -559,6 +559,14 @@ export function assignHistoryTurnIds(messages = [], entries = []) {
     .filter((candidate) => candidate.turnId);
 
   const findCandidate = (message) => {
+    const identityCandidate = candidates.find((candidate) => (
+      !candidate.used
+        && candidate.item.id
+        && message.id
+        && String(candidate.item.id) === String(message.id)
+    ));
+    if (identityCandidate) return identityCandidate;
+
     const toolCalls = Array.isArray(message.tool_calls)
       ? message.tool_calls
       : Array.isArray(message.toolCalls)
@@ -594,10 +602,28 @@ export function assignHistoryTurnIds(messages = [], entries = []) {
     candidate.used = true;
     return {
       ...message,
+      ...(message.role === 'user' && candidate.item.id
+        ? { inputItemId: candidate.item.id }
+        : {}),
       turnId: candidate.turnId,
+      historyOrder: candidate.index,
+      ...(message.role === 'user' && candidate.item.inputSource
+        ? { inputSource: candidate.item.inputSource }
+        : {}),
       capturedAt: message.capturedAt || candidate.capturedAt || null,
     };
   });
+}
+
+/** Prefer durable input items when checkpoint compaction rewrites user text. */
+export function filterUnmatchedCheckpointInputs(messages = [], entries = []) {
+  const hasDurableInputs = (entries || []).some((entry) => (
+    entry?.item?.type === 'userMessage' || entry?.item?.type === 'user_message'
+  ));
+  if (!hasDurableInputs) return messages;
+  return (messages || []).filter((message) => (
+    message?.role !== 'user' || Boolean(message.inputItemId)
+  ));
 }
 
 /**
@@ -794,50 +820,95 @@ function restoredToolBlock(item) {
   };
 }
 
-function replayPersistedTurnBlocks(turnId, entries, presentation) {
-  const blocks = [];
+function persistedSegmentId(item) {
+  if (item.segmentId) return String(item.segmentId);
+  const id = String(item.id || '');
+  return id.replace(/:(reasoning|agent)$/, '') || null;
+}
+
+function replayPersistedTurnSegments(turnId, entries, presentation) {
+  const segments = [];
   const activities = presentation?.activities || [];
-  let activityIndex = 0;
-  let assistantSegments = 0;
-  let activeSegmentId = null;
-  const appendThrough = (segmentCount) => {
-    while (
-      activityIndex < activities.length
-      && Number(activities[activityIndex]?.afterAssistantSegments || 0) <= segmentCount
-    ) {
-      appendPresentationActivity(blocks, activities[activityIndex], turnId);
-      activityIndex += 1;
-    }
+  let activeSegment = null;
+  let syntheticSegmentIndex = 0;
+  const beginSegment = (segmentId = null) => {
+    activeSegment = {
+      id: segmentId || `${turnId}:activity:${syntheticSegmentIndex++}`,
+      blocks: [],
+      historyOrder: null,
+    };
   };
   const finishSegment = () => {
-    if (activeSegmentId === null) return;
-    activeSegmentId = null;
-    assistantSegments += 1;
-    appendThrough(assistantSegments);
+    if (!activeSegment) return;
+    segments.push(activeSegment);
+    activeSegment = null;
   };
 
-  appendThrough(0);
-  for (const entry of entries) {
+  for (const [entryIndex, entry] of entries.entries()) {
     const item = entry?.item || {};
+    if (item.type === 'userMessage' || item.type === 'user_message') {
+      finishSegment();
+      continue;
+    }
     if (item.type === 'reasoning' || item.type === 'agentMessage') {
-      const segmentId = item.segmentId || item.id || `${turnId}:${assistantSegments}`;
-      if (activeSegmentId !== null && activeSegmentId !== segmentId) finishSegment();
-      activeSegmentId = segmentId;
-      blocks.push(item.type === 'reasoning'
+      const segmentId = persistedSegmentId(item) || `${turnId}:segment:${entryIndex}`;
+      if (activeSegment && activeSegment.id !== segmentId) finishSegment();
+      if (!activeSegment) beginSegment(segmentId);
+      if (activeSegment.historyOrder === null) {
+        activeSegment.historyOrder = Number.isFinite(entry.historyOrder)
+          ? entry.historyOrder
+          : entryIndex;
+      }
+      activeSegment.blocks.push(item.type === 'reasoning'
         ? { type: 'thinking', id: item.id, content: item.text || '', isStreaming: false }
         : { type: 'text', id: item.id, content: item.text || '' });
       continue;
     }
-    finishSegment();
     if (item.type === 'toolCall' || item.type === 'tool_call') {
-      blocks.push(restoredToolBlock(item));
+      if (!activeSegment) beginSegment(persistedSegmentId(item));
+      if (activeSegment.historyOrder === null) {
+        activeSegment.historyOrder = Number.isFinite(entry.historyOrder)
+          ? entry.historyOrder
+          : entryIndex;
+      }
+      activeSegment.blocks.push(restoredToolBlock(item));
     } else if (item.type === 'contextCompaction' || item.type === 'context_compaction') {
-      blocks.push({ ...item, type: 'compaction', id: item.id || `compaction_${blocks.length}` });
+      if (!activeSegment) beginSegment(persistedSegmentId(item));
+      if (activeSegment.historyOrder === null) {
+        activeSegment.historyOrder = Number.isFinite(entry.historyOrder)
+          ? entry.historyOrder
+          : entryIndex;
+      }
+      activeSegment.blocks.push({
+        ...item,
+        type: 'compaction',
+        id: item.id || `compaction_${activeSegment.blocks.length}`,
+      });
     }
   }
   finishSegment();
-  appendThrough(Number.MAX_SAFE_INTEGER);
-  return blocks;
+
+  const activitiesByBoundary = new Map();
+  for (const activity of activities) {
+    const boundary = Math.max(0, Math.min(
+      segments.length,
+      Number(activity?.afterAssistantSegments || 0),
+    ));
+    if (!activitiesByBoundary.has(boundary)) activitiesByBoundary.set(boundary, []);
+    activitiesByBoundary.get(boundary).push(activity);
+  }
+  if (segments.length === 0 && activitiesByBoundary.size > 0) beginSegment();
+  for (const [boundary, boundaryActivities] of activitiesByBoundary) {
+    const targetIndex = boundary === 0 ? 0 : Math.min(boundary - 1, segments.length - 1);
+    const target = segments[targetIndex] || activeSegment;
+    if (!target) continue;
+    const blocks = [];
+    for (const activity of boundaryActivities) appendPresentationActivity(blocks, activity, turnId);
+    if (boundary === 0) target.blocks.unshift(...blocks);
+    else target.blocks.push(...blocks);
+  }
+  if (segments.length === 0 && activeSegment) segments.push(activeSegment);
+  return segments;
 }
 
 /**
@@ -851,39 +922,45 @@ export function restorePersistedTurnPresentation(messages = [], entries = [], pr
       .filter((presentation) => presentation?.turnId)
       .map((presentation) => [String(presentation.turnId), presentation]),
   );
-  if (presentationByTurn.size === 0) return messages;
-
   const entriesByTurn = new Map();
-  for (const entry of entries || []) {
+  for (const [entryIndex, entry] of (entries || []).entries()) {
     const turnId = entry?.turnId || entry?.turn_id;
     if (!turnId) continue;
     const key = String(turnId);
     if (!entriesByTurn.has(key)) entriesByTurn.set(key, []);
-    entriesByTurn.get(key).push(entry);
+    entriesByTurn.get(key).push({
+      ...entry,
+      historyOrder: Number.isFinite(entry?.historyOrder) ? entry.historyOrder : entryIndex,
+    });
   }
 
   const restoredTurns = new Set();
   return (messages || []).flatMap((message) => {
     if (message?.role !== 'assistant' || !message.turnId) return [message];
     const key = String(message.turnId);
-    const presentation = presentationByTurn.get(key);
-    if (!presentation) return [message];
+    const turnEntries = entriesByTurn.get(key) || [];
+    if (turnEntries.length === 0) return [message];
     if (restoredTurns.has(key)) return [];
-    restoredTurns.add(key);
-    const blocks = replayPersistedTurnBlocks(
+    const segments = replayPersistedTurnSegments(
       key,
-      entriesByTurn.get(key) || [],
-      presentation,
+      turnEntries,
+      presentationByTurn.get(key),
     );
-    if (blocks.length === 0) return [message];
-    return [{
-      ...message,
-      text: blocks.filter((block) => block.type === 'text').map((block) => block.content).join('\n\n'),
-      thinking: blocks.filter((block) => block.type === 'thinking').map((block) => block.content).join('\n\n'),
-      tools: blocks.filter((block) => block.type === 'tool'),
-      toolCallIds: blocks.filter((block) => block.type === 'tool').map((block) => block.call_id),
-      blocks,
-    }];
+    if (segments.length === 0) return [message];
+    restoredTurns.add(key);
+    return segments.map((segment, index) => {
+      const blocks = segment.blocks;
+      return {
+        ...message,
+        id: segment.id || `${message.id || `turn_${key}`}:segment:${index}`,
+        historyOrder: segment.historyOrder,
+        text: blocks.filter((block) => block.type === 'text').map((block) => block.content).join('\n\n'),
+        thinking: blocks.filter((block) => block.type === 'thinking').map((block) => block.content).join('\n\n'),
+        tools: blocks.filter((block) => block.type === 'tool'),
+        toolCallIds: blocks.filter((block) => block.type === 'tool').map((block) => block.call_id),
+        blocks,
+      };
+    });
   });
 }
 
@@ -920,6 +997,16 @@ export function orderMessagesByTurnHistory(messages = [], entries = []) {
         return left.turnIndex - right.turnIndex;
       }
       if (leftKnown !== rightKnown) return leftKnown ? -1 : 1;
+      const sameTurn = left.message?.turnId
+        && right.message?.turnId
+        && String(left.message.turnId) === String(right.message.turnId);
+      if (sameTurn) {
+        const leftOrder = Number(left.message.historyOrder);
+        const rightOrder = Number(right.message.historyOrder);
+        if (Number.isFinite(leftOrder) && Number.isFinite(rightOrder) && leftOrder !== rightOrder) {
+          return leftOrder - rightOrder;
+        }
+      }
       return left.index - right.index;
     })
     .map(({ message }) => message);

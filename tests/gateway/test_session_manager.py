@@ -1089,6 +1089,143 @@ def test_session_catalog_lists_all_items_with_bounded_pages(tmp_path, monkeypatc
     )
 
 
+def test_session_catalog_restores_steer_prompt_missing_from_message_items(
+    tmp_path, monkeypatch
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    session_dir = session_base / "s-steer"
+    session_dir.mkdir(parents=True)
+    records = [
+        {"seq": 1, "kind": "session_created", "session_id": "s-steer"},
+        {"seq": 2, "kind": "thread_started", "thread_id": "t-steer"},
+        {
+            "seq": 3,
+            "kind": "turn_started",
+            "thread_id": "t-steer",
+            "turn_id": "turn-1",
+            "timestamp_ms": 1000,
+            "prompt": "initial prompt",
+        },
+        {
+            "seq": 4,
+            "kind": "item",
+            "item_id": "input-1",
+            "thread_id": "t-steer",
+            "turn_id": "turn-1",
+            "timestamp_ms": 1000,
+            "message": {"role": "user", "text": "initial prompt"},
+        },
+        {
+            "seq": 5,
+            "kind": "turn_settled",
+            "thread_id": "t-steer",
+            "turn_id": "turn-1",
+            "status": "steered",
+        },
+        {
+            "seq": 6,
+            "kind": "turn_started",
+            "thread_id": "t-steer",
+            "turn_id": "turn-2",
+            "timestamp_ms": 2000,
+            "prompt": "second steer",
+        },
+        {
+            "seq": 7,
+            "kind": "item",
+            "item_id": "assistant-2",
+            "thread_id": "t-steer",
+            "turn_id": "turn-2",
+            "timestamp_ms": 2000,
+            "message": {"role": "assistant", "reasoning": "working", "text": ""},
+        },
+        {
+            "seq": 8,
+            "kind": "turn_settled",
+            "thread_id": "t-steer",
+            "turn_id": "turn-2",
+            "status": "completed",
+        },
+        {
+            "seq": 9,
+            "kind": "turn_started",
+            "thread_id": "t-steer",
+            "turn_id": "turn-3",
+            "timestamp_ms": 3000,
+            "prompt": "unpersisted user prompt",
+        },
+        {
+            "seq": 10,
+            "kind": "turn_settled",
+            "thread_id": "t-steer",
+            "turn_id": "turn-3",
+            "status": "completed",
+        },
+        {
+            "seq": 11,
+            "kind": "turn_started",
+            "thread_id": "t-steer",
+            "turn_id": "turn-child-wakeup",
+            "timestamp_ms": 4000,
+            "prompt": "internal child update prompt",
+            "presentation": {"turnSource": "child_wakeup"},
+        },
+    ]
+    (session_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_base / "thread_index.json").write_text(
+        json.dumps({"version": 1, "threads": {"t-steer": {"session_id": "s-steer"}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("server.session_catalog._process_alive", lambda _pid: False)
+
+    page = SessionCatalog().list_thread_items(workspace, "project-1", "t-steer")
+
+    assert page is not None
+    inputs = [entry for entry in page["data"] if entry["item"]["type"] == "userMessage"]
+    assert inputs == [
+        {
+            "turnId": "turn-1",
+            "item": {
+                "type": "userMessage",
+                "id": "input-1",
+                "text": "initial prompt",
+                "capturedAt": "1970-01-01T00:00:01+00:00",
+                "inputSource": "user",
+            },
+            "turnSource": None,
+        },
+        {
+            "turnId": "turn-2",
+            "item": {
+                "type": "userMessage",
+                "id": "turn-2:user",
+                "text": "second steer",
+                "capturedAt": "1970-01-01T00:00:02+00:00",
+                "inputSource": "steer",
+            },
+            "turnSource": None,
+        },
+        {
+            "turnId": "turn-3",
+            "item": {
+                "type": "userMessage",
+                "id": "turn-3:user",
+                "text": "unpersisted user prompt",
+                "capturedAt": "1970-01-01T00:00:03+00:00",
+                "inputSource": "user",
+            },
+            "turnSource": None,
+        },
+    ]
+
+
 def test_session_catalog_projects_fork_lineage(tmp_path, monkeypatch):
     """Child discovery can use SessionStore lineage without Gateway metadata."""
     workspace = tmp_path / "workspace"

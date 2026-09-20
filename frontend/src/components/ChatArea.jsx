@@ -54,14 +54,24 @@ export default function ChatArea({
       && !(message?.role === 'user'
         && String(message.turnSource || message.turn_source || '').toLowerCase() === 'child_wakeup')
     ));
+    const consumedInputs = new Set();
     projectedInputs.forEach((input) => {
       const inputTurnId = input.turnId ? String(input.turnId) : null;
-      const alreadyRendered = result.some((message) => {
+      const existingInput = result.find((message) => {
+        if (consumedInputs.has(message)) return false;
         if (message.role !== 'user') return false;
-        if (inputTurnId && message.turnId) return String(message.turnId) === inputTurnId;
-        return String(message.text || '').trim() === String(input.text || '').trim();
+        const inputId = input.inputItemId || input.id;
+        const messageId = message.inputItemId || message.id;
+        if (inputId && messageId && String(inputId) === String(messageId)) return true;
+        const sameText = String(message.text || '').trim() === String(input.text || '').trim();
+        return sameText && (
+          !inputTurnId || !message.turnId || String(message.turnId) === inputTurnId
+        );
       });
-      if (alreadyRendered) return;
+      if (existingInput) {
+        consumedInputs.add(existingInput);
+        return;
+      }
       const assistantIndex = inputTurnId
         ? result.findIndex((message) => (
           message.role === 'assistant' && String(message.turnId || '') === inputTurnId
@@ -69,6 +79,7 @@ export default function ChatArea({
         : -1;
       if (assistantIndex >= 0) result.splice(assistantIndex, 0, input);
       else result.push(input);
+      consumedInputs.add(input);
     });
     return orderMessagesByTurnHistory(result, threadItems);
   }, [messages, threadItems, traceScope]);

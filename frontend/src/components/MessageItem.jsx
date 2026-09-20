@@ -24,6 +24,19 @@ import {
   extractTextAttachmentNames,
 } from '../utils/inputTrace';
 
+function getCurrentExecutionSegmentStartIndex(blocks, activeBlockIndex) {
+  const currentIndex = activeBlockIndex >= 0 ? activeBlockIndex : blocks.length - 1;
+  if (currentIndex < 0) return 0;
+
+  const currentBlock = blocks[currentIndex];
+  if (currentBlock.type === 'thinking') return currentIndex;
+
+  const segmentThinkingIndex = blocks.findLastIndex((block, index) => (
+    index <= currentIndex && block.type === 'thinking'
+  ));
+  return segmentThinkingIndex >= 0 ? segmentThinkingIndex : currentIndex;
+}
+
 export default function MessageItem({
   message,
   isLast,
@@ -271,11 +284,17 @@ export default function MessageItem({
   const isCurrentExecutionSegmentActive = isLast && (
     isGenerating || pendingApproval || activeBlockIndex !== -1
   );
+  const currentExecutionSegmentStartIndex = isCurrentExecutionSegmentActive
+    ? getCurrentExecutionSegmentStartIndex(normalizedBlocks, activeBlockIndex)
+    : -1;
   const renderedBlocks = isCurrentExecutionSegmentActive
-    ? normalizedBlocks
+    ? [
+      ...groupSettledAssistantBlocks(normalizedBlocks.slice(0, currentExecutionSegmentStartIndex)),
+      ...normalizedBlocks.slice(currentExecutionSegmentStartIndex),
+    ]
     : groupSettledAssistantBlocks(normalizedBlocks);
   const turnScope = String(turnEntry?.turnId || message.turnId || message.id || 'assistant');
-  const currentBlockIndex = activeBlockIndex;
+  const currentBlock = activeBlockIndex >= 0 ? normalizedBlocks[activeBlockIndex] : null;
   let childTaskBatchRendered = false;
 
   const renderDelegateBatch = (tool, key) => {
@@ -298,7 +317,7 @@ export default function MessageItem({
         {/* Render sequential blocks if present */}
         {renderedBlocks.length > 0 ? (
           renderedBlocks.map((block, idx) => {
-            const isCurrentBlock = isStreamingThis && idx === currentBlockIndex;
+            const isCurrentBlock = isStreamingThis && block === currentBlock;
             if (block.type === 'activityGroup') {
               return (
                 <AssistantActivityGroup

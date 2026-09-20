@@ -174,6 +174,79 @@ describe('AssistantTextBlock', () => {
     expect(screen.getByText('任务已停止。')).toBeDefined();
   });
 
+  it('folds prior completed segments inside the live assistant message', () => {
+    const message = {
+      id: 'assistant-live-turn',
+      turnId: 'live-turn',
+      role: 'assistant',
+      blocks: [{
+        type: 'thinking',
+        id: 'thinking-1',
+        content: '检查第一项',
+        isStreaming: false,
+      }, {
+        type: 'tool',
+        id: 'tool-1',
+        name: 'shell',
+        status: 'completed',
+        output: '第一项完成',
+      }, {
+        type: 'thinking',
+        id: 'thinking-2',
+        content: '检查第二项',
+        isStreaming: false,
+      }, {
+        type: 'tool',
+        id: 'tool-2',
+        name: 'shell',
+        status: 'completed',
+        output: '第二项完成',
+      }, {
+        type: 'thinking',
+        id: 'thinking-3',
+        content: '检查当前结果',
+        isStreaming: true,
+      }],
+    };
+    const { container, rerender } = render(
+      <MessageItem message={message} isLast isGenerating />,
+    );
+
+    expect(container.querySelector('.assistant-activity-group-summary')?.textContent)
+      .toContain('已完成 4 项活动');
+    expect(container.querySelector('.assistant-activity-group-summary')?.getAttribute('aria-expanded'))
+      .toBe('false');
+    expect(container.querySelector('[data-block-id="live-turn:thinking:thinking-3"] .thinking-body')?.textContent)
+      .toContain('检查当前结果');
+
+    rerender(
+      <MessageItem
+        message={{
+          ...message,
+          blocks: [
+            ...message.blocks.slice(0, -1),
+            { ...message.blocks.at(-1), isStreaming: false },
+            {
+              type: 'thinking',
+              id: 'thinking-4',
+              content: '开始下一段检查',
+              isStreaming: true,
+            },
+          ],
+        }}
+        isLast
+        isGenerating
+      />,
+    );
+
+    expect(container.querySelector('.assistant-activity-group-summary')?.textContent)
+      .toContain('已完成 5 项活动');
+    expect(container.querySelector('.assistant-activity-group-summary')?.getAttribute('aria-expanded'))
+      .toBe('false');
+    expect(container.querySelector('[data-block-id="live-turn:thinking:thinking-4"] .thinking-body')?.textContent)
+      .toContain('开始下一段检查');
+  });
+
   it('keeps a manual activity-summary toggle by stable block id while the page remains open', () => {
     const message = {
       id: 'assistant-manual-fold',

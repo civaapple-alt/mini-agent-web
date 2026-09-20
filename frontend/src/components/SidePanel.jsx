@@ -927,7 +927,7 @@ export default function SidePanel({
         </div>
 
         {/* Panel Content Body */}
-        <div className={`sidepanel-content custom-scrollbar ${activeTab === 'plan_view' ? 'plan-view-content' : ''}`}>
+        <div className={`sidepanel-content custom-scrollbar ${activeTab === 'plan_view' ? 'plan-view-content' : ''} ${activeTab === 'status' && activeChild ? 'child-session-content' : ''}`}>
           {activeTab.startsWith('workspace_') && (
             <div className="workspace-subtabs" role="tablist" aria-label="工作区详情">
               <button

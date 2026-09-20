@@ -104,19 +104,30 @@ function CommandPreview({ value }) {
       const viewportWidth = window.innerWidth || 1024;
       const viewportHeight = window.innerHeight || 768;
       const padding = 12;
-      const width = Math.min(720, Math.max(0, viewportWidth - padding * 2));
-      const belowSpace = viewportHeight - rect.bottom - padding;
-      const aboveSpace = rect.top - padding;
+      const panelRect = trigger.closest('.sidepanel-container')?.getBoundingClientRect();
+      const bounds = {
+        left: Math.max(padding, panelRect?.left ?? 0),
+        right: Math.min(viewportWidth - padding, panelRect?.right ?? viewportWidth),
+        top: Math.max(padding, panelRect?.top ?? 0),
+        bottom: Math.min(viewportHeight - padding, panelRect?.bottom ?? viewportHeight),
+      };
+      const width = Math.min(720, Math.max(0, bounds.right - bounds.left - padding * 2));
+      const belowSpace = bounds.bottom - rect.bottom - padding;
+      const aboveSpace = rect.top - bounds.top - padding;
       const showAbove = belowSpace < 180 && aboveSpace > belowSpace;
-      const availableHeight = Math.max(80, showAbove ? aboveSpace : belowSpace);
-      const maxHeight = Math.min(360, availableHeight);
+      const availableBoundsHeight = Math.max(0, bounds.bottom - bounds.top - padding * 2);
+      const maxHeight = Math.min(
+        360,
+        availableBoundsHeight,
+        Math.max(80, showAbove ? aboveSpace : belowSpace),
+      );
       const left = Math.min(
-        Math.max(padding, rect.left),
-        Math.max(padding, viewportWidth - width - padding),
+        Math.max(bounds.left + padding, rect.left),
+        Math.max(bounds.left + padding, bounds.right - width - padding),
       );
       const top = showAbove
-        ? Math.max(padding, rect.top - maxHeight - 8)
-        : Math.min(viewportHeight - maxHeight - padding, rect.bottom + 8);
+        ? Math.max(bounds.top + padding, rect.top - maxHeight - 8)
+        : Math.min(bounds.bottom - maxHeight - padding, rect.bottom + 8);
       setPosition({ left, top, width, maxHeight });
     };
 

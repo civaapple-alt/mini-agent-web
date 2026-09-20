@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   task's lifecycle, keep the Runtime child list authoritative, and open each
   materialized child in a read-only right-drawer transcript without switching
   the parent stream. Refresh active child history and page older activity.
+  Preserve multiline prompts for queued children so work beyond the active
+  concurrency limit stays queued and starts when a slot opens. Keep the visible
+  transcript position while paging older child activity, use one scroll region
+  in the drawer, and keep command previews inside the drawer boundary.
   Resolve every child fork and client binding through its parent's canonical
   Project identity, and hide delegated child Sessions from the project session
   tree while preserving ordinary forks.

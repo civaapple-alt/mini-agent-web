@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { api } from '../api';
 import MessageItem from './MessageItem';
@@ -114,6 +114,7 @@ export default function ChildSessionViewer({
   const entriesRef = useRef([]);
   const latestKeysRef = useRef(null);
   const olderCursorRef = useRef(null);
+  const olderScrollPositionRef = useRef(null);
 
   const refresh = useCallback(async ({ quiet = false } = {}) => {
     if (requestRef.current) return;
@@ -190,9 +191,18 @@ export default function ChildSessionViewer({
     return () => window.clearInterval(timer);
   }, [checkpoint, child.status, refresh]);
 
-  useEffect(() => {
-    if (!pinnedToBottomRef.current || !transcriptRef.current) return;
-    transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
+  useLayoutEffect(() => {
+    const transcript = transcriptRef.current;
+    if (!transcript) return;
+    const olderScrollPosition = olderScrollPositionRef.current;
+    if (olderScrollPosition) {
+      transcript.scrollTop = olderScrollPosition.scrollTop
+        + transcript.scrollHeight
+        - olderScrollPosition.scrollHeight;
+      olderScrollPositionRef.current = null;
+      return;
+    }
+    if (pinnedToBottomRef.current) transcript.scrollTop = transcript.scrollHeight;
   }, [entries, checkpoint]);
 
   const messages = useMemo(
@@ -221,7 +231,14 @@ export default function ChildSessionViewer({
       });
       if (!mountedRef.current || controller.signal.aborted) return;
       const older = [...(Array.isArray(page.data) ? page.data : [])].reverse();
-      entriesRef.current = mergeEntries(older, entriesRef.current);
+      const merged = mergeEntries(older, entriesRef.current);
+      if (merged.length > entriesRef.current.length && transcriptRef.current) {
+        olderScrollPositionRef.current = {
+          scrollTop: transcriptRef.current.scrollTop,
+          scrollHeight: transcriptRef.current.scrollHeight,
+        };
+      }
+      entriesRef.current = merged;
       setEntries(entriesRef.current);
       olderCursorRef.current = page.next_cursor || page.nextCursor || null;
       setOlderCursor(olderCursorRef.current);
@@ -303,7 +320,7 @@ export default function ChildSessionViewer({
         )}
       </div>
       <footer className="child-session-view-footer">
-        <span>{entries.length ? `显示最近 ${entries.length} 条活动` : '只读查看子 Session'}</span>
+        <span>{entries.length ? `已加载 ${entries.length} 条活动` : '只读查看子 Session'}</span>
         {lastUpdatedAt && <time>{new Date(lastUpdatedAt).toLocaleTimeString()}</time>}
       </footer>
     </section>

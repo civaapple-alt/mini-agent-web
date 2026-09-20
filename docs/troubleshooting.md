@@ -301,6 +301,10 @@ Web Studio 支持同一项目下的多个不同会话，以及多个项目下的
 [`child-tasks.md`](child-tasks.md)。若状态暂未更新，刷新父会话和“运行详情”中的“子任务”列表。
 任务没有“打开”入口时，通常表示它在创建 Child Session 前失败；具体诊断保留在任务详情中。
 “打开”会在运行详情右侧抽屉中读取子 Session 历史，不会切换主消息流；运行中的子会话会自动刷新。
+默认并发上限是 2，项目设置可调整为 1–8；超过上限的子任务应显示“排队中”，并在有空位时自动开始。
+若任务报错 `operation prompt ... contains control characters`，但任务提示只是普通多行文本，说明
+App Server 没有接受排队任务中的换行符；升级 App Server 后重新委派失败项。已运行的子任务无需重复委派。
+DeepSeek 的 `transport error` 是父 Turn 的模型连接中断，和子任务排队失败是两条独立错误链。
 如果子任务出现在错误的项目下，核对 `/children` 中的 `project_id` 是否与父 Session 一致，
 并确认 child metadata 与 Session 路径都落在该项目。修正索引或升级 Gateway 后重启服务，以重新加载项目路由并恢复持久队列；不要移动 Session 日志文件。
 

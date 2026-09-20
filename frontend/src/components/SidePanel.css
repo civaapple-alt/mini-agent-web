@@ -193,7 +193,7 @@
 .btn-icon-small { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; padding: 3px; }
 .btn-icon-small:hover { color: var(--text-danger, #c2410c); }
 
-.child-session-view { display: flex; flex-direction: column; height: 100%; min-height: 360px; gap: 9px; }
+.child-session-view { display: flex; flex: 1; flex-direction: column; height: auto; min-height: 0; gap: 9px; overflow: hidden; }
 .child-session-view-header { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color); }
 .child-session-view-header > .btn-action-small { flex: 0 0 auto; }
 .child-session-view-heading { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; }
@@ -203,7 +203,7 @@
 .child-session-load-older { flex: 0 0 auto; align-self: center; padding: 5px 9px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-surface); color: var(--text-secondary); font-size: 10px; cursor: pointer; }
 .child-session-load-older:hover:not(:disabled) { border-color: var(--border-focus); color: var(--text-primary); }
 .child-session-load-older:disabled { opacity: .6; cursor: wait; }
-.child-session-transcript { flex: 1; min-height: 180px; overflow: auto; overscroll-behavior: contain; }
+.child-session-transcript { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .child-session-messages { display: flex; flex-direction: column; gap: 12px; padding: 4px 1px 14px; }
 .child-session-transcript .user-bubble-container { max-width: 92%; }
 .child-session-transcript .message-row { min-width: 0; }
@@ -219,6 +219,13 @@
 }
 
 .sidepanel-container.plan-view-active .sidepanel-content {
+  overflow: hidden;
+}
+
+.sidepanel-content.child-session-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 

@@ -102,6 +102,51 @@ describe('child agents drawer tab', () => {
     expect(childTab.className).toContain('active');
   });
 
+  it('renders as a non-modal dock beside the conversation and can return to overlay mode', () => {
+    const onToggleDock = vi.fn();
+    const { container } = render(
+      <SidePanel
+        isOpen
+        isDocked
+        dockPreference
+        canDock
+        onToggleDock={onToggleDock}
+        initialTab="child_agents"
+        threadId="parent-a"
+        projectId="project-a"
+        childTasks={[child]}
+        childTasksLoading={false}
+      />,
+    );
+
+    expect(container.querySelector('.sidepanel-docked')).toBeTruthy();
+    expect(container.querySelector('.sidepanel-overlay')).toBeNull();
+    expect(screen.getByRole('dialog').getAttribute('aria-modal')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '恢复浮层显示' }));
+    expect(onToggleDock).toHaveBeenCalledOnce();
+  });
+
+  it('uses modal overlay on narrow windows while keeping the dock preference available', () => {
+    const onToggleDock = vi.fn();
+    const { container } = render(
+      <SidePanel
+        isOpen
+        isDocked={false}
+        dockPreference
+        canDock={false}
+        onToggleDock={onToggleDock}
+        initialTab="child_agents"
+        childTasks={[]}
+        childTasksLoading={false}
+      />,
+    );
+
+    expect(container.querySelector('.sidepanel-overlay')).toBeTruthy();
+    expect(screen.getByRole('dialog').getAttribute('aria-modal')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: '取消宽屏右侧停靠' }));
+    expect(onToggleDock).toHaveBeenCalledOnce();
+  });
+
   it('shows an explicit empty state when a fork has no child-local items', async () => {
     api.listThreadItems.mockResolvedValue({ data: [], next_cursor: null });
     render(

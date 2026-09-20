@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the same child lifecycle projection.
 - Keep the Plan viewer on the current Session's `plan/plan.md`; refresh its file list and
   content after a Turn settles.
+- Dock the runtime details panel beside the main conversation on wide windows, remember the layout choice, and use a modal overlay on narrow windows. Show child-agent attention states first, group lifecycle stages by attempt, and expose phase, sequence position, recovery state, and report attempt.
 - Show delegated children as a per-Turn batch in the message stream with each
   task's lifecycle, keep the Runtime child list authoritative, and add a
   top-level Child Agents drawer page with in-page list and detail navigation.

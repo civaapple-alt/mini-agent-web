@@ -20,6 +20,7 @@
 - [活动摘要等待执行段结束](implemented/bug-fix/2026-09-20-active-execution-segment-summary-boundary.zh.md)
 - [实时消息收拢已结束执行段](implemented/bug-fix/2026-09-20-live-turn-previous-execution-segment-summary.zh.md)
 - [压缩恢复缺失的 assistant 回复](implemented/bug-fix/2026-09-20-restore-assistant-replies-after-compaction.zh.md)
+- [子代理抽屉停靠与尝试阶段列表](implemented/bug-fix/2026-09-20-docked-child-agent-panel-and-attempt-history.zh.md)
 - [Workspace Root、Session 附件根与 Prompt Context](implemented/architecture/2026-09-18-workspace-roots-session-attachments-and-prompt-context.zh.md)
 - [Child Session operation、恢复与 Session notebook](implemented/architecture/2026-09-17-child-operation-recovery-and-notebook.zh.md)
 - [Child Session 项目路由与运行详情消息流](implemented/bug-fix/2026-09-20-child-project-routing-and-drawer-transcript.zh.md)

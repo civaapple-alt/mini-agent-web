@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, ArrowRight, GitBranch, ShieldAlert, X } from 'lucide-react';
 import { threadApi } from '../api/threads.js';
-import { getChildTaskStatus } from '../utils/childTasks';
+import { getChildTaskCounts } from '../utils/childTasks';
 
 function formatBytes(value) {
   if (!Number.isFinite(value)) return '—';
@@ -58,10 +58,7 @@ export default function StatusDetailsPane({
   const [expandedLogs, setExpandedLogs] = useState({});
   const isChild = Boolean(sessionMeta?.parentSessionId);
   const hasSession = Boolean(sessionMeta?.sessionId);
-  const activeChildCount = childTasks.filter((child) => (
-    ['queued', 'running', 'in_progress', 'awaiting_approval', 'cancelling']
-      .includes(getChildTaskStatus(child))
-  )).length;
+  const childTaskCounts = getChildTaskCounts(childTasks);
   const hasForkMetrics = hasSession && (
     sessionMeta.parentSessionId
     || sessionMeta.contextBeforeBytes !== null
@@ -200,7 +197,7 @@ export default function StatusDetailsPane({
           <span className="status-child-count">
             {childTasksLoading && childTasks.length === 0
               ? '正在读取'
-              : `${activeChildCount} 运行或排队 · ${childTasks.length} 个任务`}
+              : `运行 ${childTaskCounts.running} · 排队 ${childTaskCounts.queued} · 待处理 ${childTaskCounts.needsAttention} · 共 ${childTasks.length}`}
           </span>
           {childTasksError && <small className="status-child-error">{childTasksError}</small>}
         </div>

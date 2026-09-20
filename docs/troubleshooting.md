@@ -336,6 +336,8 @@ App Server 没有接受排队任务中的换行符；升级 App Server 后重新
 DeepSeek 的 `transport error` 是父 Turn 的模型连接中断，和子任务排队失败是两条独立错误链。
 如果子任务出现在错误的项目下，核对 `/children` 中的 `project_id` 是否与父 Session 一致，
 并确认 child metadata 与 Session 路径都落在该项目。修正索引或升级 Gateway 后重启服务，以重新加载项目路由并恢复持久队列；不要移动 Session 日志文件。
+如果父代理需要根据已完成结果安排返工，当前 `retry` 只适用于失败、取消或达到步数上限的子任务，
+并重用原提示词。请用新的 `delegate_task` 创建后续任务；已完成的子 Session 还不支持接收新的评审意见。
 
 点击正在运行的会话时，Studio 会先载入快照，再按事件序号回放遗漏事件，最后继续接收
 当前会话的 WebSocket 流。若事件已过期或出现缺口，页面会提示“事件回放存在缺口”，

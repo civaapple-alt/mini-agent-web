@@ -1,9 +1,13 @@
 export const childTaskStatusLabels = {
+  starting: '启动中',
+  pending: '等待启动',
   queued: '排队中',
   running: '运行中',
   in_progress: '运行中',
   awaiting_approval: '等待审批',
   cancelling: '正在取消',
+  idle: '空闲',
+  not_started: '未开始',
   completed: '已完成',
   failed: '失败',
   cancelled: '已取消',
@@ -11,7 +15,10 @@ export const childTaskStatusLabels = {
 };
 
 export const childTaskLifecycleLabels = {
+  pending: '等待启动',
   queued: '已分配',
+  not_started: '未开始',
+  starting: '启动中',
   running: '已开始',
   in_progress: '已开始',
   awaiting_approval: '等待审批',
@@ -22,34 +29,110 @@ export const childTaskLifecycleLabels = {
   step_limit: '达到步数限制',
 };
 
-const collapsedChildTaskStatuses = new Set(['completed', 'cancelled', 'step_limit']);
-const prioritizedChildTaskStatuses = new Set([
-  'running',
-  'in_progress',
-  'awaiting_approval',
-  'queued',
-  'cancelling',
-]);
+const collapsedChildTaskStatuses = new Set(['completed', 'cancelled']);
+const runningChildTaskStatuses = new Set(['running', 'in_progress', 'cancelling']);
+const attentionChildTaskStatuses = new Set(['awaiting_approval', 'failed', 'step_limit', 'not_started']);
+
+function childTaskPriority(task) {
+  const status = getChildTaskStatus(task);
+  if (task.recovery_required || attentionChildTaskStatuses.has(status)) return 0;
+  if (runningChildTaskStatuses.has(status)) return 1;
+  if (status === 'queued' || status === 'pending' || status === 'starting') return 2;
+  return 3;
+}
+
+const childTaskPhaseLabels = {
+  starting_turn: '正在启动',
+  model: '模型处理中',
+  tool: '执行工具',
+  waiting_approval: '等待审批',
+  stopping: '正在停止',
+  compaction: '整理上下文',
+  persisting: '保存结果',
+  goal_verification: '检查目标',
+  goal_continuation_queued: '等待继续',
+  resuming: '恢复中',
+  completed: '已完成',
+  failed: '失败',
+  idle: '空闲',
+};
 
 export function getChildTaskStatus(task) {
   return typeof task?.status === 'string' && task.status ? task.status : 'queued';
 }
 
-export function orderChildTasksForRuntime(children) {
-  return children
+export function orderChildTasksForRuntime(children = []) {
+  return (Array.isArray(children) ? children : [])
     .map((child, index) => ({ child, index }))
     .sort((left, right) => {
-      const leftStatus = getChildTaskStatus(left.child);
-      const rightStatus = getChildTaskStatus(right.child);
-      const leftPriority = prioritizedChildTaskStatuses.has(leftStatus) ? 0 : 1;
-      const rightPriority = prioritizedChildTaskStatuses.has(rightStatus) ? 0 : 1;
-      return leftPriority - rightPriority || left.index - right.index;
+      const priorityDifference = childTaskPriority(left.child) - childTaskPriority(right.child);
+      if (priorityDifference !== 0) return priorityDifference;
+
+      const leftGroup = left.child.operation_group_id;
+      const rightGroup = right.child.operation_group_id;
+      if (leftGroup && leftGroup === rightGroup) {
+        const leftSequence = left.child.group_sequence;
+        const rightSequence = right.child.group_sequence;
+        if (Number.isInteger(leftSequence) && Number.isInteger(rightSequence) && leftSequence !== rightSequence) {
+          return leftSequence - rightSequence;
+        }
+      }
+      return left.index - right.index;
     })
     .map(({ child }) => child);
 }
 
 export function isCollapsedChildTask(task) {
   return collapsedChildTaskStatuses.has(getChildTaskStatus(task));
+}
+
+export function getChildTaskCounts(children = []) {
+  return (Array.isArray(children) ? children : []).reduce((counts, child) => {
+    const status = getChildTaskStatus(child);
+    if (child.recovery_required || attentionChildTaskStatuses.has(status)) {
+      counts.needsAttention += 1;
+    } else if (runningChildTaskStatuses.has(status)) {
+      counts.running += 1;
+    } else if (status === 'queued' || status === 'pending' || status === 'starting') {
+      counts.queued += 1;
+    } else if (status === 'completed') {
+      counts.completed += 1;
+    }
+    return counts;
+  }, { running: 0, queued: 0, needsAttention: 0, completed: 0 });
+}
+
+export function getChildTaskAttemptGroups(task, maxGroups = 2) {
+  const fallbackAttempt = Number.isInteger(task?.operation_attempt) && task.operation_attempt > 0
+    ? task.operation_attempt
+    : 1;
+  let lifecycle = Array.isArray(task?.lifecycle) ? task.lifecycle : [];
+  if (lifecycle.length === 0) {
+    lifecycle = [];
+    if (task?.assigned_at_ms) lifecycle.push({ status: 'queued', timestamp_ms: task.assigned_at_ms });
+    if (task?.started_at_ms) lifecycle.push({ status: 'running', timestamp_ms: task.started_at_ms });
+    if (task?.finished_at_ms && task?.status) {
+      lifecycle.push({ status: task.status, timestamp_ms: task.finished_at_ms });
+    }
+    if (lifecycle.length === 0 && task?.status) lifecycle.push({ status: task.status });
+  }
+
+  const groups = new Map();
+  for (const stage of lifecycle) {
+    const attempt = Number.isInteger(stage?.attempt) && stage.attempt > 0
+      ? stage.attempt
+      : fallbackAttempt;
+    if (!groups.has(attempt)) groups.set(attempt, { attempt, stages: [] });
+    groups.get(attempt).stages.push(stage);
+  }
+  const limit = Number.isInteger(maxGroups) && maxGroups > 0 ? maxGroups : 2;
+  return [...groups.values()].sort((left, right) => left.attempt - right.attempt).slice(-limit);
+}
+
+export function getChildTaskPhaseLabel(task) {
+  const phase = nonEmptyText(task?.phase);
+  if (!phase || phase === 'idle') return null;
+  return childTaskPhaseLabels[phase] || phase.replace(/[_-]+/g, ' ');
 }
 
 function nonEmptyText(value) {
@@ -77,6 +160,14 @@ export function getLatestChildTaskReport(task) {
   return {
     text,
     timestamp_ms: Number.isFinite(timestamp) ? timestamp : null,
+    attempt: candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+      && Number.isInteger(candidate.attempt)
+      ? candidate.attempt
+      : null,
+    cursor: candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+      && Number.isInteger(candidate.cursor)
+      ? candidate.cursor
+      : null,
   };
 }
 

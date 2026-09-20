@@ -22,6 +22,8 @@ import {
   ChevronDown,
   Check,
   Copy,
+  PanelRightOpen,
+  PanelRightClose,
 } from 'lucide-react';
 import { api } from '../api';
 import { readStateRevision, shouldApplyStateRevision } from '../utils/revisionState';
@@ -414,6 +416,10 @@ export function PromptContextCard({ context, status = {}, workspace = '' }) {
 
 export default function SidePanel({
   isOpen,
+  isDocked = false,
+  dockPreference = false,
+  canDock = true,
+  onToggleDock,
   initialTab = 'world',
   onClose,
   planActive,
@@ -875,12 +881,19 @@ export default function SidePanel({
 
   if (!isOpen) return null;
 
+  const dockButtonLabel = dockPreference
+    ? (canDock ? '恢复浮层显示' : '取消宽屏右侧停靠')
+    : (canDock ? '吸附到右侧' : '窗口较窄，宽屏时吸附到右侧');
+
   return (
-    <div className="sidepanel-overlay" onClick={onClose}>
+    <div
+      className={isDocked ? 'sidepanel-docked' : 'sidepanel-overlay'}
+      onClick={isDocked ? undefined : onClose}
+    >
       <div
         className={`sidepanel-container ${activeTab === 'plan_view' ? 'plan-view-active' : ''}`}
         role="dialog"
-        aria-modal="true"
+        aria-modal={isDocked ? undefined : 'true'}
         aria-label="运行详情抽屉"
         onClick={(e) => e.stopPropagation()}
       >
@@ -940,6 +953,18 @@ export default function SidePanel({
 
           </div>
 
+          {onToggleDock && (
+            <button
+              type="button"
+              className={`panel-dock-btn ${dockPreference ? 'active' : ''}`}
+              onClick={onToggleDock}
+              aria-label={dockButtonLabel}
+              aria-pressed={dockPreference}
+              title={dockButtonLabel}
+            >
+              {dockPreference ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+            </button>
+          )}
           <button className="panel-close-btn" onClick={onClose} aria-label="关闭详情抽屉">
             <X size={15} />
           </button>

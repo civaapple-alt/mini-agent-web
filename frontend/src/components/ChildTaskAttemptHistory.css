@@ -1,0 +1,51 @@
+.child-task-attempt-history {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  list-style: none;
+}
+
+.child-task-attempt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.child-task-attempt > strong {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.child-task-attempt-stages {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 5px;
+  min-width: 0;
+}
+
+.child-task-stage {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.child-task-stage.running,
+.child-task-stage.in_progress { color: var(--text-sky, #0284c7); }
+.child-task-stage.completed { color: var(--text-success, #059669); }
+.child-task-stage.failed,
+.child-task-stage.step_limit { color: var(--text-danger, #dc2626); }
+.child-task-stage.awaiting_approval { color: var(--text-amber, #b45309); }
+.child-task-stage time { color: var(--text-muted); font: 9px var(--font-mono); }
+.child-task-stage-separator { color: var(--border-focus); }
+
+.delegate-task-row .child-task-attempt-history { margin-top: 5px; }
+.delegate-task-row .child-task-attempt { gap: 3px 6px; }

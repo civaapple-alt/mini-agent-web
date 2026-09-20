@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import ChatArea from './ChatArea';
@@ -9,6 +9,18 @@ import SettingsModal from './SettingsModal';
 import Toast from './Toast';
 import ErrorBoundary from './ErrorBoundary';
 import useChildTasks from '../hooks/useChildTasks';
+
+const SIDE_PANEL_DOCK_BREAKPOINT = 1200;
+const SIDE_PANEL_DOCK_STORAGE_KEY = 'mini-agent-web.side-panel-docked';
+
+function readSidePanelDockPreference() {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(SIDE_PANEL_DOCK_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
 
 export default function AppLayout({
   currentThread,
@@ -86,7 +98,28 @@ export default function AppLayout({
   onSkillInsertionApplied,
 }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [sidePanelDockPreference, setSidePanelDockPreference] = useState(readSidePanelDockPreference);
+  const [canDockSidePanel, setCanDockSidePanel] = useState(() => (
+    typeof window === 'undefined' || window.innerWidth >= SIDE_PANEL_DOCK_BREAKPOINT
+  ));
   const childTasks = useChildTasks(currentThread, currentThreadProject);
+  const sidePanelDocked = sidePanelOpen && sidePanelDockPreference && canDockSidePanel;
+
+  useEffect(() => {
+    const updateViewport = () => {
+      setCanDockSidePanel(window.innerWidth >= SIDE_PANEL_DOCK_BREAKPOINT);
+    };
+    window.addEventListener('resize', updateViewport);
+    return () => window.removeEventListener('resize', updateViewport);
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDE_PANEL_DOCK_STORAGE_KEY, String(sidePanelDockPreference));
+    } catch {
+      // Keep the in-memory preference when browser storage is unavailable.
+    }
+  }, [sidePanelDockPreference]);
 
   return (
     <div className="app-container">
@@ -202,35 +235,39 @@ export default function AppLayout({
             onSkillInsertionApplied={onSkillInsertionApplied}
           />
         </main>
-      </div>
 
-      <ErrorBoundary title="侧边栏渲染异常 (Side Panel Render Error)">
-        <SidePanel
-          isOpen={sidePanelOpen}
-          initialTab={sidePanelTab}
-          onClose={onCloseSidePanelPanel}
-          planActive={planActive}
-          goalState={goalState}
-          status={statusModel}
-          lastTurnResult={lastTurnResult}
-          sessionMeta={sessionMeta}
-          threadId={currentThread}
-          projectId={currentThreadProject}
-          onGoalChanged={onGoalChanged}
-          onTogglePlan={onTogglePlan}
-          onToast={onToast}
-          availableSkills={skillCatalog}
-          skillGroups={skillGroups}
-          skillsLoading={skillsLoading}
-          skillsError={skillsError}
-          onToggleSkillGroup={onToggleSkillGroup}
-          onInsertSkill={onInsertSkill}
-          childTasks={childTasks.children}
-          childTasksLoading={childTasks.loading}
-          childTasksError={childTasks.error}
-          onRefreshChildTasks={childTasks.refresh}
-        />
-      </ErrorBoundary>
+        <ErrorBoundary title="侧边栏渲染异常 (Side Panel Render Error)">
+          <SidePanel
+            isOpen={sidePanelOpen}
+            isDocked={sidePanelDocked}
+            dockPreference={sidePanelDockPreference}
+            canDock={canDockSidePanel}
+            onToggleDock={() => setSidePanelDockPreference((docked) => !docked)}
+            initialTab={sidePanelTab}
+            onClose={onCloseSidePanelPanel}
+            planActive={planActive}
+            goalState={goalState}
+            status={statusModel}
+            lastTurnResult={lastTurnResult}
+            sessionMeta={sessionMeta}
+            threadId={currentThread}
+            projectId={currentThreadProject}
+            onGoalChanged={onGoalChanged}
+            onTogglePlan={onTogglePlan}
+            onToast={onToast}
+            availableSkills={skillCatalog}
+            skillGroups={skillGroups}
+            skillsLoading={skillsLoading}
+            skillsError={skillsError}
+            onToggleSkillGroup={onToggleSkillGroup}
+            onInsertSkill={onInsertSkill}
+            childTasks={childTasks.children}
+            childTasksLoading={childTasks.loading}
+            childTasksError={childTasks.error}
+            onRefreshChildTasks={childTasks.refresh}
+          />
+        </ErrorBoundary>
+      </div>
 
       <SettingsModal
         isOpen={settingsModalOpen}

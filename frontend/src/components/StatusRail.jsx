@@ -18,7 +18,7 @@ const ACCESS_SCOPES = [
 const POLICIES = [
   { id: 'interactive', label: '交互批准', description: '高风险敏感操作需要显式确认' },
   { id: 'automatic', label: '自动低风险', description: '受限检查自动放行，高风险或越界操作仍需确认' },
-  { id: 'trusted', label: '信任执行', description: '普通工作区操作和 Shell 自动执行，破坏性或外部操作仍需确认' },
+  { id: 'trusted', label: '信任执行', description: '普通工作区操作、Shell 和通过 URL 校验的公网读取自动执行；破坏性操作、MCP 与工作区外图片读取仍需确认' },
 ];
 
 const CONTINUATION_MODES = [

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Under the `trusted` policy, admit public `web_fetch` requests after URL
+  validation without an approval prompt. Keep approval for destructive
+  operations and update the execution setting description.
 - Let child agents report bounded progress, let the parent steer or cancel
   queued/running work, retry failures, cancel a sequential group, and add new
   tasks. Persist reports with child operation identity and cursor; coalesce

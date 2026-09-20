@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, ShieldAlert, X } from 'lucide-react';
+import { Activity, ArrowRight, GitBranch, ShieldAlert, X } from 'lucide-react';
 import { threadApi } from '../api/threads.js';
-import ChildTasksPane from './ChildTasksPane';
+import { getChildTaskStatus } from '../utils/childTasks';
 
 function formatBytes(value) {
   if (!Number.isFinite(value)) return '—';
@@ -46,11 +46,10 @@ export default function StatusDetailsPane({
   sessionMeta = null,
   threadId = 'default',
   projectId = null,
-  onOpenThread,
+  onOpenChildTasks,
   childTasks = [],
   childTasksLoading = false,
   childTasksError = null,
-  onRefreshChildTasks,
 }) {
   const [backgroundTasks, setBackgroundTasks] = useState([]);
   const [backgroundTaskError, setBackgroundTaskError] = useState(null);
@@ -59,6 +58,10 @@ export default function StatusDetailsPane({
   const [expandedLogs, setExpandedLogs] = useState({});
   const isChild = Boolean(sessionMeta?.parentSessionId);
   const hasSession = Boolean(sessionMeta?.sessionId);
+  const activeChildCount = childTasks.filter((child) => (
+    ['queued', 'running', 'in_progress', 'awaiting_approval', 'cancelling']
+      .includes(getChildTaskStatus(child))
+  )).length;
   const hasForkMetrics = hasSession && (
     sessionMeta.parentSessionId
     || sessionMeta.contextBeforeBytes !== null
@@ -164,9 +167,55 @@ export default function StatusDetailsPane({
         </span>
       </div>
 
-      {hasSession && (
-        <div className="status-detail-section">
-          <span className="card-label">Session 身份</span>
+      <div className="status-current-stage">
+        <span className="card-label">当前阶段</span>
+        <strong>{status?.summary || '空闲'}</strong>
+        {status?.scope?.turnId && <small className="font-mono">Turn {status.scope.turnId}</small>}
+      </div>
+
+      {status?.approval && (
+        <div className="status-detail-alert approval">
+          <ShieldAlert size={14} />
+          <div>
+            <strong>{status.approval.state === 'cancelling' ? '审批正在失效' : '等待审批'}</strong>
+            <span>{status.approval.actionSummary || '敏感工具操作等待人工授权'}</span>
+            <small className="font-mono">{status.approval.requestId}</small>
+          </div>
+        </div>
+      )}
+
+      {status?.runtime?.error && (
+        <div className="status-detail-alert error">
+          <X size={14} />
+          <div>
+            <strong>运行异常</strong>
+            <span>{status.runtime.error}</span>
+          </div>
+        </div>
+      )}
+
+      <section className="status-child-summary" aria-label="子智能体摘要">
+        <div>
+          <span className="section-title"><GitBranch size={14} />子智能体</span>
+          <span className="status-child-count">
+            {childTasksLoading && childTasks.length === 0
+              ? '正在读取'
+              : `${activeChildCount} 运行或排队 · ${childTasks.length} 个任务`}
+          </span>
+          {childTasksError && <small className="status-child-error">{childTasksError}</small>}
+        </div>
+        <button type="button" className="btn-action-small" onClick={onOpenChildTasks}>
+          <span>查看子智能体</span>
+          <ArrowRight size={12} />
+        </button>
+      </section>
+
+      <details className="status-detail-disclosure">
+        <summary>Session 与运行诊断</summary>
+        <div className="status-detail-disclosure-body">
+          {hasSession && (
+            <div className="status-detail-section">
+              <span className="card-label">Session 身份</span>
           <div className="status-detail-grid">
             <div className="detail-card">
               <span className="card-label">Session ID</span>
@@ -210,69 +259,49 @@ export default function StatusDetailsPane({
                 </div>
               </>
             )}
+              </div>
+            </div>
+          )}
+
+          <div className="status-detail-grid">
+            <div className="detail-card">
+              <span className="card-label">Turn</span>
+              <span className="card-val font-mono">{status?.scope?.turnId || '—'}</span>
+            </div>
+            <div className="detail-card">
+              <span className="card-label">Checkpoint</span>
+              <span className="card-val font-mono">{status?.runtime?.checkpointSeq ?? '—'}</span>
+            </div>
+            <div className="detail-card">
+              <span className="card-label">Operation</span>
+              <span className="card-val font-mono" title={status?.runtime?.operationId || ''}>
+                {status?.runtime?.operationId || '—'}
+              </span>
+            </div>
+          </div>
+
+          <div className="status-detail-section">
+            <span className="card-label">运行设置</span>
+            <div className="status-detail-settings font-mono">
+              {status?.executionSettings?.summary || '—'}
+            </div>
+            {status?.workflow?.goalStatus === 'active' && (
+              <p className="status-detail-note">Goal 正在接管当前会话的推进方式。</p>
+            )}
+          </div>
+
+          <div className="status-detail-section">
+            <span className="card-label">最近事件</span>
+            <div className="status-detail-event font-mono">
+              {status?.runtime?.lastWorkflowEvent || '暂无新的工作流事件'}
+            </div>
           </div>
         </div>
-      )}
+      </details>
 
-      <div className="status-detail-grid">
-        <div className="detail-card">
-          <span className="card-label">当前阶段</span>
-          <span className="card-val font-mono">{status?.summary || '空闲'}</span>
-        </div>
-        <div className="detail-card">
-          <span className="card-label">Turn</span>
-          <span className="card-val font-mono">{status?.scope?.turnId || '—'}</span>
-        </div>
-        <div className="detail-card">
-          <span className="card-label">Checkpoint</span>
-          <span className="card-val font-mono">{status?.runtime?.checkpointSeq ?? '—'}</span>
-        </div>
-        <div className="detail-card">
-          <span className="card-label">Operation</span>
-          <span className="card-val font-mono" title={status?.runtime?.operationId || ''}>
-            {status?.runtime?.operationId || '—'}
-          </span>
-        </div>
-      </div>
-
-      <div className="status-detail-section">
-        <span className="card-label">运行设置</span>
-        <div className="status-detail-settings font-mono">
-          {status?.executionSettings?.summary || '—'}
-        </div>
-        {status?.workflow?.goalStatus === 'active' && (
-          <p className="status-detail-note">Goal 正在接管当前会话的推进方式。</p>
-        )}
-      </div>
-
-      {status?.approval && (
-        <div className="status-detail-alert approval">
-          <ShieldAlert size={14} />
-          <div>
-            <strong>{status.approval.state === 'cancelling' ? '审批正在失效' : '等待审批'}</strong>
-            <span>{status.approval.actionSummary || '敏感工具操作等待人工授权'}</span>
-            <small className="font-mono">{status.approval.requestId}</small>
-          </div>
-        </div>
-      )}
-
-      {status?.runtime?.error && (
-        <div className="status-detail-alert error">
-          <X size={14} />
-          <div>
-            <strong>运行异常</strong>
-            <span>{status.runtime.error}</span>
-          </div>
-        </div>
-      )}
-
-      <div className="status-detail-section">
-        <span className="card-label">最近事件</span>
-        <div className="status-detail-event font-mono">
-          {status?.runtime?.lastWorkflowEvent || '暂无新的工作流事件'}
-        </div>
-      </div>
-
+      <details className="status-detail-disclosure background-tasks-disclosure">
+        <summary>后台 Shell 任务（{backgroundTasks.length}）</summary>
+        <div className="status-detail-disclosure-body">
       <div className="status-detail-section background-tasks-section">
         <div className="pane-section-header">
           <span className="card-label">后台 Shell 任务</span>
@@ -328,7 +357,12 @@ export default function StatusDetailsPane({
           })}
         </div>
       </div>
+        </div>
+      </details>
 
+      <details className="status-detail-disclosure scheduled-tasks-disclosure">
+        <summary>定时任务（{scheduledTasks.length}）</summary>
+        <div className="status-detail-disclosure-body">
       <div className="status-detail-section scheduled-tasks-section">
         <div className="pane-section-header">
           <span className="card-label">定时任务</span>
@@ -370,15 +404,8 @@ export default function StatusDetailsPane({
           })}
         </div>
       </div>
-
-      <ChildTasksPane
-        projectId={projectId}
-        onOpenThread={onOpenThread}
-        children={childTasks}
-        loading={childTasksLoading}
-        error={childTasksError}
-        onRefresh={onRefreshChildTasks}
-      />
+        </div>
+      </details>
     </div>
   );
 }

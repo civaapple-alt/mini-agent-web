@@ -978,8 +978,17 @@ export function aggregateStreamEvent(messages, data) {
 
     if (type === 'turn_started') {
       const turnMessageId = 'turn_' + (data.turnId || '');
-      if (data.turnId && messages.some((message) => message.id === turnMessageId)) {
-        return messages;
+      const turnSource = data.turnSource || data.turn_source
+        || evt.turnSource || evt.turn_source || null;
+      const existingIndex = data.turnId
+        ? messages.findIndex((message) => message.id === turnMessageId)
+        : -1;
+      if (existingIndex !== -1) {
+        const existing = messages[existingIndex];
+        if (!turnSource || existing.turnSource === turnSource) return messages;
+        return messages.map((message, index) => (
+          index === existingIndex ? { ...message, turnSource } : message
+        ));
       }
       return [
         ...messages,
@@ -991,6 +1000,7 @@ export function aggregateStreamEvent(messages, data) {
           thinking: '',
           tools: [],
           blocks: [],
+          turnSource,
         },
       ];
     }

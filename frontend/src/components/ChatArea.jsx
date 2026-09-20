@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { Sparkles, Terminal, Compass, TestTube2, ArrowDown } from 'lucide-react';
 import MessageItem from './MessageItem';
 import SessionTurnRail from './SessionTurnRail';
-import { collectInputMessages } from '../utils/inputTrace';
+import { collectInputMessages, getChildWakeupTurnIds } from '../utils/inputTrace';
 import { normalizeAssistantBlocks, orderMessagesByTurnHistory } from '../utils/messageState';
 import { buildTurnHistoryEntries } from '../utils/turnHistory';
 import { buildTurnChildTaskBatch, getDelegateTaskAssignments } from '../utils/childTasks';
@@ -44,7 +44,12 @@ export default function ChatArea({
 
   const displayMessages = useMemo(() => {
     const projectedInputs = collectInputMessages(messages, threadItems, traceScope);
-    const result = [...messages];
+    const childWakeupTurnIds = getChildWakeupTurnIds(messages, threadItems);
+    const result = messages.filter((message) => (
+      !(message?.role === 'user' && childWakeupTurnIds.has(String(message.turnId || '')))
+      && !(message?.role === 'user'
+        && String(message.turnSource || message.turn_source || '').toLowerCase() === 'child_wakeup')
+    ));
     projectedInputs.forEach((input) => {
       const inputTurnId = input.turnId ? String(input.turnId) : null;
       const alreadyRendered = result.some((message) => {

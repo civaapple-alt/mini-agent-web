@@ -85,6 +85,12 @@
   font-weight: 600;
 }
 
+.panel-tab-count {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
 .panel-close-btn {
   background: transparent;
   border: none;
@@ -190,6 +196,8 @@
 .child-task-finished-toggle { align-self: flex-start; padding: 4px 6px; border: 0; background: transparent; color: var(--text-muted); font-size: 10px; cursor: pointer; }
 .child-task-finished-toggle:hover { color: var(--text-primary); }
 .child-task-empty { padding: 9px 0; color: var(--text-muted); font-size: 12px; }
+.sidepanel-content.child-session-content > .child-tasks-pane { flex: 1; min-height: 0; overflow-y: auto; margin-top: 0; padding-top: 0; border-top: 0; }
+.child-session-content .child-task-row > .btn-action-small { grid-column: 3; }
 .btn-icon-small { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; padding: 3px; }
 .btn-icon-small:hover { color: var(--text-danger, #c2410c); }
 
@@ -199,6 +207,20 @@
 .child-session-view-heading { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; }
 .child-session-view-heading strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); font-size: 12px; }
 .child-session-view-heading .child-task-status { flex: 0 0 auto; }
+.child-session-overview { display: flex; flex: 0 0 auto; flex-direction: column; gap: 7px; padding: 10px 11px; border: 1px solid var(--border-color); border-radius: 7px; background: var(--bg-card); }
+.child-session-overview.running { border-color: var(--status-approval-border); background: var(--status-approval-soft); }
+.child-session-overview.failed { border-color: var(--status-failed-border); background: var(--status-failed-soft); }
+.child-session-overview-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--text-primary); font-size: 11px; }
+.child-session-overview-heading span { color: var(--text-muted); font-size: 10px; }
+.child-session-source { color: var(--text-muted); font-size: 9px; line-height: 1.45; overflow-wrap: anywhere; }
+.child-session-latest-report,
+.child-session-final-reply { display: flex; flex-direction: column; gap: 3px; padding-top: 6px; border-top: 1px solid var(--border-subtle); }
+.child-session-latest-report > span,
+.child-session-final-reply > span { color: var(--text-secondary); font-size: 10px; font-weight: 600; }
+.child-session-latest-report p,
+.child-session-final-reply p { max-height: 80px; margin: 0; overflow: auto; color: var(--text-primary); font-size: 11px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.child-session-latest-report time { color: var(--text-muted); font: 9px var(--font-mono); }
+.child-session-final-error { padding-top: 6px; border-top: 1px solid var(--status-failed-border); color: var(--status-failed); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
 .child-session-view-error { flex: 0 0 auto; padding: 8px 10px; border: 1px solid var(--status-failed-border); border-radius: 6px; background: var(--status-failed-soft); color: var(--status-failed); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
 .child-session-load-older { flex: 0 0 auto; align-self: center; padding: 5px 9px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-surface); color: var(--text-secondary); font-size: 10px; cursor: pointer; }
 .child-session-load-older:hover:not(:disabled) { border-color: var(--border-focus); color: var(--text-primary); }
@@ -208,7 +230,8 @@
 .child-session-transcript .user-bubble-container { max-width: 92%; }
 .child-session-transcript .message-row { min-width: 0; }
 .child-session-transcript .assistant-container { min-width: 0; }
-.child-session-empty { padding: 20px 8px; color: var(--text-muted); font-size: 11px; text-align: center; }
+.child-session-empty { display: flex; flex-direction: column; gap: 7px; padding: 30px 16px; color: var(--text-muted); font-size: 11px; line-height: 1.5; text-align: center; }
+.child-session-empty strong { color: var(--text-secondary); font-size: 12px; }
 .child-session-view-footer { display: flex; justify-content: space-between; gap: 8px; padding-top: 7px; border-top: 1px solid var(--border-subtle); color: var(--text-muted); font-size: 9px; font-family: var(--font-mono); }
 .child-session-view-footer time { flex: 0 0 auto; }
 
@@ -331,6 +354,33 @@
   gap: 7px;
   margin-top: 14px;
 }
+
+.status-current-stage,
+.status-child-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-card);
+}
+.status-current-stage { align-items: flex-start; flex-direction: column; gap: 4px; }
+.status-current-stage strong { color: var(--text-primary); font-size: 12px; font-weight: 500; }
+.status-current-stage small { color: var(--text-muted); font-size: 10px; }
+.status-child-summary > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.status-child-summary .section-title { display: inline-flex; align-items: center; gap: 6px; color: var(--text-primary); font-size: 11px; font-weight: 600; }
+.status-child-count,.status-child-error { color: var(--text-muted); font-size: 10px; }
+.status-child-error { color: var(--status-failed); }
+.status-detail-disclosure { margin-top: 9px; border: 1px solid var(--border-subtle); border-radius: 7px; background: var(--bg-surface); }
+.status-detail-disclosure > summary { padding: 9px 10px; color: var(--text-secondary); font-size: 11px; cursor: pointer; }
+.status-detail-disclosure[open] > summary { border-bottom: 1px solid var(--border-subtle); }
+.status-detail-disclosure-body { display: flex; flex-direction: column; gap: 5px; padding: 0 10px 10px; }
+.status-detail-disclosure-body > .status-detail-section { margin-top: 9px; }
+.status-detail-disclosure-body > .status-detail-grid { margin-top: 9px; }
+.status-detail-disclosure .status-detail-section > .pane-section-header { margin-top: 0; }
+.status-detail-disclosure .status-detail-section { margin-top: 5px; }
 
 .status-detail-settings,
 .status-detail-event {

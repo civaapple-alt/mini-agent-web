@@ -1,4 +1,9 @@
-import { cleanInputText, collectInputMessages, getInputTrace } from './inputTrace';
+import {
+  cleanInputText,
+  collectInputMessages,
+  getChildWakeupTurnIds,
+  getInputTrace,
+} from './inputTrace';
 
 export const TURN_STATE_LABELS = {
   running: '运行中',
@@ -156,8 +161,40 @@ export function buildTurnHistoryEntries({
   lastTurnResult = null,
 } = {}) {
   const inputs = collectInputMessages(messages, threadItems, scope);
+  const childWakeupTurnIds = getChildWakeupTurnIds(messages, threadItems);
+  const inputTurnIds = new Set(inputs.map((message) => normalizedTurnId(message.turnId)).filter(Boolean));
+  const assistantMessageByTurnId = new Map();
+  messages.forEach((message) => {
+    const turnId = normalizedTurnId(message?.turnId);
+    if (turnId && message.role === 'assistant' && !assistantMessageByTurnId.has(turnId)) {
+      assistantMessageByTurnId.set(turnId, message);
+    }
+  });
+  const projectedInputs = inputs.map((message, index) => ({
+    message,
+    index,
+    childWakeup: false,
+    order: timelineOrder(message, messages, threadItems, index),
+  }));
+  [...childWakeupTurnIds].forEach((turnId, index) => {
+    if (inputTurnIds.has(turnId)) return;
+    const sourceMessage = assistantMessageByTurnId.get(turnId);
+    projectedInputs.push({
+      message: {
+        id: sourceMessage?.id || `turn_${turnId}`,
+        role: 'assistant',
+        turnId,
+        text: '',
+        turnSource: 'child_wakeup',
+      },
+      index: inputs.length + index,
+      childWakeup: true,
+      order: timelineOrder({ turnId, id: sourceMessage?.id }, messages, threadItems, inputs.length + index),
+    });
+  });
+  projectedInputs.sort((left, right) => left.order - right.order || left.index - right.index);
   const currentId = normalizedTurnId(activeTurnId || statusModel?.scope?.turnId);
-  return inputs.map((message, index) => {
+  return projectedInputs.map(({ message, index, childWakeup }) => {
     const trace = getInputTrace(message, scope);
     const turnId = normalizedTurnId(message.turnId || trace.scope?.turnId);
     const isCurrent = Boolean(currentId && turnId && currentId === turnId);
@@ -173,8 +210,8 @@ export function buildTurnHistoryEntries({
       id: `turn:${turnId || message.id || index}`,
       messageId: message.id || `input_${index}`,
       turnId,
-      summary: boundedSummary(message),
-      source: trace.source || 'user',
+      summary: childWakeup ? '子代理更新' : boundedSummary(message),
+      source: childWakeup ? 'child_wakeup' : trace.source || 'user',
       state,
       stateLabel: TURN_STATE_LABELS[state] || TURN_STATE_LABELS.unknown,
       isCurrent,
@@ -183,6 +220,19 @@ export function buildTurnHistoryEntries({
       actionHint: actionHint(state, statusModel, isCurrent),
     };
   });
+}
+
+function timelineOrder(message, messages, threadItems, fallbackIndex) {
+  const turnId = normalizedTurnId(message?.turnId);
+  const itemIndex = (threadItems || []).findIndex((entry) => (
+    normalizedTurnId(entry?.turnId || entry?.turn_id) === turnId
+  ));
+  if (itemIndex !== -1) return itemIndex;
+  const messageIndex = (messages || []).findIndex((candidate) => (
+    (message?.id && candidate?.id === message.id)
+    || (turnId && normalizedTurnId(candidate?.turnId) === turnId)
+  ));
+  return (threadItems || []).length + (messageIndex === -1 ? fallbackIndex : messageIndex);
 }
 
 export function formatDuration(durationMs) {
@@ -195,15 +245,28 @@ export function formatDuration(durationMs) {
 
 export function blocksCanBeGrouped(blocks) {
   return (blocks || []).filter((block) => {
-    if (block.type === 'thinking') return !block.isStreaming;
-    if (block.type !== 'tool') return false;
-    const outcome = String(block.outcome || '').toLowerCase();
-    const approvalState = String(block.approval?.state || '').toLowerCase();
     const status = String(block.status || '').toLowerCase();
-    return !block.isStreaming
-      && !['running', 'inprogress', 'pending', 'queued'].includes(status)
+    const outcome = String(block.outcome || '').toLowerCase();
+    if (block.type === 'thinking') {
+      return !block.isStreaming
+        && !block.error
+        && !['running', 'inprogress', 'pending', 'queued', 'failed', 'error'].includes(status)
+        && !['failed', 'error', 'needs_approval', 'deferred'].includes(outcome);
+    }
+    if (block.type !== 'tool') return false;
+    const approvalState = String(block.approval?.state || '').toLowerCase();
+    const name = String(block.name || block.toolName || block.tool || '').toLowerCase();
+    const hasOutcome = block.outcome !== null
+      && block.outcome !== undefined
+      && (typeof block.outcome !== 'string' || block.outcome.trim() !== '');
+    const hasSuccessfulOutcome = !hasOutcome
+      || (typeof block.outcome === 'string' && block.outcome.trim().toLowerCase() === 'completed');
+    return ['completed', 'success'].includes(status)
+      && name !== 'delegate_task'
+      && !block.isStreaming
       && !block.error
-      && !['failed', 'error', 'needs_approval', 'deferred'].includes(outcome)
+      && hasSuccessfulOutcome
+      && !block.approval
       && !['pending', 'denied', 'expired'].includes(approvalState);
   });
 }

@@ -16,7 +16,9 @@ import AssistantTextBlock from './AssistantTextBlock';
 import ContextCompactionGroup from './ContextCompactionGroup';
 import ErrorBoundary from './ErrorBoundary';
 import ChildTaskBatchCard from './ChildTaskBatchCard';
+import AssistantActivityGroup from './AssistantActivityGroup';
 import { groupCompactionBlocks, normalizeAssistantBlocks } from '../utils/messageState';
+import { groupSettledAssistantBlocks } from '../utils/turnHistory';
 import {
   extractFileAttachmentNames,
   extractTextAttachmentNames,
@@ -232,16 +234,42 @@ export default function MessageItem({
   const fullResponseText = blocks.length > 0
     ? blocks.filter((b) => b.type === 'text').map((b) => b.content).join('\n\n')
     : text;
-  const renderedBlocks = groupCompactionBlocks(normalizeAssistantBlocks(blocks));
+  const sourceBlocks = blocks.length > 0
+    ? blocks
+    : [
+      ...(thinking
+        ? [{
+          type: 'thinking',
+          id: `${message.id || 'assistant'}:thinking`,
+          content: thinking,
+          isStreaming: isStreamingThis && !text,
+        }]
+        : []),
+      ...tools.map((tool, index) => ({
+        type: 'tool',
+        id: tool.id || `${message.id || 'assistant'}:tool:${index}`,
+        ...tool,
+      })),
+      ...((text || isStreamingThis)
+        ? [{
+          type: 'text',
+          id: `${message.id || 'assistant'}:text`,
+          content: text || '',
+          isStreaming: isStreamingThis,
+        }]
+        : []),
+    ];
+  const renderedBlocks = groupSettledAssistantBlocks(
+    groupCompactionBlocks(normalizeAssistantBlocks(sourceBlocks)),
+  );
+  const turnScope = String(turnEntry?.turnId || message.turnId || message.id || 'assistant');
   const activeBlockIndex = renderedBlocks.findLastIndex((block) => {
     const status = String(block.status || '').toLowerCase();
     return Boolean(block.isStreaming)
       || ['running', 'inprogress'].includes(status)
       || (block.type === 'skills' && (block.loading || []).length > 0);
   });
-  const currentBlockIndex = activeBlockIndex === -1
-    ? renderedBlocks.length - 1
-    : activeBlockIndex;
+  const currentBlockIndex = activeBlockIndex;
   let childTaskBatchRendered = false;
 
   const renderDelegateBatch = (tool, key) => {
@@ -265,6 +293,47 @@ export default function MessageItem({
         {renderedBlocks.length > 0 ? (
           renderedBlocks.map((block, idx) => {
             const isCurrentBlock = isStreamingThis && idx === currentBlockIndex;
+            if (block.type === 'activityGroup') {
+              return (
+                <AssistantActivityGroup
+                  key={block.id}
+                  id={block.id}
+                  presentationId={`${turnScope}:${block.id}`}
+                  items={block.items}
+                >
+                  {block.items.map((item, itemIndex) => {
+                    if (item.type === 'thinking') {
+                      const blockId = item.id || `${block.id}:thinking:${itemIndex}`;
+                      return (
+                        <ThinkingBlock
+                          key={blockId}
+                          content={item.content}
+                          isStreaming={false}
+                          presentationId={`${turnScope}:thinking:${blockId}`}
+                        />
+                      );
+                    }
+                    if (item.type === 'tool') {
+                      const blockId = item.id || `${block.id}:tool:${itemIndex}`;
+                      return (
+                        <ErrorBoundary
+                          key={blockId}
+                          compact
+                          title={`工具 [${item.name || 'tool'}] 渲染异常`}
+                        >
+                          <ToolCard
+                            tool={item}
+                            pendingApproval={null}
+                            presentationId={`${turnScope}:tool:${blockId}`}
+                          />
+                        </ErrorBoundary>
+                      );
+                    }
+                    return null;
+                  })}
+                </AssistantActivityGroup>
+              );
+            }
             if (block.type === 'thinking') {
               return (
                 <ThinkingBlock
@@ -272,6 +341,7 @@ export default function MessageItem({
                   content={block.content}
                   isStreaming={Boolean(block.isStreaming && isCurrentBlock)}
                   isCurrentBlock={isCurrentBlock}
+                  presentationId={`${turnScope}:thinking:${block.id || idx}`}
                 />
               );
             }
@@ -291,7 +361,7 @@ export default function MessageItem({
                     tool={block}
                     pendingApproval={isLast ? pendingApproval : null}
                     policy={policy}
-                    isCurrentBlock={isCurrentBlock}
+                    presentationId={`${turnScope}:tool:${block.id || idx}`}
                   />
                 </ErrorBoundary>
               );

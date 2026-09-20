@@ -53,6 +53,7 @@ async def test_child_report_reaches_parent_wakeup_and_gateway_projection(
     project_metadata_before = dict(session_manager._thread_metadata_by_project)
     wake_seen_before = session_manager._child_wake_seen.copy()
     wake_pending_before = session_manager._child_wake_pending.get(wake_key)
+    wake_deferred_before = session_manager._child_wake_deferred.copy()
 
     parent = None
     child = None
@@ -72,18 +73,26 @@ async def test_child_report_reaches_parent_wakeup_and_gateway_projection(
             child_thread_id, project_id
         )
 
-        # Exercise the real parent idle-status RPC, but stop before model execution.
+        # Model an in-flight parent Turn. Reports must be durably recorded and
+        # coalesced, but they must neither steer nor start another Turn.
         wake_started = asyncio.Event()
+        wake_calls: list[dict[str, object]] = []
+        steer_calls: list[dict[str, object]] = []
 
         async def record_wake(**kwargs: object) -> SimpleNamespace:
-            assert kwargs["thread_id"] == parent_thread_id
-            assert child_thread_id in str(kwargs["prompt"])
-            assert "task_read" in str(kwargs["prompt"])
+            wake_calls.append(kwargs)
             wake_started.set()
             return SimpleNamespace(turn_id="scenario-parent-wake")
 
+        async def record_steer(*args: object, **kwargs: object) -> None:
+            steer_calls.append({"args": args, **kwargs})
+
         monkeypatch.setattr(parent, "start_turn", record_wake)
+        monkeypatch.setattr(parent, "steer_turn", record_steer)
         monkeypatch.setattr(parent, "wait_for_turn", _settled_turn)
+        session_manager.set_active_turn(
+            parent_thread_id, "scenario-parent-active", project_id=project_id
+        )
 
         report_intent = json.dumps(
             {
@@ -124,7 +133,51 @@ async def test_child_report_reaches_parent_wakeup_and_gateway_projection(
             project_id,
         )
         await asyncio.wait_for(persisted.wait(), timeout=5)
+
+        active_wake_job = session_manager._child_wake_jobs.get(wake_key)
+        if active_wake_job is not None:
+            await asyncio.wait_for(active_wake_job, timeout=5)
+        else:
+            await asyncio.sleep(0)
+        assert session_manager.get_active_turn(parent_thread_id, project_id) == (
+            "scenario-parent-active"
+        )
+        assert wake_calls == []
+        assert steer_calls == []
+        assert session_manager._child_wake_pending[wake_key] == {
+            child_thread_id: {
+                "status": "report",
+                "attempt": 1,
+                "child_session_available": True,
+            }
+        }
+        assert wake_key in session_manager._child_wake_deferred
+
+        # Once the existing parent Turn settles, the merged child update starts
+        # exactly one marked continuation. The report body stays in SessionStore;
+        # the bounded prompt points the parent at task_read instead of copying it.
+        session_manager.clear_active_turn(
+            parent_thread_id, project_id, "scenario-parent-active"
+        )
         await asyncio.wait_for(wake_started.wait(), timeout=5)
+        wake_job = session_manager._child_wake_jobs.get(wake_key)
+        if wake_job is not None:
+            await asyncio.wait_for(wake_job, timeout=5)
+        wake_task = session_manager._active_tasks_by_project.get(wake_key)
+        if wake_task is not None:
+            await asyncio.wait_for(wake_task, timeout=5)
+        assert len(wake_calls) == 1
+        assert steer_calls == []
+        wake_kwargs = wake_calls[0]
+        assert wake_kwargs["thread_id"] == parent_thread_id
+        assert wake_kwargs["mode"] == "start_if_idle"
+        assert wake_kwargs["turn_source"] == "child_wakeup"
+        prompt = str(wake_kwargs["prompt"])
+        assert child_thread_id in prompt
+        assert "task_read" in prompt
+        assert "omit after_cursor" in prompt
+        assert report_text not in prompt
+        assert len(prompt.encode("utf-8")) <= 2048
 
         # Duplicate delivery reuses the canonical report cursor and JSONL record.
         duplicate = await child.child_task_action(
@@ -177,16 +230,19 @@ async def test_child_report_reaches_parent_wakeup_and_gateway_projection(
             wake_job.cancel()
         if wake_job is not None:
             await asyncio.gather(wake_job, return_exceptions=True)
-        if wake_pending_before is None:
-            session_manager._child_wake_pending.pop(wake_key, None)
-        else:
-            session_manager._child_wake_pending[wake_key] = wake_pending_before
-        session_manager._child_wake_seen = wake_seen_before
+        session_manager._child_wake_pending.pop(wake_key, None)
         active_task = session_manager._active_tasks_by_project.get(wake_key)
         session_manager.cancel_active_task(parent_thread_id, project_id)
         if active_task is not None:
             await asyncio.gather(active_task, return_exceptions=True)
         session_manager.clear_active_turn(parent_thread_id, project_id)
+        if wake_pending_before is not None:
+            session_manager._child_wake_pending[wake_key] = wake_pending_before
+        if wake_deferred_before:
+            session_manager._child_wake_deferred.add(wake_key)
+        else:
+            session_manager._child_wake_deferred.discard(wake_key)
+        session_manager._child_wake_seen = wake_seen_before
         shutdown_errors: list[Exception] = []
         for thread_id, client in (
             (child_thread_id, child),

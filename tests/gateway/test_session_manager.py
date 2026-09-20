@@ -13,7 +13,11 @@ import pytest
 
 from server.control import client_pool as client_pool_module
 from server.session_catalog import SessionCatalog
-from server.session_manager import SessionManager
+from server.session_manager import (
+    MAX_CHILD_WAKE_BATCH_CHILDREN,
+    MAX_CHILD_WAKE_PENDING_CHILDREN,
+    SessionManager,
+)
 from server.thread_titles import build_auto_thread_title
 
 
@@ -1732,6 +1736,9 @@ async def test_pre_session_delegation_failure_retains_error_and_broadcasts(
     )
     broadcast = AsyncMock()
     monkeypatch.setattr(mock_session_manager, "_broadcast_child_operation", broadcast)
+    monkeypatch.setattr(
+        mock_session_manager, "_schedule_child_parent_wakeup", lambda *_args: None
+    )
     mock_session_manager._record_delegation_receipt(
         "parent:turn-1:call-1",
         {
@@ -1771,6 +1778,27 @@ async def test_pre_session_delegation_failure_retains_error_and_broadcasts(
         "queued",
         "failed",
     ]
+    failed_update = mock_session_manager._child_wake_pending[("default", "parent")][
+        "child-missing"
+    ]
+    assert failed_update["status"] == "failed"
+    assert failed_update["child_session_available"] is False
+    assert failed_update["operation_error"] == "fork unavailable"
+
+    parent_client = AsyncMock()
+    parent_client.get_runtime_status.return_value = SimpleNamespace(
+        phase="idle", turn_id=None
+    )
+    parent_client.start_turn.return_value = SimpleNamespace(turn_id=None)
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_client_for_thread",
+        AsyncMock(return_value=parent_client),
+    )
+    await mock_session_manager._drain_child_parent_wakeups("default", "parent")
+    prompt = parent_client.start_turn.await_args.kwargs["prompt"]
+    assert "Session creation failed: fork unavailable" in prompt
+    assert "task_read" not in prompt
 
 
 def test_session_catalog_does_not_mark_dead_unsettled_turn_as_active(
@@ -2990,6 +3018,8 @@ async def test_coalesced_child_reports_wake_parent_from_report_history(
     mock_session_manager, monkeypatch, caplog
 ):
     client = AsyncMock()
+    client.get_runtime_status.return_value = SimpleNamespace(phase="idle", turn_id=None)
+    client.start_turn.return_value = SimpleNamespace(turn_id="parent-wake-after-report")
     client.child_task_action.side_effect = [
         {"cursor": 27, "attempt": 2},
         {"cursor": 31, "attempt": 2},
@@ -3043,7 +3073,11 @@ async def test_coalesced_child_reports_wake_parent_from_report_history(
 
     key = ("default", "parent")
     assert mock_session_manager._child_wake_pending[key] == {
-        "child": {"status": "report"}
+        "child": {
+            "status": "report",
+            "attempt": 2,
+            "child_session_available": True,
+        }
     }
     wake_job = mock_session_manager._child_wake_jobs[key]
     release_drain.set()
@@ -3060,9 +3094,23 @@ async def test_coalesced_child_reports_wake_parent_from_report_history(
             {"report": "Found one follow-up.", "report_id": "call-31"},
         ),
     ]
-    client.steer_turn.assert_awaited_once()
-    prompt = client.steer_turn.await_args.args[1]
-    assert "child (report)" in prompt
+    client.steer_turn.assert_not_awaited()
+    assert mock_session_manager._child_wake_pending[key] == {
+        "child": {
+            "status": "report",
+            "attempt": 2,
+            "child_session_available": True,
+        }
+    }
+    mock_session_manager.clear_active_turn("parent", "default", "parent-turn")
+    wake_job = mock_session_manager._child_wake_jobs[key]
+    await wake_job
+    wake_wait = mock_session_manager._active_tasks_by_project.get(key)
+    if wake_wait is not None:
+        await wake_wait
+    client.start_turn.assert_awaited_once()
+    prompt = client.start_turn.await_args.kwargs["prompt"]
+    assert "child [child] (report)" in prompt
     assert "omit after_cursor" in prompt
     assert "follow next_cursor" in prompt
     assert "after_cursor=" not in prompt
@@ -3077,6 +3125,8 @@ async def test_equal_report_cursors_from_different_children_both_wake_parent(
     mock_session_manager, monkeypatch
 ):
     client = AsyncMock()
+    client.get_runtime_status.return_value = SimpleNamespace(phase="idle", turn_id=None)
+    client.start_turn.return_value = SimpleNamespace(turn_id="parent-wake-after-reports")
     client.child_task_action.return_value = {"cursor": 27, "attempt": 1}
     monkeypatch.setattr(
         mock_session_manager,
@@ -3126,17 +3176,32 @@ async def test_equal_report_cursors_from_different_children_both_wake_parent(
 
     key = ("default", "parent")
     assert mock_session_manager._child_wake_pending[key] == {
-        "child-a": {"status": "report"},
-        "child-b": {"status": "report"},
+        "child-a": {
+            "status": "report",
+            "attempt": 1,
+            "child_session_available": True,
+        },
+        "child-b": {
+            "status": "report",
+            "attempt": 1,
+            "child_session_available": True,
+        },
     }
     wake_job = mock_session_manager._child_wake_jobs[key]
     release_drain.set()
     await wake_job
 
-    client.steer_turn.assert_awaited_once()
-    prompt = client.steer_turn.await_args.args[1]
-    assert "child-a (report)" in prompt
-    assert "child-b (report)" in prompt
+    client.steer_turn.assert_not_awaited()
+    mock_session_manager.clear_active_turn("parent", "default", "parent-turn")
+    wake_job = mock_session_manager._child_wake_jobs[key]
+    await wake_job
+    wake_wait = mock_session_manager._active_tasks_by_project.get(key)
+    if wake_wait is not None:
+        await wake_wait
+    client.start_turn.assert_awaited_once()
+    prompt = client.start_turn.await_args.kwargs["prompt"]
+    assert "child-a [child-a] (report)" in prompt
+    assert "child-b [child-b] (report)" in prompt
 
 
 @pytest.mark.asyncio
@@ -3166,9 +3231,161 @@ async def test_child_wake_starts_a_new_turn_when_parent_is_idle(
     client.get_runtime_status.assert_awaited_once_with("parent")
     client.start_turn.assert_awaited_once()
     assert client.start_turn.await_args.kwargs["thread_id"] == "parent"
+    assert client.start_turn.await_args.kwargs["mode"] == "start_if_idle"
     assert client.start_turn.await_args.kwargs["effort"] == "medium"
     assert "omit after_cursor" in client.start_turn.await_args.kwargs["prompt"]
     assert mock_session_manager.get_active_turn("parent", "default") == "parent-wake-1"
+
+
+@pytest.mark.asyncio
+async def test_child_wake_reads_only_bounded_materialized_updates(
+    mock_session_manager, monkeypatch
+):
+    client = AsyncMock()
+    client.get_runtime_status.return_value = SimpleNamespace(phase="idle", turn_id=None)
+    client.start_turn.return_value = SimpleNamespace(turn_id=None)
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_client_for_thread",
+        AsyncMock(return_value=client),
+    )
+    key = ("default", "parent")
+    mock_session_manager._child_wake_pending[key] = {
+        f"child-{index:02}": {
+            "status": "queued" if index == 0 else "completed",
+            "attempt": 1,
+            "child_session_available": index != 1,
+        }
+        for index in range(MAX_CHILD_WAKE_BATCH_CHILDREN + 4)
+    }
+
+    await mock_session_manager._drain_child_parent_wakeups("default", "parent")
+
+    prompt = client.start_turn.await_args.kwargs["prompt"]
+    read_line = next(line for line in prompt.split(". ") if line.startswith("Use task_read"))
+    assert "child-00" not in read_line
+    assert "child-01" not in read_line
+    assert "child-02" in read_line
+    assert f"child-{MAX_CHILD_WAKE_BATCH_CHILDREN:02}" not in prompt
+    assert len(mock_session_manager._child_wake_pending[key]) == (
+        MAX_CHILD_WAKE_BATCH_CHILDREN + 4
+    )
+
+
+@pytest.mark.asyncio
+async def test_child_wake_start_waits_for_same_session_turn_admission_lock(
+    mock_session_manager, monkeypatch
+):
+    client = AsyncMock()
+    client.get_runtime_status.return_value = SimpleNamespace(phase="idle", turn_id=None)
+    client.start_turn.return_value = SimpleNamespace(turn_id="parent-wake-1")
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_client_for_thread",
+        AsyncMock(return_value=client),
+    )
+    key = ("default", "parent")
+    mock_session_manager._child_wake_pending[key] = {"child": {"status": "report"}}
+    lock = mock_session_manager.get_turn_start_lock("parent", "default")
+    await lock.acquire()
+    job = asyncio.create_task(
+        mock_session_manager._drain_child_parent_wakeups("default", "parent")
+    )
+    await asyncio.sleep(0)
+
+    client.get_runtime_status.assert_not_awaited()
+    client.start_turn.assert_not_awaited()
+    lock.release()
+    await job
+
+    client.start_turn.assert_awaited_once()
+    await asyncio.sleep(0)
+    wake_wait = mock_session_manager._active_tasks_by_project.get(key)
+    if wake_wait is not None:
+        await wake_wait
+
+
+def test_child_wake_pending_child_count_is_bounded(mock_session_manager):
+    key = ("default", "parent")
+    mock_session_manager._child_wake_deferred.add(key)
+
+    for index in range(MAX_CHILD_WAKE_PENDING_CHILDREN + 10):
+        mock_session_manager._queue_child_parent_wakeup(
+            "parent",
+            f"child-{index}",
+            "default",
+            f"report:{index}",
+            status="report",
+            attempt=1,
+        )
+
+    pending = mock_session_manager._child_wake_pending[key]
+    child_ids = [child_id for child_id in pending if not child_id.startswith("@")]
+    assert len(child_ids) == MAX_CHILD_WAKE_PENDING_CHILDREN
+    assert pending["@overflow"]["count"] == 10
+    assert len(pending["@overflow"]["sample"]) <= 8
+
+
+@pytest.mark.asyncio
+async def test_child_wake_updates_during_auto_turn_wait_for_next_idle_boundary(
+    mock_session_manager, monkeypatch
+):
+    client = AsyncMock()
+    client.get_runtime_status.return_value = SimpleNamespace(phase="idle", turn_id=None)
+    client.start_turn.side_effect = [
+        SimpleNamespace(turn_id="parent-wake-1"),
+        SimpleNamespace(turn_id="parent-wake-2"),
+    ]
+    first_turn_finished = asyncio.Event()
+    second_turn_finished = asyncio.Event()
+
+    async def wait_for_turn(turn_id):
+        event = first_turn_finished if turn_id == "parent-wake-1" else second_turn_finished
+        await event.wait()
+        return SimpleNamespace(turn_id=turn_id)
+
+    client.wait_for_turn.side_effect = wait_for_turn
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_client_for_thread",
+        AsyncMock(return_value=client),
+    )
+    mock_session_manager._child_wake_pending[("default", "parent")] = {
+        "child-one": {"status": "completed"}
+    }
+
+    await mock_session_manager._drain_child_parent_wakeups("default", "parent")
+    key = ("default", "parent")
+    await asyncio.sleep(0)
+
+    mock_session_manager._queue_child_parent_wakeup(
+        "parent", "child-two", "default", "settled:child-two", status="completed"
+    )
+    assert mock_session_manager._child_wake_pending[key] == {
+        "child-two": {"status": "completed", "attempt": 1}
+    }
+    assert key in mock_session_manager._child_wake_deferred
+    assert key not in mock_session_manager._child_wake_jobs
+
+    first_turn_finished.set()
+    first_wait = mock_session_manager._active_tasks_by_project[
+        ("default", "parent")
+    ]
+    await first_wait
+
+    assert client.start_turn.await_count == 2
+    assert client.start_turn.await_args_list[0].kwargs["turn_source"] == "child_wakeup"
+    assert client.start_turn.await_args_list[1].kwargs["turn_source"] == "child_wakeup"
+    assert "child-two [child-two] (completed)" in client.start_turn.await_args_list[1].kwargs[
+        "prompt"
+    ]
+    assert mock_session_manager.get_active_turn("parent", "default") == "parent-wake-2"
+
+    second_turn_finished.set()
+    second_wait = mock_session_manager._active_tasks_by_project[
+        ("default", "parent")
+    ]
+    await second_wait
 
 
 @pytest.mark.asyncio
@@ -3312,6 +3529,10 @@ async def test_child_control_rpc_failure_wakes_parent_with_failed_child_id(
     child_client = AsyncMock()
     child_client.child_task_action.side_effect = RuntimeError("App Server offline")
     parent_client = AsyncMock()
+    parent_client.get_runtime_status.return_value = SimpleNamespace(
+        phase="idle", turn_id=None
+    )
+    parent_client.start_turn.return_value = SimpleNamespace(turn_id="parent-wake-1")
     monkeypatch.setattr(
         mock_session_manager, "list_child_tasks", AsyncMock(return_value=[child])
     )
@@ -3338,12 +3559,17 @@ async def test_child_control_rpc_failure_wakes_parent_with_failed_child_id(
     await wake_job
 
     child_client.child_task_action.assert_awaited_once()
-    parent_client.steer_turn.assert_awaited_once()
-    parent_prompt = parent_client.steer_turn.await_args.args[1]
+    parent_client.steer_turn.assert_not_awaited()
+    mock_session_manager.clear_active_turn("parent", "default", "parent-turn")
+    wake_job = mock_session_manager._child_wake_jobs[("default", "parent")]
+    await wake_job
+    parent_client.start_turn.assert_awaited_once()
+    parent_prompt = parent_client.start_turn.await_args.kwargs["prompt"]
     assert "outcome=failed" in parent_prompt
     assert "child-failed" in parent_prompt
     assert "App Server offline" not in parent_prompt
-    assert "re-read it before deciding" in parent_prompt
+    assert "known task state before deciding" in parent_prompt
+    assert "Use task_read only for these reported or settled child sessions" not in parent_prompt
 
 
 @pytest.mark.asyncio
@@ -3351,6 +3577,10 @@ async def test_child_control_projection_failure_notifies_parent(
     mock_session_manager, monkeypatch
 ):
     parent_client = AsyncMock()
+    parent_client.get_runtime_status.return_value = SimpleNamespace(
+        phase="idle", turn_id=None
+    )
+    parent_client.start_turn.return_value = SimpleNamespace(turn_id="parent-wake-1")
     monkeypatch.setattr(
         mock_session_manager,
         "list_child_tasks",
@@ -3377,8 +3607,12 @@ async def test_child_control_projection_failure_notifies_parent(
     wake_job = mock_session_manager._child_wake_jobs[("default", "parent")]
     await wake_job
 
-    parent_client.steer_turn.assert_awaited_once()
-    parent_prompt = parent_client.steer_turn.await_args.args[1]
+    parent_client.steer_turn.assert_not_awaited()
+    mock_session_manager.clear_active_turn("parent", "default", "parent-turn")
+    wake_job = mock_session_manager._child_wake_jobs[("default", "parent")]
+    await wake_job
+    parent_client.start_turn.assert_awaited_once()
+    parent_prompt = parent_client.start_turn.await_args.kwargs["prompt"]
     assert "outcome=failed" in parent_prompt
     assert "child-requested" in parent_prompt
 
@@ -3432,6 +3666,7 @@ async def test_child_control_applied_outcome_reaches_idle_parent(
     )
     client.start_turn.assert_awaited_once()
     parent_prompt = client.start_turn.await_args.kwargs["prompt"]
+    assert client.start_turn.await_args.kwargs["turn_source"] == "child_wakeup"
     assert "outcome=applied" in parent_prompt
     assert "child-updated" in parent_prompt
     assert "App Server child operation projection remains authoritative" in parent_prompt
@@ -3474,6 +3709,10 @@ async def test_child_control_reports_partial_group_outcome(
     failed_client = AsyncMock()
     failed_client.child_task_action.side_effect = RuntimeError("RPC failed")
     parent_client = AsyncMock()
+    parent_client.get_runtime_status.return_value = SimpleNamespace(
+        phase="idle", turn_id=None
+    )
+    parent_client.start_turn.return_value = SimpleNamespace(turn_id="parent-wake-1")
     clients = {
         "child-applied": applied_client,
         "child-failed": failed_client,
@@ -3506,8 +3745,12 @@ async def test_child_control_reports_partial_group_outcome(
     await wake_job
 
     assert applied_client.child_task_action.await_count == 1
-    parent_client.steer_turn.assert_awaited_once()
-    parent_prompt = parent_client.steer_turn.await_args.args[1]
+    parent_client.steer_turn.assert_not_awaited()
+    mock_session_manager.clear_active_turn("parent", "default", "parent-turn")
+    wake_job = mock_session_manager._child_wake_jobs[("default", "parent")]
+    await wake_job
+    parent_client.start_turn.assert_awaited_once()
+    parent_prompt = parent_client.start_turn.await_args.kwargs["prompt"]
     assert "outcome=partial" in parent_prompt
     assert "child-applied" in parent_prompt
     assert "child-failed" in parent_prompt

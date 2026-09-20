@@ -912,6 +912,7 @@ class MiniAgentClient:
         operation_group_id: str | None = None,
         execution_mode: str | None = None,
         group_sequence: int | None = None,
+        turn_source: str | None = None,
     ) -> TurnSubmissionResult:
         """Submit a turn prompt to the App Server with optional reasoning effort ('low', 'medium', 'high')."""
         payload: dict[str, Any] = {
@@ -937,6 +938,10 @@ class MiniAgentClient:
             payload["executionMode"] = execution_mode
         if group_sequence is not None:
             payload["groupSequence"] = group_sequence
+        if turn_source is not None:
+            if turn_source != "child_wakeup":
+                raise ValueError("turn_source must be child_wakeup")
+            payload["turnSource"] = turn_source
         if effort is not None:
             payload["effort"] = effort
         res = await self._send_request("turn/start", payload)

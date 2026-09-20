@@ -182,6 +182,22 @@ async def test_sdk_start_turn_preserves_workflow_and_namespaced_skills():
 
 
 @pytest.mark.asyncio
+async def test_sdk_start_turn_sends_structured_child_wakeup_source():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {"status": "started", "turnId": "turn-wake"}
+
+    client._send_request = fake_send
+    await client.start_turn("Continue from child updates.", turn_source="child_wakeup")
+
+    assert calls[0][0] == "turn/start"
+    assert calls[0][1]["turnSource"] == "child_wakeup"
+
+
+@pytest.mark.asyncio
 async def test_stream_turn_filters_events_by_thread_and_turn():
     client = MiniAgentClient()
 

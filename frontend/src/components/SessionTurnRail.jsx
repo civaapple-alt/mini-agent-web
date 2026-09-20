@@ -1,4 +1,5 @@
 import React from 'react';
+import { getInputTraceSourceLabel } from '../utils/inputTrace';
 
 export default function SessionTurnRail({
   entries = [],
@@ -22,6 +23,9 @@ export default function SessionTurnRail({
           entry?.metrics?.toolCount > 0 ? `工具 ${entry.metrics.toolCount} 次` : null,
           entry?.metrics?.shellCount > 0 ? `命令 ${entry.metrics.shellCount} 次` : null,
         ].filter(Boolean).join(' · ');
+        const sourceLabel = entry?.source && entry.source !== 'user'
+          ? getInputTraceSourceLabel(entry.source)
+          : null;
         return (
           <button
             key={entryKey}
@@ -36,6 +40,9 @@ export default function SessionTurnRail({
               <span className="session-turn-popover-input">
                 {entry?.summary || '（空输入）'}
               </span>
+              {sourceLabel && (
+                <span className="session-turn-popover-source">来源：{sourceLabel}</span>
+              )}
               <span className="session-turn-popover-response">{response}</span>
               {metrics && <span className="session-turn-popover-metrics">{metrics}</span>}
             </span>

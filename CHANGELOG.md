@@ -15,15 +15,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Let child agents report bounded progress, let the parent steer or cancel
   queued/running work, retry failures, cancel a sequential group, and add new
   tasks. Persist reports with child operation identity and cursor; coalesce
-  parent wakeups and resume the parent safely when progress arrives. Keep the
-  message stream, Runtime panel, and project-session filter on the same child
-  lifecycle projection.
+  parent wakeups without steering an active parent Turn. Start one continuation
+  after the parent becomes idle and mark it with `turnSource: "child_wakeup"`.
+  Bound pending wakeups to 64 distinct child states and each continuation to 16 child
+  updates, serialize user starts with automatic wakeups, and avoid duplicate
+  steer confirmations for internal child updates.
+  Keep the message stream, Child Agents panel, and project-session filter on
+  the same child lifecycle projection.
 - Keep the Plan viewer on the current Session's `plan/plan.md`; refresh its file list and
   content after a Turn settles.
 - Show delegated children as a per-Turn batch in the message stream with each
-  task's lifecycle, keep the Runtime child list authoritative, and open each
-  materialized child in a read-only right-drawer transcript without switching
-  the parent stream. Refresh active child history and page older activity.
+  task's lifecycle, keep the Runtime child list authoritative, and add a
+  top-level Child Agents drawer page with in-page list and detail navigation.
+  Show only child-local persisted activity in each read-only transcript; keep
+  the inherited parent checkpoint as model context and source metadata.
+  Refresh active child history and page older activity.
   Preserve multiline prompts for queued children so work beyond the active
   concurrency limit stays queued and starts when a slot opens. Keep the visible
   transcript position while paging older child activity, use one scroll region
@@ -34,12 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sort each project's session list by the canonical Session activity time and
   show a relative age under each session title.
 - Keep the message stream at its normal centered width when the Session Turn rail is visible.
-- Keep only the current block expanded as a Turn advances. Fold completed
-  reasoning and assistant text one block at a time while later reasoning and
-  tool blocks continue in order. Treat streamed assistant text as the current
-  block so the previous block folds when the final reply starts; keep that reply
-  expanded after Turn settlement. Render folded reasoning as a compact summary
-  row instead of retaining a truncated preview line.
+- Keep the current activity expanded while a Turn runs. After settlement, group
+  adjacent successful thinking and tool activity into expandable summaries.
+  Keep progress explanations visible, and keep failures, approvals, delegation,
+  and the expanded final reply separate. Derive defaults from stable Turn and
+  block order so live completion and reloaded history render consistently.
 - Parse `+ <group> task` as a workflow shorthand only at the start of a message,
   so ordinary prose such as `+ Enter` no longer blocks submission as an unknown
   plugin group.

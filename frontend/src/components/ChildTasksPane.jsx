@@ -72,10 +72,10 @@ function ChildTaskRow({ child, projectId, onOpenThread }) {
           type="button"
           className="btn-action-small"
           onClick={() => onOpenThread(child.child_thread_id, child.project_id || projectId)}
-          title="在运行详情中查看子代理消息流"
+          title="在子智能体标签中查看子会话活动"
         >
           <ExternalLink size={12} />
-          <span>打开</span>
+          <span>查看</span>
         </button>
       )}
     </div>

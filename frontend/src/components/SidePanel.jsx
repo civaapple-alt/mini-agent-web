@@ -18,6 +18,7 @@ import {
   Activity,
   Sparkles,
   BookOpen,
+  Bot,
   ChevronDown,
   Check,
   Copy,
@@ -27,6 +28,7 @@ import { readStateRevision, shouldApplyStateRevision } from '../utils/revisionSt
 import StatusDetailsPane from './StatusDetailsPane';
 import SkillPanel from './SkillPanel';
 import NotebookPane from './NotebookPane';
+import ChildTasksPane from './ChildTasksPane';
 import ChildSessionViewer from './ChildSessionViewer';
 import './SidePanel.css';
 
@@ -218,6 +220,7 @@ function normalizePanelTab(tab) {
   if (tab === 'plan' || tab === 'plan_view') return 'plan_view';
   if (tab === 'plan_goal' || tab === 'goal') return 'goal';
   if (tab === 'notebook' || tab === 'memory') return 'notebook';
+  if (tab === 'children' || tab === 'agents') return 'child_agents';
   return tab || 'status';
 }
 
@@ -858,7 +861,12 @@ export default function SidePanel({
       ...child,
       project_id: childProjectId || child.project_id || projectId,
     });
-    setActiveTab('status');
+    setActiveTab('child_agents');
+  };
+
+  const handleOpenChildTasks = () => {
+    setSelectedChild(null);
+    setActiveTab('child_agents');
   };
 
   const activeChild = selectedChild
@@ -882,9 +890,20 @@ export default function SidePanel({
             <button
               className={`panel-tab-btn ${activeTab === 'status' ? 'active' : ''}`}
               onClick={() => setActiveTab('status')}
+              type="button"
             >
               <Activity size={14} />
               <span>运行状态</span>
+            </button>
+
+            <button
+              className={`panel-tab-btn ${activeTab === 'child_agents' ? 'active' : ''}`}
+              onClick={() => setActiveTab('child_agents')}
+              type="button"
+            >
+              <Bot size={14} />
+              <span>子智能体</span>
+              {childTasks.length > 0 && <span className="panel-tab-count">{childTasks.length}</span>}
             </button>
 
             <button
@@ -927,7 +946,7 @@ export default function SidePanel({
         </div>
 
         {/* Panel Content Body */}
-        <div className={`sidepanel-content custom-scrollbar ${activeTab === 'plan_view' ? 'plan-view-content' : ''} ${activeTab === 'status' && activeChild ? 'child-session-content' : ''}`}>
+        <div className={`sidepanel-content custom-scrollbar ${activeTab === 'plan_view' ? 'plan-view-content' : ''} ${activeTab === 'child_agents' ? 'child-session-content' : ''}`}>
           {activeTab.startsWith('workspace_') && (
             <div className="workspace-subtabs" role="tablist" aria-label="工作区详情">
               <button
@@ -969,6 +988,19 @@ export default function SidePanel({
           )}
 
           {activeTab === 'status' && (
+            <StatusDetailsPane
+              status={status}
+              sessionMeta={sessionMeta}
+              threadId={threadId}
+              projectId={projectId}
+              childTasks={childTasks}
+              childTasksLoading={childTasksLoading}
+              childTasksError={childTasksError}
+              onOpenChildTasks={handleOpenChildTasks}
+            />
+          )}
+
+          {activeTab === 'child_agents' && (
             activeChild ? (
               <ChildSessionViewer
                 key={`${activeChild.project_id || projectId || ''}:${activeChild.child_thread_id}`}
@@ -977,16 +1009,13 @@ export default function SidePanel({
                 onBack={() => setSelectedChild(null)}
               />
             ) : (
-              <StatusDetailsPane
-                status={status}
-                sessionMeta={sessionMeta}
-                threadId={threadId}
+              <ChildTasksPane
                 projectId={projectId}
                 onOpenThread={handleOpenChildThread}
-                childTasks={childTasks}
-                childTasksLoading={childTasksLoading}
-                childTasksError={childTasksError}
-                onRefreshChildTasks={onRefreshChildTasks}
+                children={childTasks}
+                loading={childTasksLoading}
+                error={childTasksError}
+                onRefresh={onRefreshChildTasks}
               />
             )
           )}

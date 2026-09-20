@@ -1,0 +1,45 @@
+.assistant-activity-group {
+  margin: 3px 0 7px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.assistant-activity-group-summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 0;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.assistant-activity-group-summary:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-secondary);
+}
+
+.assistant-activity-group-title {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.assistant-activity-group-counts {
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.assistant-activity-group-items {
+  display: grid;
+  gap: 5px;
+  padding: 5px 7px 7px;
+  border-top: 1px solid var(--border-subtle);
+}

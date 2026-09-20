@@ -6,6 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { getManualExpansion, setManualExpansion } from '../utils/activityPresentationState';
 import { createPortal } from 'react-dom';
 import {
   Terminal,
@@ -189,16 +190,13 @@ function CommandPreview({ value }) {
 export default function ToolCard({
   tool,
   pendingApproval,
-  isCurrentBlock = false,
+  presentationId = null,
 }) {
-  const [showOutput, setShowOutput] = useState(false);
+  const expansionId = presentationId ? `tool-output:${presentationId}` : null;
+  const [showOutput, setShowOutput] = useState(
+    () => getManualExpansion(expansionId) ?? false,
+  );
   const [copied, setCopied] = useState(false);
-  const wasCurrentBlockRef = useRef(Boolean(isCurrentBlock));
-
-  useLayoutEffect(() => {
-    if (wasCurrentBlockRef.current && !isCurrentBlock) setShowOutput(false);
-    wasCurrentBlockRef.current = isCurrentBlock;
-  }, [isCurrentBlock]);
 
   const { status, error, id, outcome } = tool;
   const name = tool.name || tool.toolName || tool.tool || tool.tool_name || '';
@@ -310,10 +308,17 @@ export default function ToolCard({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const toggleOutput = () => {
+    const nextShowOutput = !showOutput;
+    setShowOutput(nextShowOutput);
+    setManualExpansion(expansionId, nextShowOutput);
+  };
+
   return (
     <div
       className={`tool-card notranslate ${normalizedStatus || 'running'} ${isFailed ? 'has-error' : ''} ${isAwaitingApproval ? 'awaiting-approval' : ''}`}
       translate="no"
+      data-block-id={presentationId || undefined}
     >
       {/* Top Tool Header */}
       <div className="tool-header">
@@ -329,7 +334,7 @@ export default function ToolCard({
           {hasOutput && (
             <button
               className="toggle-output-btn font-mono"
-              onClick={() => setShowOutput(!showOutput)}
+              onClick={toggleOutput}
               aria-expanded={showOutput}
             >
               <Terminal size={11} />

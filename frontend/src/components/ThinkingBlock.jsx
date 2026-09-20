@@ -1,11 +1,17 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Brain, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
+import { getManualExpansion, setManualExpansion } from '../utils/activityPresentationState';
 import './ThinkingBlock.css';
 
-export default function ThinkingBlock({ content, isStreaming, isCurrentBlock = false }) {
-  // Keep the current block open and collapse it when execution advances.
-  const [isOpen, setIsOpen] = useState(Boolean(isStreaming || isCurrentBlock));
-  const wasCurrentBlockRef = useRef(Boolean(isCurrentBlock));
+export default function ThinkingBlock({
+  content,
+  isStreaming,
+  isCurrentBlock = false,
+  presentationId = null,
+}) {
+  const [isOpen, setIsOpen] = useState(() => (
+    getManualExpansion(presentationId) ?? Boolean(isStreaming || isCurrentBlock)
+  ));
   const [copied, setCopied] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   const startTimeRef = useRef(Date.now());
@@ -14,10 +20,8 @@ export default function ThinkingBlock({ content, isStreaming, isCurrentBlock = f
   const followLatestRef = useRef(true);
 
   useLayoutEffect(() => {
-    if (isCurrentBlock) setIsOpen(true);
-    else if (wasCurrentBlockRef.current) setIsOpen(false);
-    wasCurrentBlockRef.current = isCurrentBlock;
-  }, [isCurrentBlock]);
+    if (isCurrentBlock && getManualExpansion(presentationId) === undefined) setIsOpen(true);
+  }, [isCurrentBlock, presentationId]);
 
   useEffect(() => {
     let interval = null;
@@ -55,6 +59,12 @@ export default function ThinkingBlock({ content, isStreaming, isCurrentBlock = f
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const toggleOpen = () => {
+    const nextOpen = !isOpen;
+    setIsOpen(nextOpen);
+    setManualExpansion(presentationId, nextOpen);
+  };
+
   const handleBodyScroll = () => {
     const body = bodyRef.current;
     if (!body) return;
@@ -66,10 +76,11 @@ export default function ThinkingBlock({ content, isStreaming, isCurrentBlock = f
     <div
       className={`thinking-container notranslate ${isStreaming ? 'streaming' : ''} ${isOpen ? 'expanded' : 'collapsed'}`}
       translate="no"
+      data-block-id={presentationId || undefined}
     >
       <div
         className="thinking-header"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={toggleOpen}
       >
         <div className="thinking-title">
           <Brain
@@ -96,7 +107,7 @@ export default function ThinkingBlock({ content, isStreaming, isCurrentBlock = f
               {copied ? <Check size={12} className="text-green" /> : <Copy size={12} />}
             </button>
           )}
-          <button className="btn-toggle-micro" onClick={() => setIsOpen(!isOpen)}>
+          <button className="btn-toggle-micro" onClick={toggleOpen}>
             {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
         </div>

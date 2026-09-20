@@ -263,6 +263,12 @@
   white-space: nowrap;
 }
 
+.session-turn-popover-source {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.3;
+}
+
 .session-turn-popover-response {
   display: -webkit-box;
   overflow: hidden;

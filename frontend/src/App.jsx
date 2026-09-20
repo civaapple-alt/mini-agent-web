@@ -1456,7 +1456,8 @@ export default function App() {
       } else if (evt.type === 'turn_finished') {
         const turnStatus = evt.status || evt.stop_reason || 'unknown';
         if (turnStatus === 'steered') {
-          showToast('✓ 纠偏已生效，正在应用新指令继续生成...', 'info', 2500);
+          // The accepted steer_ack is the only user-facing confirmation.
+          // Turn settlement is lifecycle bookkeeping, not a second toast.
         } else {
           if (turnStatus !== 'completed') {
             setLastTurnResult((previous) => ({
@@ -1827,7 +1828,6 @@ export default function App() {
         sent,
         hasAttachments: images.length > 0 || textAttachments.length > 0,
       });
-      showToast('已发送实时纠偏指令 (Steer)', 'info', 2000);
     }
   };
 

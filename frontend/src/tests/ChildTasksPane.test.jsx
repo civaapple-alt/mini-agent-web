@@ -66,7 +66,7 @@ describe('ChildTasksPane', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: '显示已结束任务（1）' }));
-    fireEvent.click(screen.getByRole('button', { name: '打开' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看' }));
     expect(onOpenThread).toHaveBeenCalledWith('child-a', 'memory-card');
     expect(screen.getAllByText('已完成').length).toBeGreaterThan(0);
     expect(container.querySelector('.child-task-meta').textContent).toContain('2.4s');

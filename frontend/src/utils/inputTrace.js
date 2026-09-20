@@ -5,6 +5,7 @@ export const INPUT_TRACE_SOURCE_LABELS = {
   user: '用户输入',
   steer: '实时纠偏',
   goal: 'Goal 目标',
+  child_wakeup: '子代理更新',
 };
 
 export const INPUT_TRACE_ACCESS_LABELS = {
@@ -39,6 +40,25 @@ export function isInternalCompactionMessage(message) {
     return true;
   }
   return String(message.text || '').trim().startsWith(COMPACTED_CONTEXT_PREFIX);
+}
+
+function isChildWakeupSource(value) {
+  return String(value || '').toLowerCase() === 'child_wakeup';
+}
+
+/** Find turns started by internal child updates so their synthetic prompt is not shown as user input. */
+export function getChildWakeupTurnIds(messages = [], entries = []) {
+  const turnIds = new Set();
+  const addTurn = (record, item = null) => {
+    const turnSource = record?.turnSource || record?.turn_source
+      || item?.turnSource || item?.turn_source;
+    const turnId = record?.turnId || record?.turn_id || item?.turnId || item?.turn_id;
+    if (isChildWakeupSource(turnSource) && turnId) turnIds.add(String(turnId));
+  };
+
+  messages.forEach((message) => addTurn(message));
+  entries.forEach((entry) => addTurn(entry, entry?.item));
+  return turnIds;
 }
 
 function normalizeFiles(files) {
@@ -233,14 +253,20 @@ function entryInputMessage(entry, index, scope) {
  * not replaced by the deliberately smaller historical projection.
  */
 export function collectInputMessages(messages = [], entries = [], scope = {}) {
+  const childWakeupTurnIds = getChildWakeupTurnIds(messages, entries);
   const existing = messages.filter((message) => (
-    message?.role === 'user' && !isInternalCompactionMessage(message)
+    message?.role === 'user'
+    && !isInternalCompactionMessage(message)
+    && !childWakeupTurnIds.has(String(message.turnId || ''))
+    && !isChildWakeupSource(message.turnSource || message.turn_source)
   ));
   const used = new Set();
   const result = [];
   const inputEntries = (entries || []).filter((entry) => (
     (entry?.item?.type === 'userMessage' || entry?.item?.type === 'user_message')
     && !isInternalCompactionMessage(entry.item)
+    && !childWakeupTurnIds.has(String(entryTurnId(entry) || ''))
+    && !isChildWakeupSource(entry?.turnSource || entry?.turn_source)
   ));
 
   for (const [index, entry] of inputEntries.entries()) {

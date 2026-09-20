@@ -3,18 +3,18 @@ import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { api } from '../api';
 import MessageItem from './MessageItem';
 import {
-  assignHistoryTurnIds,
   aggregateThreadItems,
   filterEmptyMessages,
   orderMessagesByTurnHistory,
-  restorePersistedTurnPresentation,
 } from '../utils/messageState';
+import { collectInputMessages } from '../utils/inputTrace';
 import {
-  cleanInputText,
-  collectInputMessages,
-  isInternalCompactionMessage,
-} from '../utils/inputTrace';
-import { childTaskStatusLabels, getChildTaskStatus } from '../utils/childTasks';
+  childTaskStatusLabels,
+  formatChildTaskDuration,
+  formatChildTaskTimestamp,
+  getChildTaskStatus,
+  getLatestChildTaskReport,
+} from '../utils/childTasks';
 
 const ITEM_PAGE_SIZE = 128;
 const REFRESH_INTERVAL_MS = 3000;
@@ -36,55 +36,26 @@ function mergeEntries(earlier, later) {
   return [...entriesByKey.values()];
 }
 
-function projectChildMessages(checkpoint, entries, child, projectId) {
-  const rawMessages = assignHistoryTurnIds(checkpoint?.messages || [], entries);
-  const messages = rawMessages.reduce((result, message, index) => {
-    if (isInternalCompactionMessage(message)) return result;
-    if (message.role !== 'user' && message.role !== 'assistant') return result;
-
-    const reasoning = message.reasoning || message.thinking || '';
-    const text = message.role === 'user' ? cleanInputText(message.text) : (message.text || '');
-    result.push({
-      id: message.id || `child-history-${child.child_thread_id}-${index}`,
-      role: message.role,
-      turnId: message.turnId || null,
-      text,
-      thinking: reasoning,
-      tools: [],
-      toolCallIds: [],
-      blocks: [
-        ...(reasoning ? [{ type: 'thinking', id: `${message.id || index}:thinking`, content: reasoning }] : []),
-        ...(text ? [{ type: 'text', id: `${message.id || index}:text`, content: text }] : []),
-      ],
-    });
-    return result;
-  }, []);
-
+function projectChildMessages(entries, child, projectId) {
   const scope = { threadId: child.child_thread_id, projectId };
-  const inputs = collectInputMessages(messages, entries, scope);
-  const withInputs = [...messages];
-  for (const input of inputs) {
-    const inputTurnId = input.turnId ? String(input.turnId) : null;
-    const alreadyRendered = withInputs.some((message) => (
-      message.role === 'user'
-      && (inputTurnId && message.turnId
-        ? String(message.turnId) === inputTurnId
-        : String(message.text || '').trim() === String(input.text || '').trim())
-    ));
-    if (alreadyRendered) continue;
-    const assistantIndex = inputTurnId
-      ? withInputs.findIndex((message) => (
-        message.role === 'assistant' && String(message.turnId || '') === inputTurnId
-      ))
-      : -1;
-    if (assistantIndex >= 0) withInputs.splice(assistantIndex, 0, input);
-    else withInputs.push(input);
-  }
-
-  const presentations = checkpoint?.presentations || checkpoint?.session?.presentations || [];
-  const restored = restorePersistedTurnPresentation(withInputs, entries, presentations);
-  const hydrated = aggregateThreadItems(restored, entries);
+  const inputs = collectInputMessages([], entries, scope);
+  const hydrated = aggregateThreadItems(inputs, entries);
   return filterEmptyMessages(orderMessagesByTurnHistory(hydrated, entries));
+}
+
+function formatElapsedSince(timestamp) {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
+  return formatChildTaskDuration(Math.max(0, Date.now() - timestamp));
+}
+
+function getTaskResultText(result) {
+  if (typeof result === 'string') return result.trim() || null;
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return null;
+  for (const key of ['summary', 'text', 'result', 'content']) {
+    const value = result[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
 }
 
 function isRunning(checkpoint, child) {
@@ -206,8 +177,8 @@ export default function ChildSessionViewer({
   }, [entries, checkpoint]);
 
   const messages = useMemo(
-    () => projectChildMessages(checkpoint, entries, child, childProjectId),
-    [checkpoint, entries, child, childProjectId],
+    () => projectChildMessages(entries, child, childProjectId),
+    [entries, child, childProjectId],
   );
   const running = isRunning(checkpoint, child);
   const status = getChildTaskStatus(child);
@@ -215,6 +186,23 @@ export default function ChildSessionViewer({
   const failed = !running && (status === 'failed' || ['failed', 'error'].includes(String(
     checkpoint?.last_turn_status || checkpoint?.session?.last_turn_status || '',
   ).toLowerCase()));
+  const latestReport = getLatestChildTaskReport(child);
+  const startedAt = child.started_at_ms || child.started_at;
+  const duration = child.duration_ms != null
+    ? formatChildTaskDuration(child.duration_ms)
+    : running
+      ? formatElapsedSince(startedAt)
+      : null;
+  const parentThreadId = child.parent_thread_id
+    || checkpoint?.parent_thread_id
+    || checkpoint?.session?.parent_thread_id;
+  const parentCheckpointSeq = child.parent_checkpoint_seq
+    ?? checkpoint?.parent_checkpoint_seq
+    ?? checkpoint?.session?.parent_checkpoint_seq;
+  const finalReply = [...messages].reverse().find((message) => (
+    message.role === 'assistant' && String(message.text || '').trim()
+  ))?.text || getTaskResultText(child.result);
+  const failureDetail = failure || child.error || child.operation_error;
 
   const loadOlder = async () => {
     if (!olderCursorRef.current || loadingOlder || requestRef.current) return;
@@ -277,10 +265,39 @@ export default function ChildSessionViewer({
         </button>
       </header>
 
+      <section className={`child-session-overview ${running ? 'running' : failed ? 'failed' : 'finished'}`}>
+        <div className="child-session-overview-heading">
+          <strong>{running ? '子代理正在执行' : failed ? '子代理执行失败' : '子代理已结束'}</strong>
+          {duration && <span className="font-mono">{running ? '已运行' : '耗时'} {duration}</span>}
+        </div>
+        {parentThreadId && (
+          <div className="child-session-source">
+            来源父会话 <span className="font-mono">{parentThreadId}</span>
+            {Number.isFinite(parentCheckpointSeq) && ` · checkpoint ${parentCheckpointSeq}`}
+            {' · '}这里只显示子会话自己的活动
+          </div>
+        )}
+        {running && latestReport && (
+          <div className="child-session-latest-report">
+            <span>最新进展</span>
+            <p>{latestReport.text}</p>
+            {latestReport.timestamp_ms && (
+              <time>{formatChildTaskTimestamp(latestReport.timestamp_ms)}</time>
+            )}
+          </div>
+        )}
+        {!running && !failed && finalReply && (
+          <div className="child-session-final-reply">
+            <span>最终回复</span>
+            <p>{finalReply}</p>
+          </div>
+        )}
+        {failed && failureDetail && (
+          <div className="child-session-final-error">{failureDetail}</div>
+        )}
+      </section>
+
       {error && <div className="child-session-view-error" role="alert">{error}</div>}
-      {failed && failure && (
-        <div className="child-session-view-error" role="status">子任务执行失败：{failure}</div>
-      )}
       {olderCursor && (
         <button
           type="button"
@@ -303,7 +320,10 @@ export default function ChildSessionViewer({
         {loading && messages.length === 0 ? (
           <div className="child-session-empty">正在加载子代理消息流…</div>
         ) : messages.length === 0 ? (
-          <div className="child-session-empty">子 Session 暂无可显示的消息</div>
+          <div className="child-session-empty">
+            <strong>暂无子代理活动</strong>
+            <span>此处只显示子 Session 自己持久化的消息与工具活动。早期任务如果没有本地活动记录，不会回填父会话 checkpoint 内容。</span>
+          </div>
         ) : (
           <div className="child-session-messages">
             {messages.map((message, index) => (

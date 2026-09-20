@@ -2,6 +2,8 @@ import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import ChatArea from '../components/ChatArea';
+import { collectInputMessages } from '../utils/inputTrace';
+import { aggregateStreamEvent } from '../utils/messageState';
 import {
   buildTurnHistoryEntries,
   groupSettledAssistantBlocks,
@@ -56,17 +58,104 @@ describe('Turn history projection', () => {
     expect(entry.stateLabel).toBe('历史');
   });
 
-  it('groups only adjacent settled internal blocks and keeps failures visible', () => {
+  it('groups only adjacent successful settled activity and keeps boundaries visible', () => {
     const grouped = groupSettledAssistantBlocks([
       { type: 'thinking', id: 'thinking-1', content: 'done', isStreaming: false },
       { type: 'tool', id: 'tool-1', name: 'shell', status: 'completed' },
+      { type: 'tool', id: 'tool-running', name: 'shell', status: 'running' },
+      { type: 'tool', id: 'tool-queued', name: 'shell', status: 'queued' },
+      { type: 'tool', id: 'tool-approval', name: 'shell', status: 'completed', approval: { state: 'approved' } },
+      { type: 'tool', id: 'tool-delegate', name: 'delegate_task', status: 'completed' },
       { type: 'tool', id: 'tool-2', name: 'shell', status: 'failed', error: 'boom' },
       { type: 'text', content: 'partial' },
     ]);
     expect(grouped[0].type).toBe('activityGroup');
     expect(grouped[0].items).toHaveLength(2);
-    expect(grouped[1].type).toBe('tool');
-    expect(grouped[2].type).toBe('text');
+    expect(grouped.slice(1).map((block) => block.id || block.type)).toEqual([
+      'tool-running',
+      'tool-queued',
+      'tool-approval',
+      'tool-delegate',
+      'tool-2',
+      'text',
+    ]);
+  });
+
+  it('keeps retryable, unknown, failure, and approval tool outcomes out of success summaries', () => {
+    const grouped = groupSettledAssistantBlocks([
+      { type: 'tool', id: 'tool-explicit-success', name: 'shell', status: 'completed', outcome: 'completed' },
+      { type: 'tool', id: 'tool-retryable', name: 'shell', status: 'completed', outcome: 'retryable' },
+      { type: 'tool', id: 'tool-unknown', name: 'shell', status: 'completed', outcome: 'server_added_state' },
+      { type: 'tool', id: 'tool-failed', name: 'shell', status: 'completed', outcome: 'failed' },
+      { type: 'tool', id: 'tool-approval', name: 'shell', status: 'completed', outcome: 'needs_approval' },
+      { type: 'tool', id: 'tool-denied', name: 'shell', status: 'completed', approval: { state: 'denied' } },
+      { type: 'tool', id: 'tool-no-outcome', name: 'shell', status: 'completed' },
+    ]);
+
+    expect(grouped.map((block) => block.id || block.type)).toEqual([
+      'activity_tool-explicit-success',
+      'tool-retryable',
+      'tool-unknown',
+      'tool-failed',
+      'tool-approval',
+      'tool-denied',
+      'activity_tool-no-outcome',
+    ]);
+    expect(grouped[0].items.map((block) => block.id)).toEqual(['tool-explicit-success']);
+    expect(grouped.at(-1).items.map((block) => block.id)).toEqual(['tool-no-outcome']);
+  });
+
+  it('keeps child-wakeup turns out of user bubbles and labels their source in the Turn rail', () => {
+    const messages = [
+      {
+        id: 'turn_wakeup-1',
+        role: 'assistant',
+        turnId: 'wakeup-1',
+        turnSource: 'child_wakeup',
+        text: '',
+        blocks: [],
+      },
+      { id: 'wakeup-input', role: 'user', turnId: 'wakeup-1', text: 'internal child update prompt' },
+      { id: 'normal-input', role: 'user', turnId: 'user-1', text: '普通用户输入' },
+    ];
+    const threadItems = [
+      { turnId: 'wakeup-1', turnSource: 'child_wakeup', item: { type: 'turnStarted' } },
+      { turnId: 'wakeup-1', item: { type: 'userMessage', id: 'wakeup-input', text: 'internal child update prompt' } },
+      { turnId: 'user-1', item: { type: 'userMessage', id: 'normal-input', text: '普通用户输入' } },
+    ];
+
+    expect(collectInputMessages(messages, threadItems).map((message) => message.text))
+      .toEqual(['普通用户输入']);
+    const turnEntries = buildTurnHistoryEntries({ messages, threadItems });
+    expect(turnEntries.map(({ turnId, source, summary }) => ({ turnId, source, summary })))
+      .toEqual([
+        { turnId: 'wakeup-1', source: 'child_wakeup', summary: '子代理更新' },
+        { turnId: 'user-1', source: 'user', summary: '普通用户输入' },
+      ]);
+
+    render(
+      <ChatArea
+        messages={messages}
+        threadItems={threadItems}
+        statusModel={null}
+        isGenerating={false}
+        pendingApproval={null}
+        lastTurnResult={null}
+      />,
+    );
+    expect(screen.queryByText('internal child update prompt')).toBeNull();
+    expect(screen.getByText('子代理更新')).toBeDefined();
+    expect(screen.getAllByText('普通用户输入')).toHaveLength(2);
+  });
+
+  it('stores a structured child-wakeup source on the live Turn placeholder', () => {
+    const messages = aggregateStreamEvent([], {
+      type: 'event',
+      turnId: 'wakeup-2',
+      turnSource: 'child_wakeup',
+      event: { type: 'turn_started' },
+    });
+    expect(messages[0]).toMatchObject({ turnId: 'wakeup-2', turnSource: 'child_wakeup' });
   });
 });
 

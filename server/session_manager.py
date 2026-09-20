@@ -39,6 +39,9 @@ MAX_CHILD_TASK_LIFECYCLE = 32
 MAX_CHILD_CONTROL_WAKE_EVENTS = 8
 MAX_CHILD_CONTROL_WAKE_IDS = 8
 MAX_CHILD_CONTROL_WAKE_CHILD_IDS = 16
+MAX_CHILD_WAKE_PENDING_CHILDREN = 64
+MAX_CHILD_WAKE_BATCH_CHILDREN = 16
+MAX_CHILD_WAKE_OVERFLOW_SAMPLE = 8
 MAX_DELEGATION_FAILURES_PER_PARENT = 32
 MAX_NOTEBOOK_ENTRIES = 64
 MAX_NOTEBOOK_ENTRY_BYTES = 4096
@@ -113,6 +116,10 @@ class SessionManager:
         self._active_tasks_by_project: dict[tuple[str, str], asyncio.Task[Any]] = {}
         self._child_wake_jobs: dict[tuple[str, str], asyncio.Task[Any]] = {}
         self._child_wake_pending: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+        self._turn_start_locks: OrderedDict[tuple[str, str], asyncio.Lock] = (
+            OrderedDict()
+        )
+        self._child_wake_deferred: set[tuple[str, str]] = set()
         self._child_wake_seen: OrderedDict[tuple[str, str, str, str], None] = (
             OrderedDict()
         )
@@ -828,6 +835,9 @@ class SessionManager:
                             "settled:"
                             f"{child.get('operation_id')}:{child.get('operation_attempt')}:{child.get('status')}:{child.get('finished_at_ms')}",
                             status=str(child.get("status")),
+                            attempt=int(child.get("operation_attempt") or 1),
+                            child_session_available=True,
+                            title=str(child.get("title") or "") or None,
                         )
             except Exception:
                 logger.debug(
@@ -1605,6 +1615,7 @@ class SessionManager:
             self._active_turns_by_project.clear()
             self._child_wake_jobs.clear()
             self._child_wake_pending.clear()
+            self._child_wake_deferred.clear()
             self._client = None
             for client in set(clients):
                 try:
@@ -2175,6 +2186,12 @@ class SessionManager:
             self._schedule_child_control(payload, project_id)
         await self.broadcast_ws(payload)
         if payload.get("type") == "event":
+            event = payload.get("event")
+            if isinstance(event, dict) and event.get("type") == "turn_finished":
+                self._resume_child_parent_wakeup(
+                    project_id or payload.get("projectId"),
+                    payload.get("threadId") or payload.get("thread_id"),
+                )
             return
         if payload.get("method") != "thread/goal/updated":
             return
@@ -2424,6 +2441,9 @@ class SessionManager:
                 project_id,
                 f"report:{persisted.get('cursor') or report_id}",
                 status="report",
+                attempt=attempt,
+                child_session_available=True,
+                title=str(state.get("title") or "") or None,
             )
         except Exception:
             logger.warning(
@@ -2757,6 +2777,10 @@ class SessionManager:
         event_id: str,
         *,
         status: str,
+        attempt: int | None = None,
+        child_session_available: bool | None = None,
+        title: str | None = None,
+        operation_error: str | None = None,
         details: dict[str, Any] | None = None,
     ) -> None:
         # Report cursors are local to each child Session, so distinct children
@@ -2770,13 +2794,93 @@ class SessionManager:
         key = (project_id, parent_thread_id)
         pending = self._child_wake_pending.setdefault(key, {})
         if details is None:
-            pending[child_thread_id] = {"status": status}
+            task = {
+                "status": status,
+                "attempt": max(1, attempt or 1),
+            }
+            if child_session_available is not None:
+                task["child_session_available"] = child_session_available
+            if title:
+                task["title"] = title[:96]
+            if operation_error:
+                task["operation_error"] = operation_error[:256]
+            existing = pending.get(child_thread_id)
+            if existing is not None and task["attempt"] < existing.get("attempt", 1):
+                return
+            if existing is not None and task["attempt"] == existing.get("attempt", 1):
+                terminal = {"completed", "failed", "cancelled", "step_limit"}
+                if existing.get("status") in terminal and status not in terminal:
+                    task = {**task, **existing}
+            if existing is None and sum(
+                not item.startswith("@") for item in pending
+            ) >= MAX_CHILD_WAKE_PENDING_CHILDREN:
+                overflow = pending.setdefault(
+                    "@overflow", {"kind": "overflow", "count": 0, "sample": []}
+                )
+                overflow["count"] = min(overflow.get("count", 0) + 1, 2**31 - 1)
+                if (
+                    child_thread_id not in overflow["sample"]
+                    and len(overflow["sample"]) < MAX_CHILD_WAKE_OVERFLOW_SAMPLE
+                ):
+                    overflow["sample"].append(child_thread_id[:64])
+            else:
+                pending[child_thread_id] = task
         else:
             self._merge_child_control_wakeup(pending, details)
-        if key not in self._child_wake_jobs:
-            self._child_wake_jobs[key] = asyncio.create_task(
-                self._drain_child_parent_wakeups(project_id, parent_thread_id)
+        self._schedule_child_parent_wakeup(project_id, parent_thread_id)
+
+    def get_turn_start_lock(
+        self, thread_id: str, project_id: str | None = None
+    ) -> asyncio.Lock:
+        resolved_project = (
+            project_id
+            or self._active_thread_projects.get(thread_id)
+            or self._current_project_id
+        )
+        key = (resolved_project, thread_id)
+        lock = self._turn_start_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._turn_start_locks[key] = lock
+        self._turn_start_locks.move_to_end(key)
+        while len(self._turn_start_locks) > 256:
+            stale_key = next(
+                (
+                    candidate
+                    for candidate, candidate_lock in self._turn_start_locks.items()
+                    if candidate != key and not candidate_lock.locked()
+                ),
+                None,
             )
+            if stale_key is None:
+                break
+            self._turn_start_locks.pop(stale_key, None)
+        return lock
+
+    def _schedule_child_parent_wakeup(
+        self, project_id: str, parent_thread_id: str
+    ) -> None:
+        key = (project_id, parent_thread_id)
+        if (
+            not self._child_wake_pending.get(key)
+            or key in self._child_wake_jobs
+            or key in self._child_wake_deferred
+        ):
+            return
+        self._child_wake_jobs[key] = asyncio.create_task(
+            self._drain_child_parent_wakeups(project_id, parent_thread_id)
+        )
+
+    def _resume_child_parent_wakeup(
+        self, project_id: str | None, parent_thread_id: str | None
+    ) -> None:
+        if not isinstance(project_id, str) or not project_id:
+            return
+        if not isinstance(parent_thread_id, str) or not parent_thread_id:
+            return
+        key = (project_id, parent_thread_id)
+        self._child_wake_deferred.discard(key)
+        self._schedule_child_parent_wakeup(project_id, parent_thread_id)
 
     @staticmethod
     def _merge_child_control_wakeup(
@@ -2841,123 +2945,158 @@ class SessionManager:
         key = (project_id, parent_thread_id)
         delivery_failed = False
         batch: dict[str, dict[str, Any]] = {}
+        start_lock = self.get_turn_start_lock(parent_thread_id, project_id)
+        start_lock_acquired = False
         try:
-            while self._child_wake_pending.get(key):
-                batch = self._child_wake_pending.pop(key)
-                task_descriptions: list[str] = []
-                read_child_ids: set[str] = set()
-                control_bucket = batch.get("@control")
-                for child_id, value in batch.items():
-                    if value.get("kind") == "control":
-                        read_child_ids.update(
-                            str(item)
-                            for item in value.get("child_ids", [])
-                            if isinstance(item, str)
-                        )
-                        continue
-                    task_descriptions.append(f"{child_id} ({value['status']})")
+            if not self._child_wake_pending.get(key):
+                return
+            await start_lock.acquire()
+            start_lock_acquired = True
+            if self.get_active_turn(parent_thread_id, project_id):
+                self._child_wake_deferred.add(key)
+                return
+
+            client = await self.get_client_for_thread(parent_thread_id, project_id)
+            runtime = await client.get_runtime_status(parent_thread_id)
+            phase = str(getattr(runtime, "phase", "idle") or "idle")
+            if (
+                phase not in {"idle", "completed", "failed"}
+                or self.get_active_turn(parent_thread_id, project_id)
+            ):
+                self._child_wake_deferred.add(key)
+                return
+
+            pending = self._child_wake_pending.setdefault(key, {})
+            batch = {}
+            batch_child_count = 0
+            for child_id in list(pending):
+                if child_id.startswith("@"):
+                    batch[child_id] = pending.pop(child_id)
+                elif batch_child_count < MAX_CHILD_WAKE_BATCH_CHILDREN:
+                    batch[child_id] = pending.pop(child_id)
+                    batch_child_count += 1
+            if not batch:
+                return
+            task_descriptions: list[str] = []
+            read_child_ids: set[str] = set()
+            control_bucket = batch.get("@control")
+            for child_id, value in batch.items():
+                if value.get("kind") in {"control", "overflow"}:
+                    continue
+                display_id = child_id[:64]
+                display_name = str(value.get("title") or display_id)[:48]
+                status = str(value.get("status") or "unknown")[:24]
+                description = f"{display_name} [{display_id}] ({status})"
+                if value.get("child_session_available") is False:
+                    error = str(value.get("operation_error") or "")[:128]
+                    if error:
+                        description += f"; Session creation failed: {error}"
+                task_descriptions.append(description)
+                if (
+                    value.get("child_session_available") is not False
+                    and status not in {"queued", "not_started", "idle"}
+                ):
                     read_child_ids.add(child_id)
 
-                prompt_parts = [
-                    "Delegated child updates are available: "
-                    + (", ".join(task_descriptions) or "task control outcomes")
-                    + "."
-                ]
-                if isinstance(control_bucket, dict):
-                    for notification in control_bucket.get("notifications", []):
-                        if not isinstance(notification, dict):
-                            continue
-
-                        def display_ids(
-                            field: str, notification: dict[str, Any] = notification
-                        ) -> str:
-                            values = notification.get(field)
-                            if not isinstance(values, list) or not values:
-                                return "[]"
-                            return (
-                                "["
-                                + ", ".join(
-                                    str(item)[:64]
-                                    for item in values[:MAX_CHILD_CONTROL_WAKE_IDS]
-                                    if isinstance(item, str)
-                                )
-                                + "]"
-                            )
-
-                        prompt_parts.append(
-                            "task_control "
-                            f"{str(notification.get('action') or 'unknown')[:40]} "
-                            f"outcome={str(notification.get('outcome') or 'failed')[:16]}; "
-                            f"applied={display_ids('applied_child_ids')}; "
-                            f"failed={display_ids('failed_child_ids')}; "
-                            f"skipped={display_ids('skipped_child_ids')}; "
-                            f"stale={display_ids('stale_child_ids')}; "
-                            f"requested={display_ids('requested_child_ids')}"
-                        )
-                    omitted = int(control_bucket.get("omitted") or 0)
-                    if omitted:
-                        counts = control_bucket.get("outcome_counts") or {}
-                        count_summary = ", ".join(
-                            f"{str(name)[:16]}={int(count or 0)}"
-                            for name, count in list(counts.items())[:5]
-                        )
-                        prompt_parts.append(
-                            f"{omitted} older control outcome detail(s) were coalesced "
-                            f"({count_summary}); affected child IDs: "
-                            + ", ".join(control_bucket.get("child_ids", []))
-                        )
-                    if control_bucket.get("child_ids_truncated"):
-                        prompt_parts.append(
-                            "The affected child ID list was truncated; inspect the "
-                            "current App Server child projection before taking action."
-                        )
-                if read_child_ids:
-                    prompt_parts.append(
-                        "Use task_read for each affected child_thread_id to inspect "
-                        "the latest lifecycle and reports; omit after_cursor for the "
-                        "first page and follow next_cursor for additional report pages."
-                    )
-                if isinstance(control_bucket, dict):
-                    prompt_parts.append(
-                        "Control notifications describe the Gateway RPC outcome. "
-                        "The App Server child operation projection remains authoritative; "
-                        "re-read it before deciding whether to retry, steer, cancel, "
-                        "or delegate more work."
-                    )
+            prompt_parts = [
+                "Delegated child updates are available: "
+                + (", ".join(task_descriptions) or "task control outcomes")
+                + "."
+            ]
+            overflow = batch.get("@overflow")
+            if isinstance(overflow, dict) and overflow.get("count"):
+                sample = overflow.get("sample") or []
                 prompt_parts.append(
-                    "Then decide whether to wait, steer, cancel, retry, or delegate more work."
+                    f"{int(overflow['count'])} additional child update(s) were coalesced "
+                    "to keep this continuation bounded; track previously delegated "
+                    "children using their known IDs. Sample IDs: "
+                    + ", ".join(str(child_id)[:64] for child_id in sample[:8])
                 )
-                prompt = " ".join(prompt_parts)
-                client = await self.get_client_for_thread(parent_thread_id, project_id)
-                turn_id = self.get_active_turn(parent_thread_id, project_id)
-                if not turn_id:
-                    runtime = await client.get_runtime_status(parent_thread_id)
-                    phase = str(getattr(runtime, "phase", "idle") or "idle")
-                    turn_id = getattr(runtime, "turn_id", None)
-                    if phase not in {"idle", "completed", "failed"} and turn_id:
-                        await client.steer_turn(str(turn_id), prompt, parent_thread_id)
+            if isinstance(control_bucket, dict):
+                for notification in control_bucket.get("notifications", []):
+                    if not isinstance(notification, dict):
                         continue
-                    submission = await client.start_turn(
-                        prompt=prompt,
-                        mode="start",
-                        thread_id=parent_thread_id,
-                        effort=self.get_settings(project_id).get(
-                            "reasoning_effort", "high"
-                        ),
-                    )
-                    turn_id = str(getattr(submission, "turn_id", None) or "")
-                    if not turn_id:
-                        raise RuntimeError(
-                            "Parent wake-up Turn submission returned no turn ID"
+
+                    def display_ids(
+                        field: str, notification: dict[str, Any] = notification
+                    ) -> str:
+                        values = notification.get(field)
+                        if not isinstance(values, list) or not values:
+                            return "[]"
+                        return (
+                            "["
+                            + ", ".join(
+                                str(item)[:64]
+                                for item in values[:MAX_CHILD_CONTROL_WAKE_IDS]
+                                if isinstance(item, str)
+                            )
+                            + "]"
                         )
-                    task = asyncio.create_task(
-                        self._wait_for_parent_child_wakeup_turn(
-                            client, parent_thread_id, project_id, turn_id
-                        )
+
+                    prompt_parts.append(
+                        "task_control "
+                        f"{str(notification.get('action') or 'unknown')[:40]} "
+                        f"outcome={str(notification.get('outcome') or 'failed')[:16]}; "
+                        f"applied={display_ids('applied_child_ids')}; "
+                        f"failed={display_ids('failed_child_ids')}; "
+                        f"skipped={display_ids('skipped_child_ids')}; "
+                        f"stale={display_ids('stale_child_ids')}; "
+                        f"requested={display_ids('requested_child_ids')}"
                     )
-                    self.set_active_turn(parent_thread_id, turn_id, task, project_id)
-                    continue
-                await client.steer_turn(turn_id, prompt, parent_thread_id)
+                omitted = int(control_bucket.get("omitted") or 0)
+                if omitted:
+                    counts = control_bucket.get("outcome_counts") or {}
+                    count_summary = ", ".join(
+                        f"{str(name)[:16]}={int(count or 0)}"
+                        for name, count in list(counts.items())[:5]
+                    )
+                    prompt_parts.append(
+                        f"{omitted} older control outcome detail(s) were coalesced "
+                        f"({count_summary}); affected child IDs: "
+                        + ", ".join(control_bucket.get("child_ids", []))
+                    )
+                if control_bucket.get("child_ids_truncated"):
+                    prompt_parts.append(
+                        "The affected child ID list was truncated; inspect the "
+                        "current App Server child projection before taking action."
+                    )
+            if read_child_ids:
+                prompt_parts.append(
+                    "Use task_read only for these reported or settled child sessions: "
+                    + ", ".join(sorted(read_child_ids))
+                    + ". Inspect "
+                    "the latest lifecycle and reports; omit after_cursor for the "
+                    "first page and follow next_cursor for additional report pages."
+                )
+            if isinstance(control_bucket, dict):
+                prompt_parts.append(
+                    "Control notifications describe the Gateway RPC outcome. "
+                    "The App Server child operation projection remains authoritative; "
+                    "do not call task_read for queued tasks or control-only IDs. "
+                    "Use the control outcome and known task state before deciding "
+                    "whether to retry, steer, cancel, or delegate more work."
+                )
+            prompt_parts.append(
+                "Then decide whether to wait, steer, cancel, retry, or delegate more work."
+            )
+            prompt = " ".join(prompt_parts)
+            submission = await client.start_turn(
+                prompt=prompt,
+                mode="start_if_idle",
+                thread_id=parent_thread_id,
+                effort=self.get_settings(project_id).get("reasoning_effort", "high"),
+                turn_source="child_wakeup",
+            )
+            turn_id = str(getattr(submission, "turn_id", None) or "")
+            if not turn_id:
+                raise RuntimeError("Parent wake-up Turn submission returned no turn ID")
+            task = asyncio.create_task(
+                self._wait_for_parent_child_wakeup_turn(
+                    client, parent_thread_id, project_id, turn_id
+                )
+            )
+            self.set_active_turn(parent_thread_id, turn_id, task, project_id)
+            self._child_wake_deferred.add(key)
         except Exception:
             delivery_failed = True
             logger.warning(
@@ -2969,13 +3108,29 @@ class SessionManager:
             # Prefer entries queued during delivery if they contain newer state.
             pending = self._child_wake_pending.setdefault(key, {})
             for child_thread_id, value in batch.items():
-                pending.setdefault(child_thread_id, value)
+                if child_thread_id == "@overflow":
+                    current = pending.setdefault(
+                        child_thread_id,
+                        {"kind": "overflow", "count": 0, "sample": []},
+                    )
+                    current["count"] = min(
+                        current.get("count", 0) + value.get("count", 0),
+                        2**31 - 1,
+                    )
+                    for sample_id in value.get("sample", []):
+                        if (
+                            sample_id not in current["sample"]
+                            and len(current["sample"]) < MAX_CHILD_WAKE_OVERFLOW_SAMPLE
+                        ):
+                            current["sample"].append(sample_id)
+                else:
+                    pending.setdefault(child_thread_id, value)
         finally:
+            if start_lock_acquired:
+                start_lock.release()
             self._child_wake_jobs.pop(key, None)
-            if self._child_wake_pending.get(key) and not delivery_failed:
-                self._child_wake_jobs[key] = asyncio.create_task(
-                    self._drain_child_parent_wakeups(project_id, parent_thread_id)
-                )
+            if not delivery_failed:
+                self._schedule_child_parent_wakeup(project_id, parent_thread_id)
 
     async def _wait_for_parent_child_wakeup_turn(
         self,
@@ -3097,6 +3252,19 @@ class SessionManager:
                         "finished_at_ms": receipt.get("failed_at_ms"),
                         "operation_error": str(err),
                     }
+                )
+                self._queue_child_parent_wakeup(
+                    parent_thread_id,
+                    child_thread_id,
+                    project_id or self._current_project_id,
+                    "creation-failed:"
+                    f"{receipt.get('operation_id') or child_thread_id}:"
+                    f"{receipt.get('operation_attempt') or 1}",
+                    status="failed",
+                    attempt=_nonnegative_int(receipt.get("operation_attempt")) or 1,
+                    child_session_available=False,
+                    title=str(receipt.get("title") or child_thread_id),
+                    operation_error=str(err),
                 )
             logger.exception(
                 "Unable to start delegated child %s from %s",
@@ -3237,6 +3405,10 @@ class SessionManager:
     ) -> None:
         """Clear active turn tracking upon turn settlement."""
         self._turn_registry.clear_active_turn(thread_id, project_id, turn_id, task)
+        if self.get_active_turn(thread_id, project_id):
+            return
+        resolved_project_id = self.resolve_thread_project(thread_id, project_id)
+        self._resume_child_parent_wakeup(resolved_project_id, thread_id)
 
     def get_active_turn(
         self, thread_id: str | None = None, project_id: str | None = None

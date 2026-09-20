@@ -481,6 +481,8 @@ async def _stream_turn_to_ws(
     )
     active_turn_id: str | None = None
     project_id: str | None = None
+    turn_start_lock: asyncio.Lock | None = None
+    turn_start_lock_acquired = False
     try:
         client = await session_manager.get_client_for_thread(
             target_thread, requested_project_id
@@ -488,6 +490,11 @@ async def _stream_turn_to_ws(
         project_id = requested_project_id or session_manager._client_projects.get(
             target_thread
         )
+        turn_start_lock = session_manager.get_turn_start_lock(
+            target_thread, project_id
+        )
+        await turn_start_lock.acquire()
+        turn_start_lock_acquired = True
         stream_kwargs = {
             "prompt": prompt,
             "mode": mode,
@@ -512,6 +519,9 @@ async def _stream_turn_to_ws(
                         current_task,
                         project_id,
                     )
+                    if turn_start_lock_acquired:
+                        turn_start_lock.release()
+                        turn_start_lock_acquired = False
             elif item.get("type") == "event":
                 turn_id = item.get("turnId")
                 if turn_id:
@@ -522,6 +532,9 @@ async def _stream_turn_to_ws(
                         current_task,
                         project_id,
                     )
+                    if turn_start_lock_acquired:
+                        turn_start_lock.release()
+                        turn_start_lock_acquired = False
 
             safe_item = to_json_serializable(item)
             # App Server notifications are centrally broadcast by the SDK
@@ -568,6 +581,8 @@ async def _stream_turn_to_ws(
             error_payload["projectId"] = project_id
         await session_manager.broadcast_ws(error_payload)
     finally:
+        if turn_start_lock_acquired and turn_start_lock is not None:
+            turn_start_lock.release()
         session_manager.clear_active_turn(
             target_thread,
             project_id,

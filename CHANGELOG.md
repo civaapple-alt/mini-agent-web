@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clear stale turn results when an execution segment starts and show incomplete-turn banners only after the active Turn settles. Tone down steer messages with neutral bubble colors and a muted label.
 - Keep every activity block in the current running assistant segment visible. Fold a settled segment into an activity summary only after a later segment becomes current; fold the final settled segment when its Turn ends.
 - Restore restarted Sessions from ordered items so assistant execution segments keep separate summaries and steer inputs keep separate message bubbles. Recover a missing input item from the persisted `turn_started.prompt`, and keep one Turn rail node when a Turn has multiple inputs.
+- Make the `有新活动 · 查看当前 Turn` action scroll to the last assistant message in the current Turn. Fall back to the Turn input when no assistant activity exists.
 - Under the `trusted` policy, admit public `web_fetch` requests after URL
   validation without an approval prompt. Keep approval for destructive
   operations and update the execution setting description.

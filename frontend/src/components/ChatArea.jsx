@@ -140,21 +140,26 @@ export default function ChatArea({
     else messageRefs.current.delete(String(messageId));
   };
 
-  const scrollToEntry = (entry) => {
-    if (!entry) return;
-    const node = messageRefs.current.get(String(entry.messageId));
-    if (!node) return;
+  const scrollToMessage = (messageId, turnId, block) => {
+    const node = messageRefs.current.get(String(messageId || ''));
+    if (!node || typeof node.scrollIntoView !== 'function') return false;
     const reducedMotion = window.matchMedia
       ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
       : false;
-    if (typeof node.scrollIntoView === 'function') {
-      node.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
-    }
+    node.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block });
     setIsScrolledUp(false);
     setHasNewActivity(false);
-    setFocusedTurnId(entry.turnId || entry.id);
+    setFocusedTurnId(turnId || null);
     if (focusTimerRef.current) window.clearTimeout(focusTimerRef.current);
-    focusTimerRef.current = window.setTimeout(() => setFocusedTurnId(null), 1400);
+    focusTimerRef.current = turnId
+      ? window.setTimeout(() => setFocusedTurnId(null), 1400)
+      : null;
+    return true;
+  };
+
+  const scrollToEntry = (entry) => {
+    if (!entry) return false;
+    return scrollToMessage(entry.messageId, entry.turnId || entry.id, 'center');
   };
 
   const selectTurn = (entry) => scrollToEntry(entry);
@@ -162,7 +167,15 @@ export default function ChatArea({
   const scrollToCurrentTurn = () => {
     const currentEntry = turnEntries.find((entry) => entry.isCurrent)
       || turnEntries[turnEntries.length - 1];
-    scrollToEntry(currentEntry);
+    const currentTurnId = currentEntry?.turnId ? String(currentEntry.turnId) : null;
+    if (currentTurnId) {
+      const latestAssistant = [...displayMessages].reverse().find((message) => (
+        message?.role === 'assistant' && String(message.turnId || '') === currentTurnId
+      ));
+      if (latestAssistant && scrollToMessage(latestAssistant.id, currentTurnId, 'end')) return;
+    }
+    if (currentEntry && scrollToEntry(currentEntry)) return;
+    scrollToBottom();
   };
 
   const handleScroll = () => {

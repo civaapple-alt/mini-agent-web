@@ -69,6 +69,50 @@ describe('ChatArea turn status', () => {
   });
 });
 
+describe('ChatArea restored assistant replies', () => {
+  it('shows reply actions only on the last assistant segment of each Turn', () => {
+    const { container } = render(
+      <ChatArea
+        messages={[
+          {
+            id: 'turn-two-answer',
+            role: 'assistant',
+            turnId: 'turn-2',
+            blocks: [{ type: 'text', id: 'answer-2', content: 'Earlier answer' }],
+          },
+          {
+            id: 'turn-five-progress',
+            role: 'assistant',
+            turnId: 'turn-5',
+            blocks: [{ type: 'text', id: 'progress-5', content: 'Now the new section at the end of the file.' }],
+          },
+          {
+            id: 'turn-five-follow-up',
+            role: 'assistant',
+            turnId: 'turn-5',
+            blocks: [{ type: 'tool', id: 'tool-5', name: 'apply_patch', status: 'completed' }],
+          },
+          {
+            id: 'turn-five-answer',
+            role: 'assistant',
+            turnId: 'turn-5',
+            blocks: [{ type: 'text', id: 'answer-5', content: 'The work is complete.' }],
+          },
+        ]}
+        isGenerating={false}
+        pendingApproval={null}
+        lastTurnResult={null}
+        onQuickPrompt={() => {}}
+        onRetryPrompt={() => {}}
+      />,
+    );
+
+    const footerMessageIds = [...container.querySelectorAll('.assistant-footer')]
+      .map((footer) => footer.closest('.message-row')?.getAttribute('data-message-id'));
+    expect(footerMessageIds).toEqual(['turn-two-answer', 'turn-five-answer']);
+  });
+});
+
 describe('ChatArea delegated child task batch', () => {
   const messages = [{
     id: 'assistant-turn-4',

@@ -40,6 +40,7 @@ function getCurrentExecutionSegmentStartIndex(blocks, activeBlockIndex) {
 export default function MessageItem({
   message,
   isLast,
+  isLastInTurn = isLast,
   isGenerating,
   pendingApproval,
   policy = 'interactive',
@@ -479,7 +480,7 @@ export default function MessageItem({
         )}
 
         {/* Footer actions & usage */}
-        {!isStreamingThis && fullResponseText && (
+        {!isStreamingThis && isLastInTurn && fullResponseText && (
           <div className="assistant-footer">
             <button
               className="msg-action-btn font-mono"

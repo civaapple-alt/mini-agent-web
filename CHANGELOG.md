@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep every activity block in the current running assistant segment visible. Fold a settled segment into an activity summary only after a later segment becomes current; fold the final settled segment when its Turn ends.
 - While a Turn is live, fold completed earlier segments within the same assistant message and keep the current segment expanded.
 - Restore restarted Sessions from ordered items so assistant execution segments keep separate summaries and steer inputs keep separate message bubbles. Recover a missing input item from the persisted `turn_started.prompt`, and keep one Turn rail node when a Turn has multiple inputs.
+- Restore earlier assistant replies from durable ThreadItems when checkpoint compaction omits their Turns; preserve item order and avoid duplicating Turns already present in the checkpoint.
 - Make the `有新活动 · 查看当前 Turn` action scroll to the last assistant message in the current Turn. Fall back to the Turn input when no assistant activity exists.
 - Under the `trusted` policy, admit public `web_fetch` requests after URL
   validation without an approval prompt. Keep approval for destructive

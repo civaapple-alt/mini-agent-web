@@ -85,6 +85,8 @@ App Server，避免停止、恢复或下一次请求继续等待一个已关闭�
 如果重启后首次输入和后续 steer 出现在同一个气泡，或一个 Turn 的思考与工具活动只显示为一张摘要卡，
 请更新 Gateway 和 Web Studio 后重新打开 Session。历史投影按持久化 item ID 和顺序还原每条输入，
 并按 assistant segment 还原执行段。多个输入可以属于同一个 Turn，因此消息气泡分别显示，Turn 轨道仍只显示一个节点。
+checkpoint 压缩可能移除较早的 assistant 对话，但持久化 ThreadItems 仍保留这些 Turn 的回复。Web Studio 会为缺少的 Turn
+重建 assistant 执行段，再按 ThreadItem 顺序与 checkpoint 内容合并；因此旧输入和回复不会因压缩而脱节，也不会重复显示。
 
 旧 Session 缺少输入 item 时，Gateway 会从对应 `turn_started.prompt` 恢复输入；如果前一个 Turn 以
 `steered` 结算，则该输入标记为 steer。已存在持久输入 item 时，Studio 会忽略无法匹配的 checkpoint 用户消息，

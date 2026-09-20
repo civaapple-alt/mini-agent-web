@@ -180,6 +180,15 @@ export default function ChildSessionViewer({
     () => projectChildMessages(entries, child, childProjectId),
     [entries, child, childProjectId],
   );
+  const lastAssistantIndexByTurn = useMemo(() => {
+    const indexByTurn = new Map();
+    messages.forEach((message, index) => {
+      if (message?.role === 'assistant' && message?.turnId) {
+        indexByTurn.set(String(message.turnId), index);
+      }
+    });
+    return indexByTurn;
+  }, [messages]);
   const running = isRunning(checkpoint, child);
   const status = getChildTaskStatus(child);
   const failure = checkpoint?.last_turn_error || checkpoint?.session?.last_turn_error;
@@ -331,6 +340,9 @@ export default function ChildSessionViewer({
                 key={message.id || `child-message-${index}`}
                 message={message}
                 isLast={index === messages.length - 1}
+                isLastInTurn={message.turnId
+                  ? lastAssistantIndexByTurn.get(String(message.turnId)) === index
+                  : index === messages.length - 1}
                 isGenerating={running}
                 pendingApproval={null}
                 policy="read_only"

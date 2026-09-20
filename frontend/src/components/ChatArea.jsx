@@ -84,6 +84,16 @@ export default function ChatArea({
     return orderMessagesByTurnHistory(result, threadItems);
   }, [messages, threadItems, traceScope]);
 
+  const lastAssistantIndexByTurn = useMemo(() => {
+    const indexByTurn = new Map();
+    displayMessages.forEach((message, index) => {
+      if (message?.role === 'assistant' && message?.turnId) {
+        indexByTurn.set(String(message.turnId), index);
+      }
+    });
+    return indexByTurn;
+  }, [displayMessages]);
+
   const childTaskBatchByMessage = useMemo(() => {
     const turnGroups = new Map();
     displayMessages.forEach((message, index) => {
@@ -285,6 +295,9 @@ export default function ChatArea({
                   key={msg.id || `msg_${index}`}
                   message={msg}
                   isLast={index === displayMessages.length - 1}
+                  isLastInTurn={turnId
+                    ? lastAssistantIndexByTurn.get(turnId) === index
+                    : index === displayMessages.length - 1}
                   isGenerating={isGenerating}
                   pendingApproval={pendingApproval}
                   policy={policy}

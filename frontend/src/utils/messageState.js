@@ -826,6 +826,18 @@ function persistedSegmentId(item) {
   return id.replace(/:(reasoning|agent)$/, '') || null;
 }
 
+function isAssistantHistoryItem(item) {
+  return [
+    'reasoning',
+    'agentMessage',
+    'agent_message',
+    'toolCall',
+    'tool_call',
+    'contextCompaction',
+    'context_compaction',
+  ].includes(item?.type);
+}
+
 function replayPersistedTurnSegments(turnId, entries, presentation) {
   const segments = [];
   const activities = presentation?.activities || [];
@@ -850,7 +862,7 @@ function replayPersistedTurnSegments(turnId, entries, presentation) {
       finishSegment();
       continue;
     }
-    if (item.type === 'reasoning' || item.type === 'agentMessage') {
+    if (item.type === 'reasoning' || item.type === 'agentMessage' || item.type === 'agent_message') {
       const segmentId = persistedSegmentId(item) || `${turnId}:segment:${entryIndex}`;
       if (activeSegment && activeSegment.id !== segmentId) finishSegment();
       if (!activeSegment) beginSegment(segmentId);
@@ -912,9 +924,9 @@ function replayPersistedTurnSegments(turnId, entries, presentation) {
 }
 
 /**
- * Rebuild a settled Turn from its durable item order and bounded presentation
- * metadata. New SessionStore records carry that metadata, so restored UI has
- * the same workflow and skill boundaries as the live event stream.
+ * Rebuild settled Turns from durable item order and bounded presentation
+ * metadata. Synthesize assistant anchors for Turns omitted by checkpoint
+ * compaction so their persisted replies remain visible after a restart.
  */
 export function restorePersistedTurnPresentation(messages = [], entries = [], presentations = []) {
   const presentationByTurn = new Map(
@@ -934,8 +946,31 @@ export function restorePersistedTurnPresentation(messages = [], entries = [], pr
     });
   }
 
+  const messagesWithAssistantAnchors = [...(messages || [])];
+  const assistantTurns = new Set(
+    messagesWithAssistantAnchors
+      .filter((message) => message?.role === 'assistant' && message?.turnId)
+      .map((message) => String(message.turnId)),
+  );
+  for (const [turnId, turnEntries] of entriesByTurn) {
+    if (assistantTurns.has(turnId)) continue;
+    const firstAssistantEntry = turnEntries.find((entry) => isAssistantHistoryItem(entry?.item));
+    if (!firstAssistantEntry) continue;
+    messagesWithAssistantAnchors.push({
+      id: `history_assistant_${turnId}`,
+      role: 'assistant',
+      turnId,
+      historyOrder: firstAssistantEntry.historyOrder,
+      text: '',
+      thinking: '',
+      tools: [],
+      blocks: [],
+    });
+    assistantTurns.add(turnId);
+  }
+
   const restoredTurns = new Set();
-  return (messages || []).flatMap((message) => {
+  const restoredMessages = messagesWithAssistantAnchors.flatMap((message) => {
     if (message?.role !== 'assistant' || !message.turnId) return [message];
     const key = String(message.turnId);
     const turnEntries = entriesByTurn.get(key) || [];
@@ -962,6 +997,7 @@ export function restorePersistedTurnPresentation(messages = [], entries = [], pr
       };
     });
   });
+  return orderMessagesByTurnHistory(restoredMessages, entries);
 }
 
 /**

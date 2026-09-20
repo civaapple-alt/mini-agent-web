@@ -1043,6 +1043,96 @@ test('history restores assistant segments and presentation activity in item orde
   ]);
 });
 
+test('history restores assistant turns omitted from a compacted checkpoint', () => {
+  const restored = restorePersistedTurnPresentation([
+    {
+      id: 'checkpoint-current-assistant',
+      role: 'assistant',
+      turnId: 'turn-current',
+      text: 'Current answer',
+    },
+  ], [
+    {
+      turnId: 'turn-old',
+      historyOrder: 0,
+      item: { type: 'userMessage', id: 'input-old', text: 'Earlier question' },
+    },
+    {
+      turnId: 'turn-old',
+      historyOrder: 1,
+      item: {
+        type: 'reasoning',
+        id: 'old-segment-1:reasoning',
+        segmentId: 'old-segment-1',
+        text: 'Retry the failed patch',
+      },
+    },
+    {
+      turnId: 'turn-old',
+      historyOrder: 2,
+      item: {
+        type: 'toolCall',
+        id: 'call-failed',
+        name: 'apply_patch',
+        status: 'failed',
+        output: 'hunk did not match',
+      },
+    },
+    {
+      turnId: 'turn-old',
+      historyOrder: 3,
+      item: {
+        type: 'reasoning',
+        id: 'old-segment-2:reasoning',
+        segmentId: 'old-segment-2',
+        text: 'Use the current file contents',
+      },
+    },
+    {
+      turnId: 'turn-old',
+      historyOrder: 4,
+      item: {
+        type: 'agentMessage',
+        id: 'old-segment-2:agent',
+        segmentId: 'old-segment-2',
+        text: 'Earlier answer restored',
+      },
+    },
+    {
+      turnId: 'turn-current',
+      historyOrder: 5,
+      item: {
+        type: 'reasoning',
+        id: 'current-segment:reasoning',
+        segmentId: 'current-segment',
+        text: 'Current thought',
+      },
+    },
+    {
+      turnId: 'turn-current',
+      historyOrder: 6,
+      item: {
+        type: 'agentMessage',
+        id: 'current-segment:agent',
+        segmentId: 'current-segment',
+        text: 'Current answer',
+      },
+    },
+  ]);
+
+  const assistants = restored.filter((message) => message.role === 'assistant');
+  assert.deepEqual(assistants.map(({ turnId, id }) => [turnId, id]), [
+    ['turn-old', 'old-segment-1'],
+    ['turn-old', 'old-segment-2'],
+    ['turn-current', 'current-segment'],
+  ]);
+  assert.deepEqual(assistants[0].blocks.map((block) => block.type), ['thinking', 'tool']);
+  assert.equal(assistants[0].blocks[1].status, 'failed');
+  assert.equal(assistants[0].blocks[1].output, 'hunk did not match');
+  assert.equal(assistants[1].text, 'Earlier answer restored');
+  assert.equal(assistants[2].text, 'Current answer');
+});
+
 test('history keeps a steer between its preceding and following assistant segments', () => {
   const entries = [
     { turnId: 'turn-steer', historyOrder: 0, item: { type: 'userMessage', id: 'input-1', text: 'initial' } },

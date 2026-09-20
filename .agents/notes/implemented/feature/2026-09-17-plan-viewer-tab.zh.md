@@ -24,3 +24,11 @@ Tab，并将状态栏的计划详情入口直接指向该 Tab。
 
 `PlanViewer.test.jsx` 覆盖顶层 Tab、默认计划文件读取、Markdown 标题/检查项渲染
 和文件切换；前端 lint、组件测试与生产构建作为提交前验证。
+
+## Session 计划路径与刷新
+
+Plan Mode 中模型使用逻辑别名 `plan.md` 读写当前 Session 的计划产物。Session 文件接口将它
+公开为 `plan/plan.md`；项目根目录的 `plan.md` 是另一份工作区文件。“计划”页优先选中当前
+Session 的 `plan/plan.md`，不扫描或拼接物理 Session 路径。
+
+Turn 结算后，侧栏根据新的 Turn 结果重新加载计划文件列表和正文。这样 Plan Mode 写入的内容会在同一 Session 的运行面板中更新。相关修复由 Harness 提交 `0f7a8cd`、`0bf5189` 和 WebStudio 提交 `af85c51` 完成；计划查看入口本身由 `7faf8b3`、`dc78c45` 建立和调整。

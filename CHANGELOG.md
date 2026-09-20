@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parent wakeups and resume the parent safely when progress arrives. Keep the
   message stream, Runtime panel, and project-session filter on the same child
   lifecycle projection.
+- Keep the Plan viewer on the current Session's `plan/plan.md`; refresh its file list and
+  content after a Turn settles.
 - Show delegated children as a per-Turn batch in the message stream with each
   task's lifecycle, keep the Runtime child list authoritative and openable, and
   hide delegated child Sessions from the project session tree while preserving
@@ -69,9 +71,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Web Studio runtime panel. Child Sessions can read the parent task list but
   cannot control it; remote waits such as GitHub Actions use the scheduled marker
   described below rather than a local Shell task.
-- Add bounded scheduled wake-up task projection to the SDK, Gateway, and runtime
-  panel. A ready marker lets a later model Turn perform one remote status query;
-  it does not run Shell, auto-resume the model, or cancel the remote operation.
+- Add bounded scheduled delay-marker projection to the SDK, Gateway, and runtime
+  panel. A ready marker records when a later, explicitly started Turn can query
+  remote status; it does not wake a Thread, run Shell, or cancel remote work.
 
 - Redact free-form approval arguments from SDK and Gateway logs. Approval
   records now keep the tool name, bounded `apply_patch` counts, and request ID

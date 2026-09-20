@@ -11,6 +11,7 @@
 | [`privacy.md`](privacy.md) | 本地数据、凭证、日志和网络边界 |
 | [`releasing.md`](releasing.md) | 版本同步、验证和发布步骤 |
 | [`skills.md`](skills.md) | 内置技能组、项目开关、技能目录和 `$skill` 激活 |
+| [`child-tasks.md`](child-tasks.md) | 子代理批次、进展、动态控制及运行面板入口 |
 | [`background-tasks.md`](background-tasks.md) | 跨 Turn 本地后台 Shell 任务及运行面板行为 |
 | [`scheduled-tasks.md`](scheduled-tasks.md) | 跨 Turn 的有界延时标记及远程状态等待边界 |
 | [`troubleshooting.md`](troubleshooting.md) | 启动、连接、端口和审批故障排查 |

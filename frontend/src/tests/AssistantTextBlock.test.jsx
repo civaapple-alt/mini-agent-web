@@ -56,7 +56,7 @@ describe('AssistantTextBlock', () => {
     expect(container.querySelector('.assistant-answer')?.textContent).toContain('已完成的步骤');
   });
 
-  it('keeps progress and final text visible while activity summaries settle', () => {
+  it('keeps the active execution segment ungrouped and folds it after the next segment starts', () => {
     const baseMessage = {
       id: 'assistant-1',
       role: 'assistant',
@@ -67,13 +67,15 @@ describe('AssistantTextBlock', () => {
         isStreaming: false,
       }, {
         type: 'tool',
-        id: 'tool-running-1',
+        id: 'tool-completed-1',
         name: 'shell',
-        status: 'running',
+        status: 'completed',
+        output: 'ok',
       }, {
         type: 'text',
         id: 'progress-1',
         content: '我正在检查任务状态。',
+        isStreaming: true,
       }],
     };
     const { container, rerender, unmount } = render(
@@ -87,7 +89,7 @@ describe('AssistantTextBlock', () => {
           blocks: [
             { ...baseMessage.blocks[0], isStreaming: false },
             baseMessage.blocks[1],
-            { ...baseMessage.blocks[2], content: '我正在核对结果。' },
+            { ...baseMessage.blocks[2], content: '我正在核对结果。', isStreaming: false },
           ],
         }}
         isLast
@@ -96,8 +98,35 @@ describe('AssistantTextBlock', () => {
     );
 
     expect(container.querySelector('.assistant-answer')?.textContent).toContain('我正在核对结果。');
-    expect(screen.getByText('运行中')).toBeDefined();
-    expect(container.querySelector('.assistant-activity-group-summary')?.textContent).toContain('已完成 1 项活动');
+    expect(container.querySelector('.assistant-activity-group-summary')).toBeNull();
+    expect(container.querySelector('.thinking-container')).toBeTruthy();
+
+    const nextSegment = {
+      id: 'assistant-2',
+      role: 'assistant',
+      turnId: 'turn-1',
+      blocks: [{
+        type: 'thinking',
+        id: 'thinking-2',
+        content: '继续核对',
+        isStreaming: true,
+      }],
+    };
+    rerender(
+      <>
+        <MessageItem key="segment-a" message={baseMessage} isLast={false} isGenerating />
+        <MessageItem key="segment-b" message={nextSegment} isLast isGenerating />
+      </>,
+    );
+
+    const assistantMessages = container.querySelectorAll('.message-row.assistant');
+    expect(assistantMessages).toHaveLength(2);
+    expect(assistantMessages[0].querySelector('.assistant-activity-group-summary')?.textContent)
+      .toContain('已完成 2 项活动');
+    expect(assistantMessages[0].querySelector('.assistant-activity-group-summary')?.getAttribute('aria-expanded'))
+      .toBe('false');
+    expect(assistantMessages[1].querySelector('.assistant-activity-group-summary')).toBeNull();
+    expect(assistantMessages[1].querySelector('.thinking-container')).toBeTruthy();
 
     rerender(
       <MessageItem
@@ -106,7 +135,7 @@ describe('AssistantTextBlock', () => {
           blocks: [
             { ...baseMessage.blocks[0], isStreaming: false },
             { ...baseMessage.blocks[1], status: 'completed', output: 'ok' },
-            { ...baseMessage.blocks[2], content: '我正在核对结果。' },
+            { ...baseMessage.blocks[2], content: '我正在核对结果。', isStreaming: false },
             { type: 'text', id: 'answer-1', content: '任务已停止。' },
           ],
         }}
@@ -131,7 +160,7 @@ describe('AssistantTextBlock', () => {
           blocks: [
             { ...baseMessage.blocks[0], isStreaming: false },
             { ...baseMessage.blocks[1], status: 'completed', output: 'ok' },
-            { ...baseMessage.blocks[2], content: '我正在核对结果。' },
+            { ...baseMessage.blocks[2], content: '我正在核对结果。', isStreaming: false },
             { type: 'text', id: 'answer-1', content: '任务已停止。' },
           ],
         }}

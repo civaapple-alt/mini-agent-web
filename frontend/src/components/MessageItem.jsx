@@ -259,16 +259,22 @@ export default function MessageItem({
         }]
         : []),
     ];
-  const renderedBlocks = groupSettledAssistantBlocks(
-    groupCompactionBlocks(normalizeAssistantBlocks(sourceBlocks)),
-  );
-  const turnScope = String(turnEntry?.turnId || message.turnId || message.id || 'assistant');
-  const activeBlockIndex = renderedBlocks.findLastIndex((block) => {
+  const normalizedBlocks = groupCompactionBlocks(normalizeAssistantBlocks(sourceBlocks));
+  const activeBlockIndex = normalizedBlocks.findLastIndex((block) => {
     const status = String(block.status || '').toLowerCase();
     return Boolean(block.isStreaming)
-      || ['running', 'inprogress'].includes(status)
+      || Boolean(block.approval)
+      || ['running', 'inprogress', 'pending', 'queued', 'approval', 'waiting_approval', 'needs_approval']
+        .includes(status)
       || (block.type === 'skills' && (block.loading || []).length > 0);
   });
+  const isCurrentExecutionSegmentActive = isLast && (
+    isGenerating || pendingApproval || activeBlockIndex !== -1
+  );
+  const renderedBlocks = isCurrentExecutionSegmentActive
+    ? normalizedBlocks
+    : groupSettledAssistantBlocks(normalizedBlocks);
+  const turnScope = String(turnEntry?.turnId || message.turnId || message.id || 'assistant');
   const currentBlockIndex = activeBlockIndex;
   let childTaskBatchRendered = false;
 

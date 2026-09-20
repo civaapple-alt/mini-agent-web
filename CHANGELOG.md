@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep every activity block in the current running assistant segment visible. Fold a settled segment into an activity summary only after a later segment becomes current; fold the final settled segment when its Turn ends.
 - Under the `trusted` policy, admit public `web_fetch` requests after URL
   validation without an approval prompt. Keep approval for destructive
   operations and update the execution setting description.

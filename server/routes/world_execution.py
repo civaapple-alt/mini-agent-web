@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +31,25 @@ ALL_BUILTIN_TOOLS: list[str] = [
 
 
 def _ask_directory_dialog() -> str:
-    """Prompt native Windows/OS directory dialog."""
+    """Prompt a native directory dialog without creating UI in the server thread."""
+    if sys.platform == "darwin":
+        result = subprocess.run(
+            [
+                "/usr/bin/osascript",
+                "-e",
+                'POSIX path of (choose folder with prompt "Select Project Root")',
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+        if "(-128)" in result.stderr:
+            return ""
+        detail = result.stderr.strip() or "osascript exited without an error message"
+        raise RuntimeError(f"Unable to open macOS folder dialog: {detail}")
+
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -41,8 +61,6 @@ def _ask_directory_dialog() -> str:
         root.destroy()
         return selected or ""
     except Exception:  # noqa: BLE001
-        import subprocess
-
         ps_cmd = (
             "Add-Type -AssemblyName System.Windows.Forms; "
             "$f = New-Object System.Windows.Forms.FolderBrowserDialog; "

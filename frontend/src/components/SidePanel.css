@@ -26,8 +26,8 @@
 
 .sidepanel-docked {
   display: flex;
-  flex: 0 0 min(420px, 38vw);
-  width: min(420px, 38vw);
+  flex: 0 0 var(--side-panel-width, min(420px, 38vw));
+  width: var(--side-panel-width, min(420px, 38vw));
   min-width: 320px;
   min-height: 0;
   overflow: hidden;
@@ -70,7 +70,19 @@
   gap: 4px;
   min-width: 0;
   overflow-x: auto;
+  cursor: grab;
+  overscroll-behavior-x: contain;
   scrollbar-width: none;
+}
+
+.sidepanel-tabs.is-dragging,
+.sidepanel-tabs.is-dragging * {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.sidepanel-tabs.is-dragging {
+  scroll-behavior: auto;
 }
 
 .sidepanel-tabs::-webkit-scrollbar {

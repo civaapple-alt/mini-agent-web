@@ -126,6 +126,40 @@ describe('child agents drawer tab', () => {
     expect(onToggleDock).toHaveBeenCalledOnce();
   });
 
+  it('scrolls the top-level tabs when the user drags the tab strip', () => {
+    const { container } = render(
+      <SidePanel
+        isOpen
+        isDocked
+        initialTab="status"
+        threadId="parent-a"
+        projectId="project-a"
+        childTasks={[]}
+        childTasksLoading={false}
+      />,
+    );
+    const tabs = container.querySelector('.sidepanel-tabs');
+    const statusTab = screen.getByRole('button', { name: '运行状态' });
+    const planTab = screen.getByRole('button', { name: '计划' });
+
+    fireEvent.pointerDown(planTab, {
+      pointerId: 4,
+      pointerType: 'mouse',
+      button: 0,
+      clientX: 300,
+    });
+    fireEvent.pointerMove(planTab, {
+      pointerId: 4,
+      pointerType: 'mouse',
+      clientX: 220,
+    });
+    fireEvent.pointerUp(planTab, { pointerId: 4, pointerType: 'mouse' });
+    fireEvent.click(planTab);
+
+    expect(tabs.scrollLeft).toBe(80);
+    expect(statusTab.className).toContain('active');
+  });
+
   it('uses modal overlay on narrow windows while keeping the dock preference available', () => {
     const onToggleDock = vi.fn();
     const { container } = render(

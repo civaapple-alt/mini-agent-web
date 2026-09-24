@@ -470,6 +470,10 @@ export default function SidePanel({
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRetryingMcp, setIsRetryingMcp] = useState(false);
+  const [isDraggingTabs, setIsDraggingTabs] = useState(false);
+  const tabsViewportRef = useRef(null);
+  const tabsPointerRef = useRef(null);
+  const suppressTabClickRef = useRef(false);
   const workflowRevisionRef = useRef(null);
   const selectedFileRef = useRef(null);
   const requestEpochRef = useRef(0);
@@ -480,6 +484,20 @@ export default function SidePanel({
   useEffect(() => {
     if (initialTab) setActiveTab(normalizePanelTab(initialTab));
   }, [initialTab]);
+
+  useEffect(() => {
+    const tabs = tabsViewportRef.current;
+    const activeTabButton = tabs?.querySelector('.panel-tab-btn.active');
+    if (!tabs || !activeTabButton) return;
+
+    const tabsBounds = tabs.getBoundingClientRect();
+    const activeBounds = activeTabButton.getBoundingClientRect();
+    if (activeBounds.left < tabsBounds.left) {
+      tabs.scrollLeft -= tabsBounds.left - activeBounds.left;
+    } else if (activeBounds.right > tabsBounds.right) {
+      tabs.scrollLeft += activeBounds.right - tabsBounds.right;
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -885,6 +903,59 @@ export default function SidePanel({
     ? (canDock ? '恢复浮层显示' : '取消宽屏右侧停靠')
     : (canDock ? '吸附到右侧' : '窗口较窄，宽屏时吸附到右侧');
 
+  const handleTabsPointerDown = (event) => {
+    if (event.button !== 0 || event.pointerType === 'touch') return;
+    tabsPointerRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startScrollLeft: event.currentTarget.scrollLeft,
+      dragging: false,
+    };
+  };
+
+  const handleTabsPointerMove = (event) => {
+    const drag = tabsPointerRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - drag.startX;
+    if (!drag.dragging && Math.abs(deltaX) < 5) return;
+    if (!drag.dragging) {
+      drag.dragging = true;
+      setIsDraggingTabs(true);
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
+    event.currentTarget.scrollLeft = drag.startScrollLeft - deltaX;
+    event.preventDefault();
+  };
+
+  const finishTabsPointer = (event) => {
+    const drag = tabsPointerRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    tabsPointerRef.current = null;
+    if (!drag.dragging) return;
+
+    suppressTabClickRef.current = true;
+    setIsDraggingTabs(false);
+    window.setTimeout(() => {
+      suppressTabClickRef.current = false;
+    }, 0);
+  };
+
+  const handleTabsClickCapture = (event) => {
+    if (!suppressTabClickRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressTabClickRef.current = false;
+  };
+
+  const handleTabsWheel = (event) => {
+    const tabs = tabsViewportRef.current;
+    if (!tabs || tabs.scrollWidth <= tabs.clientWidth) return;
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+    tabs.scrollLeft += event.deltaY;
+    event.preventDefault();
+  };
+
   return (
     <div
       className={isDocked ? 'sidepanel-docked' : 'sidepanel-overlay'}
@@ -899,7 +970,18 @@ export default function SidePanel({
       >
         {/* Header with Tabs */}
         <div className="sidepanel-header">
-          <div className="sidepanel-tabs">
+          <div
+            className={`sidepanel-tabs ${isDraggingTabs ? 'is-dragging' : ''}`}
+            ref={tabsViewportRef}
+            aria-label="运行详情标签"
+            onPointerDown={handleTabsPointerDown}
+            onPointerMove={handleTabsPointerMove}
+            onPointerUp={finishTabsPointer}
+            onPointerCancel={finishTabsPointer}
+            onLostPointerCapture={finishTabsPointer}
+            onClickCapture={handleTabsClickCapture}
+            onWheel={handleTabsWheel}
+          >
             <button
               className={`panel-tab-btn ${activeTab === 'status' ? 'active' : ''}`}
               onClick={() => setActiveTab('status')}

@@ -30,9 +30,11 @@ vi.mock('../components/SidePanel', () => ({
 
 describe('AppLayout side panel docking', () => {
   const storageKey = 'mini-agent-web.side-panel-docked';
+  const widthStorageKey = 'mini-agent-web.side-panel-width';
 
   beforeEach(() => {
     window.localStorage.removeItem(storageKey);
+    window.localStorage.removeItem(widthStorageKey);
     window.innerWidth = 1400;
   });
 
@@ -81,5 +83,61 @@ describe('AppLayout side panel docking', () => {
       />,
     );
     expect(screen.getByTestId('side-panel').dataset.docked).toBe('true');
+  });
+
+  it('resizes and remembers the docked panel width with pointer and keyboard input', async () => {
+    const { container, unmount } = render(
+      <AppLayout
+        currentThread="parent-thread"
+        threads={[]}
+        messages={[]}
+        threadItems={[]}
+        currentThreadProject="project-a"
+        userSettings={{ auto_scroll: true, word_wrap: true, font_size: 13 }}
+        sidePanelOpen
+        sidePanelTab="child_agents"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '切换停靠' }));
+    await waitFor(() => expect(window.localStorage.getItem(storageKey)).toBe('true'));
+    const resizeHandle = screen.getByRole('separator', { name: '调整右侧面板宽度' });
+    expect(resizeHandle.getAttribute('aria-valuenow')).toBe('420');
+
+    fireEvent.pointerDown(resizeHandle, {
+      pointerId: 7,
+      button: 0,
+      clientX: 800,
+    });
+    fireEvent.pointerMove(resizeHandle, {
+      pointerId: 7,
+      clientX: 720,
+    });
+    fireEvent.pointerUp(resizeHandle, { pointerId: 7 });
+
+    expect(resizeHandle.getAttribute('aria-valuenow')).toBe('500');
+    expect(window.localStorage.getItem(widthStorageKey)).toBe('500');
+    expect(container.querySelector('.app-main-layout').style.getPropertyValue('--side-panel-width'))
+      .toBe('500px');
+
+    fireEvent.keyDown(resizeHandle, { key: 'ArrowLeft' });
+    expect(resizeHandle.getAttribute('aria-valuenow')).toBe('516');
+    expect(window.localStorage.getItem(widthStorageKey)).toBe('516');
+
+    unmount();
+    render(
+      <AppLayout
+        currentThread="parent-thread"
+        threads={[]}
+        messages={[]}
+        threadItems={[]}
+        currentThreadProject="project-a"
+        userSettings={{ auto_scroll: true, word_wrap: true, font_size: 13 }}
+        sidePanelOpen
+        sidePanelTab="child_agents"
+      />,
+    );
+    expect(screen.getByRole('separator', { name: '调整右侧面板宽度' })
+      .getAttribute('aria-valuenow')).toBe('516');
   });
 });

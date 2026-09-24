@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import ChatArea from './ChatArea';
@@ -12,6 +12,37 @@ import useChildTasks from '../hooks/useChildTasks';
 
 const SIDE_PANEL_DOCK_BREAKPOINT = 1200;
 const SIDE_PANEL_DOCK_STORAGE_KEY = 'mini-agent-web.side-panel-docked';
+const SIDE_PANEL_WIDTH_STORAGE_KEY = 'mini-agent-web.side-panel-width';
+const SIDE_PANEL_MIN_WIDTH = 320;
+const SIDE_PANEL_MAX_WIDTH = 720;
+const SIDE_PANEL_DEFAULT_WIDTH = 420;
+
+function sidePanelWidthLimits(viewportWidth) {
+  return {
+    min: SIDE_PANEL_MIN_WIDTH,
+    max: Math.max(
+      SIDE_PANEL_MIN_WIDTH,
+      Math.min(SIDE_PANEL_MAX_WIDTH, Math.floor(viewportWidth * 0.5)),
+    ),
+  };
+}
+
+function clampSidePanelWidth(width, viewportWidth) {
+  const limits = sidePanelWidthLimits(viewportWidth);
+  return Math.min(limits.max, Math.max(limits.min, Math.round(width)));
+}
+
+function readSidePanelWidth() {
+  if (typeof window === 'undefined') return SIDE_PANEL_DEFAULT_WIDTH;
+  try {
+    const storedWidth = Number(window.localStorage.getItem(SIDE_PANEL_WIDTH_STORAGE_KEY));
+    return Number.isFinite(storedWidth) && storedWidth > 0
+      ? clampSidePanelWidth(storedWidth, window.innerWidth)
+      : SIDE_PANEL_DEFAULT_WIDTH;
+  } catch {
+    return SIDE_PANEL_DEFAULT_WIDTH;
+  }
+}
 
 function readSidePanelDockPreference() {
   if (typeof window === 'undefined') return false;
@@ -99,11 +130,70 @@ export default function AppLayout({
 }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sidePanelDockPreference, setSidePanelDockPreference] = useState(readSidePanelDockPreference);
+  const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth);
   const [canDockSidePanel, setCanDockSidePanel] = useState(() => (
     typeof window === 'undefined' || window.innerWidth >= SIDE_PANEL_DOCK_BREAKPOINT
   ));
+  const sidePanelWidthRef = useRef(sidePanelWidth);
+  const sidePanelResizeRef = useRef(null);
   const childTasks = useChildTasks(currentThread, currentThreadProject);
   const sidePanelDocked = sidePanelOpen && sidePanelDockPreference && canDockSidePanel;
+  const viewportWidth = typeof window === 'undefined' ? 1440 : window.innerWidth;
+  const visibleSidePanelWidth = clampSidePanelWidth(sidePanelWidth, viewportWidth);
+  const sidePanelWidthLimitsForViewport = sidePanelWidthLimits(viewportWidth);
+
+  const updateSidePanelWidth = (nextWidth) => {
+    const clampedWidth = clampSidePanelWidth(nextWidth, viewportWidth);
+    sidePanelWidthRef.current = clampedWidth;
+    setSidePanelWidth(clampedWidth);
+    return clampedWidth;
+  };
+
+  const persistSidePanelWidth = (width) => {
+    try {
+      window.localStorage.setItem(SIDE_PANEL_WIDTH_STORAGE_KEY, String(width));
+    } catch {
+      // Keep the in-memory preference when browser storage is unavailable.
+    }
+  };
+
+  const handleSidePanelResizeStart = (event) => {
+    if (!sidePanelDocked || event.button !== 0) return;
+    sidePanelWidthRef.current = visibleSidePanelWidth;
+    sidePanelResizeRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: visibleSidePanelWidth,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  };
+
+  const handleSidePanelResizeMove = (event) => {
+    const resize = sidePanelResizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    updateSidePanelWidth(resize.startWidth + resize.startX - event.clientX);
+    event.preventDefault();
+  };
+
+  const finishSidePanelResize = (event) => {
+    const resize = sidePanelResizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    sidePanelResizeRef.current = null;
+    persistSidePanelWidth(sidePanelWidthRef.current);
+  };
+
+  const handleSidePanelResizeKeyDown = (event) => {
+    let nextWidth;
+    if (event.key === 'ArrowLeft') nextWidth = visibleSidePanelWidth + 16;
+    else if (event.key === 'ArrowRight') nextWidth = visibleSidePanelWidth - 16;
+    else if (event.key === 'Home') nextWidth = sidePanelWidthLimitsForViewport.min;
+    else if (event.key === 'End') nextWidth = sidePanelWidthLimitsForViewport.max;
+    else return;
+
+    event.preventDefault();
+    persistSidePanelWidth(updateSidePanelWidth(nextWidth));
+  };
 
   useEffect(() => {
     const updateViewport = () => {
@@ -138,7 +228,10 @@ export default function AppLayout({
         onToggleSidebar={() => setMobileSidebarOpen((open) => !open)}
       />
 
-      <div className="app-main-layout">
+      <div
+        className="app-main-layout"
+        style={{ '--side-panel-width': `${visibleSidePanelWidth}px` }}
+      >
         <Sidebar
           threads={threads}
           currentThread={currentThread}
@@ -235,6 +328,26 @@ export default function AppLayout({
             onSkillInsertionApplied={onSkillInsertionApplied}
           />
         </main>
+
+        {sidePanelDocked && (
+          <div
+            className="sidepanel-resize-handle"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整右侧面板宽度"
+            aria-valuemin={sidePanelWidthLimitsForViewport.min}
+            aria-valuemax={sidePanelWidthLimitsForViewport.max}
+            aria-valuenow={visibleSidePanelWidth}
+            aria-valuetext={`${visibleSidePanelWidth} 像素`}
+            tabIndex={0}
+            onPointerDown={handleSidePanelResizeStart}
+            onPointerMove={handleSidePanelResizeMove}
+            onPointerUp={finishSidePanelResize}
+            onPointerCancel={finishSidePanelResize}
+            onLostPointerCapture={finishSidePanelResize}
+            onKeyDown={handleSidePanelResizeKeyDown}
+          />
+        )}
 
         <ErrorBoundary title="侧边栏渲染异常 (Side Panel Render Error)">
           <SidePanel

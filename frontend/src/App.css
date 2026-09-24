@@ -28,6 +28,33 @@
   width: 100%;
 }
 
+.sidepanel-resize-handle {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 0 0 8px;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  cursor: col-resize;
+  outline: none;
+}
+
+.sidepanel-resize-handle::before {
+  width: 2px;
+  height: 36px;
+  border-radius: 2px;
+  background: var(--border-color);
+  content: '';
+  transition: height 0.15s ease, background-color 0.15s ease;
+}
+
+.sidepanel-resize-handle:hover::before,
+.sidepanel-resize-handle:focus-visible::before {
+  height: 48px;
+  background: var(--border-focus);
+}
+
 .mobile-sidebar-backdrop {
   display: none;
 }

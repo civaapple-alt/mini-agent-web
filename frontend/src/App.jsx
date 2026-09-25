@@ -131,7 +131,6 @@ export default function App() {
     access: 'project',
     policy: 'interactive',
     default_mode: 'chat',
-    reasoning_effort: 'high',
     theme: 'light',
     auto_scroll: true,
     word_wrap: true,

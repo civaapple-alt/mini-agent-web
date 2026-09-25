@@ -12,8 +12,8 @@ from mini_agent import (
     ThreadGoal,
     TurnEventsResult,
 )
-from mini_agent.errors import ServerProcessError
 from mini_agent.client import _redact_secrets
+from mini_agent.errors import ServerProcessError
 
 from tests.conftest import has_app_server
 
@@ -50,6 +50,7 @@ async def test_sdk_model_catalog_request_and_thread_model_settings():
                 "builtinTools": [],
                 "continuationMode": "manual",
                 "modelSelection": {"providerId": "deepseek", "modelId": "deepseek-v4"},
+                "reasoningSelection": {"kind": "level", "value": "disabled"},
                 "reasoningEffort": "high",
             }
         }
@@ -65,6 +66,10 @@ async def test_sdk_model_catalog_request_and_thread_model_settings():
         thread_id="thread-1",
         model_selection={"providerId": "deepseek", "modelId": "deepseek-v4"},
         reasoning_effort="high",
+    )
+    typed_settings = await client.update_thread_model_settings(
+        thread_id="thread-1",
+        reasoning_selection={"kind": "level", "value": "disabled"},
     )
     thread_settings = await client.get_thread_model_settings("thread-1")
 
@@ -90,11 +95,23 @@ async def test_sdk_model_catalog_request_and_thread_model_settings():
         "modelId": "deepseek-v4",
     }
     assert settings.reasoning_effort == "high"
+    assert typed_settings.reasoning_selection == {"kind": "level", "value": "disabled"}
     assert calls[2] == (
+        "thread/settings/update",
+        {
+            "threadId": "thread-1",
+            "reasoningSelection": {"kind": "level", "value": "disabled"},
+        },
+    )
+    assert calls[3] == (
         "thread/model-settings/get",
         {"threadId": "thread-1"},
     )
     assert thread_settings["value"]["modelSelection"]["providerId"] == "deepseek"
+    assert thread_settings["value"]["reasoningSelection"] == {
+        "kind": "level",
+        "value": "disabled",
+    }
     assert _redact_secrets({"provider": {"api_key": "private-key"}}) == {
         "provider": {"api_key": "[REDACTED]"}
     }

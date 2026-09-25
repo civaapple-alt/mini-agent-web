@@ -51,6 +51,8 @@ const SLASH_COMMANDS = [
   { cmd: '/clear', desc: '仅清空当前界面显示，不删除会话历史', icon: <Sparkles size={13} className="text-sky" /> },
 ];
 
+const reasoningLevelLabel = (level) => (level === 'disabled' ? 'disabled（关闭）' : level);
+
 export default function InputBar({
   isGenerating,
   isInterrupting = false,
@@ -95,7 +97,7 @@ export default function InputBar({
   const [composerDirective, setComposerDirective] = useState(null);
   const [showPluginPopup, setShowPluginPopup] = useState(false);
   const [modelCatalog, setModelCatalog] = useState({ providers: [], projectDefaults: {} });
-  const [threadModelSettings, setThreadModelSettings] = useState({ model_selection: null, reasoning_effort: null });
+  const [threadModelSettings, setThreadModelSettings] = useState({ model_selection: null, reasoning_selection: null });
   const [modelSettingsLoading, setModelSettingsLoading] = useState(false);
   const [modelSettingsSaving, setModelSettingsSaving] = useState(false);
   const [modelSettingsError, setModelSettingsError] = useState('');
@@ -131,7 +133,10 @@ export default function InputBar({
       setModelCatalog(catalogResult?.catalog || catalogResult || { providers: [], projectDefaults: {} });
       setThreadModelSettings({
         model_selection: threadResult?.model_selection || null,
-        reasoning_effort: threadResult?.reasoning_effort || null,
+        reasoning_selection: threadResult?.reasoning_selection
+          || (threadResult?.reasoning_effort
+            ? { kind: 'level', value: threadResult.reasoning_effort }
+            : null),
       });
       setModelSettingsError('');
     } catch (error) {
@@ -185,16 +190,27 @@ export default function InputBar({
             : '';
   const threadSelectionKey = selectionKey(threadModelSettings.model_selection);
   const reasoningLevels = effectiveEntry?.model.reasoningLevels || [];
-  const reasoningValue = threadModelSettings.reasoning_effort || '';
+  const globalDefaultReasoning = modelCatalog.defaultReasoningSelection || { kind: 'api_default' };
+  const inheritedReasoning = !threadModelSettings.model_selection
+    && !projectDefault
+    && selectionKey(effectiveSelection) === selectionKey(modelCatalog.defaultModel)
+    ? globalDefaultReasoning
+    : { kind: 'api_default' };
+  const effectiveReasoningSelection = threadModelSettings.reasoning_selection || inheritedReasoning;
+  const reasoningValue = effectiveReasoningSelection.kind === 'level'
+    ? `level:${effectiveReasoningSelection.value}`
+    : 'api_default';
 
-  const saveThreadModelSettings = async (selection, effort) => {
+  const saveThreadModelSettings = async (selection, reasoningSelection) => {
     if (!currentThread) return;
     setModelSettingsSaving(true);
     try {
-      const result = await api.updateThreadModelSettings(currentThread, selection, effort, { projectId });
+      const result = await api.updateThreadModelSettings(currentThread, selection, reasoningSelection, { projectId });
       setThreadModelSettings({
         model_selection: result?.model_selection ?? result?.modelSelection ?? selection,
-        reasoning_effort: result?.reasoning_effort ?? result?.reasoningEffort ?? effort,
+        reasoning_selection: result?.reasoning_selection
+          ?? result?.reasoningSelection
+          ?? reasoningSelection,
       });
       setModelSettingsError('');
     } catch (error) {
@@ -1155,7 +1171,17 @@ export default function InputBar({
                     disabled={modelSelectionDisabled}
                     onChange={(event) => {
                       const selected = modelEntries.find((entry) => entry.key === event.target.value);
-                      void saveThreadModelSettings(selected?.selection || null, threadModelSettings.reasoning_effort);
+                      if (!selected) {
+                        void saveThreadModelSettings(null, null);
+                        return;
+                      }
+                      const current = effectiveReasoningSelection;
+                      const remainsSupported = current.kind !== 'level'
+                        || selected.model.reasoningLevels?.includes(current.value);
+                      void saveThreadModelSettings(
+                        selected.selection,
+                        remainsSupported ? current : { kind: 'api_default' },
+                      );
                     }}
                   >
                     <option value="__default__">
@@ -1195,11 +1221,13 @@ export default function InputBar({
                       disabled={modelSelectionDisabled}
                       onChange={(event) => void saveThreadModelSettings(
                         threadModelSettings.model_selection,
-                        event.target.value || null,
+                        event.target.value === 'api_default'
+                          ? { kind: 'api_default' }
+                          : { kind: 'level', value: event.target.value.slice('level:'.length) },
                       )}
                     >
-                      <option value="">服务商默认</option>
-                      {reasoningLevels.map((level) => <option key={level} value={level}>{level}</option>)}
+                      <option value="api_default">使用 API 默认</option>
+                      {reasoningLevels.map((level) => <option key={level} value={`level:${level}`}>{reasoningLevelLabel(level)}</option>)}
                     </select>
                   </label>
                 )}

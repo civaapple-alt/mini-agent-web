@@ -1292,6 +1292,7 @@ class MiniAgentClient:
         continuation_mode: str | None = None,
         model_selection: dict[str, str] | None | object = ...,
         reasoning_effort: str | None | object = ...,
+        reasoning_selection: dict[str, Any] | None | object = ...,
     ) -> ThreadSettingsResult:
         """Update Thread collaboration mode and optional Builtin selection."""
         params: dict[str, Any] = {"threadId": thread_id or self._active_thread_id}
@@ -1307,6 +1308,8 @@ class MiniAgentClient:
             params["modelSelection"] = model_selection
         if reasoning_effort is not ...:
             params["reasoningEffort"] = reasoning_effort
+        if reasoning_selection is not ...:
+            params["reasoningSelection"] = reasoning_selection
         res = await self._send_request(
             "thread/settings/update",
             params,
@@ -1320,6 +1323,7 @@ class MiniAgentClient:
         model_selection: dict[str, str] | None | object = ...,
         reasoning_effort: str | None | object = ...,
         thread_id: str | None = None,
+        reasoning_selection: dict[str, Any] | None | object = ...,
     ) -> ThreadSettingsResult:
         """Update this Thread's model choice without changing its workflow mode."""
         return await self.update_thread_settings(
@@ -1327,6 +1331,7 @@ class MiniAgentClient:
             thread_id=thread_id,
             model_selection=model_selection,
             reasoning_effort=reasoning_effort,
+            reasoning_selection=reasoning_selection,
         )
 
     async def get_thread_model_settings(self, thread_id: str | None = None) -> dict[str, Any]:

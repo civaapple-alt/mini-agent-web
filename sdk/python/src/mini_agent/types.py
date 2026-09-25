@@ -701,6 +701,7 @@ class ThreadSettingsResult:
     builtin_tools: list[str] = field(default_factory=list)
     continuation_mode: ContinuationMode = "manual"
     model_selection: dict[str, str] | None = None
+    reasoning_selection: dict[str, Any] | None = None
     reasoning_effort: str | None = None
     state_revision: int | None = None
     raw: dict[str, Any] = field(default_factory=dict)
@@ -721,6 +722,9 @@ class ThreadSettingsResult:
             or val.get("continuation_mode", "manual"),
             model_selection=val.get("modelSelection")
             or val.get("model_selection"),
+            reasoning_selection=val.get("reasoningSelection")
+            if "reasoningSelection" in val
+            else val.get("reasoning_selection"),
             reasoning_effort=val.get("reasoningEffort")
             or val.get("reasoning_effort"),
             state_revision=(

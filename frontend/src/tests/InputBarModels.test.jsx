@@ -23,7 +23,8 @@ const provider = {
       id: 'deepseek-r1',
       name: 'DeepSeek R1',
       enabled: true,
-      reasoningLevels: ['low', 'high'],
+      reasoningLevels: ['disabled', 'low', 'high'],
+      reasoningParameterMap: { disabled: { reasoning: { effort: 'none' } } },
     },
   ],
 };
@@ -44,16 +45,17 @@ describe('InputBar model controls', () => {
       catalog: {
         providers: [provider],
         defaultModel: { providerId: 'deepseek', modelId: 'deepseek-r1' },
+        defaultReasoningSelection: { kind: 'api_default' },
         projectDefaults: {},
       },
     });
     modelApi.getThreadModelSettings.mockResolvedValue({
       model_selection: null,
-      reasoning_effort: null,
+      reasoning_selection: null,
     });
     modelApi.updateThreadModelSettings.mockResolvedValue({
       model_selection: { providerId: 'deepseek', modelId: 'deepseek-r1' },
-      reasoning_effort: 'high',
+      reasoning_selection: { kind: 'api_default' },
     });
   });
 
@@ -67,16 +69,24 @@ describe('InputBar model controls', () => {
     await waitFor(() => expect(modelApi.updateThreadModelSettings).toHaveBeenCalledWith(
       'thread-a',
       { providerId: 'deepseek', modelId: 'deepseek-r1' },
-      null,
+      { kind: 'api_default' },
       { projectId: 'project-a' },
     ));
 
     const reasoningSelect = screen.getByRole('combobox', { name: '当前会话推理等级' });
-    fireEvent.change(reasoningSelect, { target: { value: 'high' } });
+    fireEvent.change(reasoningSelect, { target: { value: 'level:high' } });
     await waitFor(() => expect(modelApi.updateThreadModelSettings).toHaveBeenLastCalledWith(
       'thread-a',
       { providerId: 'deepseek', modelId: 'deepseek-r1' },
-      'high',
+      { kind: 'level', value: 'high' },
+      { projectId: 'project-a' },
+    ));
+
+    fireEvent.change(reasoningSelect, { target: { value: 'level:disabled' } });
+    await waitFor(() => expect(modelApi.updateThreadModelSettings).toHaveBeenLastCalledWith(
+      'thread-a',
+      { providerId: 'deepseek', modelId: 'deepseek-r1' },
+      { kind: 'level', value: 'disabled' },
       { projectId: 'project-a' },
     ));
   });

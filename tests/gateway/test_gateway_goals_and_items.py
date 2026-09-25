@@ -274,6 +274,7 @@ async def test_thread_settings_without_continuation_keeps_persisted_preference(
             builtin_tools=["read_file"],
             continuation_mode="continuous",
             model_selection=None,
+            reasoning_selection=None,
             reasoning_effort=None,
             state_revision=7,
         )
@@ -297,7 +298,66 @@ async def test_thread_settings_without_continuation_keeps_persisted_preference(
         continuation_mode=None,
         model_selection=...,
         reasoning_effort=...,
+        reasoning_selection=...,
     )
+
+
+@pytest.mark.asyncio
+async def test_thread_settings_accepts_model_supported_reasoning_level(
+    gateway_test_app,
+):
+    mock_client = AsyncMock()
+    mock_client.update_thread_settings = AsyncMock(
+        return_value=SimpleNamespace(
+            collaboration_mode=SimpleNamespace(mode="default"),
+            builtin_tools=[],
+            continuation_mode="manual",
+            model_selection=None,
+            reasoning_selection={"kind": "level", "value": "disabled"},
+            reasoning_effort="disabled",
+            state_revision=8,
+        )
+    )
+    mock_client.get_thread_model_settings = AsyncMock(
+        return_value={
+            "value": {
+                "modelSelection": {"providerId": "deepseek", "modelId": "deepseek-r1"},
+                "reasoningSelection": {"kind": "level", "value": "disabled"},
+            }
+        }
+    )
+    session_manager._clients["t-reasoning"] = mock_client
+
+    transport = ASGITransport(app=gateway_test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/threads/t-reasoning/settings",
+            json={"reasoning_selection": {"kind": "level", "value": "disabled"}},
+        )
+        read_response = await client.get(
+            "/api/threads/t-reasoning/model-settings"
+        )
+
+    assert response.status_code == 200
+    assert response.json()["reasoning_selection"] == {
+        "kind": "level",
+        "value": "disabled",
+    }
+    mock_client.update_thread_settings.assert_awaited_once_with(
+        mode=None,
+        builtin_tools=None,
+        thread_id="t-reasoning",
+        continuation_mode=None,
+        model_selection=...,
+        reasoning_effort=...,
+        reasoning_selection={"kind": "level", "value": "disabled"},
+    )
+
+    assert read_response.status_code == 200
+    assert read_response.json()["reasoning_selection"] == {
+        "kind": "level",
+        "value": "disabled",
+    }
 
 
 @pytest.mark.asyncio

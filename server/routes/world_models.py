@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,6 +20,21 @@ class SetExecutionRequest(BaseModel):
     )
 
 
+class ApiDefaultReasoning(BaseModel):
+    kind: Literal["api_default"]
+
+
+class ReasoningLevel(BaseModel):
+    kind: Literal["level"]
+    value: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
+
+
+ReasoningSelectionRequest = Annotated[
+    ApiDefaultReasoning | ReasoningLevel,
+    Field(discriminator="kind"),
+]
+
+
 class UpdateThreadSettingsRequest(BaseModel):
     mode: Literal["default", "plan"] | None = Field(
         default=None, description="Optional Thread collaboration mode: default or plan"
@@ -35,6 +50,10 @@ class UpdateThreadSettingsRequest(BaseModel):
     model_selection: dict[str, str] | None = Field(
         default=None,
         description="Optional stable {providerId, modelId} Thread selection; null clears it",
+    )
+    reasoning_selection: ReasoningSelectionRequest | None = Field(
+        default=None,
+        description="Optional API default or model-supported reasoning level; null inherits defaults",
     )
     reasoning_effort: str | None = Field(
         default=None,

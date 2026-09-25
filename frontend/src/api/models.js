@@ -25,7 +25,7 @@ export const modelApi = {
     return res.json();
   },
 
-  async updateThreadModelSettings(threadId, modelSelection, reasoningEffort, options = {}) {
+  async updateThreadModelSettings(threadId, modelSelection, reasoningSelection, options = {}) {
     const target = threadId || 'default';
     const res = await request(
       `/api/threads/${encodeURIComponent(target)}/settings`,
@@ -34,7 +34,7 @@ export const modelApi = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model_selection: modelSelection,
-          reasoning_effort: reasoningEffort,
+          reasoning_selection: reasoningSelection,
         }),
         ...requestSignal(options),
       },

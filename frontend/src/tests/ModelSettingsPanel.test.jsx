@@ -27,11 +27,92 @@ describe('ModelSettingsPanel smart matching', () => {
       catalog: {
         providers: [provider],
         defaultModel: null,
+        defaultReasoningSelection: { kind: 'api_default' },
         verifierDefaultModel: null,
         projectDefaults: {},
       },
     });
     modelApi.manageModelCatalog.mockResolvedValue({ catalog: { providers: [provider] } });
+  });
+
+  it('saves the global model together with a model-supported disabled level', async () => {
+    const model = {
+      id: 'kimi-k3',
+      name: 'Kimi K3',
+      enabled: true,
+      reasoningLevels: ['disabled', 'high'],
+      reasoningParameterMap: { disabled: { reasoning: { effort: 'none' } } },
+    };
+    const configuredProvider = { ...provider, models: [model] };
+    modelApi.getModelCatalog.mockResolvedValue({
+      catalog: {
+        providers: [configuredProvider],
+        defaultModel: null,
+        defaultReasoningSelection: { kind: 'api_default' },
+        verifierDefaultModel: null,
+        projectDefaults: {},
+      },
+    });
+    modelApi.manageModelCatalog.mockResolvedValue({
+      catalog: {
+        providers: [configuredProvider],
+        defaultModel: { providerId: 'kimi', modelId: 'kimi-k3' },
+        defaultReasoningSelection: { kind: 'level', value: 'disabled' },
+        verifierDefaultModel: null,
+        projectDefaults: {},
+      },
+    });
+
+    render(<ModelSettingsPanel onToast={vi.fn()} />);
+    const modelSelect = await screen.findByLabelText('全局默认模型');
+    fireEvent.change(modelSelect, { target: { value: 'kimi::kimi-k3' } });
+    fireEvent.change(screen.getByLabelText('全局默认推理等级'), {
+      target: { value: 'level:disabled' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /保存默认值/ }));
+
+    await waitFor(() => expect(modelApi.manageModelCatalog).toHaveBeenCalledWith(
+      'set_defaults',
+      expect.objectContaining({
+        defaultModel: { providerId: 'kimi', modelId: 'kimi-k3' },
+        defaultReasoningSelection: { kind: 'level', value: 'disabled' },
+        verifierDefaultModel: null,
+      }),
+      { projectId: null },
+    ));
+  });
+
+  it('adds a custom reasoning level for Thread selection and maps it to provider parameters', async () => {
+    render(<ModelSettingsPanel onToast={vi.fn()} />);
+    await screen.findByText('Kimi');
+    fireEvent.click(screen.getByRole('button', { name: /添加模型/ }));
+    fireEvent.change(screen.getByPlaceholderText('供应商要求的模型 ID'), {
+      target: { value: 'kimi-custom' },
+    });
+    fireEvent.change(screen.getByLabelText('显示名称'), {
+      target: { value: 'Kimi Custom' },
+    });
+    fireEvent.change(screen.getByLabelText('自定义推理等级'), {
+      target: { value: 'balanced' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /添加等级/ }));
+    fireEvent.change(screen.getByLabelText('推理参数映射（JSON）'), {
+      target: { value: JSON.stringify({ balanced: { reasoning: { effort: 'balanced' } } }) },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存模型' }));
+
+    await waitFor(() => expect(modelApi.manageModelCatalog).toHaveBeenCalledWith(
+      'upsert_model',
+      expect.objectContaining({
+        providerId: 'kimi',
+        model: expect.objectContaining({
+          id: 'kimi-custom',
+          reasoningLevels: ['balanced'],
+          reasoningParameterMap: { balanced: { reasoning: { effort: 'balanced' } } },
+        }),
+      }),
+      { projectId: null },
+    ));
   });
 
   it('matches within the selected provider and lets manual edits take ownership', async () => {

@@ -30,6 +30,7 @@ async def get_thread_model_settings(
         value = result.get("value", result) if isinstance(result, dict) else {}
         return {
             "model_selection": value.get("modelSelection"),
+            "reasoning_selection": value.get("reasoningSelection"),
             "reasoning_effort": value.get("reasoningEffort"),
         }
     except ServerProcessError as err:
@@ -176,6 +177,14 @@ async def update_thread_settings(
         client = await session_manager.get_client_for_thread(
             thread_id, routing_project_id
         )
+        if "reasoning_selection" in req.model_fields_set:
+            reasoning_selection = (
+                req.reasoning_selection.model_dump(exclude_none=True)
+                if req.reasoning_selection is not None
+                else None
+            )
+        else:
+            reasoning_selection = ...
         res = await client.update_thread_settings(
             mode=req.mode,
             builtin_tools=req.builtin_tools,
@@ -191,6 +200,7 @@ async def update_thread_settings(
                 if "reasoning_effort" in req.model_fields_set
                 else ...
             ),
+            reasoning_selection=reasoning_selection,
         )
         session_manager.set_builtin_tools_for_thread(
             thread_id, res.builtin_tools, routing_project_id
@@ -200,6 +210,7 @@ async def update_thread_settings(
             "builtin_tools": res.builtin_tools,
             "continuation_mode": res.continuation_mode,
             "model_selection": res.model_selection,
+            "reasoning_selection": res.reasoning_selection,
             "reasoning_effort": res.reasoning_effort,
             "state_revision": res.state_revision,
             "available_builtin_tools": ALL_BUILTIN_TOOLS,

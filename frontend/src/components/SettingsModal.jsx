@@ -7,7 +7,6 @@ import {
   Save,
   Settings,
   Shield,
-  SlidersHorizontal,
   X,
 } from 'lucide-react';
 import { api } from '../api';
@@ -24,12 +23,6 @@ const SETTINGS_GROUPS = [
         label: '安全与运行',
         description: '审批缓存与运行边界',
         icon: Shield,
-      },
-      {
-        id: 'reasoning',
-        label: '推理与工作流',
-        description: '默认推理等级',
-        icon: SlidersHorizontal,
       },
       {
         id: 'appearance',
@@ -53,7 +46,6 @@ const SETTINGS_GROUPS = [
 ];
 
 const DEFAULT_SETTINGS = {
-  reasoning_effort: 'high',
   theme: 'light',
   auto_scroll: true,
   word_wrap: true,
@@ -113,9 +105,11 @@ export default function SettingsModal({
     try {
       const data = await api.getSettings({ projectId, signal: context?.signal });
       if (isCurrentRequest(context)) {
+        const preferenceData = { ...data };
+        delete preferenceData.reasoning_effort;
         setSettings((previous) => ({
           ...previous,
-          ...data,
+          ...preferenceData,
           theme: normalizeTheme(data.theme || previous.theme),
         }));
       }
@@ -274,33 +268,6 @@ export default function SettingsModal({
                         >
                           {isRevokingApprovals ? '撤销中...' : '撤销已批准'}
                         </button>
-                      </div>
-                    </section>
-                  )}
-
-                  {activeSection === 'reasoning' && (
-                    <section className="settings-preference-section">
-                      <div className="settings-section-intro">
-                        <SlidersHorizontal size={17} />
-                        <div>
-                          <h3>模型与推理偏好</h3>
-                          <p>为新的工作流设置默认推理深度；Thread 仍可在输入框中单独调整。</p>
-                        </div>
-                      </div>
-                      <div className="settings-preference-card setting-item">
-                        <div className="setting-text">
-                          <strong className="setting-title">默认推理等级</strong>
-                          <span className="setting-desc">等级越高，越适合复杂规划与多步任务。</span>
-                        </div>
-                        <select
-                          className="setting-select"
-                          value={settings.reasoning_effort}
-                          onChange={(event) => updateSetting('reasoning_effort', event.target.value)}
-                        >
-                          <option value="low">低 · 快速响应</option>
-                          <option value="medium">中 · 均衡</option>
-                          <option value="high">高 · 复杂规划</option>
-                        </select>
                       </div>
                     </section>
                   )}

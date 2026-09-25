@@ -12,7 +12,31 @@ const PROVIDER_KINDS = [
 ];
 const MODALITIES = ['text', 'image', 'video', 'pdf'];
 const CAPABILITIES = ['structured_output', 'web_search', 'system_messages'];
-const REASONING_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const REASONING_LEVELS = ['disabled', 'low', 'medium', 'high', 'xhigh', 'max'];
+const STANDARD_REASONING_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+const API_DEFAULT_REASONING = { kind: 'api_default' };
+
+function reasoningSelectionKey(selection) {
+  if (selection?.kind === 'level' && typeof selection.value === 'string') {
+    return `level:${selection.value}`;
+  }
+  return 'api_default';
+}
+
+function reasoningSelectionFromKey(key) {
+  if (key === 'api_default') return API_DEFAULT_REASONING;
+  if (key.startsWith('level:')) return { kind: 'level', value: key.slice('level:'.length) };
+  return API_DEFAULT_REASONING;
+}
+
+function reasoningLevelLabel(level) {
+  return level === 'disabled' ? 'disabled（关闭）' : level;
+}
+
+function hasParameterMapping(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).length > 0;
+}
 const SMART_MATCHES = [
   {
     provider: 'deepseek', id: 'deepseek-flash', name: 'DeepSeek Flash',
@@ -77,14 +101,15 @@ function normalizeModel(model) {
 }
 
 export default function ModelSettingsPanel({ projectId = null, onToast }) {
-  const [catalog, setCatalog] = useState({ providers: [], defaultModel: null, verifierDefaultModel: null, projectDefaults: {} });
+  const [catalog, setCatalog] = useState({ providers: [], defaultModel: null, defaultReasoningSelection: API_DEFAULT_REASONING, verifierDefaultModel: null, projectDefaults: {} });
   const [selectedProviderId, setSelectedProviderId] = useState('');
   const [providerDraft, setProviderDraft] = useState(null);
   const [providerIsNew, setProviderIsNew] = useState(false);
   const [apiKeyDraft, setApiKeyDraft] = useState('');
   const [modelDraft, setModelDraft] = useState(null);
   const [modelIndex, setModelIndex] = useState(null);
-  const [defaults, setDefaults] = useState({ primary: '', verifier: '', project: '' });
+  const [newReasoningLevel, setNewReasoningLevel] = useState('');
+  const [defaults, setDefaults] = useState({ primary: '', reasoning: API_DEFAULT_REASONING, verifier: '', project: '' });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -99,6 +124,7 @@ export default function ModelSettingsPanel({ projectId = null, onToast }) {
         providerName: provider.name,
         modelId: model.id,
         modelName: model.name,
+        reasoningLevels: model.reasoningLevels || [],
       }))), [catalog.providers]);
 
   const applyCatalog = (next) => {
@@ -112,6 +138,7 @@ export default function ModelSettingsPanel({ projectId = null, onToast }) {
     ));
     setDefaults({
       primary: refKey(value.defaultModel),
+      reasoning: value.defaultReasoningSelection || API_DEFAULT_REASONING,
       verifier: refKey(value.verifierDefaultModel),
       project: refKey(value.projectDefaults?.[projectId]),
     });
@@ -176,6 +203,14 @@ export default function ModelSettingsPanel({ projectId = null, onToast }) {
       contextWindow: modelDraft.contextWindow === '' ? null : Number(modelDraft.contextWindow),
       maxOutputTokens: modelDraft.maxOutputTokens === '' ? null : Number(modelDraft.maxOutputTokens),
     };
+    const unmappedLevel = model.reasoningLevels.find((level) => (
+      (level === 'disabled' || !STANDARD_REASONING_LEVELS.has(level))
+      && !hasParameterMapping(model.reasoningParameterMap?.[level])
+    ));
+    if (unmappedLevel) {
+      onToast?.(`推理等级 ${unmappedLevel} 需要配置供应商对应的参数映射。`, 'warning');
+      return;
+    }
     const previousModelId = modelIndex === null ? undefined : selectedProvider.models?.[modelIndex]?.id;
     if (await runMutation('upsert_model', {
       providerId: selectedProvider.id,
@@ -231,6 +266,7 @@ export default function ModelSettingsPanel({ projectId = null, onToast }) {
     }
     if (await runMutation('set_defaults', {
       defaultModel: primary,
+      defaultReasoningSelection: defaults.reasoning,
       verifierDefaultModel: verifier,
     })) {
       const projectDefault = fromRef(defaults.project);
@@ -308,14 +344,14 @@ export default function ModelSettingsPanel({ projectId = null, onToast }) {
 
               {!providerIsNew && selectedProvider && (
                 <div className="model-list-section">
-                  <div className="model-list-heading"><h4>模型列表</h4><button type="button" className="model-secondary-button" onClick={() => { setModelIndex(null); setModelDraft(emptyModel()); }}><Plus size={14} /> 添加模型</button></div>
+                  <div className="model-list-heading"><h4>模型列表</h4><button type="button" className="model-secondary-button" onClick={() => { setModelIndex(null); setModelDraft(emptyModel()); setNewReasoningLevel(''); }}><Plus size={14} /> 添加模型</button></div>
                   {(selectedProvider.models || []).length ? (
                     <div className="model-list">
                       {selectedProvider.models.map((model, index) => (
                         <div className="model-list-row" key={`${model.id}-${index}`}>
                           <div><strong>{model.name || model.id}</strong><small>{model.id}</small>{model.smartManaged && <span className="model-smart-badge"><Sparkles size={11} />智能匹配</span>}</div>
                           <div className="model-row-actions">
-                            <button type="button" className="model-text-button" onClick={() => { setModelIndex(index); setModelDraft(normalizeModel(model)); }}>编辑</button>
+                            <button type="button" className="model-text-button" onClick={() => { setModelIndex(index); setModelDraft(normalizeModel(model)); setNewReasoningLevel(''); }}>编辑</button>
                             <button type="button" className="model-text-button danger" onClick={() => void runMutation('delete_model', { providerId: selectedProvider.id, modelId: model.id })}>删除</button>
                             <label className="model-switch"><input type="checkbox" checked={model.enabled} onChange={() => void runMutation('upsert_model', { providerId: selectedProvider.id, model: { ...model, enabled: !model.enabled } })} /><span /></label>
                           </div>
@@ -333,11 +369,32 @@ export default function ModelSettingsPanel({ projectId = null, onToast }) {
       <section className="model-defaults-card">
         <div className="model-defaults-title"><div><h3>模型默认值</h3><p>Thread 显式选择优先，其次项目默认，再使用全局默认。</p></div></div>
         <div className="model-defaults-grid">
-          <label>全局默认模型<select value={defaults.primary} onChange={(event) => setDefaults({ ...defaults, primary: event.target.value })}><option value="">选择模型</option>{enabledModels.map((model) => <option key={model.key} value={model.key}>{model.providerName} · {model.modelName}</option>)}</select></label>
+          <label>全局默认模型<select value={defaults.primary} onChange={(event) => {
+            const primary = event.target.value;
+            const selected = enabledModels.find((model) => model.key === primary);
+            const currentReasoning = defaults.reasoning;
+            const supported = currentReasoning.kind !== 'level'
+              || selected?.reasoningLevels.includes(currentReasoning.value);
+            setDefaults({
+              ...defaults,
+              primary,
+              reasoning: supported ? currentReasoning : API_DEFAULT_REASONING,
+            });
+          }}><option value="">选择模型</option>{enabledModels.map((model) => <option key={model.key} value={model.key}>{model.providerName} · {model.modelName}</option>)}</select></label>
+          <label>全局默认推理等级<select
+            value={reasoningSelectionKey(defaults.reasoning)}
+            disabled={!defaults.primary}
+            onChange={(event) => setDefaults({ ...defaults, reasoning: reasoningSelectionFromKey(event.target.value) })}
+          >
+            <option value="api_default">使用 API 默认</option>
+            {(enabledModels.find((model) => model.key === defaults.primary)?.reasoningLevels || []).map((level) => (
+              <option key={level} value={`level:${level}`}>{reasoningLevelLabel(level)}</option>
+            ))}
+          </select></label>
           <label>Goal Verifier 默认模型<select value={defaults.verifier} onChange={(event) => setDefaults({ ...defaults, verifier: event.target.value })}><option value="">未配置</option>{enabledModels.filter((model) => model.key !== defaults.primary).map((model) => <option key={model.key} value={model.key}>{model.providerName} · {model.modelName}</option>)}</select></label>
           {projectId && <label>当前项目默认模型<select value={defaults.project} onChange={(event) => setDefaults({ ...defaults, project: event.target.value })}><option value="">继承全局默认</option>{enabledModels.map((model) => <option key={model.key} value={model.key}>{model.providerName} · {model.modelName}</option>)}</select></label>}
         </div>
-        <div className="model-defaults-footer"><span>未配置 Verifier 默认值时，Goal 验证会明确失败，不会复用主模型。</span><button type="button" className="model-primary-button" onClick={() => void saveDefaults()} disabled={saving || enabledModels.length === 0}><Save size={14} />保存默认值</button></div>
+        <div className="model-defaults-footer"><span>全局推理等级只对所选默认模型生效；可选择模型等级或使用 API 默认。未配置 Verifier 默认值时，Goal 验证会明确失败，不会复用主模型。</span><button type="button" className="model-primary-button" onClick={() => void saveDefaults()} disabled={saving || enabledModels.length === 0}><Save size={14} />保存默认值</button></div>
       </section>
 
       {modelDraft && (
@@ -350,7 +407,53 @@ export default function ModelSettingsPanel({ projectId = null, onToast }) {
               <div className="model-numeric-grid"><label>上下文窗口<input type="number" min="1" value={modelDraft.contextWindow} onChange={(event) => setModelDraft({ ...modelDraft, contextWindow: event.target.value, smartManaged: false })} placeholder="例如 200000" /></label><label>最大输出 Token<input type="number" min="1" value={modelDraft.maxOutputTokens} onChange={(event) => setModelDraft({ ...modelDraft, maxOutputTokens: event.target.value, smartManaged: false })} placeholder="手动填写" /></label></div>
               <fieldset><legend>输入模态</legend><div className="model-chip-list">{MODALITIES.map((item) => <button key={item} type="button" className={modelDraft.inputModalities.includes(item) ? 'active' : ''} onClick={() => toggleValue('inputModalities', item)}>{item}</button>)}</div></fieldset>
               <fieldset><legend>模型能力</legend><div className="model-chip-list">{CAPABILITIES.map((item) => <button key={item} type="button" className={modelDraft.capabilities.includes(item) ? 'active' : ''} onClick={() => toggleValue('capabilities', item)}>{item}</button>)}</div></fieldset>
-              <fieldset><legend>推理等级</legend><div className="model-chip-list">{REASONING_LEVELS.map((item) => <button key={item} type="button" className={modelDraft.reasoningLevels.includes(item) ? 'active' : ''} onClick={() => toggleValue('reasoningLevels', item)}>{item}</button>)}</div></fieldset>
+              <fieldset>
+                <legend>推理等级</legend>
+                <div className="model-chip-list">
+                  {[...new Set([...REASONING_LEVELS, ...modelDraft.reasoningLevels])].map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      className={modelDraft.reasoningLevels.includes(item) ? 'active' : ''}
+                      onClick={() => toggleValue('reasoningLevels', item)}
+                    >
+                      {reasoningLevelLabel(item)}
+                    </button>
+                  ))}
+                </div>
+                <div className="model-reasoning-level-editor">
+                  <input
+                    aria-label="自定义推理等级"
+                    value={newReasoningLevel}
+                    onChange={(event) => setNewReasoningLevel(event.target.value)}
+                    placeholder="自定义等级 ID"
+                  />
+                  <button
+                    type="button"
+                    className="model-secondary-button"
+                    onClick={() => {
+                      const level = newReasoningLevel.trim();
+                      if (!/^[A-Za-z0-9_.-]{1,64}$/.test(level)) {
+                        onToast?.('推理等级需为 1–64 位字母、数字、点、下划线或短横线。', 'warning');
+                        return;
+                      }
+                      if (modelDraft.reasoningLevels.includes(level)) {
+                        onToast?.('该推理等级已存在。', 'info');
+                        return;
+                      }
+                      setModelDraft((current) => ({
+                        ...current,
+                        reasoningLevels: [...current.reasoningLevels, level],
+                        smartManaged: false,
+                      }));
+                      setNewReasoningLevel('');
+                    }}
+                  >
+                    <Plus size={13} />添加等级
+                  </button>
+                </div>
+                <small>这里配置 Thread 可选的等级。disabled 和自定义等级需在参数映射中设置供应商对应的请求参数。</small>
+              </fieldset>
               <label>推理参数映射（JSON）<textarea rows="5" value={JSON.stringify(modelDraft.reasoningParameterMap, null, 2)} onChange={(event) => { try { setModelDraft({ ...modelDraft, reasoningParameterMap: JSON.parse(event.target.value), smartManaged: false }); } catch { setModelDraft({ ...modelDraft, reasoningParameterMap: event.target.value, smartManaged: false }); } }} /></label>
               {typeof modelDraft.reasoningParameterMap === 'string' && <span className="model-form-error">请输入合法 JSON 对象</span>}
             </div>

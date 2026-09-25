@@ -273,6 +273,8 @@ async def test_thread_settings_without_continuation_keeps_persisted_preference(
             collaboration_mode=SimpleNamespace(mode="default"),
             builtin_tools=["read_file"],
             continuation_mode="continuous",
+            model_selection=None,
+            reasoning_effort=None,
             state_revision=7,
         )
     )
@@ -293,6 +295,8 @@ async def test_thread_settings_without_continuation_keeps_persisted_preference(
         builtin_tools=["read_file"],
         thread_id="t-settings",
         continuation_mode=None,
+        model_selection=...,
+        reasoning_effort=...,
     )
 
 
@@ -317,6 +321,57 @@ async def test_thread_settings_rejects_active_turn(
     assert response.status_code == 409
     assert "本轮" in response.json()["detail"]
     mock_client.update_thread_settings.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_model_gateway_forwards_catalog_without_exposing_api_keys(
+    gateway_test_app, monkeypatch
+):
+    catalog = {
+        "providers": [
+            {
+                "id": "deepseek",
+                "name": "DeepSeek",
+                "baseUrl": "https://example.test/v1",
+                "apiKeyConfigured": True,
+                "models": [],
+            }
+        ],
+        "defaultModel": None,
+        "verifierDefaultModel": None,
+        "projectDefaults": {},
+    }
+    mock_client = AsyncMock()
+    mock_client.manage_model_catalog.return_value = {"value": {"catalog": catalog}}
+    monkeypatch.setattr(
+        session_manager,
+        "get_client_for_project",
+        AsyncMock(return_value=mock_client),
+    )
+
+    transport = ASGITransport(app=gateway_test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        read = await client.get("/api/models?project_id=goals_test_proj")
+        saved = await client.post(
+            "/api/models/manage?project_id=goals_test_proj",
+            json={
+                "operation": "upsert_provider",
+                "provider": {
+                    "id": "deepseek",
+                    "name": "DeepSeek",
+                    "kind": "deepseek",
+                    "baseUrl": "https://example.test/v1",
+                },
+                "apiKey": "private-provider-key",
+            },
+        )
+
+    assert read.status_code == saved.status_code == 200
+    assert read.json() == {"catalog": catalog}
+    assert saved.json() == {"catalog": catalog}
+    assert "private-provider-key" not in saved.text
+    assert mock_client.manage_model_catalog.await_args_list[0].args == ("get",)
+    assert mock_client.manage_model_catalog.await_args_list[1].kwargs["apiKey"] == "private-provider-key"
 
 
 @pytest.mark.asyncio

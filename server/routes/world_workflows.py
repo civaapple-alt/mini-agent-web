@@ -18,6 +18,26 @@ router = APIRouter(prefix="/api", tags=["World & Workflows"])
 # -----------------------------------------------------------------------------
 
 
+@router.get("/threads/{thread_id}/model-settings", summary="Read Thread model settings")
+async def get_thread_model_settings(
+    thread_id: str,
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    try:
+        routing_project_id = session_manager.resolve_thread_project(thread_id, project_id)
+        client = await session_manager.get_client_for_thread(thread_id, routing_project_id)
+        result = await client.get_thread_model_settings(thread_id)
+        value = result.get("value", result) if isinstance(result, dict) else {}
+        return {
+            "model_selection": value.get("modelSelection"),
+            "reasoning_effort": value.get("reasoningEffort"),
+        }
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
 @router.get("/workflows/state", summary="Get workflow state")
 async def get_workflow_state(
     thread_id: str | None = None,
@@ -50,6 +70,7 @@ async def get_workflow_state(
                     "current_milestone": goal.get("current_milestone", 0),
                     "total_milestones": goal.get("total_milestones", 0),
                     "loop_count": goal.get("loop_count", 0),
+                    "verifier_model_selection": goal.get("verifier_model_selection"),
                     "last_verifier_score": goal.get("last_verifier_score"),
                     "last_error": goal.get("last_error"),
                     "verification_status": goal.get("verification_status", "idle"),
@@ -149,7 +170,7 @@ async def update_thread_settings(
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "当前 Turn 正在执行或等待审批，需先完成/停止本轮后才能切换 Plan Mode"
+                    "当前 Turn 正在执行或等待审批，需先完成/停止本轮后才能更新 Thread 设置"
                 ),
             )
         client = await session_manager.get_client_for_thread(
@@ -160,6 +181,16 @@ async def update_thread_settings(
             builtin_tools=req.builtin_tools,
             thread_id=thread_id,
             continuation_mode=req.continuation_mode,
+            model_selection=(
+                req.model_selection
+                if "model_selection" in req.model_fields_set
+                else ...
+            ),
+            reasoning_effort=(
+                req.reasoning_effort
+                if "reasoning_effort" in req.model_fields_set
+                else ...
+            ),
         )
         session_manager.set_builtin_tools_for_thread(
             thread_id, res.builtin_tools, routing_project_id
@@ -168,6 +199,8 @@ async def update_thread_settings(
             "collaboration_mode": {"mode": res.collaboration_mode.mode},
             "builtin_tools": res.builtin_tools,
             "continuation_mode": res.continuation_mode,
+            "model_selection": res.model_selection,
+            "reasoning_effort": res.reasoning_effort,
             "state_revision": res.state_revision,
             "available_builtin_tools": ALL_BUILTIN_TOOLS,
         }
@@ -292,6 +325,7 @@ def _goal_dict(goal: Any) -> dict[str, Any]:
         "current_milestone": getattr(goal, "current_milestone", 0),
         "total_milestones": getattr(goal, "total_milestones", 0),
         "loop_count": getattr(goal, "loop_count", 0),
+        "verifier_model_selection": getattr(goal, "verifier_model_selection", None),
         "last_verifier_score": getattr(goal, "last_verifier_score", None),
         "last_error": getattr(goal, "last_error", None),
         "verification_status": getattr(goal, "verification_status", "idle"),

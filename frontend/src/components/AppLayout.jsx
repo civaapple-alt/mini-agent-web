@@ -115,6 +115,7 @@ export default function AppLayout({
   onGoalChanged,
   onTogglePlan,
   settingsModalOpen,
+  settingsInitialTab = 'preferences',
   onCloseSettings,
   onSettingsSaved,
   toasts,
@@ -220,7 +221,7 @@ export default function AppLayout({
         sessionId={sessionId}
         isConnected={isConnected}
         onOpenSidePanel={onOpenSidePanel}
-        onOpenSettings={onOpenSettings}
+        onOpenSettings={() => onOpenSettings?.('preferences')}
         onRenameThread={onRenameCurrentThread}
         onUpdateSummary={onUpdateCurrentSummary}
         onToast={onToast}
@@ -301,7 +302,9 @@ export default function AppLayout({
             isGenerating={isGenerating}
             isInterrupting={isInterrupting}
             sessionReadOnly={sessionReadOnly}
+            currentThread={currentThread}
             projectId={currentThreadProject}
+            onOpenSettings={onOpenSettings}
             pendingApproval={pendingApproval}
             pendingApprovalCount={pendingApprovalCount}
             onRespondApproval={onRespondApproval}
@@ -385,6 +388,7 @@ export default function AppLayout({
       <SettingsModal
         isOpen={settingsModalOpen}
         onClose={onCloseSettings}
+        initialTab={settingsInitialTab}
         projectId={currentThreadProject}
         onToast={onToast}
         onSettingsSaved={onSettingsSaved}

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add local Responses provider and model management, separate global primary
+  and Goal Verifier defaults, project defaults, and per-Thread model and
+  reasoning selection in the composer.
 - Clear stale turn results when an execution segment starts and show incomplete-turn banners only after the active Turn settles. Tone down steer messages with neutral bubble colors and a muted label.
 - Keep the current execution segment expanded while it runs; fold earlier settled activity, including failed tool calls, when a later segment starts. Add failure counts and tool types to activity summaries while keeping approvals, delegation, and the final reply separate.
 - Keep Session Turn hover details visible outside the rail's scroll clipping area, and remove the unintended glow around the current marker.

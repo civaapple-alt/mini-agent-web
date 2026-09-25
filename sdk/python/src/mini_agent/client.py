@@ -157,6 +157,23 @@ def _ensure_utf8_console() -> None:
                     pass
 
 
+def _redact_secrets(value: Any) -> Any:
+    """Return a log-safe copy of nested JSON-RPC parameters."""
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, item in value.items():
+            normalized = str(key).replace("_", "").replace("-", "").lower()
+            redacted[key] = (
+                "[REDACTED]"
+                if normalized in {"apikey", "authorization", "password", "secret"}
+                else _redact_secrets(item)
+            )
+        return redacted
+    if isinstance(value, list):
+        return [_redact_secrets(item) for item in value]
+    return value
+
+
 def _env_search_dirs(cwd: str) -> list[str]:
     """Return bounded project, Web workspace, and user config directories."""
     module_dir = os.path.dirname(os.path.abspath(__file__))
@@ -398,7 +415,10 @@ class MiniAgentClient:
         future: asyncio.Future[Any] = loop.create_future()
         self._pending_requests[req_id] = future
 
-        logger.debug(">>> SEND: %s", data.strip())
+        logger.debug(
+            ">>> SEND: %s",
+            json.dumps(_redact_secrets(payload), ensure_ascii=False),
+        )
         try:
             await asyncio.wait_for(
                 self._write_request(data), timeout=self.request_timeout
@@ -1266,22 +1286,27 @@ class MiniAgentClient:
 
     async def update_thread_settings(
         self,
-        mode: CollaborationModeKind,
+        mode: CollaborationModeKind | None,
         builtin_tools: list[str] | None = None,
         thread_id: str | None = None,
         continuation_mode: str | None = None,
+        model_selection: dict[str, str] | None | object = ...,
+        reasoning_effort: str | None | object = ...,
     ) -> ThreadSettingsResult:
         """Update Thread collaboration mode and optional Builtin selection."""
-        params: dict[str, Any] = {
-            "threadId": thread_id or self._active_thread_id,
-            "collaborationMode": {"mode": mode},
-        }
+        params: dict[str, Any] = {"threadId": thread_id or self._active_thread_id}
+        if mode is not None:
+            params["collaborationMode"] = {"mode": mode}
         if builtin_tools is not None:
             params["builtinTools"] = builtin_tools
         if continuation_mode is not None:
             if continuation_mode not in ("manual", "continuous"):
                 raise ValueError("continuation_mode must be manual or continuous")
             params["continuationMode"] = continuation_mode
+        if model_selection is not ...:
+            params["modelSelection"] = model_selection
+        if reasoning_effort is not ...:
+            params["reasoningEffort"] = reasoning_effort
         res = await self._send_request(
             "thread/settings/update",
             params,
@@ -1289,6 +1314,44 @@ class MiniAgentClient:
         result = ThreadSettingsResult.from_dict(res)
         self._cache_thread_settings(params["threadId"], result)
         return result
+
+    async def update_thread_model_settings(
+        self,
+        model_selection: dict[str, str] | None | object = ...,
+        reasoning_effort: str | None | object = ...,
+        thread_id: str | None = None,
+    ) -> ThreadSettingsResult:
+        """Update this Thread's model choice without changing its workflow mode."""
+        return await self.update_thread_settings(
+            None,
+            thread_id=thread_id,
+            model_selection=model_selection,
+            reasoning_effort=reasoning_effort,
+        )
+
+    async def get_thread_model_settings(self, thread_id: str | None = None) -> dict[str, Any]:
+        """Read the persisted Thread model reference and reasoning effort."""
+        return await self._send_request(
+            "thread/model-settings/get",
+            {"threadId": thread_id or self._active_thread_id},
+        )
+
+    async def manage_model_catalog(self, operation: str, **params: Any) -> dict[str, Any]:
+        """Read or update Host-owned machine-wide provider and model settings."""
+        if operation not in {
+            "get",
+            "upsert_provider",
+            "delete_provider",
+            "upsert_model",
+            "delete_model",
+            "set_defaults",
+            "set_project_default",
+        }:
+            raise ValueError("unsupported model catalog operation")
+        return await self._send_request(
+            "model/catalog/manage",
+            {"operation": operation, **params},
+        )
 
     async def set_collaboration_mode(
         self,

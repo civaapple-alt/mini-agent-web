@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Send,
   Plus,
@@ -10,6 +10,7 @@ import {
   Folder,
   FileCode,
   FileText,
+  Settings,
 } from 'lucide-react';
 import { api } from '../api';
 import { getSlashCommandDraft, parseAndExecuteSlashCommand } from '../utils/slashCommands';
@@ -54,7 +55,9 @@ export default function InputBar({
   isGenerating,
   isInterrupting = false,
   sessionReadOnly = false,
+  currentThread = null,
   projectId = null,
+  onOpenSettings,
   pendingApproval,
   pendingApprovalCount = 0,
   onRespondApproval,
@@ -91,6 +94,11 @@ export default function InputBar({
   const [workflowSelection, setWorkflowSelection] = useState(null);
   const [composerDirective, setComposerDirective] = useState(null);
   const [showPluginPopup, setShowPluginPopup] = useState(false);
+  const [modelCatalog, setModelCatalog] = useState({ providers: [], projectDefaults: {} });
+  const [threadModelSettings, setThreadModelSettings] = useState({ model_selection: null, reasoning_effort: null });
+  const [modelSettingsLoading, setModelSettingsLoading] = useState(false);
+  const [modelSettingsSaving, setModelSettingsSaving] = useState(false);
+  const [modelSettingsError, setModelSettingsError] = useState('');
 
   // Image & File Attachments
   const [attachedImages, setAttachedImages] = useState([]);
@@ -108,6 +116,96 @@ export default function InputBar({
   const textareaRef = useRef(null);
   const mentionRequestEpochRef = useRef(0);
   const mentionRequestControllerRef = useRef(null);
+  const modelSettingsEpochRef = useRef(0);
+
+  const loadModelSettings = useCallback(async () => {
+    if (!currentThread) return;
+    const epoch = ++modelSettingsEpochRef.current;
+    setModelSettingsLoading(true);
+    try {
+      const [catalogResult, threadResult] = await Promise.all([
+        api.getModelCatalog({ projectId }),
+        api.getThreadModelSettings(currentThread, { projectId }),
+      ]);
+      if (epoch !== modelSettingsEpochRef.current) return;
+      setModelCatalog(catalogResult?.catalog || catalogResult || { providers: [], projectDefaults: {} });
+      setThreadModelSettings({
+        model_selection: threadResult?.model_selection || null,
+        reasoning_effort: threadResult?.reasoning_effort || null,
+      });
+      setModelSettingsError('');
+    } catch (error) {
+      if (epoch === modelSettingsEpochRef.current) {
+        setModelSettingsError(error?.message || '模型设置加载失败');
+      }
+    } finally {
+      if (epoch === modelSettingsEpochRef.current) setModelSettingsLoading(false);
+    }
+  }, [currentThread, projectId]);
+
+  useEffect(() => {
+    void loadModelSettings();
+    return () => { modelSettingsEpochRef.current += 1; };
+  }, [loadModelSettings]);
+
+  useEffect(() => {
+    const reload = () => { void loadModelSettings(); };
+    window.addEventListener('mini-agent-model-catalog-updated', reload);
+    return () => window.removeEventListener('mini-agent-model-catalog-updated', reload);
+  }, [loadModelSettings]);
+
+  const modelEntries = (modelCatalog.providers || []).flatMap((provider) => (
+    (provider.models || []).map((model) => ({
+      key: `${provider.id}::${model.id}`,
+      provider,
+      model,
+      selection: { providerId: provider.id, modelId: model.id },
+    }))
+  ));
+  const selectionKey = (selection) => selection
+    ? `${selection.providerId || selection.provider_id}::${selection.modelId || selection.model_id}`
+    : '';
+  const projectDefault = projectId ? modelCatalog.projectDefaults?.[projectId] : null;
+  const inheritedSelection = projectDefault || modelCatalog.defaultModel || null;
+  const inheritedEntry = modelEntries.find((entry) => entry.key === selectionKey(inheritedSelection)) || null;
+  const effectiveSelection = threadModelSettings.model_selection || projectDefault || modelCatalog.defaultModel || null;
+  const effectiveKey = selectionKey(effectiveSelection);
+  const effectiveEntry = modelEntries.find((entry) => entry.key === effectiveKey) || null;
+  const configuredModelCount = modelEntries.length;
+  const effectiveModelProblem = !configuredModelCount || !effectiveSelection
+    ? ''
+    : !effectiveEntry
+      ? '当前模型已从目录中删除，请重新选择模型。'
+      : !effectiveEntry.provider.enabled || !effectiveEntry.model.enabled
+        ? `模型 ${effectiveEntry.model.name || effectiveEntry.model.id} 已停用。`
+        : !effectiveEntry.provider.baseUrl?.trim()
+          ? `供应商 ${effectiveEntry.provider.name} 尚未填写 Base URL。`
+          : !effectiveEntry.provider.apiKeyConfigured
+            ? `供应商 ${effectiveEntry.provider.name} 尚未配置 API Key。`
+            : '';
+  const threadSelectionKey = selectionKey(threadModelSettings.model_selection);
+  const reasoningLevels = effectiveEntry?.model.reasoningLevels || [];
+  const reasoningValue = threadModelSettings.reasoning_effort || '';
+
+  const saveThreadModelSettings = async (selection, effort) => {
+    if (!currentThread) return;
+    setModelSettingsSaving(true);
+    try {
+      const result = await api.updateThreadModelSettings(currentThread, selection, effort, { projectId });
+      setThreadModelSettings({
+        model_selection: result?.model_selection ?? result?.modelSelection ?? selection,
+        reasoning_effort: result?.reasoning_effort ?? result?.reasoningEffort ?? effort,
+      });
+      setModelSettingsError('');
+    } catch (error) {
+      onToast?.(`模型切换失败：${error?.message || '请求失败'}`, 'error');
+    } finally {
+      setModelSettingsSaving(false);
+    }
+  };
+
+  const modelSelectionDisabled = !currentThread || modelSettingsLoading || modelSettingsSaving
+    || isGenerating || Boolean(pendingApproval) || sessionReadOnly;
 
   useEffect(() => () => {
     mentionRequestControllerRef.current?.abort();
@@ -1047,6 +1145,80 @@ export default function InputBar({
 
           {/* Bottom-Right: Action Buttons */}
           <div className="input-actions">
+            {currentThread && (
+              <div className="composer-model-controls">
+                <label className="composer-model-select-wrap" title={effectiveModelProblem || '切换当前 Thread 的模型'}>
+                  <span>模型</span>
+                  <select
+                    aria-label="当前会话模型"
+                    value={threadSelectionKey || '__default__'}
+                    disabled={modelSelectionDisabled}
+                    onChange={(event) => {
+                      const selected = modelEntries.find((entry) => entry.key === event.target.value);
+                      void saveThreadModelSettings(selected?.selection || null, threadModelSettings.reasoning_effort);
+                    }}
+                  >
+                    <option value="__default__">
+                      {inheritedEntry
+                        ? `默认 · ${inheritedEntry.provider.name} / ${inheritedEntry.model.name || inheritedEntry.model.id}`
+                        : '使用项目 / 全局默认'}
+                    </option>
+                    {modelCatalog.providers.map((provider) => (
+                      <optgroup key={provider.id} label={provider.name}>
+                        {(provider.models || []).map((model) => {
+                          const key = `${provider.id}::${model.id}`;
+                          const disabledReason = !provider.enabled
+                            ? '供应商已停用'
+                            : !model.enabled
+                              ? '模型已停用'
+                              : !provider.baseUrl?.trim()
+                                ? '未填写 Base URL'
+                                : !provider.apiKeyConfigured
+                                  ? '未配置 API Key'
+                                  : '';
+                          return (
+                            <option key={key} value={key} disabled={Boolean(disabledReason)}>
+                              {model.name || model.id}{disabledReason ? `（${disabledReason}）` : ''}
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                    ))}
+                  </select>
+                </label>
+                {reasoningLevels.length > 0 && (
+                  <label className="composer-reasoning-select-wrap" title="设置当前 Thread 的推理等级">
+                    <span>推理</span>
+                    <select
+                      aria-label="当前会话推理等级"
+                      value={reasoningValue}
+                      disabled={modelSelectionDisabled}
+                      onChange={(event) => void saveThreadModelSettings(
+                        threadModelSettings.model_selection,
+                        event.target.value || null,
+                      )}
+                    >
+                      <option value="">服务商默认</option>
+                      {reasoningLevels.map((level) => <option key={level} value={level}>{level}</option>)}
+                    </select>
+                  </label>
+                )}
+                <button
+                  type="button"
+                  className="composer-model-settings"
+                  onClick={() => onOpenSettings?.('models')}
+                  title="管理供应商和模型"
+                  aria-label="管理模型设置"
+                >
+                  <Settings size={14} />
+                </button>
+                {(modelSettingsError || effectiveModelProblem) && (
+                  <span className="composer-model-warning" role="status">
+                    {modelSettingsError || effectiveModelProblem}
+                  </span>
+                )}
+              </div>
+            )}
             {sessionReadOnly ? (
               <span className="readonly-session-label">只读查看</span>
             ) : isInterrupting ? (
@@ -1079,7 +1251,7 @@ export default function InputBar({
                    && attachedImages.length === 0
                    && attachedTextAttachments.length === 0
                    && attachedFileAttachments.length === 0
-                 ) || !!pendingApproval}
+                 ) || !!pendingApproval || modelSettingsSaving || Boolean(effectiveModelProblem)}
                 title="发送"
               >
                 <Send size={13} />

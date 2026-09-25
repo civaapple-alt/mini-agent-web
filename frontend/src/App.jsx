@@ -142,6 +142,7 @@ export default function App() {
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
   const [sidePanelTab, setSidePanelTab] = useState('status');
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState('preferences');
   const [isConnected, setIsConnected] = useState(false);
   const [connectionState, setConnectionState] = useState('offline');
 
@@ -2456,7 +2457,10 @@ export default function App() {
       sessionMeta={currentThreadMeta}
       isConnected={isConnected}
       onOpenSidePanel={handleOpenSidePanel}
-      onOpenSettings={() => setSettingsModalOpen(true)}
+      onOpenSettings={(tab = 'preferences') => {
+        setSettingsInitialTab(tab === 'models' ? 'models' : 'preferences');
+        setSettingsModalOpen(true);
+      }}
       onRenameThread={handleRenameThread}
       onUpdateSummary={handleUpdateSummary}
       onRenameCurrentThread={(title) => handleRenameThread(currentThread, title)}
@@ -2515,6 +2519,7 @@ export default function App() {
       )}
       onTogglePlan={handleTogglePlan}
       settingsModalOpen={settingsModalOpen}
+      settingsInitialTab={settingsInitialTab}
       onCloseSettings={() => setSettingsModalOpen(false)}
       onSettingsSaved={(newSettings) => {
         if (newSettings.theme) {

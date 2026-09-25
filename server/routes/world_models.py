@@ -21,8 +21,8 @@ class SetExecutionRequest(BaseModel):
 
 
 class UpdateThreadSettingsRequest(BaseModel):
-    mode: Literal["default", "plan"] = Field(
-        ..., description="Thread collaboration mode: default or plan"
+    mode: Literal["default", "plan"] | None = Field(
+        default=None, description="Optional Thread collaboration mode: default or plan"
     )
     builtin_tools: list[str] | None = Field(
         default=None,
@@ -31,6 +31,14 @@ class UpdateThreadSettingsRequest(BaseModel):
     continuation_mode: Literal["manual", "continuous"] | None = Field(
         default=None,
         description="Bounded one-turn execution or explicit continuous execution",
+    )
+    model_selection: dict[str, str] | None = Field(
+        default=None,
+        description="Optional stable {providerId, modelId} Thread selection; null clears it",
+    )
+    reasoning_effort: str | None = Field(
+        default=None,
+        description="Optional Thread reasoning effort; null clears it",
     )
 
 

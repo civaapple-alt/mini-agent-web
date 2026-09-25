@@ -26,6 +26,12 @@
   animation: scaleIn 0.15s ease;
 }
 
+.settings-modal-container.models-expanded {
+  width: min(1180px, 94vw);
+  max-width: 94vw;
+  max-height: 94vh;
+}
+
 @keyframes scaleIn {
   from { transform: scale(0.97); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
@@ -74,6 +80,30 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.settings-modal-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 8px 16px 0;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-surface);
+}
+
+.settings-modal-tabs button {
+  padding: 7px 11px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings-modal-tabs button.active {
+  border-bottom-color: var(--accent-green);
+  color: var(--text-primary);
 }
 
 .settings-section {

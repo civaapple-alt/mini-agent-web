@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 import { normalizeTheme } from '../utils/statusModel.js';
+import ModelSettingsPanel from './ModelSettingsPanel';
 import './SettingsModal.css';
 
 export default function SettingsModal({
@@ -19,6 +20,7 @@ export default function SettingsModal({
   onSettingsSaved,
   onToast,
   projectId = null,
+  initialTab = 'preferences',
 }) {
   const [settings, setSettings] = useState({
     reasoning_effort: 'high',
@@ -31,6 +33,7 @@ export default function SettingsModal({
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [approvalInfo, setApprovalInfo] = useState(null);
   const [isRevokingApprovals, setIsRevokingApprovals] = useState(false);
+  const [activeTab, setActiveTab] = useState('preferences');
   const requestEpochRef = useRef(0);
   const requestControllerRef = useRef(null);
 
@@ -49,6 +52,10 @@ export default function SettingsModal({
       requestEpochRef.current += 1;
     };
   }, [isOpen, projectId]);
+
+  useEffect(() => {
+    if (isOpen) setActiveTab(initialTab === 'models' ? 'models' : 'preferences');
+  }, [initialTab, isOpen]);
 
   const isCurrentRequest = (context) => (
     context && context.epoch === requestEpochRef.current
@@ -139,7 +146,7 @@ export default function SettingsModal({
 
   return (
     <div className="settings-modal-overlay" onClick={onClose}>
-      <div className="settings-modal-container" onClick={(e) => e.stopPropagation()}>
+      <div className={`settings-modal-container ${activeTab === 'models' ? 'models-expanded' : ''}`} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="settings-modal-header">
           <div className="modal-title-group">
@@ -151,8 +158,14 @@ export default function SettingsModal({
           </button>
         </div>
 
+        <div className="settings-modal-tabs" role="tablist" aria-label="设置分类">
+          <button type="button" role="tab" aria-selected={activeTab === 'preferences'} className={activeTab === 'preferences' ? 'active' : ''} onClick={() => setActiveTab('preferences')}>偏好设置</button>
+          <button type="button" role="tab" aria-selected={activeTab === 'models'} className={activeTab === 'models' ? 'active' : ''} onClick={() => setActiveTab('models')}>模型设置</button>
+        </div>
+
         {/* Body */}
         <div className="settings-modal-body custom-scrollbar">
+          {activeTab === 'models' ? <ModelSettingsPanel projectId={projectId} onToast={onToast} /> : <>
           {/* Section 1: Security & Governance */}
           <div className="settings-section">
             <div className="section-label">
@@ -256,10 +269,11 @@ export default function SettingsModal({
               />
             </div>
           </div>
+          </>}
         </div>
 
         {/* Footer */}
-        <div className="settings-modal-footer">
+        {activeTab === 'preferences' && <div className="settings-modal-footer">
           <button className="btn-reset" onClick={handleReset} title="恢复默认设置">
             <RotateCcw size={12} />
             <span>恢复默认</span>
@@ -283,7 +297,7 @@ export default function SettingsModal({
               )}
             </button>
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );

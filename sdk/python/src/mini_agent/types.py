@@ -598,6 +598,7 @@ class ThreadGoal:
     current_milestone: int = 0
     total_milestones: int = 0
     loop_count: int = 0
+    verifier_model_selection: dict[str, str] | None = None
     last_verifier_score: int | None = None
     last_error: str | None = None
     verification_status: str = "idle"
@@ -623,6 +624,9 @@ class ThreadGoal:
             total_milestones=val.get("totalMilestones")
             or val.get("total_milestones", 0),
             loop_count=val.get("loopCount") or val.get("loop_count", 0),
+            verifier_model_selection=val.get("verifierModelSelection")
+            if "verifierModelSelection" in val
+            else val.get("verifier_model_selection"),
             last_verifier_score=val.get("lastVerifierScore")
             if "lastVerifierScore" in val
             else val.get("last_verifier_score"),
@@ -696,6 +700,8 @@ class ThreadSettingsResult:
     collaboration_mode: CollaborationMode
     builtin_tools: list[str] = field(default_factory=list)
     continuation_mode: ContinuationMode = "manual"
+    model_selection: dict[str, str] | None = None
+    reasoning_effort: str | None = None
     state_revision: int | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -713,6 +719,10 @@ class ThreadSettingsResult:
             ),
             continuation_mode=val.get("continuationMode")
             or val.get("continuation_mode", "manual"),
+            model_selection=val.get("modelSelection")
+            or val.get("model_selection"),
+            reasoning_effort=val.get("reasoningEffort")
+            or val.get("reasoning_effort"),
             state_revision=(
                 data.get("stateRevision")
                 if isinstance(data, dict) and "stateRevision" in data

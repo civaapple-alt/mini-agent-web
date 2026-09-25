@@ -9,11 +9,95 @@ from mini_agent import (
     MiniAgentClient,
     RuntimeStatus,
     ThreadCheckpoint,
+    ThreadGoal,
     TurnEventsResult,
 )
 from mini_agent.errors import ServerProcessError
+from mini_agent.client import _redact_secrets
 
 from tests.conftest import has_app_server
+
+
+def test_goal_result_parses_verifier_model_snapshot():
+    goal = ThreadGoal.from_dict(
+        {
+            "thread_id": "thread-1",
+            "objective": "verify",
+            "status": "active",
+            "verifier_model_selection": {
+                "provider_id": "kimi",
+                "model_id": "kimi-k2",
+            },
+        }
+    )
+
+    assert goal.verifier_model_selection == {
+        "provider_id": "kimi",
+        "model_id": "kimi-k2",
+    }
+
+
+@pytest.mark.asyncio
+async def test_sdk_model_catalog_request_and_thread_model_settings():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {
+            "value": {
+                "collaborationMode": {"mode": "default"},
+                "builtinTools": [],
+                "continuationMode": "manual",
+                "modelSelection": {"providerId": "deepseek", "modelId": "deepseek-v4"},
+                "reasoningEffort": "high",
+            }
+        }
+
+    client._send_request = fake_send
+    await client.manage_model_catalog(
+        "upsert_provider",
+        provider={"id": "deepseek", "name": "DeepSeek", "kind": "deepseek", "baseUrl": ""},
+        apiKey="private-key",
+    )
+    settings = await client.update_thread_settings(
+        "default",
+        thread_id="thread-1",
+        model_selection={"providerId": "deepseek", "modelId": "deepseek-v4"},
+        reasoning_effort="high",
+    )
+    thread_settings = await client.get_thread_model_settings("thread-1")
+
+    assert calls[0] == (
+        "model/catalog/manage",
+        {
+            "operation": "upsert_provider",
+            "provider": {
+                "id": "deepseek",
+                "name": "DeepSeek",
+                "kind": "deepseek",
+                "baseUrl": "",
+            },
+            "apiKey": "private-key",
+        },
+    )
+    assert calls[1][1]["modelSelection"] == {
+        "providerId": "deepseek",
+        "modelId": "deepseek-v4",
+    }
+    assert settings.model_selection == {
+        "providerId": "deepseek",
+        "modelId": "deepseek-v4",
+    }
+    assert settings.reasoning_effort == "high"
+    assert calls[2] == (
+        "thread/model-settings/get",
+        {"threadId": "thread-1"},
+    )
+    assert thread_settings["value"]["modelSelection"]["providerId"] == "deepseek"
+    assert _redact_secrets({"provider": {"api_key": "private-key"}}) == {
+        "provider": {"api_key": "[REDACTED]"}
+    }
 
 
 @pytest.mark.asyncio

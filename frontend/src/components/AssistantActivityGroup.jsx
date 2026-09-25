@@ -3,7 +3,14 @@ import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { getManualExpansion, setManualExpansion } from '../utils/activityPresentationState';
 import './AssistantActivityGroup.css';
 
-export default function AssistantActivityGroup({ id, presentationId = null, items, children }) {
+export default function AssistantActivityGroup({
+  id,
+  presentationId = null,
+  items,
+  failureCount = 0,
+  failureTypes = [],
+  children,
+}) {
   const expansionId = `assistant-activity-group:${presentationId || id}`;
   const [isExpanded, setIsExpanded] = useState(
     () => getManualExpansion(expansionId) ?? false,
@@ -14,6 +21,14 @@ export default function AssistantActivityGroup({ id, presentationId = null, item
     thinkingCount > 0 ? `思考 ${thinkingCount}` : null,
     toolCount > 0 ? `工具 ${toolCount}` : null,
   ].filter(Boolean).join(' · ');
+  const failureTypeSummary = failureTypes
+    .map(({ name, count }) => count > 1 ? `${name} ×${count}` : name)
+    .join('、');
+  const failureSummary = failureCount > 0
+    ? `失败 ${failureCount} 次${failureTypeSummary ? ` · ${failureTypeSummary}` : ''}`
+    : null;
+  const summaryTitle = `已完成 ${items.length} 项活动`;
+  const summaryLabel = [summaryTitle, counts, failureSummary].filter(Boolean).join('，');
 
   const toggle = () => {
     const nextExpanded = !isExpanded;
@@ -31,12 +46,15 @@ export default function AssistantActivityGroup({ id, presentationId = null, item
         type="button"
         className="assistant-activity-group-summary"
         aria-expanded={isExpanded}
-        aria-label={`已完成 ${items.length} 项活动${counts ? `，${counts}` : ''}`}
+        aria-label={summaryLabel}
         onClick={toggle}
       >
         <Check size={13} aria-hidden="true" />
-        <span className="assistant-activity-group-title">已完成 {items.length} 项活动</span>
+        <span className="assistant-activity-group-title">{summaryTitle}</span>
         {counts && <span className="assistant-activity-group-counts">{counts}</span>}
+        {failureSummary && (
+          <span className="assistant-activity-group-failures">{failureSummary}</span>
+        )}
         {isExpanded
           ? <ChevronDown size={13} aria-hidden="true" />
           : <ChevronRight size={13} aria-hidden="true" />}

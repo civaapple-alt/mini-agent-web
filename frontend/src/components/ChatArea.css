@@ -199,7 +199,7 @@
   height: 2px;
   border-radius: 2px;
   background: var(--text-muted);
-  transition: width 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+  transition: width 0.15s ease, background-color 0.15s ease;
 }
 
 .session-turn-node:hover .session-turn-node-mark,
@@ -222,17 +222,15 @@
 
 .session-turn-node.is-current .session-turn-node-mark {
   width: 24px;
-  box-shadow: 0 0 0 3px var(--status-running-soft);
 }
 
 .session-turn-node-popover {
-  position: absolute;
-  left: 24px;
-  top: 50%;
+  position: fixed;
+  z-index: 1000;
   display: grid;
   width: max-content;
-  min-width: 220px;
-  max-width: min(360px, 42vw);
+  min-width: min(220px, calc(100vw - 16px));
+  max-width: min(360px, calc(100vw - 16px));
   gap: 4px;
   padding: 9px 11px;
   border: 1px solid var(--border-color);
@@ -241,16 +239,13 @@
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.14);
   color: var(--text-secondary);
   text-align: left;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-50%) translateX(-4px);
-  transition: opacity 0.12s ease, transform 0.12s ease;
+  opacity: 1;
+  transform: translateY(-50%);
+  transition: opacity 0.12s ease;
 }
 
-.session-turn-node:hover .session-turn-node-popover,
-.session-turn-node:focus-visible .session-turn-node-popover {
-  opacity: 1;
-  transform: translateY(-50%) translateX(0);
+.session-turn-node-popover.is-visible {
+  pointer-events: auto;
 }
 
 .session-turn-popover-input {

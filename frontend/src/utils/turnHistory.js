@@ -282,29 +282,55 @@ export function blocksCanBeGrouped(blocks) {
     const hasOutcome = block.outcome !== null
       && block.outcome !== undefined
       && (typeof block.outcome !== 'string' || block.outcome.trim() !== '');
-    const hasSuccessfulOutcome = !hasOutcome
-      || (typeof block.outcome === 'string' && block.outcome.trim().toLowerCase() === 'completed');
-    return ['completed', 'success'].includes(status)
+    const isFailure = isFailedToolBlock(block);
+    const hasKnownOutcome = !hasOutcome
+      || ['completed', 'success', 'failed', 'error', 'retryable'].includes(outcome);
+    const isSettled = ['completed', 'success', 'failed', 'error'].includes(status);
+    return isSettled
       && name !== 'delegate_task'
       && !block.isStreaming
-      && !block.error
-      && hasSuccessfulOutcome
+      && (isFailure || hasKnownOutcome)
+      && (isFailure || !block.error)
       && !block.approval
+      && !['needs_approval', 'deferred'].includes(outcome)
       && !['pending', 'denied', 'expired'].includes(approvalState);
   });
 }
 
-/** Group adjacent settled internal blocks while preserving all source blocks. */
+function isFailedToolBlock(block) {
+  if (block?.type !== 'tool') return false;
+  const status = String(block.status || '').toLowerCase();
+  const outcome = String(block.outcome || '').toLowerCase();
+  return Boolean(block.error)
+    || ['failed', 'error'].includes(status)
+    || ['failed', 'error', 'retryable'].includes(outcome);
+}
+
+function activityGroup(items, index = 0) {
+  const failureCounts = new Map();
+  for (const item of items) {
+    if (!isFailedToolBlock(item)) continue;
+    const name = String(item.name || item.toolName || item.tool || 'tool');
+    failureCounts.set(name, (failureCounts.get(name) || 0) + 1);
+  }
+
+  const failureTypes = [...failureCounts].map(([name, count]) => ({ name, count }));
+  return {
+    type: 'activityGroup',
+    id: `activity_${items[0]?.id || index}`,
+    items,
+    failureCount: failureTypes.reduce((total, item) => total + item.count, 0),
+    failureTypes,
+  };
+}
+
+/** Group adjacent settled activity and keep failure details in the summary. */
 export function groupSettledAssistantBlocks(blocks = []) {
   const grouped = [];
   let pending = [];
   const flush = () => {
     if (pending.length > 0) {
-      grouped.push({
-        type: 'activityGroup',
-        id: `activity_${pending[0].id || grouped.length}`,
-        items: pending,
-      });
+      grouped.push(activityGroup(pending, grouped.length));
       pending = [];
     }
   };

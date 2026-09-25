@@ -340,6 +340,8 @@ export default function MessageItem({
                   id={block.id}
                   presentationId={`${turnScope}:${block.id}`}
                   items={block.items}
+                  failureCount={block.failureCount}
+                  failureTypes={block.failureTypes}
                 >
                   {block.items.map((item, itemIndex) => {
                     if (item.type === 'thinking') {

@@ -58,7 +58,7 @@ describe('Turn history projection', () => {
     expect(entry.stateLabel).toBe('历史');
   });
 
-  it('groups only adjacent successful settled activity and keeps boundaries visible', () => {
+  it('groups settled failures while keeping active, approval, and delegation boundaries visible', () => {
     const grouped = groupSettledAssistantBlocks([
       { type: 'thinking', id: 'thinking-1', content: 'done', isStreaming: false },
       { type: 'tool', id: 'tool-1', name: 'shell', status: 'completed' },
@@ -76,12 +76,16 @@ describe('Turn history projection', () => {
       'tool-queued',
       'tool-approval',
       'tool-delegate',
-      'tool-2',
+      'activity_tool-2',
       'text',
     ]);
+    expect(grouped[5]).toMatchObject({
+      failureCount: 1,
+      failureTypes: [{ name: 'shell', count: 1 }],
+    });
   });
 
-  it('keeps retryable, unknown, failure, and approval tool outcomes out of success summaries', () => {
+  it('summarizes failed outcomes and leaves unknown or approval outcomes separate', () => {
     const grouped = groupSettledAssistantBlocks([
       { type: 'tool', id: 'tool-explicit-success', name: 'shell', status: 'completed', outcome: 'completed' },
       { type: 'tool', id: 'tool-retryable', name: 'shell', status: 'completed', outcome: 'retryable' },
@@ -94,15 +98,68 @@ describe('Turn history projection', () => {
 
     expect(grouped.map((block) => block.id || block.type)).toEqual([
       'activity_tool-explicit-success',
-      'tool-retryable',
       'tool-unknown',
-      'tool-failed',
+      'activity_tool-failed',
       'tool-approval',
       'tool-denied',
       'activity_tool-no-outcome',
     ]);
-    expect(grouped[0].items.map((block) => block.id)).toEqual(['tool-explicit-success']);
+    expect(grouped[0].items.map((block) => block.id)).toEqual([
+      'tool-explicit-success',
+      'tool-retryable',
+    ]);
+    expect(grouped[0]).toMatchObject({
+      failureCount: 1,
+      failureTypes: [{ name: 'shell', count: 1 }],
+    });
+    expect(grouped[2]).toMatchObject({
+      failureCount: 1,
+      failureTypes: [{ name: 'shell', count: 1 }],
+    });
     expect(grouped.at(-1).items.map((block) => block.id)).toEqual(['tool-no-outcome']);
+  });
+
+  it('collapses a settled failed call with the rest of its completed execution activity', () => {
+    const grouped = groupSettledAssistantBlocks([
+      { type: 'thinking', id: 'thinking-before-success', content: 'Earlier work' },
+      { type: 'tool', id: 'tool-success', name: 'read_file', status: 'completed' },
+      { type: 'thinking', id: 'thinking-before-failure', content: 'This patch needs correction' },
+      { type: 'tool', id: 'tool-failed', name: 'apply_patch', status: 'failed', error: 'hunk did not match' },
+      { type: 'thinking', id: 'thinking-after-failure', content: 'Try the current file contents' },
+    ]);
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0].type).toBe('activityGroup');
+    expect(grouped[0].items.map((block) => block.id)).toEqual([
+      'thinking-before-success',
+      'tool-success',
+      'thinking-before-failure',
+      'tool-failed',
+      'thinking-after-failure',
+    ]);
+    expect(grouped[0]).toMatchObject({
+      failureCount: 1,
+      failureTypes: [{ name: 'apply_patch', count: 1 }],
+    });
+  });
+
+  it('summarizes a failed call even when its outcome uses an unknown server value', () => {
+    const grouped = groupSettledAssistantBlocks([
+      {
+        type: 'tool',
+        id: 'tool-failed-unknown-outcome',
+        name: 'shell',
+        status: 'failed',
+        outcome: 'server_added_state',
+      },
+    ]);
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0]).toMatchObject({
+      type: 'activityGroup',
+      failureCount: 1,
+      failureTypes: [{ name: 'shell', count: 1 }],
+    });
   });
 
   it('keeps child-wakeup turns out of user bubbles and labels their source in the Turn rail', () => {
@@ -144,8 +201,9 @@ describe('Turn history projection', () => {
       />,
     );
     expect(screen.queryByText('internal child update prompt')).toBeNull();
-    expect(screen.getByText('子代理更新')).toBeDefined();
-    expect(screen.getAllByText('普通用户输入')).toHaveLength(2);
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /子代理更新/ }));
+    expect(screen.getByRole('tooltip').textContent).toContain('来源：子代理更新');
+    expect(screen.getAllByText('普通用户输入')).toHaveLength(1);
   });
 
   it('stores a structured child-wakeup source on the live Turn placeholder', () => {

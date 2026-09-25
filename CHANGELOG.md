@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Clear stale turn results when an execution segment starts and show incomplete-turn banners only after the active Turn settles. Tone down steer messages with neutral bubble colors and a muted label.
-- Keep the current execution segment expanded while it runs; only fold an earlier segment into an activity summary when a later segment starts. Preserve progress explanations, failures, approvals, delegation, and the final reply as separate visible content, with the same defaults after reload.
+- Keep the current execution segment expanded while it runs; fold earlier settled activity, including failed tool calls, when a later segment starts. Add failure counts and tool types to activity summaries while keeping approvals, delegation, and the final reply separate.
+- Keep Session Turn hover details visible outside the rail's scroll clipping area, and remove the unintended glow around the current marker.
 - Restore restarted Sessions from ordered items so assistant execution segments keep separate summaries and steer inputs keep separate message bubbles. Recover a missing input item from the persisted `turn_started.prompt`, and keep one Turn rail node when a Turn has multiple inputs.
 - Restore earlier assistant replies from durable ThreadItems when checkpoint compaction omits their Turns; preserve item order and avoid duplicating Turns already present in the checkpoint.
 - Make the `有新活动 · 查看当前 Turn` action scroll to the last assistant message in the current Turn. Fall back to the Turn input when no assistant activity exists.

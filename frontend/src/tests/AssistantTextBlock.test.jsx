@@ -140,6 +140,7 @@ describe('AssistantTextBlock', () => {
           ],
         }}
         isLast
+        isLastInTurn={false}
         isGenerating={false}
       />,
     );
@@ -165,6 +166,7 @@ describe('AssistantTextBlock', () => {
           ],
         }}
         isLast
+        isLastInTurn={false}
         isGenerating={false}
       />,
     );
@@ -256,13 +258,17 @@ describe('AssistantTextBlock', () => {
         { type: 'tool', id: 'tool-manual-fold', name: 'read_file', status: 'completed', output: '内容' },
       ],
     };
-    const firstRender = render(<MessageItem message={message} isLast isGenerating={false} />);
+    const firstRender = render(
+      <MessageItem message={message} isLast isLastInTurn={false} isGenerating={false} />,
+    );
     fireEvent.click(screen.getByRole('button', { name: /已完成 2 项活动/ }));
     expect(firstRender.container.querySelector('.assistant-activity-group-summary')?.getAttribute('aria-expanded'))
       .toBe('true');
 
     firstRender.unmount();
-    const secondRender = render(<MessageItem message={message} isLast isGenerating={false} />);
+    const secondRender = render(
+      <MessageItem message={message} isLast isLastInTurn={false} isGenerating={false} />,
+    );
     expect(secondRender.container.querySelector('.assistant-activity-group-summary')?.getAttribute('aria-expanded'))
       .toBe('true');
   });

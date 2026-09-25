@@ -37,6 +37,12 @@
   font-size: 10px;
 }
 
+.assistant-activity-group-failures {
+  flex: 0 0 auto;
+  color: var(--status-failed);
+  font-size: 10px;
+}
+
 .assistant-activity-group-items {
   display: grid;
   gap: 5px;

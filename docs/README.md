@@ -9,6 +9,7 @@
 | --- | --- |
 | [`limits.md`](limits.md) | 输入、输出、工具、会话和传输的硬限制 |
 | [`privacy.md`](privacy.md) | 本地数据、凭证、日志和网络边界 |
+| [`preferences.md`](preferences.md) | Web Studio 偏好设置分类、保存和安全边界 |
 | [`releasing.md`](releasing.md) | 版本同步、验证和发布步骤 |
 | [`skills.md`](skills.md) | 内置技能组、项目开关、技能目录和 `$skill` 激活 |
 | [`models.md`](models.md) | Responses 供应商、模型目录、默认值和输入框切换 |

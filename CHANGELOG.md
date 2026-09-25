@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Reorganize preferences and model settings into a grouped settings sidebar with a dedicated details pane, including a compact horizontal navigation layout on narrow screens.
 - Add local Responses provider and model management, separate global primary
   and Goal Verifier defaults, project defaults, and per-Thread model and
   reasoning selection in the composer.

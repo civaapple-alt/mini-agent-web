@@ -1,18 +1,64 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  X,
+  Boxes,
+  Check,
+  Palette,
+  RotateCcw,
+  Save,
   Settings,
   Shield,
-  Sliders,
-  Palette,
-  Check,
-  Save,
-  RotateCcw,
+  SlidersHorizontal,
+  X,
 } from 'lucide-react';
 import { api } from '../api';
 import { normalizeTheme } from '../utils/statusModel.js';
 import ModelSettingsPanel from './ModelSettingsPanel';
 import './SettingsModal.css';
+
+const SETTINGS_GROUPS = [
+  {
+    label: '偏好设置',
+    items: [
+      {
+        id: 'security',
+        label: '安全与运行',
+        description: '审批缓存与运行边界',
+        icon: Shield,
+      },
+      {
+        id: 'reasoning',
+        label: '推理与工作流',
+        description: '默认推理等级',
+        icon: SlidersHorizontal,
+      },
+      {
+        id: 'appearance',
+        label: '界面与外观',
+        description: '主题和内容显示',
+        icon: Palette,
+      },
+    ],
+  },
+  {
+    label: 'Agent 能力',
+    items: [
+      {
+        id: 'models',
+        label: '模型设置',
+        description: '供应商、模型与默认值',
+        icon: Boxes,
+      },
+    ],
+  },
+];
+
+const DEFAULT_SETTINGS = {
+  reasoning_effort: 'high',
+  theme: 'light',
+  auto_scroll: true,
+  word_wrap: true,
+  font_size: 13,
+};
 
 export default function SettingsModal({
   isOpen,
@@ -22,20 +68,17 @@ export default function SettingsModal({
   projectId = null,
   initialTab = 'preferences',
 }) {
-  const [settings, setSettings] = useState({
-    reasoning_effort: 'high',
-    theme: 'light',
-    auto_scroll: true,
-    word_wrap: true,
-    font_size: 13,
-  });
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [approvalInfo, setApprovalInfo] = useState(null);
   const [isRevokingApprovals, setIsRevokingApprovals] = useState(false);
-  const [activeTab, setActiveTab] = useState('preferences');
+  const [activeSection, setActiveSection] = useState('security');
   const requestEpochRef = useRef(0);
   const requestControllerRef = useRef(null);
+  const activeSectionInfo = SETTINGS_GROUPS
+    .flatMap((group) => group.items)
+    .find((item) => item.id === activeSection) || SETTINGS_GROUPS[0].items[0];
 
   useEffect(() => {
     requestControllerRef.current?.abort();
@@ -45,8 +88,8 @@ export default function SettingsModal({
     requestControllerRef.current = controller;
     const requestEpoch = requestEpochRef.current;
     const context = { epoch: requestEpoch, signal: controller.signal };
-    loadSettings(context);
-    loadApprovalInfo(context);
+    void loadSettings(context);
+    void loadApprovalInfo(context);
     return () => {
       controller.abort();
       requestEpochRef.current += 1;
@@ -54,21 +97,26 @@ export default function SettingsModal({
   }, [isOpen, projectId]);
 
   useEffect(() => {
-    if (isOpen) setActiveTab(initialTab === 'models' ? 'models' : 'preferences');
+    if (isOpen) setActiveSection(initialTab === 'models' ? 'models' : 'security');
   }, [initialTab, isOpen]);
 
   const isCurrentRequest = (context) => (
     context && context.epoch === requestEpochRef.current
   );
 
+  const updateSetting = (name, value) => {
+    setSettings((current) => ({ ...current, [name]: value }));
+    setSavedSuccess(false);
+  };
+
   const loadSettings = async (context = null) => {
     try {
       const data = await api.getSettings({ projectId, signal: context?.signal });
       if (isCurrentRequest(context)) {
-        setSettings((prev) => ({
-          ...prev,
+        setSettings((previous) => ({
+          ...previous,
           ...data,
-          theme: normalizeTheme(data.theme || prev.theme),
+          theme: normalizeTheme(data.theme || previous.theme),
         }));
       }
     } catch (err) {
@@ -114,190 +162,221 @@ export default function SettingsModal({
       signal: requestControllerRef.current?.signal,
     };
     try {
-      const res = await api.updateSettings(settings, {
+      const response = await api.updateSettings(settings, {
         projectId,
         signal: context.signal,
       });
       if (!isCurrentRequest(context)) return;
       setSavedSuccess(true);
-      if (onSettingsSaved) onSettingsSaved(res.settings);
+      if (onSettingsSaved) onSettingsSaved(response.settings);
       setTimeout(() => setSavedSuccess(false), 2000);
     } catch (err) {
       if (err?.name === 'AbortError' || !isCurrentRequest(context)) return;
-      if (onToast) {
-        onToast(`保存设置失败: ${err.message}`, 'error');
-      }
+      if (onToast) onToast(`保存设置失败: ${err.message}`, 'error');
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleReset = () => {
-    setSettings({
-      reasoning_effort: 'high',
-      theme: 'light',
-      auto_scroll: true,
-      word_wrap: true,
-      font_size: 13,
-    });
+    setSettings({ ...DEFAULT_SETTINGS });
+    setSavedSuccess(false);
   };
 
   if (!isOpen) return null;
 
   return (
     <div className="settings-modal-overlay" onClick={onClose}>
-      <div className={`settings-modal-container ${activeTab === 'models' ? 'models-expanded' : ''}`} onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="settings-modal-header">
+      <div
+        className="settings-modal-container"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="系统设置"
+      >
+        <header className="settings-modal-header">
           <div className="modal-title-group">
-            <Settings size={15} className="text-emerald" />
-            <h3>系统与偏好设置 (Settings)</h3>
+            <Settings size={17} className="text-emerald" />
+            <div>
+              <h3>设置</h3>
+              <span>偏好设置与模型配置</span>
+            </div>
           </div>
-          <button className="modal-close-btn" onClick={onClose}>
-            <X size={15} />
+          <button type="button" className="modal-close-btn" onClick={onClose} aria-label="关闭设置">
+            <X size={17} />
           </button>
-        </div>
+        </header>
 
-        <div className="settings-modal-tabs" role="tablist" aria-label="设置分类">
-          <button type="button" role="tab" aria-selected={activeTab === 'preferences'} className={activeTab === 'preferences' ? 'active' : ''} onClick={() => setActiveTab('preferences')}>偏好设置</button>
-          <button type="button" role="tab" aria-selected={activeTab === 'models'} className={activeTab === 'models' ? 'active' : ''} onClick={() => setActiveTab('models')}>模型设置</button>
-        </div>
-
-        {/* Body */}
-        <div className="settings-modal-body custom-scrollbar">
-          {activeTab === 'models' ? <ModelSettingsPanel projectId={projectId} onToast={onToast} /> : <>
-          {/* Section 1: Security & Governance */}
-          <div className="settings-section">
-            <div className="section-label">
-              <Shield size={13} className="text-amber" />
-              <span>安全与运行边界 (Security & Governance)</span>
-            </div>
-
-            <div className="setting-item">
-              <div className="setting-text">
-                <span className="setting-title">访问范围与批准生命周期</span>
-                <span className="setting-desc">访问范围、审批策略和推进方式请在顶部运行状态栏的“运行设置”中调整。</span>
+        <div className="settings-modal-main">
+          <nav className="settings-modal-sidebar" aria-label="设置菜单">
+            {SETTINGS_GROUPS.map((group) => (
+              <div className="settings-nav-group" key={group.label}>
+                <h4>{group.label}</h4>
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const selected = activeSection === item.id;
+                  return (
+                    <button
+                      type="button"
+                      key={item.id}
+                      className={`settings-nav-item${selected ? ' active' : ''}`}
+                      aria-current={selected ? 'page' : undefined}
+                      onClick={() => setActiveSection(item.id)}
+                    >
+                      <Icon size={16} aria-hidden="true" />
+                      <span>
+                        <strong>{item.label}</strong>
+                        <small>{item.description}</small>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-              <Shield size={20} className="text-amber" />
-            </div>
+            ))}
+          </nav>
 
-            <div className="approval-state-card">
-              <div>
-                <span className="setting-title">当前项目批准缓存</span>
-                <span className="setting-desc">
-                  {approvalInfo?.pending_requests?.length || 0} 个待处理请求 · 授权存储：{approvalInfo?.grant_store || 'Host/Capabilities'}
-                </span>
-              </div>
-              <button
-                className="btn-revoke-approvals"
-                onClick={handleRevokeApprovals}
-                disabled={isRevokingApprovals}
-              >
-                {isRevokingApprovals ? '撤销中...' : '撤销已批准'}
-              </button>
-            </div>
-          </div>
-
-          {/* Section 2: Model & Reasoning */}
-          <div className="settings-section">
-            <div className="section-label">
-              <Sliders size={13} className="text-sky" />
-              <span>模型与推理偏好 (Reasoning & Workflow)</span>
-            </div>
-
-            <div className="setting-item">
-              <div className="setting-text">
-                <span className="setting-title">思考深度 (Reasoning Effort)</span>
-                <span className="setting-desc">调整 o1/o3/Claude 思维预算</span>
-              </div>
-              <select
-                className="setting-select"
-                value={settings.reasoning_effort}
-                onChange={(e) => setSettings({ ...settings, reasoning_effort: e.target.value })}
-              >
-                <option value="low">低 (Low - 极速响应)</option>
-                <option value="medium">中 (Medium - 标准深度)</option>
-                <option value="high">高 (High - 复杂逻辑规划)</option>
-              </select>
-            </div>
-
-          </div>
-
-          {/* Section 3: UI & Appearance */}
-          <div className="settings-section">
-            <div className="section-label">
-              <Palette size={13} className="text-purple" />
-              <span>界面外观与交互 (UI & Appearance)</span>
-            </div>
-
-            <div className="setting-item">
-              <div className="setting-text">
-                <span className="setting-title">色彩主题 (Theme)</span>
-                <span className="setting-desc">选择符合你习惯的 IDE 主题风格</span>
-              </div>
-              <select
-                className="setting-select"
-                value={settings.theme}
-                onChange={(e) => setSettings({ ...settings, theme: e.target.value })}
-              >
-                <option value="light">Light（浅色）</option>
-                <option value="dark">Dark（深色）</option>
-              </select>
-            </div>
-
-            <div className="setting-item checkbox">
-              <div className="setting-text">
-                <span className="setting-title">自动滚动流式输出</span>
-                <span className="setting-desc">模型输出新 Token 时保持窗口在最下方</span>
-              </div>
-              <input
-                type="checkbox"
-                checked={settings.auto_scroll}
-                onChange={(e) => setSettings({ ...settings, auto_scroll: e.target.checked })}
-              />
-            </div>
-
-            <div className="setting-item checkbox">
-              <div className="setting-text">
-                <span className="setting-title">代码与长文本自动换行</span>
-                <span className="setting-desc">在工具输出和代码卡片中开启自动换行</span>
-              </div>
-              <input
-                type="checkbox"
-                checked={settings.word_wrap}
-                onChange={(e) => setSettings({ ...settings, word_wrap: e.target.checked })}
-              />
-            </div>
-          </div>
-          </>}
-        </div>
-
-        {/* Footer */}
-        {activeTab === 'preferences' && <div className="settings-modal-footer">
-          <button className="btn-reset" onClick={handleReset} title="恢复默认设置">
-            <RotateCcw size={12} />
-            <span>恢复默认</span>
-          </button>
-
-          <div className="footer-right">
-            <button className="btn-cancel" onClick={onClose}>
-              取消
-            </button>
-            <button className="btn-save" onClick={handleSave} disabled={isSaving}>
-              {savedSuccess ? (
-                <>
-                  <Check size={12} />
-                  <span>已保存</span>
-                </>
+          <main className="settings-modal-detail">
+            <div className="settings-detail-scroll custom-scrollbar">
+              {activeSection === 'models' ? (
+                <ModelSettingsPanel projectId={projectId} onToast={onToast} />
               ) : (
                 <>
-                  <Save size={12} />
-                  <span>{isSaving ? '保存中...' : '保存配置'}</span>
+                  <div className="settings-detail-heading">
+                    <div>
+                      <h2>{activeSectionInfo.label}</h2>
+                      <p>{activeSectionInfo.description}</p>
+                    </div>
+                  </div>
+
+                  {activeSection === 'security' && (
+                    <section className="settings-preference-section">
+                      <div className="settings-section-intro">
+                        <Shield size={17} />
+                        <div>
+                          <h3>安全与运行边界</h3>
+                          <p>执行范围和批准策略由运行状态栏与 Host 管理。</p>
+                        </div>
+                      </div>
+                      <div className="settings-preference-card approval-state-card">
+                        <div className="setting-text">
+                          <strong className="setting-title">当前项目批准缓存</strong>
+                          <span className="setting-desc">
+                            {approvalInfo?.pending_requests?.length ?? '读取中'} 个待处理请求
+                            <span className="settings-meta-separator">·</span>
+                            授权存储：{approvalInfo?.grant_store || 'Host/Capabilities'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-revoke-approvals"
+                          onClick={() => void handleRevokeApprovals()}
+                          disabled={isRevokingApprovals}
+                        >
+                          {isRevokingApprovals ? '撤销中...' : '撤销已批准'}
+                        </button>
+                      </div>
+                    </section>
+                  )}
+
+                  {activeSection === 'reasoning' && (
+                    <section className="settings-preference-section">
+                      <div className="settings-section-intro">
+                        <SlidersHorizontal size={17} />
+                        <div>
+                          <h3>模型与推理偏好</h3>
+                          <p>为新的工作流设置默认推理深度；Thread 仍可在输入框中单独调整。</p>
+                        </div>
+                      </div>
+                      <div className="settings-preference-card setting-item">
+                        <div className="setting-text">
+                          <strong className="setting-title">默认推理等级</strong>
+                          <span className="setting-desc">等级越高，越适合复杂规划与多步任务。</span>
+                        </div>
+                        <select
+                          className="setting-select"
+                          value={settings.reasoning_effort}
+                          onChange={(event) => updateSetting('reasoning_effort', event.target.value)}
+                        >
+                          <option value="low">低 · 快速响应</option>
+                          <option value="medium">中 · 均衡</option>
+                          <option value="high">高 · 复杂规划</option>
+                        </select>
+                      </div>
+                    </section>
+                  )}
+
+                  {activeSection === 'appearance' && (
+                    <section className="settings-preference-section">
+                      <div className="settings-section-intro">
+                        <Palette size={17} />
+                        <div>
+                          <h3>界面外观与交互</h3>
+                          <p>调整 Web Studio 的主题和会话内容呈现方式。</p>
+                        </div>
+                      </div>
+                      <div className="settings-preference-card settings-preference-list">
+                        <div className="setting-item">
+                          <div className="setting-text">
+                            <strong className="setting-title">色彩主题</strong>
+                            <span className="setting-desc">选择适合当前工作环境的配色。</span>
+                          </div>
+                          <select
+                            className="setting-select"
+                            value={settings.theme}
+                            onChange={(event) => updateSetting('theme', event.target.value)}
+                          >
+                            <option value="light">浅色</option>
+                            <option value="dark">深色</option>
+                          </select>
+                        </div>
+                        <label className="setting-item setting-toggle-row">
+                          <span className="setting-text">
+                            <strong className="setting-title">自动跟随流式输出</strong>
+                            <span className="setting-desc">模型输出时保持视图跟随最新消息。</span>
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={settings.auto_scroll}
+                            onChange={(event) => updateSetting('auto_scroll', event.target.checked)}
+                          />
+                          <span className="settings-toggle-control" aria-hidden="true" />
+                        </label>
+                        <label className="setting-item setting-toggle-row">
+                          <span className="setting-text">
+                            <strong className="setting-title">代码与长文本自动换行</strong>
+                            <span className="setting-desc">在工具输出和代码卡片中启用换行。</span>
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={settings.word_wrap}
+                            onChange={(event) => updateSetting('word_wrap', event.target.checked)}
+                          />
+                          <span className="settings-toggle-control" aria-hidden="true" />
+                        </label>
+                      </div>
+                    </section>
+                  )}
                 </>
               )}
-            </button>
-          </div>
-        </div>}
+            </div>
+
+            {activeSection !== 'models' && (
+              <footer className="settings-modal-footer">
+                <button type="button" className="btn-reset" onClick={handleReset} title="恢复默认设置">
+                  <RotateCcw size={14} />
+                  <span>恢复默认</span>
+                </button>
+                <div className="footer-right">
+                  <button type="button" className="btn-cancel" onClick={onClose}>取消</button>
+                  <button type="button" className="btn-save" onClick={() => void handleSave()} disabled={isSaving}>
+                    {savedSuccess ? <Check size={14} /> : <Save size={14} />}
+                    <span>{savedSuccess ? '已保存' : isSaving ? '保存中...' : '保存配置'}</span>
+                  </button>
+                </div>
+              </footer>
+            )}
+          </main>
+        </div>
       </div>
     </div>
   );

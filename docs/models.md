@@ -4,7 +4,7 @@ Web Studio 的模型设置管理机器级 Responses 供应商目录。Host 负�
 
 ## 配置供应商
 
-打开 **设置 → 模型设置**，添加 DeepSeek、Kimi、GLM、字节火山或自定义供应商。填写供应商名称、Responses API Base URL 和 API Key。Base URL 不预填，Host 会在其后追加 `/responses`。
+打开 **设置 → Agent 能力 → 模型设置**，在详情区添加 DeepSeek、Kimi、GLM、字节火山或自定义供应商。填写供应商名称、Responses API Base URL 和 API Key。Base URL 不预填，Host 会在其后追加 `/responses`。设置窗口的分类和保存方式见[偏好设置](preferences.md)。
 
 供应商必须提供兼容的 Responses 接口。Host 不会改用 Chat Completions。接口不兼容时，当前 Turn 会返回错误。
 

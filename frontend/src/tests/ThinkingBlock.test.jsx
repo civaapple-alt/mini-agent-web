@@ -1,6 +1,6 @@
 import React from 'react';
-import { describe, expect, it } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import ThinkingBlock from '../components/ThinkingBlock';
 
 describe('ThinkingBlock', () => {
@@ -70,5 +70,28 @@ describe('ThinkingBlock', () => {
     );
 
     expect(body.scrollTop).toBe(20);
+  });
+
+  it('freezes elapsed time when the turn settles even while the page stays open', () => {
+    vi.useFakeTimers();
+    try {
+      const { container, rerender } = render(
+        <ThinkingBlock content="完成前的思考" isStreaming />,
+      );
+
+      act(() => vi.advanceTimersByTime(3200));
+      const streamingTime = container.querySelector('.thinking-meta')?.textContent;
+      expect(streamingTime).toContain('3.2s');
+
+      rerender(<ThinkingBlock content="完成前的思考" isStreaming={false} />);
+      const settledTime = container.querySelector('.thinking-meta')?.textContent;
+      expect(settledTime).toContain('3.2s');
+      act(() => vi.advanceTimersByTime(60_000));
+
+      expect(container.querySelector('.thinking-meta')?.textContent).toBe(settledTime);
+      expect(container.querySelector('.thinking-label')?.textContent).toBe('思考');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

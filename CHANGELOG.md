@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Scope delegated child Thread identities to their creating parent Session using
+  a canonical capability-generated ID; repeated display titles and parent-local
+  keys no longer collide across Sessions. Persist bounded call arguments before
+  pairing them with successful tool results, keep maximum prompts out of tool
+  output, and reject an existing Thread owned by a different parent.
+- On event replay gaps, recover from canonical history and the latest runtime
+  status without replaying an incomplete retained suffix. Settled snapshots now
+  stop stale thinking indicators and elapsed-time counters.
 - Reconcile child task reads with settled Turns when a terminal operation snapshot
   is missing. Recover the bounded final assistant result in `task_read`, and make
   clear that an empty `reports` list means no explicit progress report was sent.

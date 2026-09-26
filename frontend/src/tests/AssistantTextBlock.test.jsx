@@ -56,6 +56,26 @@ describe('AssistantTextBlock', () => {
     expect(container.querySelector('.assistant-answer')?.textContent).toContain('已完成的步骤');
   });
 
+  it('does not animate stale reasoning blocks after the Session snapshot says settled', () => {
+    const message = {
+      id: 'assistant-settled-snapshot',
+      role: 'assistant',
+      blocks: [{
+        type: 'thinking',
+        id: 'thinking-stale-stream',
+        content: '已从会话快照恢复的思考',
+        isStreaming: true,
+      }],
+    };
+    const { container } = render(
+      <MessageItem message={message} isLast isGenerating={false} />,
+    );
+
+    expect(container.querySelector('.thinking-container.streaming')).toBeNull();
+    expect(container.querySelector('.thinking-label')?.textContent).toBe('思考');
+    expect(container.querySelector('.cursor-blink')).toBeNull();
+  });
+
   it('keeps the active execution segment ungrouped and folds it after the next segment starts', () => {
     const baseMessage = {
       id: 'assistant-1',

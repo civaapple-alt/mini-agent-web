@@ -88,6 +88,184 @@ def test_thread_attachment_root_is_gateway_state_and_project_scoped(
     assert not first.is_relative_to(project_root)
 
 
+@pytest.mark.asyncio
+async def test_delegated_child_identity_is_scoped_to_the_parent_session(
+    mock_session_manager, monkeypatch
+):
+    start = AsyncMock()
+    monkeypatch.setattr(mock_session_manager, "_start_delegated_child", start)
+
+    for parent_thread_id, turn_id, child_thread_id in (
+        (
+            "main-a",
+            "turn-a",
+            "ef5d24b7c5e3c18f62c2d610b73a1e00768e4fd506aa524abfde52841b08037c",
+        ),
+        (
+            "main-b",
+            "turn-b",
+            "69a0011578fb724d6640ff1038d9d4db5a5925720a1691a56e1f938394eb1954",
+        ),
+    ):
+        call_id = f"call-{turn_id}"
+        mock_session_manager._schedule_delegated_child(
+            {
+                "threadId": parent_thread_id,
+                "turnId": turn_id,
+                "event": {
+                    "type": "tool_started",
+                    "call": {
+                        "id": call_id,
+                        "name": "delegate_task",
+                        "arguments": {
+                            "child_key": "review",
+                            "prompt": "inspect the same module",
+                            "title": "Review module",
+                            "execution_mode": "parallel",
+                        },
+                    },
+                },
+            },
+            "default",
+        )
+        mock_session_manager._schedule_delegated_child(
+            {
+                "threadId": parent_thread_id,
+                "turnId": turn_id,
+                "event": {
+                    "type": "tool_finished",
+                    "name": "delegate_task",
+                    "call_id": call_id,
+                    "item_id": call_id,
+                    "content": json.dumps(
+                        {
+                            "status": "queued",
+                            "operation_id": f"child:{child_thread_id}",
+                            "child_thread_id": child_thread_id,
+                            "child_key": "review",
+                            "title": "Review module",
+                            "execution_mode": "parallel",
+                        }
+                    ),
+                },
+            },
+            "default",
+        )
+    await asyncio.sleep(0)
+
+    child_ids = [call.args[1] for call in start.await_args_list]
+    assert child_ids == [
+        "ef5d24b7c5e3c18f62c2d610b73a1e00768e4fd506aa524abfde52841b08037c",
+        "69a0011578fb724d6640ff1038d9d4db5a5925720a1691a56e1f938394eb1954",
+    ]
+    assert [call.args[2] for call in start.await_args_list] == [
+        "inspect the same module",
+        "inspect the same module",
+    ]
+    assert child_ids[0] != child_ids[1]
+    assert [call.args[3] for call in start.await_args_list] == [
+        "Review module",
+        "Review module",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_delegation_keeps_maximum_prompt_out_of_tool_result(
+    mock_session_manager, monkeypatch
+):
+    start = AsyncMock()
+    monkeypatch.setattr(mock_session_manager, "_start_delegated_child", start)
+    prompt = "x" * (32 * 1024)
+    call_id = "call-large"
+    mock_session_manager._schedule_delegated_child(
+        {
+            "threadId": "main-large",
+            "turnId": "turn-large",
+            "event": {
+                "type": "tool_started",
+                "call": {
+                    "id": call_id,
+                    "name": "delegate_task",
+                    "arguments": {
+                        "child_key": "large-prompt",
+                        "prompt": prompt,
+                        "execution_mode": "parallel",
+                    },
+                },
+            },
+        },
+        "default",
+    )
+    assert start.await_count == 0
+    receipt = mock_session_manager._delegation_receipts[
+        "main-large:turn-large:call-large"
+    ]
+    assert receipt["status"] == "awaiting_result"
+    assert receipt["prompt"] == prompt
+
+    child_thread_id = "b" * 64
+    mock_session_manager._schedule_delegated_child(
+        {
+            "threadId": "main-large",
+            "turnId": "turn-large",
+            "event": {
+                "type": "tool_finished",
+                "name": "delegate_task",
+                "call_id": call_id,
+                "content": json.dumps(
+                    {
+                        "status": "queued",
+                        "operation_id": f"child:{child_thread_id}",
+                        "child_thread_id": child_thread_id,
+                        "child_key": "large-prompt",
+                        "execution_mode": "parallel",
+                    }
+                ),
+            },
+        },
+        "default",
+    )
+    await asyncio.sleep(0)
+    assert start.await_args.args[2] == prompt
+
+
+@pytest.mark.asyncio
+async def test_delegate_result_without_start_event_is_visible_as_failed(
+    mock_session_manager, monkeypatch
+):
+    broadcast = AsyncMock()
+    monkeypatch.setattr(mock_session_manager, "_broadcast_child_operation", broadcast)
+    child_thread_id = "c" * 64
+    mock_session_manager._schedule_delegated_child(
+        {
+            "threadId": "main-gap",
+            "turnId": "turn-gap",
+            "event": {
+                "type": "tool_finished",
+                "name": "delegate_task",
+                "call_id": "call-gap",
+                "content": json.dumps(
+                    {
+                        "status": "queued",
+                        "operation_id": f"child:{child_thread_id}",
+                        "child_thread_id": child_thread_id,
+                        "child_key": "replay-gap",
+                        "title": "Replay gap",
+                        "execution_mode": "parallel",
+                    }
+                ),
+            },
+        },
+        "default",
+    )
+    await asyncio.sleep(0)
+    receipt = mock_session_manager._delegation_receipts["main-gap:turn-gap:call-gap"]
+    assert receipt["status"] == "failed"
+    assert "without its persisted tool arguments" in receipt["error"]
+    broadcast.assert_awaited_once()
+    assert broadcast.await_args.args[0]["status"] == "failed"
+
+
 def test_thread_attachment_root_rejects_state_inside_project(mock_session_manager):
     """A misconfigured state directory must never cause workspace writes."""
     project_root = mock_session_manager._current_project_path
@@ -2423,6 +2601,69 @@ async def test_pre_session_delegation_failure_retains_error_and_broadcasts(
     prompt = parent_client.start_turn.await_args.kwargs["prompt"]
     assert "Session creation failed: fork unavailable" in prompt
     assert "task_read" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_existing_child_from_another_parent_is_not_acknowledged_as_materialized(
+    mock_session_manager, monkeypatch
+):
+    """A project-level Thread collision must remain visible as a failed dispatch."""
+    threads = {
+        "main": {"session": {"session_id": "parent-session"}},
+        "child": {
+            "session": {
+                "session_id": "other-child-session",
+                "parent_session_id": "another-parent-session",
+            }
+        },
+    }
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_canonical_thread",
+        lambda thread_id, _project_id=None: threads.get(thread_id),
+    )
+    start = AsyncMock()
+    monkeypatch.setattr(mock_session_manager, "start_child_task", start)
+    broadcast = AsyncMock()
+    monkeypatch.setattr(mock_session_manager, "_broadcast_child_operation", broadcast)
+    wake = Mock()
+    monkeypatch.setattr(mock_session_manager, "_queue_child_parent_wakeup", wake)
+    receipt_key = "main:turn-1:call-1"
+    mock_session_manager._record_delegation_receipt(
+        receipt_key,
+        {
+            "parent_thread_id": "main",
+            "child_thread_id": "child",
+            "operation_id": "child:child",
+            "operation_attempt": 1,
+            "project_id": "default",
+            "parent_turn_id": "turn-1",
+            "title": "Review",
+            "timestamp_ms": 100,
+            "status": "pending",
+        },
+    )
+
+    await mock_session_manager._start_delegated_child(
+        "main",
+        "child",
+        "inspect",
+        "Review",
+        "default",
+        None,
+        "parallel",
+        None,
+        receipt_key,
+    )
+
+    assert mock_session_manager._delegation_receipts[receipt_key]["status"] == "failed"
+    assert (
+        "different parent Session"
+        in mock_session_manager._delegation_receipts[receipt_key]["error"]
+    )
+    assert not start.await_args_list
+    assert broadcast.await_args.args[0]["status"] == "failed"
+    wake.assert_called_once()
 
 
 @pytest.mark.asyncio

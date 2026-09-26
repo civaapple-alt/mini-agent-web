@@ -39,6 +39,7 @@ import {
 } from './utils/sessionState.js';
 import { getStatusViewModel, normalizeTheme } from './utils/statusModel.js';
 import { isIncompleteTurnStatus } from './utils/turnHistory.js';
+import { isRuntimeSettled, projectReplayPage } from './utils/sessionRecovery.js';
 import { parseSkillPrompt, parseWorkflowPrompt } from './utils/skillTokens.js';
 import { buildAutoThreadTitle, isDefaultThreadTitle } from './utils/threadTitle.js';
 import {
@@ -770,6 +771,13 @@ export default function App() {
             activeTurnIdRef.current = runtimeTurnId;
             setActiveTurnId(runtimeTurnId);
           }
+        } else if (isRuntimeSettled(status)) {
+          setIsGenerating(false);
+          setIsInterrupting(false);
+          activeTurnIdRef.current = null;
+          setActiveTurnId(null);
+          interruptPendingRef.current = false;
+          interruptTurnIdRef.current = null;
         }
       }
     } catch (err) {
@@ -793,19 +801,31 @@ export default function App() {
         signal: requestContext.signal,
       });
       if (!isCurrentSessionRequest(requestContext)) return;
-      if (page.has_gap) {
+      const replay = projectReplayPage(page);
+      if (replay.hasGap) {
         // The bounded App Server cache no longer contains the complete gap;
-        // canonical history is the safe reconciliation boundary.
+        // canonical history is authoritative. Applying the retained suffix
+        // afterward could replay an old turn_started over a settled snapshot.
         showToast('事件回放存在缺口，已从最近会话快照恢复。', 'warning', 3500);
         await loadThreadHistory(threadId, projectId, requestContext);
       }
-      for (const event of page.data || []) {
+      if (replay.cursor !== null) {
+        eventCursorsRef.current.set(
+          scopedThreadKey(threadId, projectId),
+          replay.cursor,
+        );
+      }
+      for (const event of replay.events) {
         handleServerEvent({ type: 'event', ...event }, { fromReplay: true });
       }
+      // Runtime status is read after history and replay so an older retained
+      // event cannot leave the conversation marked as generating forever.
+      await loadRuntimeStatus(threadId, projectId, requestContext);
     } catch (err) {
       console.debug('Failed to replay runtime events:', err);
       if (isAbortError(err) || !isCurrentSessionRequest(requestContext)) return;
       await loadThreadHistory(threadId, projectId, requestContext);
+      await loadRuntimeStatus(threadId, projectId, requestContext);
     }
   };
 

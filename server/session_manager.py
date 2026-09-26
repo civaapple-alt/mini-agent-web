@@ -2593,86 +2593,250 @@ class SessionManager:
         self, payload: dict[str, Any], project_id: str | None
     ) -> None:
         event = payload.get("event")
-        if not isinstance(event, dict) or event.get("type") != "tool_started":
+        if not isinstance(event, dict):
             return
-        call = event.get("call")
-        if not isinstance(call, dict) or call.get("name") != "delegate_task":
-            return
-        arguments = call.get("arguments")
-        if not isinstance(arguments, dict):
-            return
+
+        event_type = event.get("type")
         parent_thread_id = str(payload.get("threadId") or "")
-        child_thread_id = arguments.get("child_thread_id")
-        prompt = arguments.get("prompt")
-        group_id = arguments.get("group_id")
-        execution_mode = arguments.get("execution_mode")
-        sequence = arguments.get("sequence")
-        if (
-            not parent_thread_id
-            or not isinstance(child_thread_id, str)
-            or not isinstance(prompt, str)
-        ):
-            return
-        if not isinstance(group_id, str):
-            group_id = None
-        if execution_mode not in {"parallel", "sequential"}:
-            return
-        if not isinstance(sequence, int) or isinstance(sequence, bool):
-            sequence = None
-        receipt_key = ":".join(
-            str(value or "")
-            for value in (
-                parent_thread_id,
-                payload.get("turnId") or payload.get("turn_id"),
-                event.get("item_id") or event.get("itemId") or call.get("id"),
-            )
-        )
-        if not receipt_key.strip(":"):
-            return
-        if self._delegation_receipts.get(receipt_key, {}).get("status") in {
-            "materialized",
-        }:
-            return
         parent_turn_id = payload.get("turnId") or payload.get("turn_id")
         if not isinstance(parent_turn_id, str):
             parent_turn_id = None
+        call_id: Any = None
+
+        if event_type == "tool_started":
+            call = event.get("call")
+            if not isinstance(call, dict) or call.get("name") != "delegate_task":
+                return
+            arguments = call.get("arguments")
+            if not isinstance(arguments, dict):
+                return
+            call_id = call.get("id")
+            child_key = arguments.get("child_key")
+            prompt = arguments.get("prompt")
+            execution_mode = arguments.get("execution_mode")
+            group_id = arguments.get("group_id")
+            sequence = arguments.get("sequence")
+            if (
+                not parent_thread_id
+                or not isinstance(call_id, str)
+                or not call_id
+                or not isinstance(child_key, str)
+                or not child_key
+                or len(child_key.encode("utf-8")) > 64
+                or not all(
+                    character.isascii() and (character.isalnum() or character in "-_")
+                    for character in child_key
+                )
+                or not isinstance(prompt, str)
+                or not prompt.strip()
+                or len(prompt.encode("utf-8")) > MAX_CHILD_TASK_PROMPT_BYTES
+                or execution_mode not in {"parallel", "sequential"}
+                or (execution_mode == "sequential" and not isinstance(group_id, str))
+                or (
+                    sequence is not None
+                    and (
+                        not isinstance(sequence, int)
+                        or isinstance(sequence, bool)
+                        or sequence < 0
+                    )
+                )
+                or (execution_mode == "sequential" and sequence is None)
+            ):
+                logger.warning(
+                    "Ignoring invalid delegate_task call from %s", parent_thread_id
+                )
+                return
+            if not isinstance(group_id, str):
+                group_id = None
+            display_title = arguments.get("title")
+            if not isinstance(display_title, str) or not display_title.strip():
+                display_title = child_key
+            event_timestamp = event.get("timestamp_ms") or event.get("timestampMs")
+            timestamp_ms = (
+                int(event_timestamp)
+                if isinstance(event_timestamp, (int, float))
+                and not isinstance(event_timestamp, bool)
+                and event_timestamp > 0
+                else int(time.time() * 1000)
+            )
+            receipt_key = ":".join((parent_thread_id, parent_turn_id or "", call_id))
+            if self._delegation_receipts.get(receipt_key, {}).get("status") in {
+                "pending",
+                "materialized",
+                "failed",
+            }:
+                return
+            self._record_delegation_receipt(
+                receipt_key,
+                {
+                    "parent_thread_id": parent_thread_id,
+                    "child_key": child_key,
+                    "operation_attempt": 1,
+                    "parent_turn_id": parent_turn_id,
+                    "timestamp_ms": timestamp_ms,
+                    "prompt": prompt,
+                    "title": display_title[:160],
+                    "project_id": project_id or self._current_project_id,
+                    "group_id": group_id,
+                    "execution_mode": execution_mode,
+                    "sequence": sequence,
+                },
+                status="awaiting_result",
+            )
+            return
+
+        if event_type != "tool_finished" or event.get("name") != "delegate_task":
+            return
+        call_id = (
+            event.get("call_id")
+            or event.get("callId")
+            or event.get("item_id")
+            or event.get("itemId")
+        )
+        if not parent_thread_id or not isinstance(call_id, str) or not call_id:
+            return
+        receipt_key = ":".join((parent_thread_id, parent_turn_id or "", call_id))
+        receipt = self._delegation_receipts.get(receipt_key)
+        if event.get("is_error") is True or event.get("truncated") is True:
+            if receipt and receipt.get("status") == "awaiting_result":
+                self._update_delegation_receipt(
+                    receipt_key,
+                    "failed",
+                    error=(
+                        "delegate_task failed before returning its canonical child identity"
+                    ),
+                )
+            return
+
+        content = event.get("content")
+        if not isinstance(content, str):
+            return
+        try:
+            intent = json.loads(content)
+        except (TypeError, ValueError):
+            return
+        if not isinstance(intent, dict) or intent.get("status") != "queued":
+            return
+        child_thread_id = intent.get("child_thread_id")
+        child_key = intent.get("child_key")
+        if (
+            not parent_thread_id
+            or not isinstance(child_thread_id, str)
+            or not isinstance(child_key, str)
+        ):
+            return
+        if (
+            not child_thread_id
+            or len(child_thread_id) > 64
+            or not all(
+                character.isascii() and (character.isalnum() or character in "-_")
+                for character in child_thread_id
+            )
+            or not child_key
+        ):
+            logger.warning(
+                "Ignoring invalid delegated child result from %s", parent_thread_id
+            )
+            return
+        if self._delegation_receipts.get(receipt_key, {}).get("status") in {
+            "pending",
+            "materialized",
+            "failed",
+        }:
+            return
+        if (
+            receipt is None
+            or receipt.get("status") != "awaiting_result"
+            or receipt.get("child_key") != child_key
+        ):
+            error = "delegate_task result arrived without its persisted tool arguments"
+            title = str(intent.get("title") or child_key)[:160]
+            self._record_delegation_receipt(
+                receipt_key,
+                {
+                    "parent_thread_id": parent_thread_id,
+                    "child_thread_id": child_thread_id,
+                    "child_key": child_key,
+                    "operation_id": f"child:{child_thread_id}",
+                    "operation_attempt": 1,
+                    "parent_turn_id": parent_turn_id,
+                    "title": title,
+                    "project_id": project_id or self._current_project_id,
+                    "execution_mode": intent.get("execution_mode"),
+                    "group_id": intent.get("group_id"),
+                    "sequence": intent.get("sequence"),
+                },
+                status="failed",
+            )
+            self._update_delegation_receipt(receipt_key, "failed", error=error)
+            asyncio.create_task(
+                self._broadcast_child_operation(
+                    {
+                        "parent_thread_id": parent_thread_id,
+                        "child_thread_id": child_thread_id,
+                        "project": project_id or self._current_project_id,
+                        "operation_id": f"child:{child_thread_id}",
+                        "operation_attempt": 1,
+                        "parent_turn_id": parent_turn_id,
+                        "title": title,
+                        "status": "failed",
+                        "execution_mode": intent.get("execution_mode"),
+                        "operation_group_id": intent.get("group_id"),
+                        "group_sequence": intent.get("sequence"),
+                        "child_session_available": False,
+                        "operation_error": error,
+                    }
+                )
+            )
+            return
+
+        prompt = receipt.get("prompt")
+        execution_mode = receipt.get("execution_mode")
+        group_id = receipt.get("group_id")
+        sequence = receipt.get("sequence")
+        if (
+            not isinstance(prompt, str)
+            or not prompt.strip()
+            or len(prompt.encode("utf-8")) > MAX_CHILD_TASK_PROMPT_BYTES
+            or execution_mode not in {"parallel", "sequential"}
+        ):
+            self._update_delegation_receipt(
+                receipt_key,
+                "failed",
+                error="persisted delegate_task arguments are invalid",
+            )
+            return
         project_id = project_id or self._current_project_id
-        event_timestamp = (
-            event.get("timestamp_ms")
-            or event.get("timestampMs")
-            or payload.get("timestamp_ms")
-            or payload.get("timestampMs")
-        )
-        timestamp_ms = (
-            int(event_timestamp)
-            if isinstance(event_timestamp, (int, float))
-            and not isinstance(event_timestamp, bool)
-            and event_timestamp > 0
-            else int(time.time() * 1000)
-        )
+        operation_id = intent.get("operation_id")
+        if operation_id != f"child:{child_thread_id}":
+            logger.error("Ignoring delegated child with mismatched operation identity")
+            return
+        display_title = str(receipt.get("title") or child_key)[:160]
         self._record_delegation_receipt(
             receipt_key,
             {
                 "parent_thread_id": parent_thread_id,
                 "child_thread_id": child_thread_id,
-                "operation_id": f"child:{child_thread_id}",
+                "child_key": child_key,
+                "operation_id": operation_id,
                 "operation_attempt": 1,
                 "parent_turn_id": parent_turn_id,
-                "timestamp_ms": timestamp_ms,
+                "timestamp_ms": receipt.get("timestamp_ms"),
                 "prompt": prompt,
-                "title": str(arguments.get("title") or child_thread_id)[:160],
+                "title": display_title,
                 "project_id": project_id,
                 "group_id": group_id,
                 "execution_mode": execution_mode,
                 "sequence": sequence,
             },
+            status="pending",
         )
         asyncio.create_task(
             self._start_delegated_child(
                 parent_thread_id,
                 child_thread_id,
                 prompt,
-                arguments.get("title"),
+                display_title,
                 project_id,
                 group_id,
                 execution_mode,
@@ -4212,6 +4376,20 @@ class SessionManager:
         try:
             existing = self._canonical_thread(child_thread_id, project_id)
             if existing:
+                parent = self._canonical_thread(parent_thread_id, project_id)
+                parent_session_id = str(
+                    (parent or {}).get("session", {}).get("session_id") or ""
+                )
+                existing_parent_session_id = str(
+                    existing.get("session", {}).get("parent_session_id") or ""
+                )
+                if (
+                    not parent_session_id
+                    or existing_parent_session_id != parent_session_id
+                ):
+                    raise RuntimeError(
+                        "child Thread identity belongs to a different parent Session"
+                    )
                 if receipt_key:
                     self._update_delegation_receipt(receipt_key, "materialized")
                 await self.reconcile_child_operations(
@@ -4250,7 +4428,18 @@ class SessionManager:
                 self._update_delegation_receipt(receipt_key, "materialized")
         except Exception as err:
             existing = self._canonical_thread(child_thread_id, project_id)
-            if existing:
+            parent = self._canonical_thread(parent_thread_id, project_id)
+            parent_session_id = str(
+                (parent or {}).get("session", {}).get("session_id") or ""
+            )
+            existing_parent_session_id = str(
+                (existing or {}).get("session", {}).get("parent_session_id") or ""
+            )
+            if (
+                existing
+                and parent_session_id
+                and existing_parent_session_id == parent_session_id
+            ):
                 if receipt_key:
                     self._update_delegation_receipt(receipt_key, "materialized")
                 try:

@@ -383,7 +383,7 @@ export default function MessageItem({
                 <ThinkingBlock
                   key={block.id || `thinking_${idx}`}
                   content={block.content}
-                  isStreaming={Boolean(block.isStreaming && isCurrentBlock)}
+                  isStreaming={Boolean(isStreamingThis && block.isStreaming && isCurrentBlock)}
                   isCurrentBlock={isCurrentSegmentBlock}
                   presentationId={`${turnScope}:thinking:${block.id || idx}`}
                 />

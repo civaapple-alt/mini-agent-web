@@ -270,7 +270,8 @@ export function getDelegateTaskAssignments(message) {
         key: operationId || childThreadId || block.call_id || block.id || `delegate-${index}`,
         operation_id: operationId,
         child_thread_id: childThreadId,
-        title: args.title || args.task_name || args.name || output.title || childThreadId || '子代理任务',
+        title: args.title || args.task_name || args.name || args.child_key
+          || output.title || childThreadId || '子代理任务',
         execution_mode: args.execution_mode || args.executionMode || output.execution_mode || 'parallel',
         operation_group_id: args.operation_group_id || args.group_id || args.groupId
           || output.operation_group_id || null,

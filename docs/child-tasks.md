@@ -2,6 +2,11 @@
 
 委派任务由父 Session 管理。每个父 Turn 的委派任务在消息流第一次出现的位置汇总为一张
 批次卡，批内任务各自显示名称、执行模式、生命周期和最近的有界进展报告。
+`delegate_task` 使用父 Session 内唯一的 `child_key`；Capabilities 从父 Session ID
+和 key 派生 canonical `child_thread_id` 并返回给主线程。不同父 Session 可以复用相同 key，
+会得到不同的子 Thread。标题只用于展示，可以重复；子任务范围只属于创建它的 main Session。
+Gateway 会先按父 Turn 和工具调用 ID 持久化有界 `tool_started` 参数，再与成功结果配对；
+结果不重复回显提示词，因此 32 KiB 上限的委派提示不会被 16 KiB 工具输出限制截断。
 
 ## 消息流与状态
 

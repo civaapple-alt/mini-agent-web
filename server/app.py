@@ -97,6 +97,11 @@ def create_app() -> FastAPI:
             "frontend_tip": "Run `npm run build` in frontend/ to build the React SPA.",
         }
 
+    @app.get("/threads/{thread_id:path}", tags=["UI"], include_in_schema=False)
+    async def serve_thread_route(thread_id: str):
+        """Serve the SPA for a project-scoped Thread URL."""
+        return await serve_index()
+
     return app
 
 

@@ -33,9 +33,9 @@ import {
   formatRunFailure,
   normalizeGoal,
   normalizeInputPayload,
-  readSessionRoute,
+  readStudioRoute,
   scopedThreadKey,
-  writeSessionRoute,
+  writeStudioRoute,
 } from './utils/sessionState.js';
 import { getStatusViewModel, normalizeTheme } from './utils/statusModel.js';
 import { isIncompleteTurnStatus } from './utils/turnHistory.js';
@@ -93,7 +93,7 @@ async function listThreadItemsForHistory(threadId, projectId, options = {}) {
 export default function App() {
   const initialSessionRouteRef = useRef(null);
   if (!initialSessionRouteRef.current) {
-    initialSessionRouteRef.current = readSessionRoute();
+    initialSessionRouteRef.current = readStudioRoute();
   }
   const initialSessionRoute = initialSessionRouteRef.current;
   const [threads, setThreads] = useState([]);
@@ -103,11 +103,11 @@ export default function App() {
     () => initialSessionRoute.projectId || null,
   );
   const [isNewSessionLanding, setIsNewSessionLanding] = useState(
-    () => !initialSessionRoute.hasSessionTarget,
+    () => !initialSessionRoute.hasThreadTarget,
   );
   const [hasActiveThread, setHasActiveThread] = useState(false);
   const [currentThreadMeta, setCurrentThreadMeta] = useState(() => (
-    initialSessionRoute.hasSessionTarget
+    initialSessionRoute.hasThreadTarget
       ? readThreadMeta()
       : readThreadMeta({ title: '新建会话' })
   ));
@@ -122,7 +122,7 @@ export default function App() {
   const [composerDraft, setComposerDraft] = useState(null);
   const [lastTurnResult, setLastTurnResult] = useState(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(
-    () => initialSessionRoute.hasSessionTarget,
+    () => initialSessionRoute.hasThreadTarget,
   );
   const [currentSessionReadOnly, setCurrentSessionReadOnly] = useState(false);
   const [toasts, setToasts] = useState([]);
@@ -182,6 +182,7 @@ export default function App() {
   const sessionEpochRef = useRef(0);
   const sessionRequestControllerRef = useRef(null);
   const sessionSyncRef = useRef(null);
+  const routeNavigationRef = useRef(null);
   const loadThreadsRef = useRef(null);
   const catalogEpochRef = useRef(0);
   const catalogRequestControllerRef = useRef(null);
@@ -374,6 +375,14 @@ export default function App() {
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      void routeNavigationRef.current?.(readStudioRoute());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   useEffect(() => {
@@ -604,59 +613,82 @@ export default function App() {
     return () => window.clearInterval(intervalId);
   }, [isConnected]);
 
-  const initializeSession = async () => {
-    const route = initialSessionRouteRef.current;
-    if (!route.hasSessionTarget) {
-      setActiveProjectId(null);
-      await Promise.all([
-        loadThreads({ syncCurrent: false }),
-        loadSettings(),
-      ]);
-      return;
-    }
-
-    const selected = await loadThreads({
-      threadId: route.threadId || undefined,
-      sessionId: route.sessionId || undefined,
-      projectId: route.projectId || undefined,
-      syncCurrent: false,
-    });
-    if (!selected) {
-      isNewSessionLandingRef.current = true;
-      setIsNewSessionLanding(true);
-      hasActiveThreadRef.current = false;
-      setHasActiveThread(false);
+  const initializeSession = async (route = initialSessionRouteRef.current) => {
+    if (!route.hasThreadTarget) {
+      clearSessionSync(currentThreadRef.current, currentThreadProjectRef.current);
+      const context = beginSessionRequest('default', null);
       currentThreadRef.current = 'default';
       currentThreadProjectRef.current = null;
+      isNewSessionLandingRef.current = true;
+      hasActiveThreadRef.current = false;
+      setIsNewSessionLanding(true);
+      setHasActiveThread(false);
       setCurrentThread('default');
       setCurrentThreadProject(null);
       setCurrentThreadMeta(readThreadMeta({ title: '新建会话' }));
       resetSessionProjections();
-      writeSessionRoute();
-      await loadSettings();
-      showToast('未找到该会话，或同名 Thread 无法唯一确定；跨项目链接请补充 project 参数。', 'warning');
+      writeStudioRoute();
+      await Promise.all([
+        loadThreads({ projectId: null, syncCurrent: false }),
+        loadSettings(context),
+      ]);
+      if (route.isInvalidPath) {
+        showToast('未识别的页面地址，已返回新建会话页。', 'warning');
+      }
       return;
     }
 
-    const nextThread = selected.thread_id || 'default';
-    const nextProject =
-      selected.project || route.projectId || null;
-    const context = beginSessionRequest(nextThread, nextProject);
+    const requestedThread = route.threadId;
+    const requestedProject = route.projectId || null;
+    clearSessionSync(currentThreadRef.current, currentThreadProjectRef.current);
+    const lookupContext = beginSessionRequest(requestedThread, requestedProject);
+    currentThreadRef.current = requestedThread;
+    currentThreadProjectRef.current = requestedProject;
+    isNewSessionLandingRef.current = false;
+    hasActiveThreadRef.current = false;
+    setIsNewSessionLanding(false);
+    setHasActiveThread(false);
+    setCurrentThread(requestedThread);
+    setCurrentThreadProject(requestedProject);
+    setCurrentThreadMeta(readThreadMeta({ title: '正在打开会话' }, requestedThread));
+    resetSessionProjections({ loadingHistory: true });
+
+    const selected = await loadThreads({
+      threadId: requestedThread,
+      projectId: requestedProject,
+      syncCurrent: false,
+    });
+    if (!isCurrentSessionRequest(lookupContext)) return;
+    if (!selected) {
+      const missingProject = requestedProject;
+      await initializeSession({ hasThreadTarget: false });
+      showToast(
+        missingProject
+          ? '未找到该项目中的 Thread。'
+          : '未找到 Thread，或同名 Thread 无法唯一确定；跨项目链接请附上 project_id。',
+        'warning',
+      );
+      return;
+    }
+
+    const nextThread = selected.thread_id || requestedThread;
+    const nextProject = selected.project || requestedProject || null;
+    const context = nextProject === requestedProject
+      ? lookupContext
+      : beginSessionRequest(nextThread, nextProject);
     startSessionSync(nextThread, nextProject);
     isNewSessionLandingRef.current = false;
-    setIsNewSessionLanding(false);
     hasActiveThreadRef.current = true;
+    setIsNewSessionLanding(false);
     setHasActiveThread(true);
     currentThreadRef.current = nextThread;
     currentThreadProjectRef.current = nextProject;
     setCurrentThread(nextThread);
     setCurrentThreadProject(nextProject);
     setCurrentThreadMeta(readThreadMeta(selected, nextThread));
-    writeSessionRoute({ threadId: nextThread, projectId: nextProject });
+    writeStudioRoute({ threadId: nextThread, projectId: nextProject });
 
-    // Establish the project-qualified routing context before reading the
-    // project-agnostic history/workflow endpoints. A locked external Session
-    // remains readable and will be retried by an explicit later attach.
+    // Attach before loading project-scoped history and runtime projections.
     try {
       const result = await api.attachThread(nextThread, nextProject, { signal: context.signal });
       if (!isCurrentSessionRequest(context)) return;
@@ -677,6 +709,8 @@ export default function App() {
     await replayMissedEvents(nextThread, nextProject, context);
     finishSessionSync(nextThread, nextProject);
   };
+
+  routeNavigationRef.current = initializeSession;
 
   const loadWorkflows = async (
     threadId = currentThreadRef.current,
@@ -2099,7 +2133,7 @@ export default function App() {
     setIsNewSessionLanding(false);
     hasActiveThreadRef.current = true;
     setHasActiveThread(true);
-    writeSessionRoute({ threadId, projectId: nextProject });
+    writeStudioRoute({ threadId, projectId: nextProject, mode: 'push' });
 
     // Clear every projection before the new session can render. The epoch and
     // AbortController below make late history/workflow/file responses unable
@@ -2168,7 +2202,7 @@ export default function App() {
         summary: '',
         session_id: result.session_id,
       }, tid));
-      writeSessionRoute({ threadId: tid, projectId: nextProject });
+      writeStudioRoute({ threadId: tid, projectId: nextProject, mode: 'push' });
       await Promise.all([
         loadSettings(context),
         loadThreadHistory(tid, nextProject, context),
@@ -2217,7 +2251,7 @@ export default function App() {
       setActiveProjectId(nextProject);
       setCurrentThread(newId);
       setCurrentThreadProject(nextProject);
-      writeSessionRoute({ threadId: newId, projectId: nextProject });
+      writeStudioRoute({ threadId: newId, projectId: nextProject, mode: 'push' });
       setCurrentThreadMeta(readThreadMeta({
         title: result.title || `${sourceThreadId} (Fork)`,
         summary: `Forked from ${sourceThreadId}`,
@@ -2266,7 +2300,7 @@ export default function App() {
         setCurrentThread('default');
         setCurrentThreadProject(null);
         setCurrentThreadMeta(readThreadMeta({ title: '新建会话' }));
-        writeSessionRoute();
+        writeStudioRoute();
         await loadSettings(context);
       }
       showToast(`已关闭并归档会话: ${threadId}`, 'info');

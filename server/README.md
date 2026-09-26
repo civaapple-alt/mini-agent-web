@@ -19,8 +19,9 @@ uv run mini-agent-server-dev
 ```
 
 默认监听 `0.0.0.0:8000`。在 `http://127.0.0.1:8000/docs` 查看生成的 API
-参考；`GET /health` 返回 Gateway 健康状态。构建 `frontend/dist/` 后，`GET /`
-也会提供 Web Studio。
+参考；`GET /health` 返回 Gateway 健康状态。构建 `frontend/dist/` 后，`GET /` 和
+`GET /threads/{thread_id}` 都会提供 Web Studio，使 pathname Thread 链接可以直接
+打开或刷新。
 
 若要把监听端口暴露给本机外的网络，请设置明确的 bind host，并在 Gateway 前配置
 身份验证与网络访问控制。CORS 不限制网络访问。

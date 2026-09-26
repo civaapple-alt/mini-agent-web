@@ -10,8 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Open Web Studio at `/` as a blank session-creation page instead of restoring
-  the last browser-selected Session. Deep links accept `thread` or `session`
-  query parameters and include `project` to preserve project-scoped identity.
+  the last browser-selected Thread. Use pathname links in the form
+  `/threads/{thread_id}?project_id={project_id}`; project scope distinguishes
+  identical Thread IDs across projects. Legacy `?thread=` links are normalized
+  to the pathname route; Session IDs are not route identifiers.
 - Reorganize preferences and model settings into a grouped settings sidebar with a dedicated details pane, including a compact horizontal navigation layout on narrow screens.
 - Add local Responses provider and model management, separate global primary
   and Goal Verifier defaults, project defaults, and per-Thread model and

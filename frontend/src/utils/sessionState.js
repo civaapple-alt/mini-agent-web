@@ -33,7 +33,9 @@ export const ACTIVE_RUNTIME_PHASES = new Set([
 export const MAX_PENDING_SESSION_EVENTS = 128;
 export const SELECTED_SESSION_STORAGE_KEY = 'mini-agent-studio.selected-session';
 
-const SESSION_ROUTE_KEYS = [
+// Clear query-based routes left by earlier Web Studio versions. Current routes
+// identify a Thread by pathname and never resolve a Session ID.
+const STUDIO_ROUTE_QUERY_KEYS_TO_CLEAR = [
   'thread',
   'thread_id',
   'session',
@@ -42,34 +44,52 @@ const SESSION_ROUTE_KEYS = [
   'project_id',
 ];
 
-export function readSessionRoute(search = globalThis.location?.search || '') {
-  const params = new URLSearchParams(search);
-  const threadId = params.get('thread') || params.get('thread_id') || null;
-  const sessionId = params.get('session') || params.get('session_id') || null;
-  const projectId = params.get('project') || params.get('project_id') || null;
+export function readStudioRoute(location = globalThis.location) {
+  const pathname = location?.pathname || '/';
+  const params = new URLSearchParams(location?.search || '');
+  const routePath = pathname.replace(/\/+$/, '') || '/';
+  const threadPath = routePath.match(/^\/threads\/(.+)$/);
+  const legacyThreadId = routePath === '/'
+    ? params.get('thread') || params.get('thread_id') || null
+    : null;
+  let threadId = legacyThreadId;
+  if (threadPath) {
+    try {
+      threadId = decodeURIComponent(threadPath[1]);
+    } catch {
+      threadId = null;
+    }
+  }
+  const projectId = params.get('project_id') || params.get('project') || null;
   return {
     threadId,
-    sessionId: threadId ? null : sessionId,
-    projectId: threadId || sessionId ? projectId : null,
-    hasSessionTarget: Boolean(threadId || sessionId),
+    projectId: threadId ? projectId : null,
+    hasThreadTarget: Boolean(threadId),
+    isInvalidPath: routePath !== '/' && !threadPath,
   };
 }
 
-export function writeSessionRoute(
-  { threadId = null, projectId = null } = {},
+export function writeStudioRoute(
+  { threadId = null, projectId = null, mode = 'replace' } = {},
   browserWindow = globalThis.window,
 ) {
   if (!browserWindow?.history?.replaceState || !browserWindow.location) return;
 
   const url = new URL(browserWindow.location.href);
-  SESSION_ROUTE_KEYS.forEach((key) => url.searchParams.delete(key));
+  STUDIO_ROUTE_QUERY_KEYS_TO_CLEAR.forEach((key) => url.searchParams.delete(key));
   if (threadId) {
-    url.searchParams.set('thread', threadId);
-    if (projectId) url.searchParams.set('project', projectId);
+    url.pathname = `/threads/${encodeURIComponent(threadId)}`;
+    if (projectId) url.searchParams.set('project_id', projectId);
+  } else {
+    url.pathname = '/';
   }
+  url.hash = '';
   const query = url.searchParams.toString();
   const nextUrl = `${url.pathname}${query ? `?${query}` : ''}${url.hash}`;
-  browserWindow.history.replaceState(browserWindow.history.state, '', nextUrl);
+  const currentUrl = `${browserWindow.location.pathname}${browserWindow.location.search}${browserWindow.location.hash}`;
+  if (nextUrl === currentUrl) return;
+  const updateHistory = mode === 'push' ? 'pushState' : 'replaceState';
+  browserWindow.history[updateHistory](browserWindow.history.state, '', nextUrl);
 }
 
 export function scopedThreadKey(threadId, projectId) {

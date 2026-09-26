@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [子 Session 活动详情按执行段阅读](implemented/bug-fix/2026-09-27-child-session-detail-reading.zh.md)
 - [子任务结算观察超时与 WebSocket 背压](implemented/bug-fix/2026-09-27-child-settlement-rpc-timeouts.zh.md)
 - [子 Session 详情实时活动与事件回放](implemented/bug-fix/2026-09-27-child-session-live-activity.zh.md)
 - [主会话冻结与子任务报告收讫](implemented/architecture/2026-09-27-session-wide-freeze-and-child-report-delivery.zh.md)

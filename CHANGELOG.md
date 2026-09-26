@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Improve child Session detail readability: show each thinking/tool activity in
+  execution order, bound long task prompts to a scrollable bubble, and keep a
+  result-only final reply at the end of the transcript instead of duplicating it
+  in the status card.
 - Bound WebSocket notification delivery so a slow browser cannot stall the
   App Server stdout reader. Disconnect slow consumers and let them recover from
   the bounded event replay path. Treat an individual `turn/read` RPC timeout as

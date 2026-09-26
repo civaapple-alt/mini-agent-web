@@ -398,9 +398,13 @@ export default function ChildSessionViewer({
   const parentCheckpointSeq = child.parent_checkpoint_seq
     ?? checkpoint?.parent_checkpoint_seq
     ?? checkpoint?.session?.parent_checkpoint_seq;
-  const finalReply = [...messages].reverse().find((message) => (
-    message.role === 'assistant' && String(message.text || '').trim()
-  ))?.text || getTaskResultText(child.result);
+  const hasFinalTurnReply = messages.some((message) => (
+    message.role === 'assistant'
+      && String(message.text || '').trim()
+      && (!activeTurnId || !message.turnId || String(message.turnId) === String(activeTurnId))
+  ));
+  const finalReplyFallback = hasFinalTurnReply ? null : getTaskResultText(child.result);
+  const showFinalReplyFallback = !running && !queued && !failed && Boolean(finalReplyFallback);
   const failureDetail = failure || child.error || child.operation_error;
 
   const loadOlder = async () => {
@@ -493,12 +497,6 @@ export default function ChildSessionViewer({
             )}
           </div>
         )}
-        {!running && !queued && !failed && finalReply && (
-          <div className="child-session-final-reply">
-            <span>最终回复</span>
-            <p>{finalReply}</p>
-          </div>
-        )}
         {failed && failureDetail && (
           <div className="child-session-final-error">{failureDetail}</div>
         )}
@@ -536,7 +534,7 @@ export default function ChildSessionViewer({
       >
         {loading && messages.length === 0 ? (
           <div className="child-session-empty">正在加载子代理消息流…</div>
-        ) : messages.length === 0 ? (
+        ) : messages.length === 0 && !showFinalReplyFallback ? (
           <div className="child-session-empty">
             <strong>{running ? '正在等待子代理的首条活动' : '暂无子代理活动'}</strong>
             <span>这里只显示子 Session 自己的活动，不会回填父会话 checkpoint 内容；父 checkpoint 只作为模型上下文。</span>
@@ -578,12 +576,35 @@ export default function ChildSessionViewer({
                         isGenerating={isCurrentTurn}
                         pendingApproval={null}
                         policy="read_only"
+                        showAllActivityBlocks
                       />
                     ))}
                   </div>
                 </section>
               );
             })}
+            {showFinalReplyFallback && (
+              <section className="child-session-result" aria-label="任务最终回复">
+                <header className="child-session-turn-heading">
+                  <strong>任务最终回复</strong>
+                  <span>未包含在活动记录中</span>
+                </header>
+                <MessageItem
+                  message={{
+                    id: `child-result-${child.operation_id || child.child_thread_id}`,
+                    role: 'assistant',
+                    text: finalReplyFallback,
+                    turnId: activeTurnId || child.current_turn_id || child.turn_id || 'child-result',
+                  }}
+                  isLast
+                  isLastInTurn
+                  isGenerating={false}
+                  pendingApproval={null}
+                  policy="read_only"
+                  showAllActivityBlocks
+                />
+              </section>
+            )}
           </div>
         )}
       </div>

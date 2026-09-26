@@ -22,6 +22,7 @@ describe('ChatArea turn status', () => {
 
     expect(screen.getByText('本轮执行失败')).toBeDefined();
     expect(screen.getByText(/原因：model request failed: transport error/)).toBeDefined();
+    expect(screen.getByText(/重新发送此提示词.*不会续接已断开的请求/)).toBeDefined();
     expect(screen.queryByText('本轮未完整结束')).toBeNull();
   });
 

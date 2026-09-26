@@ -369,7 +369,10 @@ export default function ChatArea({
                 {' '}原因：{lastTurnResult.error}
               </span>
             )}
-            {' '}当前回答可能不完整，可以继续发送指令推进下一轮。
+            {' '}{lastTurnResult.status === 'failed'
+              || lastTurnResult.stopReason === 'failed'
+              ? '重试请点本轮输入旁的“重新发送此提示词”；这会发起新请求，不会续接已断开的请求。'
+              : '当前回答可能不完整，可以继续发送指令推进下一轮。'}
           </span>
         </div>
       )}

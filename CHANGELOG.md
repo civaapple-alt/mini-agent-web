@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Clarify that resending a failed Turn starts a new provider request, not a
+  continuation of the disconnected stream. Preserve its file attachments and
+  workflow selection in the resend action.
 - Persist the full child operation intent before both immediate and queued starts.
   Cancel a queued operation when App Server rejects its start, retain the reason,
   and notify the parent instead of leaving the task queued without an explanation.

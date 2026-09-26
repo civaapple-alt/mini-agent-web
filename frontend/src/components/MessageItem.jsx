@@ -227,9 +227,11 @@ export default function MessageItem({
                   images,
                   referencedFiles,
                   textAttachments,
+                  fileAttachments,
                   selectedSkills: Array.isArray(message.selectedSkills)
                     ? message.selectedSkills
                     : [],
+                  workflow: message.workflow || null,
                 })}
                 title="重新发送此提示词"
               >

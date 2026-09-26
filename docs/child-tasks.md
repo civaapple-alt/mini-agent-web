@@ -7,13 +7,16 @@
 
 任务状态来自 App Server 持久化的 Session operation。Gateway 的
 `child_operation_updated` 事件用于及时刷新投影，不是另一份状态账本。刷新或重新打开父会话后，
-消息流和“子智能体”页会从同一份 operation/report 投影恢复状态。
+消息流和“子智能体”页会从同一份 operation/report 投影恢复状态。若终态 operation 快照缺失，
+`task_list`、`task_read` 和 WebStudio 会用匹配的 `turn_settled` 恢复状态；`task_read` 还会从该 Turn
+的最终 assistant item 恢复有界结果。
 
 子代理可用 `task_report` 报告有界进展。父代理通过带游标的 `task_read` 读取报告，使用有界分页
 `task_list` 查询所有子任务摘要，并可用 `task_control` 修改或停止排队任务、steer 或停止运行任务、
 暂停并继续任务、重试失败或取消的任务、排队一条后续指令、取消顺序组；需要新增方向时继续使用
 `delegate_task`。每项控制都携带 `child_thread_id`、`operation_id` 和预期 `attempt`，Gateway 会拒绝
 已经过期的 attempt。完整工具活动和 transcript 留在各自子 Session，不复制到父消息流。
+`reports` 仅包含显式 `task_report` 进展；空报告列表不表示最终回答缺失。
 
 父代理可在子任务运行期间多次 steer 同一个子 Session。父代理提交 `task_control.assign` 后，Gateway
 按持久状态自动路由：运行中或等待审批时，使用当前 Turn 的 steer；报告后仍在运行的任务也继续 steer

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Reconcile child task reads with settled Turns when a terminal operation snapshot
+  is missing. Recover the bounded final assistant result in `task_read`, and make
+  clear that an empty `reports` list means no explicit progress report was sent.
 - Keep the completed-task expansion and loaded page count when opening a child
   detail and returning to the list. Include ended tasks in the panel count summary.
 - Clarify that resending a failed Turn starts a new provider request, not a

@@ -448,4 +448,70 @@ describe('ChildTasksPane', () => {
     expect(screen.getByRole('button', { name: '发送指令' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '排队后续' })).toBeTruthy();
   });
+
+  it('shows frozen Session state and requires explicit continue', async () => {
+    const onSessionControl = vi.fn().mockResolvedValue({
+      session_control: { status: 'resuming' },
+    });
+    render(
+      <ChildTasksPane
+        children={[{
+          operation_id: 'queued-op',
+          child_thread_id: 'queued-child',
+          title: 'Queued task',
+          status: 'queued',
+        }]}
+        loading={false}
+        error={null}
+        sessionControl={{ status: 'frozen' }}
+        onSessionControl={onSessionControl}
+      />,
+    );
+
+    expect(screen.getByRole('status').textContent).toContain('会话已冻结');
+    fireEvent.click(screen.getByRole('button', { name: '继续整个会话' }));
+    await waitFor(() => expect(onSessionControl).toHaveBeenCalledWith('continue'));
+  });
+
+  it('shows freeze settlement as pending instead of enabling another stop', () => {
+    render(
+      <ChildTasksPane
+        children={[]}
+        loading={false}
+        error={null}
+        parentTurnActive
+        sessionControl={{ status: 'freezing' }}
+      />,
+    );
+
+    const pending = screen.getByRole('button', { name: '正在停止…' });
+    expect(pending.disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: '停止整个会话' })).toBeNull();
+  });
+
+  it('distinguishes a persisted child report from one read by the main Thread', () => {
+    render(
+      <ChildTasksPane
+        children={[{
+          operation_id: 'report-op',
+          child_thread_id: 'report-child',
+          title: 'Reported progress',
+          status: 'running',
+          reports: [{
+            cursor: 9,
+            report_id: 'report-9',
+            attempt: 1,
+            report: 'Scanned the source files',
+            delivery_status: 'main_received',
+          }],
+        }]}
+        loading={false}
+        error={null}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /展开任务详情：Reported progress/ }));
+    expect(screen.getByText('Scanned the source files')).toBeTruthy();
+    expect(screen.getByText('主线程已收到')).toBeTruthy();
+  });
 });

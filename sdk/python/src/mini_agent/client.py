@@ -966,8 +966,8 @@ class MiniAgentClient:
         if group_sequence is not None:
             payload["groupSequence"] = group_sequence
         if turn_source is not None:
-            if turn_source != "child_wakeup":
-                raise ValueError("turn_source must be child_wakeup")
+            if turn_source not in {"child_wakeup", "session_resume"}:
+                raise ValueError("turn_source must be child_wakeup or session_resume")
             payload["turnSource"] = turn_source
         if effort is not None:
             payload["effort"] = effort
@@ -1005,6 +1005,24 @@ class MiniAgentClient:
             },
         )
 
+    async def session_control(
+        self,
+        action: str,
+        *,
+        request_id: str | None = None,
+        thread_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Read or transition the durable control state for one Session."""
+        params: dict[str, Any] = {
+            "threadId": thread_id or self._active_thread_id,
+            "action": action,
+        }
+        if request_id is not None:
+            params["requestId"] = request_id
+        result = await self._send_request("session/control", params)
+        value = result.get("value", result) if isinstance(result, dict) else result
+        return value if isinstance(value, dict) else {}
+
     async def child_task_action(
         self,
         thread_id: str,
@@ -1019,6 +1037,7 @@ class MiniAgentClient:
         request_id: str | None = None,
         turn_id: str | None = None,
         error: str | None = None,
+        control_source: str | None = None,
     ) -> dict[str, Any]:
         """Persist one parent-authorized child-task action in its Session."""
         params: dict[str, Any] = {
@@ -1040,6 +1059,8 @@ class MiniAgentClient:
             params["turnId"] = turn_id
         if error is not None:
             params["error"] = error
+        if control_source is not None:
+            params["controlSource"] = control_source
         result = await self._send_request("child/task", params)
         value = result.get("value", result) if isinstance(result, dict) else result
         return value if isinstance(value, dict) else {}

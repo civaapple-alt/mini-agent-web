@@ -201,6 +201,43 @@ async def test_sdk_child_task_action_unwraps_action_result():
     assert calls[0][1]["error"] == "App Server rejected turn/start"
 
 
+@pytest.mark.asyncio
+async def test_sdk_session_control_uses_the_durable_session_control_method():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {
+            "value": {
+                "threadId": "parent-1",
+                "sessionId": "session-1",
+                "status": "frozen",
+                "requestId": "freeze-1",
+                "updatedAtMs": 1_700_000_000_000,
+            },
+            "actionId": 8,
+        }
+
+    client._send_request = fake_send
+
+    result = await client.session_control(
+        "freeze", thread_id="parent-1", request_id="freeze-1"
+    )
+
+    assert result["status"] == "frozen"
+    assert calls == [
+        (
+            "session/control",
+            {
+                "threadId": "parent-1",
+                "action": "freeze",
+                "requestId": "freeze-1",
+            },
+        )
+    ]
+
+
 @pytest.mark.skipif(
     not has_app_server(),
     reason="Live SDK test requires mini-agent-app-server binary (set MINI_AGENT_APP_SERVER_PATH)",

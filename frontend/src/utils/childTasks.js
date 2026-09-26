@@ -210,6 +210,9 @@ export function getLatestChildTaskReport(task) {
       && Number.isInteger(candidate.cursor)
       ? candidate.cursor
       : null,
+    delivery_status: candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+      ? candidate.delivery_status || 'reported'
+      : 'reported',
   };
 }
 

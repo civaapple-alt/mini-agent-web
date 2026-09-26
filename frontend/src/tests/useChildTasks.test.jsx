@@ -8,6 +8,7 @@ vi.mock('../api', () => ({
   api: {
     listChildTasks: vi.fn(),
     controlChildTask: vi.fn(),
+    controlSession: vi.fn(),
   },
 }));
 
@@ -27,6 +28,16 @@ function ChildTasksProbe() {
       <div role="status">{children.map((item) => `${item.title}: ${item.status}`).join(', ')}</div>
       {child && <button type="button" onClick={submitControl}>停止子任务</button>}
       {controlError && <div role="alert">{controlError}</div>}
+    </>
+  );
+}
+
+function SessionControlProbe() {
+  const { sessionControl, controlSession } = useChildTasks('parent-thread', 'memory-card');
+  return (
+    <>
+      <div role="status">{sessionControl.status}</div>
+      <button type="button" onClick={() => controlSession('freeze')}>冻结会话</button>
     </>
   );
 }
@@ -132,6 +143,29 @@ describe('useChildTasks', () => {
       expect.objectContaining({
         operationId: 'child:child-a',
         attempt: 1,
+        requestId: expect.any(String),
+      }),
+    );
+  });
+
+  it('loads and controls durable parent Session freeze state', async () => {
+    api.listChildTasks
+      .mockResolvedValueOnce({ children: [], session_control: { status: 'running' } })
+      .mockResolvedValueOnce({ children: [], session_control: { status: 'freezing' } });
+    api.controlSession.mockResolvedValueOnce({
+      session_control: { status: 'freezing', requestId: 'freeze-1' },
+    });
+
+    render(<SessionControlProbe />);
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('running'));
+    screen.getByRole('button', { name: '冻结会话' }).click();
+
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('freezing'));
+    expect(api.controlSession).toHaveBeenCalledWith(
+      'parent-thread',
+      'freeze',
+      expect.objectContaining({
+        projectId: 'memory-card',
         requestId: expect.any(String),
       }),
     );

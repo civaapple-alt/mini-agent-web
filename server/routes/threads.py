@@ -140,6 +140,11 @@ class ChildTaskRequest(BaseModel):
     sequence: int | None = Field(default=None, ge=0)
 
 
+class SessionControlRequest(BaseModel):
+    action: Literal["freeze", "continue"]
+    request_id: str | None = Field(default=None, min_length=1, max_length=192)
+
+
 class ChildTaskControlRequest(BaseModel):
     action: Literal[
         "update_queued",
@@ -676,12 +681,40 @@ async def list_child_tasks(
         return {
             "parent_thread_id": thread_id,
             "project": session_manager.resolve_thread_project(thread_id, project_id),
+            "session_control": await session_manager.session_control_state(
+                thread_id, project_id
+            ),
             "children": children,
         }
     except KeyError as err:
         raise HTTPException(status_code=404, detail=str(err)) from err
     except RuntimeError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err
+    except (ServerProcessError, AppServerError) as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+
+
+@router.post("/{thread_id}/session-control", summary="Freeze or continue a Session")
+async def control_session(
+    thread_id: str,
+    req: SessionControlRequest,
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """Freeze the parent and children, or explicitly resume the Session."""
+    try:
+        if req.action == "freeze":
+            return await session_manager.freeze_session(
+                thread_id, project_id, request_id=req.request_id
+            )
+        return await session_manager.continue_session(
+            thread_id, project_id, request_id=req.request_id
+        )
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except ValueError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except (RuntimeError, ServerProcessError, AppServerError) as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
 
 
 @router.post("/{thread_id}/children", summary="Start a child task")

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Make main-thread Stop freeze the parent Session and all active child work.
+  Persist freeze/resume state in App Server, preserve queued children, block
+  automatic wakeups while frozen, and resume parent-frozen children only after
+  explicit Continue. Track whether child reports are pending main-thread read
+  or have been received, and retain the source of individual child controls.
 - Simplify the Child Agents panel into compact status rows with a color-coded
   count summary, visible phase/progress, and elapsed time. Keep stop as the only
   quick action with confirmation; reveal lifecycle details and other controls

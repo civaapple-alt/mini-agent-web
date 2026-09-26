@@ -21,11 +21,14 @@ function mergeChildUpdate(children, update) {
 
 export default function useChildTasks(threadId, projectId, enabled = true) {
   const [children, setChildren] = useState([]);
+  const [sessionControl, setSessionControl] = useState({ status: 'running' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const requestEpoch = useRef(0);
   const requestController = useRef(null);
   const hasActiveChildren = useRef(false);
+  const sessionControlStatus = useRef(sessionControl.status);
+  sessionControlStatus.current = sessionControl.status;
   hasActiveChildren.current = children.some((child) => (
     ['queued', 'running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling']
       .includes(child.status)
@@ -34,6 +37,7 @@ export default function useChildTasks(threadId, projectId, enabled = true) {
   const load = useCallback(async () => {
     if (!enabled || !threadId) {
       setChildren([]);
+      setSessionControl({ status: 'running' });
       setError(null);
       setLoading(false);
       return;
@@ -50,6 +54,7 @@ export default function useChildTasks(threadId, projectId, enabled = true) {
       });
       if (epoch !== requestEpoch.current) return;
       setChildren(normalizeChildren(result));
+      setSessionControl(result?.session_control || { status: 'running' });
       setError(null);
     } catch (cause) {
       if (cause?.name !== 'AbortError' && epoch === requestEpoch.current) {
@@ -59,6 +64,19 @@ export default function useChildTasks(threadId, projectId, enabled = true) {
       if (epoch === requestEpoch.current) setLoading(false);
     }
   }, [enabled, projectId, threadId]);
+
+  const controlSession = useCallback(async (action, requestId = null) => {
+    if (!enabled || !threadId) throw new Error('当前会话不可控制');
+    const result = await api.controlSession(threadId, action, {
+      projectId,
+      requestId: requestId || createControlRequestId(),
+    });
+    if (result?.session_control) setSessionControl(result.session_control);
+    await load();
+    if (result?.error) throw new Error(result.error);
+    if (result?.errors?.length) throw new Error(result.errors.join('；'));
+    return result;
+  }, [enabled, load, projectId, threadId]);
 
   const control = useCallback(async (child, action, payload = {}) => {
     if (!enabled || !threadId) throw new Error('当前会话不可控制子任务');
@@ -95,17 +113,27 @@ export default function useChildTasks(threadId, projectId, enabled = true) {
       return undefined;
     }
     setChildren([]);
+    setSessionControl({ status: 'running' });
     setLoading(true);
     setError(null);
     void load();
     const timer = window.setInterval(() => {
-      if (hasActiveChildren.current) void load();
-    }, 3000);
+      if (hasActiveChildren.current || ['freezing', 'resuming'].includes(sessionControlStatus.current)) void load();
+    }, 2000);
     const reconciliationTimer = window.setInterval(() => {
       if (!hasActiveChildren.current) void load();
     }, 10000);
     const handleUpdate = (event) => {
       const detail = event?.detail || {};
+      if (detail.type === 'session_control_updated' || detail.sessionControl) {
+        const parentThreadId = detail.threadId || detail.thread_id;
+        const eventProjectId = detail.projectId || detail.project_id;
+        if (parentThreadId && parentThreadId !== threadId) return;
+        if (projectId && eventProjectId && eventProjectId !== projectId) return;
+        if (detail.sessionControl) setSessionControl(detail.sessionControl);
+        void load();
+        return;
+      }
       const update = detail.data || detail.child || null;
       if (!update) return;
       const parentThreadId = detail.threadId || detail.thread_id;
@@ -125,7 +153,7 @@ export default function useChildTasks(threadId, projectId, enabled = true) {
     };
   }, [enabled, load, projectId, threadId]);
 
-  return { children, loading, error, refresh: load, control };
+  return { children, loading, error, sessionControl, refresh: load, control, controlSession };
 }
 
 function createControlRequestId() {

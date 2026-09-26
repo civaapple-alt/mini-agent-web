@@ -70,6 +70,23 @@ Gateway 按父 Session 合并唤醒。待处理队列最多保留 64 个不同�
 并保留最多 8 个示例 ID。父代理可依据示例和已知任务 ID 调用 `task_read` 查看权威状态。
 Gateway 通过同一 Session 的启动锁串行化用户 Turn 与自动续行，避免两者同时通过空闲检查。
 
+## 主会话停止与恢复
+
+主线程的“停止”冻结整个父 Session，而不只是当前 parent Turn。Gateway 先让 App Server
+持久化 `freezing`，再协作式中断 parent Turn、暂停活动子任务。排队任务保留原 operation 和
+attempt，不启动新任务。冻结完成后状态变为 `frozen`。Gateway 重启后按持久状态继续结算冻结，
+不会因子任务完成、子报告或队列重试而自动开启 parent Turn。
+
+只有用户明确点击“继续整个会话”才会进入 `resuming`。继续时恢复由 `parent_freeze` 暂停的
+子任务，排空原队列，并以 `session_resume` Turn 恢复 parent 进度。用户面板或 main agent 单独
+暂停的子任务不会被父会话 Continue 自动恢复；用户单独停止的子任务保持取消。单个子任务操作会
+持久记录 `control_source`，用于区分 `user_panel`、`main_agent` 和 `parent_freeze`。
+
+子任务报告与控制竞态时，报告正文仍写入子 Session。每条报告在状态投影中显示“待主线程读取”
+（`reported`）；父代理的 `task_read` 成功返回报告后，父 Session 会写入有界、可重放的读取回执，
+并投影为“主线程已收到”（`main_received`）。停止期间收到的报告不会唤醒冻结的 parent；用户继续后，
+parent 从现有报告与任务状态恢复，不会因重复读取产生额外报告或重复任务。
+
 ## 运行面板与会话入口
 
 右侧抽屉的“子智能体”顶层页显示父会话的全部子任务，包括排队、运行、完成、失败和取消项。

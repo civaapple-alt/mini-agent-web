@@ -180,4 +180,34 @@ describe('InputBar composer popups', () => {
       else globalThis.__MINI_AGENT_FILE_BRIDGE__ = previousBridge;
     }
   });
+
+  it('freezes the whole Session when child work is active without a parent Turn', () => {
+    const onFreezeSession = vi.fn();
+    render(
+      <InputBar
+        {...props}
+        hasSessionActivity
+        onFreezeSession={onFreezeSession}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '停止' }));
+    expect(onFreezeSession).toHaveBeenCalledOnce();
+  });
+
+  it('locks the composer while frozen and offers explicit Session continuation', () => {
+    const onContinueSession = vi.fn();
+    render(
+      <InputBar
+        {...props}
+        currentThread="parent-thread"
+        sessionControl={{ status: 'frozen' }}
+        onContinueSession={onContinueSession}
+      />,
+    );
+
+    expect(screen.getByRole('textbox').disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '继续整个会话' }));
+    expect(onContinueSession).toHaveBeenCalledOnce();
+  });
 });

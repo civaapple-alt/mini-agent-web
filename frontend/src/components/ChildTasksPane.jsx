@@ -185,6 +185,9 @@ function ChildTaskRow({
                 ? `${getChildTaskAttemptLabel(attempts.find((attempt) => attempt.attempt === latestReport.attempt) || { attempt: latestReport.attempt })}进展：`
                 : '最新进展：'}</span>
               <span>{latestReport.text}</span>
+              <span className={`child-task-report-delivery ${latestReport.delivery_status}`}>
+                {latestReport.delivery_status === 'main_received' ? '主线程已收到' : '待主线程读取'}
+              </span>
               {latestReport.timestamp_ms && (
                 <time>{formatChildTaskTimestamp(latestReport.timestamp_ms)}</time>
               )}
@@ -279,10 +282,15 @@ export default function ChildTasksPane({
   error = null,
   onRefresh,
   onControl,
+  sessionControl = { status: 'running' },
+  onSessionControl,
+  parentTurnActive = false,
   finishedVisibleCount: controlledFinishedVisibleCount,
   onFinishedVisibleCountChange,
 }) {
   const [localFinishedVisibleCount, setLocalFinishedVisibleCount] = useState(0);
+  const [sessionControlBusy, setSessionControlBusy] = useState(false);
+  const [sessionControlError, setSessionControlError] = useState('');
   const finishedVisibleCount = Number.isInteger(controlledFinishedVisibleCount)
     ? controlledFinishedVisibleCount
     : localFinishedVisibleCount;
@@ -292,6 +300,20 @@ export default function ChildTasksPane({
   const currentTasks = orderedChildren.filter((child) => !isCollapsedChildTask(child));
   const finishedTasks = orderedChildren.filter(isCollapsedChildTask);
   const visibleFinishedTasks = finishedTasks.slice(0, finishedVisibleCount);
+  const sessionStatus = sessionControl?.status || 'running';
+  const hasSessionActivity = parentTurnActive || counts.running > 0 || counts.queued > 0 || counts.needsAttention > 0;
+  const controlSession = async (action) => {
+    if (!onSessionControl) return;
+    setSessionControlBusy(true);
+    setSessionControlError('');
+    try {
+      await onSessionControl(action);
+    } catch (cause) {
+      setSessionControlError(cause?.message || '会话控制失败');
+    } finally {
+      setSessionControlBusy(false);
+    }
+  };
   const sequenceCounts = new Map();
   for (const child of children) {
     if (child.execution_mode !== 'sequential' || !child.operation_group_id) continue;
@@ -331,7 +353,29 @@ export default function ChildTasksPane({
           <RefreshCw size={12} />
           <span>刷新</span>
         </button>
+        {sessionStatus === 'frozen' ? (
+          <button type="button" className="btn-action-small" disabled={sessionControlBusy} onClick={() => void controlSession('continue')}>
+            {sessionControlBusy ? '恢复中…' : '继续整个会话'}
+          </button>
+        ) : ['freezing', 'resuming'].includes(sessionStatus) ? (
+          <button type="button" className="btn-action-small" disabled>
+            {sessionStatus === 'freezing' ? '正在停止…' : '正在恢复…'}
+          </button>
+        ) : hasSessionActivity ? (
+          <button type="button" className="btn-action-small danger" disabled={sessionControlBusy} onClick={() => void controlSession('freeze')}>
+            {sessionControlBusy ? '正在停止…' : '停止整个会话'}
+          </button>
+        ) : null}
       </div>
+
+      {sessionControlError && (
+        <div className="status-detail-alert error" role="alert">{sessionControlError}</div>
+      )}
+      {sessionStatus === 'frozen' && (
+        <div className="child-task-waiting" role="status">
+          会话已冻结；子任务与队列保持原位，点击“继续整个会话”恢复。
+        </div>
+      )}
 
       {loading && children.length === 0 ? (
         <div className="child-task-empty">正在加载子任务状态…</div>

@@ -1123,6 +1123,9 @@ class SessionCatalog:
                         "operation_control_request_id": _bounded_text(
                             record.get("control_request_id"), 192
                         ),
+                        "operation_control_source": _bounded_text(
+                            record.get("control_source"), 32
+                        ),
                         "operation_prompt": _bounded_text(
                             record.get("prompt"), 32 * 1024
                         ),
@@ -1437,6 +1440,9 @@ class SessionCatalog:
                 "attempt": latest_attempt,
                 "control_request_id": child_task_operation.get(
                     "operation_control_request_id"
+                ),
+                "control_source": child_task_operation.get(
+                    "operation_control_source"
                 ),
                 "status": child_task_operation.get("operation_status"),
                 "prompt": child_task_operation.get("operation_prompt"),

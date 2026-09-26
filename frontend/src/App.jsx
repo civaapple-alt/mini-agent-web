@@ -1257,6 +1257,26 @@ export default function App() {
       return;
     }
 
+    if (data.type === 'session_control_updated') {
+      const controlState = data.sessionControl || data.session_control;
+      const sameVisibleSession = (data.threadId || data.thread_id) === currentThreadRef.current
+        && (!data.projectId && !data.project_id
+          || (data.projectId || data.project_id) === currentThreadProjectRef.current);
+      if (sameVisibleSession && controlState?.status === 'frozen') {
+        interruptPendingRef.current = false;
+        interruptTurnIdRef.current = null;
+        activeTurnIdRef.current = null;
+        queueDispatchingRef.current = false;
+        setActiveTurnId(null);
+        setIsInterrupting(false);
+        setIsGenerating(false);
+      }
+      window.dispatchEvent(
+        new CustomEvent('mini-agent:child-operation-updated', { detail: data }),
+      );
+      return;
+    }
+
     if (
       data.type === 'notification'
       && data.method === 'session/notebook/updated'
@@ -2031,16 +2051,17 @@ export default function App() {
       showToast('当前会话由其他进程运行，只能查看，暂不能中断。', 'info', 3000);
       return;
     }
+    const freezeWholeSession = source === 'composer-stop';
     const approvalTurnId = pendingApproval?.data?.turnId || pendingApproval?.data?.turn_id;
     const turnId = activeTurnIdRef.current || approvalTurnId || activeTurnId;
-    if (!turnId) {
+    if (!turnId && !freezeWholeSession) {
       showToast('当前没有可停止的任务轮次。', 'info', 2500);
       return;
     }
-    interruptPendingRef.current = true;
-    interruptTurnIdRef.current = turnId;
-    rememberInterruptedTurn(turnId);
-    setIsInterrupting(true);
+    interruptPendingRef.current = Boolean(turnId);
+    interruptTurnIdRef.current = turnId || null;
+    if (turnId) rememberInterruptedTurn(turnId);
+    setIsInterrupting(Boolean(turnId));
     setIsGenerating(false);
     // Keep the approval dock visible while the interrupt settles. Its actions
     // are disabled by isInterrupting, which makes the cancellation boundary
@@ -2053,11 +2074,16 @@ export default function App() {
       interruptPendingRef.current = false;
       interruptTurnIdRef.current = null;
       setIsInterrupting(false);
-      setIsGenerating(true);
+      setIsGenerating(Boolean(turnId));
       showToast(`停止请求发送失败：${err.message || '服务端未确认'}。`, 'error', 4000);
     };
     let sent = false;
-    if (!hasPendingApproval && wsRef.current) {
+    if (freezeWholeSession) {
+      sent = true;
+      void api.controlSession(currentThread, 'freeze', {
+        projectId: currentThreadProject,
+      }).catch(restoreAfterInterruptFailure);
+    } else if (!hasPendingApproval && wsRef.current) {
       sent = wsRef.current.send({
         action: 'interrupt',
         turnId,
@@ -2066,7 +2092,7 @@ export default function App() {
         source,
       });
     }
-    if (hasPendingApproval || !sent) {
+    if (!freezeWholeSession && (hasPendingApproval || !sent)) {
       // A WebSocket send only means that the browser accepted the frame. When
       // an approval is pending, use the REST boundary whose response includes
       // the Gateway's approval cancellation and App Server interrupt result.
@@ -2099,7 +2125,11 @@ export default function App() {
         prev,
       ));
     }
-    showToast('已发送停止生成请求', 'info', 1800);
+    showToast(
+      freezeWholeSession ? '已发送冻结整个会话请求' : '已发送停止生成请求',
+      'info',
+      1800,
+    );
     setMessages((prev) => {
       if (prev.length === 0) return prev;
       const copy = [...prev];

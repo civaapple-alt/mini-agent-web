@@ -316,6 +316,13 @@ export default function AppLayout({
             projectId={currentThreadProject}
             isNewSessionLanding={isNewSessionLanding}
             sessionActive={sessionActive}
+            sessionControl={childTasks.sessionControl}
+            hasSessionActivity={isGenerating || childTasks.children.some((child) => (
+              ['queued', 'running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling']
+                .includes(child.status)
+            ))}
+            onFreezeSession={() => childTasks.controlSession('freeze')}
+            onContinueSession={() => childTasks.controlSession('continue')}
             onOpenSettings={onOpenSettings}
             pendingApproval={pendingApproval}
             pendingApprovalCount={pendingApprovalCount}
@@ -392,6 +399,9 @@ export default function AppLayout({
             childTasks={childTasks.children}
             childTasksLoading={childTasks.loading}
             childTasksError={childTasks.error}
+            sessionControl={childTasks.sessionControl}
+            onSessionControl={childTasks.controlSession}
+            parentTurnActive={isGenerating}
             onRefreshChildTasks={childTasks.refresh}
             onControlChildTask={childTasks.control}
           />

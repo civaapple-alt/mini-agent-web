@@ -95,6 +95,28 @@ export const threadApi = {
     return res.json();
   },
 
+  async controlSession(threadId = 'default', action, options = {}) {
+    const target = threadId || 'default';
+    const res = await request(
+      `/api/threads/${encodeURIComponent(target)}/session-control`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          request_id: options.requestId || createSessionControlRequestId(),
+        }),
+        ...requestSignal(options),
+      },
+      options.projectId,
+    );
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || `Failed to ${action} Session ${target}`);
+    }
+    return res.json();
+  },
+
   async cancelChildTask(sourceThreadId, childThreadId, options = {}) {
     const parent = sourceThreadId || 'default';
     const res = await request(
@@ -393,3 +415,8 @@ export const threadApi = {
     return res.json();
   },
 };
+
+function createSessionControlRequestId() {
+  if (globalThis.crypto?.randomUUID) return `web-session-${globalThis.crypto.randomUUID()}`;
+  return `web-session-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}

@@ -61,6 +61,8 @@ export default function InputBar({
   projectId = null,
   isNewSessionLanding = false,
   sessionActive = true,
+  sessionControl = { status: 'running' },
+  hasSessionActivity = false,
   onOpenSettings,
   pendingApproval,
   pendingApprovalCount = 0,
@@ -77,6 +79,8 @@ export default function InputBar({
   composerDraft,
   onComposerDraftApplied,
   onInterrupt,
+  onFreezeSession,
+  onContinueSession,
   onClearChat,
   onTogglePlanMode,
   onToast,
@@ -223,7 +227,10 @@ export default function InputBar({
   };
 
   const modelSelectionDisabled = !currentThread || modelSettingsLoading || modelSettingsSaving
-    || isGenerating || Boolean(pendingApproval) || sessionReadOnly || !sessionActive;
+    || isGenerating || Boolean(pendingApproval) || sessionReadOnly || !sessionActive
+    || ['freezing', 'frozen', 'resuming'].includes(sessionControl?.status);
+  const sessionFrozen = sessionControl?.status === 'frozen';
+  const sessionTransitioning = ['freezing', 'resuming'].includes(sessionControl?.status);
 
   useEffect(() => () => {
     mentionRequestControllerRef.current?.abort();
@@ -596,6 +603,7 @@ export default function InputBar({
   const handleDrop = (e) => {
     e.preventDefault();
     if (sessionReadOnly) return;
+    if (sessionFrozen || sessionTransitioning) return;
     const nativePaths = nativePathsFromDataTransfer(e.dataTransfer);
     if (nativePaths.length > 0) {
       addPathAttachments(nativePaths);
@@ -789,6 +797,13 @@ export default function InputBar({
       e.preventDefault();
       void handleSubmit();
     }
+  };
+
+  const runSessionControl = (handler) => {
+    if (typeof handler !== 'function') return;
+    void Promise.resolve(handler()).catch((cause) => {
+      onToast?.(cause?.message || '会话控制失败', 'error', 4000);
+    });
   };
 
   return (
@@ -1135,10 +1150,14 @@ export default function InputBar({
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            disabled={sessionReadOnly}
+            disabled={sessionReadOnly || sessionFrozen || sessionTransitioning}
             placeholder={
               sessionReadOnly
                 ? '只读查看：该会话由其他进程运行，结束后可重新接管'
+                : sessionFrozen
+                  ? '会话已冻结；点击“继续整个会话”恢复原进度'
+                  : sessionTransitioning
+                    ? sessionControl?.status === 'freezing' ? '正在停止整个会话并等待结算…' : '正在恢复整个会话…'
                 : pendingApproval
                 ? '⚠️ 等待上方安全权限审批确认后继续...'
                 : isGenerating
@@ -1260,6 +1279,21 @@ export default function InputBar({
             )}
             {sessionReadOnly ? (
               <span className="readonly-session-label">只读查看</span>
+            ) : sessionFrozen ? (
+              <button
+                type="button"
+                className="btn-action send"
+                onClick={() => runSessionControl(onContinueSession)}
+                title="恢复主线程与主线程冻结的子任务"
+              >
+                <Send size={13} />
+                <span>继续整个会话</span>
+              </button>
+            ) : sessionTransitioning ? (
+              <button type="button" className="btn-action stop" disabled>
+                <Square size={13} />
+                <span>{sessionControl?.status === 'freezing' ? '停止中' : '恢复中'}</span>
+              </button>
             ) : isInterrupting ? (
               <button
                 type="button"
@@ -1270,12 +1304,12 @@ export default function InputBar({
                 <Square size={13} />
                 <span>停止中</span>
               </button>
-            ) : isGenerating ? (
+            ) : isGenerating || hasSessionActivity ? (
               <button
                 type="button"
                 className="btn-action stop"
-                onClick={onInterrupt}
-                title="中断生成"
+                onClick={() => runSessionControl(isGenerating ? onInterrupt : onFreezeSession)}
+                title="冻结当前会话、活动子任务和子任务队列"
               >
                 <Square size={13} />
                 <span>停止</span>

@@ -441,6 +441,9 @@ export default function SidePanel({
   childTasks = [],
   childTasksLoading = false,
   childTasksError = null,
+  sessionControl = { status: 'running' },
+  onSessionControl,
+  parentTurnActive = false,
   onRefreshChildTasks,
   onControlChildTask,
 }) {
@@ -1127,6 +1130,9 @@ export default function SidePanel({
                 error={childTasksError}
                 onRefresh={onRefreshChildTasks}
                 onControl={onControlChildTask}
+                sessionControl={sessionControl}
+                onSessionControl={onSessionControl}
+                parentTurnActive={parentTurnActive}
                 finishedVisibleCount={finishedChildTaskVisibleCount}
                 onFinishedVisibleCountChange={setFinishedChildTaskVisibleCount}
               />

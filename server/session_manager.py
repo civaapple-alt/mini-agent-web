@@ -19,6 +19,7 @@ from typing import Any
 
 from fastapi import WebSocket
 from mini_agent import MiniAgentClient, TurnTimeoutError
+from mini_agent.errors import MiniAgentError
 
 from server.config import settings
 from server.control.approval_bridge import ApprovalBridge
@@ -166,6 +167,8 @@ class SessionManager:
         # App Server process after this short control-plane critical section.
         self._child_task_lock = asyncio.Lock()
         self._child_queue_retry_jobs: dict[tuple[str, str], asyncio.Task[Any]] = {}
+        self._session_control_jobs: dict[tuple[str, str], asyncio.Task[Any]] = {}
+        self._session_control_locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._thread_builtin_tools: dict[str, list[str]] = {}
         self._thread_builtin_tools_by_project: dict[tuple[str, str], list[str]] = {}
         self._turn_registry = TurnRegistry(self)
@@ -466,6 +469,364 @@ class SessionManager:
     ) -> MiniAgentClient:
         return await self._client_pool.get_client_for_thread(thread_id, project_id)
 
+    async def session_control_state(
+        self, thread_id: str, project_id: str | None = None
+    ) -> dict[str, Any]:
+        """Read this parent Session's durable freeze state from App Server."""
+        target = thread_id or "default"
+        resolved_project = self.resolve_thread_project(target, project_id)
+        client = await self.get_client_for_thread(target, resolved_project)
+        return await client.session_control("read", thread_id=target)
+
+    def _session_control_lock(
+        self, thread_id: str, project_id: str
+    ) -> asyncio.Lock:
+        key = (project_id, thread_id)
+        lock = self._session_control_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._session_control_locks[key] = lock
+        return lock
+
+    @staticmethod
+    def _session_control_child_request_id(
+        action: str,
+        parent_request_id: str,
+        child: dict[str, Any],
+    ) -> str:
+        identity = ":".join(
+            (
+                action,
+                parent_request_id,
+                str(child.get("child_thread_id") or ""),
+                str(child.get("operation_id") or ""),
+                str(child.get("operation_attempt") or 1),
+            )
+        )
+        return f"session-{action}:{hashlib.sha256(identity.encode()).hexdigest()[:48]}"
+
+    async def _interrupt_parent_for_freeze(
+        self, thread_id: str, project_id: str
+    ) -> str | None:
+        client = await self.get_client_for_thread(thread_id, project_id)
+        turn_id = self.get_active_turn(thread_id, project_id)
+        try:
+            runtime = await client.get_runtime_status(thread_id)
+            if str(getattr(runtime, "phase", "idle")) in ACTIVE_CHILD_RUNTIME_PHASES:
+                turn_id = turn_id or str(getattr(runtime, "turn_id", "") or "") or None
+        except Exception:
+            logger.warning("Unable to inspect parent runtime during freeze", exc_info=True)
+        if not turn_id:
+            return None
+        self.mark_turn_interrupted(thread_id, turn_id, project_id)
+        await self.cancel_pending_approvals(
+            project_id=project_id,
+            thread_id=thread_id,
+            turn_id=turn_id,
+        )
+        try:
+            await client.interrupt_turn(turn_id, thread_id)
+            return None
+        except Exception as error:
+            logger.warning(
+                "Parent Session freeze was persisted but Turn interrupt failed",
+                exc_info=True,
+            )
+            return str(error)
+
+    async def _request_freeze_for_children(
+        self, thread_id: str, project_id: str, request_id: str
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        children = await self.list_child_tasks(thread_id, project_id)
+        errors: list[str] = []
+        for child in children:
+            status = child.get("status")
+            turn_id = str(child.get("turn_id") or "")
+            child_id = str(child.get("child_thread_id") or "")
+            if (
+                not child_id
+                or not turn_id
+                or status not in ACTIVE_CHILD_TASK_STATUSES
+            ):
+                continue
+            try:
+                if status in {"running", "awaiting_approval", "in_progress"}:
+                    await self.pause_child_task(
+                        thread_id,
+                        child_id,
+                        project_id,
+                        request_id=self._session_control_child_request_id(
+                            "freeze", request_id, child
+                        ),
+                        operation_id=str(child.get("operation_id") or ""),
+                        attempt=int(child.get("operation_attempt") or 1),
+                        control_source="parent_freeze",
+                    )
+                    continue
+
+                # A task-level pause or cancel already owns its control source.
+                # Reassert only its cooperative interrupt; never relabel it as
+                # a parent-freeze action.
+                self.mark_turn_interrupted(child_id, turn_id, project_id)
+                await self.cancel_pending_approvals(
+                    project_id=project_id,
+                    thread_id=child_id,
+                    turn_id=turn_id,
+                )
+                client = await self.get_client_for_thread(child_id, project_id)
+                await client.interrupt_turn(turn_id, child_id)
+            except Exception as error:
+                errors.append(f"{child_id}: {error}")
+                logger.warning(
+                    "Unable to freeze child %s for parent Session", child_id, exc_info=True
+                )
+        return children, errors
+
+    async def freeze_session(
+        self,
+        thread_id: str,
+        project_id: str | None = None,
+        *,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Freeze one parent Session and all active child Turns durably."""
+        target = thread_id or "default"
+        resolved_project = self.resolve_thread_project(target, project_id)
+        lock = self._session_control_lock(target, resolved_project)
+        async with lock:
+            client = await self.get_client_for_thread(target, resolved_project)
+            current = await client.session_control("read", thread_id=target)
+            stored_request_id = current.get("requestId")
+            freeze_request_id = (
+                stored_request_id
+                if current.get("status") in {"freezing", "frozen"}
+                and isinstance(stored_request_id, str)
+                else request_id or f"web-freeze-{uuid.uuid4().hex}"
+            )
+            state = await client.session_control(
+                "freeze", request_id=freeze_request_id, thread_id=target
+            )
+            await self.broadcast_ws({
+                "type": "session_control_updated",
+                "threadId": target,
+                "projectId": resolved_project,
+                "sessionControl": state,
+            })
+            self._schedule_session_freeze_settlement(target, resolved_project, freeze_request_id)
+            return {"session_control": state, "request_id": freeze_request_id}
+
+    def _schedule_session_freeze_settlement(
+        self, thread_id: str, project_id: str, request_id: str
+    ) -> None:
+        key = (project_id, thread_id)
+        current = self._session_control_jobs.get(key)
+        if current is not None and not current.done():
+            return
+
+        async def settle() -> None:
+            retry = False
+            try:
+                while True:
+                    client = await self.get_client_for_thread(thread_id, project_id)
+                    state = await client.session_control("read", thread_id=thread_id)
+                    if state.get("status") not in {"freezing", "frozen"}:
+                        return
+                    parent_idle = not self.get_active_turn(thread_id, project_id)
+                    try:
+                        runtime = await client.get_runtime_status(thread_id)
+                        runtime_active = str(getattr(runtime, "phase", "idle")) in ACTIVE_CHILD_RUNTIME_PHASES
+                        parent_idle = (
+                            not runtime_active
+                            and not self.get_active_turn(thread_id, project_id)
+                        )
+                        if runtime_active or self.get_active_turn(thread_id, project_id):
+                            await self._interrupt_parent_for_freeze(thread_id, project_id)
+                    except (MiniAgentError, asyncio.TimeoutError, OSError) as error:
+                        # An unreadable App Server snapshot is not evidence that
+                        # the parent Turn settled. Keep the durable freeze pending.
+                        parent_idle = False
+                        logger.warning(
+                            "Unable to read parent runtime while settling freeze: %s",
+                            error,
+                        )
+                        await self._interrupt_parent_for_freeze(thread_id, project_id)
+                    async with self._child_task_lock:
+                        children, _ = await self._request_freeze_for_children(
+                            thread_id, project_id, request_id
+                        )
+                    children_idle = not any(
+                        child.get("status") in ACTIVE_CHILD_TASK_STATUSES
+                        and child.get("turn_id")
+                        for child in children
+                    )
+                    if state.get("status") == "freezing" and parent_idle and children_idle and not self.get_active_turn(thread_id, project_id):
+                        settled = await client.session_control(
+                            "freeze_settled", request_id=request_id, thread_id=thread_id
+                        )
+                        await self.broadcast_ws({
+                            "type": "session_control_updated",
+                            "threadId": thread_id,
+                            "projectId": project_id,
+                            "sessionControl": settled,
+                        })
+                        return
+                    if state.get("status") == "frozen":
+                        return
+                    await asyncio.sleep(0.75)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.warning("Unable to settle parent Session freeze for %s", thread_id, exc_info=True)
+                retry = True
+            finally:
+                if self._session_control_jobs.get(key) is asyncio.current_task():
+                    self._session_control_jobs.pop(key, None)
+            if retry:
+                await asyncio.sleep(1.0)
+                self._schedule_session_freeze_settlement(thread_id, project_id, request_id)
+
+        self._session_control_jobs[key] = asyncio.create_task(settle())
+
+    async def continue_session(
+        self,
+        thread_id: str,
+        project_id: str | None = None,
+        *,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Explicitly resume the frozen parent and its parent-paused children."""
+        target = thread_id or "default"
+        resolved_project = self.resolve_thread_project(target, project_id)
+        lock = self._session_control_lock(target, resolved_project)
+        async with lock:
+            client = await self.get_client_for_thread(target, resolved_project)
+            current = await client.session_control("read", thread_id=target)
+            if current.get("status") == "freezing":
+                raise ValueError("会话仍在停止结算，请等待冻结完成后再继续")
+            if current.get("status") == "running":
+                return {"session_control": current, "status": "already_running"}
+            stored_request_id = current.get("requestId")
+            resume_request_id = (
+                stored_request_id
+                if current.get("status") == "resuming" and isinstance(stored_request_id, str)
+                else request_id or f"web-resume-{uuid.uuid4().hex}"
+            )
+            state = await client.session_control(
+                "resume", request_id=resume_request_id, thread_id=target
+            )
+            await self.broadcast_ws({
+                "type": "session_control_updated",
+                "threadId": target,
+                "projectId": resolved_project,
+                "sessionControl": state,
+            })
+        return await self._finish_session_resume(
+            client, target, resolved_project, resume_request_id, state
+        )
+
+    async def _finish_session_resume(
+        self,
+        client: MiniAgentClient,
+        thread_id: str,
+        project_id: str,
+        request_id: str,
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        async with self._child_task_lock:
+            children = await self.list_child_tasks(thread_id, project_id)
+            errors: list[str] = []
+            for child in children:
+                if child.get("status") != "paused" or child.get("control_source") != "parent_freeze":
+                    continue
+                child_id = str(child.get("child_thread_id") or "")
+                try:
+                    child_client = await self.get_client_for_thread(child_id, project_id)
+                    await child_client.child_task_action(
+                        child_id,
+                        thread_id,
+                        str(child.get("operation_id") or f"child:{child_id}"),
+                        int(child.get("operation_attempt") or 1),
+                        "resume",
+                        request_id=self._session_control_child_request_id(
+                            "resume", request_id, child
+                        ),
+                        control_source="parent_freeze",
+                    )
+                except Exception as error:
+                    errors.append(f"{child_id}: {error}")
+                    logger.warning("Unable to resume child %s after parent continue", child_id, exc_info=True)
+        if errors:
+            return {"session_control": state, "request_id": request_id, "errors": errors}
+
+        await self._drain_child_queue(thread_id, project_id)
+        active_turn = self.get_active_turn(thread_id, project_id)
+        if active_turn:
+            settled = await client.session_control(
+                "resume_settled", request_id=request_id, thread_id=thread_id
+            )
+            await self.broadcast_ws({
+                "type": "session_control_updated",
+                "threadId": thread_id,
+                "projectId": project_id,
+                "sessionControl": settled,
+            })
+            return {"session_control": settled, "request_id": request_id, "turn_id": active_turn}
+        try:
+            runtime = await client.get_runtime_status(thread_id)
+            if str(getattr(runtime, "phase", "idle")) in ACTIVE_CHILD_RUNTIME_PHASES:
+                turn_id = str(getattr(runtime, "turn_id", "") or "")
+                if turn_id:
+                    task = asyncio.create_task(
+                        self._wait_for_parent_child_wakeup_turn(client, thread_id, project_id, turn_id)
+                    )
+                    self.set_active_turn(thread_id, turn_id, task, project_id)
+                    settled = await client.session_control(
+                        "resume_settled", request_id=request_id, thread_id=thread_id
+                    )
+                    await self.broadcast_ws({
+                        "type": "session_control_updated",
+                        "threadId": thread_id,
+                        "projectId": project_id,
+                        "sessionControl": settled,
+                    })
+                    return {"session_control": settled, "request_id": request_id, "turn_id": turn_id}
+        except Exception:
+            logger.warning("Unable to inspect parent runtime before continue", exc_info=True)
+        control = await client.session_control("read", thread_id=thread_id)
+        if control.get("status") != "resuming" or control.get("requestId") != request_id:
+            return {"session_control": control, "request_id": request_id, "status": "superseded"}
+        submission = await client.start_turn(
+            prompt=(
+                "Continue the interrupted parent Session from its last settled point. "
+                "First inspect task_list and relevant task_read pages. Preserve reports "
+                "already received, recover every queued or parent-paused child task, "
+                "and continue the user's original objective without repeating completed work."
+            ),
+            mode="start_if_idle",
+            thread_id=thread_id,
+            effort=self.get_settings(project_id).get("reasoning_effort", "high"),
+            turn_source="session_resume",
+        )
+        turn_id = str(getattr(submission, "turn_id", None) or "")
+        if not turn_id:
+            reason = getattr(submission, "reason", None) or getattr(submission, "status", "not submitted")
+            return {"session_control": state, "request_id": request_id, "error": str(reason)}
+        task = asyncio.create_task(
+            self._wait_for_parent_child_wakeup_turn(client, thread_id, project_id, turn_id)
+        )
+        self.set_active_turn(thread_id, turn_id, task, project_id)
+        settled = await client.session_control(
+            "resume_settled", request_id=request_id, thread_id=thread_id
+        )
+        await self.broadcast_ws({
+            "type": "session_control_updated",
+            "threadId": thread_id,
+            "projectId": project_id,
+            "sessionControl": settled,
+        })
+        self._resume_child_parent_wakeup(project_id, thread_id)
+        return {"session_control": settled, "request_id": request_id, "turn_id": turn_id}
+
     async def get_background_task_target(
         self, thread_id: str, project_id: str | None = None
     ) -> tuple[MiniAgentClient, str, bool]:
@@ -619,6 +980,16 @@ class SessionManager:
                 raise RuntimeError("parent Session persistence is unavailable")
             if parent.get("session", {}).get("parent_session_id"):
                 raise RuntimeError("child task depth is limited to one level")
+            parent_client = await self.get_client_for_thread(
+                source_thread_id, resolved_project_id
+            )
+            parent_control = await parent_client.session_control(
+                "read", thread_id=source_thread_id
+            )
+            if parent_control.get("status") != "running":
+                raise RuntimeError(
+                    "parent Session is frozen or resuming; continue it before delegating"
+                )
 
             children = self.list_project_child_sessions(
                 resolved_project_id, parent_session_id
@@ -1021,6 +1392,14 @@ class SessionManager:
             parent = self._canonical_thread(source_thread_id, project_id)
             if not parent:
                 return False
+            parent_client = await self.get_client_for_thread(
+                source_thread_id, project_id
+            )
+            parent_control = await parent_client.session_control(
+                "read", thread_id=source_thread_id
+            )
+            if parent_control.get("status") not in {"running", "resuming"}:
+                return False
             subagent = self.get_settings(project_id).get("subagent") or {}
             try:
                 limit = int(
@@ -1297,10 +1676,33 @@ class SessionManager:
                     )
         for parent in sorted(parents):
             try:
-                await self._drain_child_queue(parent, project_id)
+                control = await self.session_control_state(parent, project_id)
+                status = control.get("status")
+                if status == "freezing":
+                    await self.freeze_session(
+                        parent,
+                        project_id,
+                        request_id=str(control.get("requestId") or ""),
+                    )
+                elif status == "resuming":
+                    await self.continue_session(
+                        parent,
+                        project_id,
+                        request_id=str(control.get("requestId") or ""),
+                    )
+                elif status == "running":
+                    await self._drain_child_queue(parent, project_id)
+                elif status == "frozen":
+                    # Reassert parent-owned pauses after a Gateway restart; no
+                    # queued child is drained until the user explicitly resumes.
+                    await self.freeze_session(
+                        parent,
+                        project_id,
+                        request_id=str(control.get("requestId") or ""),
+                    )
             except Exception:
                 logger.warning(
-                    "Unable to reconcile queued Child operations for %s",
+                    "Unable to reconcile child Session control for %s",
                     parent,
                     exc_info=True,
                 )
@@ -1323,6 +1725,7 @@ class SessionManager:
         request_id: str | None = None,
         operation_id: str | None = None,
         attempt: int | None = None,
+        control_source: str = "user_panel",
     ) -> dict[str, Any]:
         """Persist stop intent, then cooperatively interrupt the child Turn."""
         resolved_project_id = self.resolve_thread_project(
@@ -1354,6 +1757,7 @@ class SessionManager:
                 int(child.get("operation_attempt") or 1),
                 "cancel_queued",
                 request_id=request_id,
+                control_source=control_source,
             )
             await self._drain_child_queue(source_thread_id, resolved_project_id)
             return {**child, "status": "cancelled", "turn_id": None}
@@ -1373,6 +1777,14 @@ class SessionManager:
             "cancel_active",
             request_id=request_id,
             turn_id=turn_id,
+            control_source=control_source,
+        )
+        self.mark_turn_interrupted(child_thread_id, turn_id, resolved_project_id)
+        await self.cancel_pending_approvals(
+            project_id=resolved_project_id,
+            thread_id=child_thread_id,
+            turn_id=turn_id,
+            reason="子任务已停止，审批已失效",
         )
         try:
             await client.interrupt_turn(turn_id, child_thread_id)
@@ -1398,6 +1810,7 @@ class SessionManager:
         request_id: str | None = None,
         operation_id: str | None = None,
         attempt: int | None = None,
+        control_source: str = "user_panel",
     ) -> dict[str, Any]:
         """Request a cooperative pause and return before Turn settlement."""
         resolved_project_id = self.resolve_thread_project(
@@ -1435,6 +1848,14 @@ class SessionManager:
             "pause",
             request_id=request_id,
             turn_id=turn_id,
+            control_source=control_source,
+        )
+        self.mark_turn_interrupted(child_thread_id, turn_id, resolved_project_id)
+        await self.cancel_pending_approvals(
+            project_id=resolved_project_id,
+            thread_id=child_thread_id,
+            turn_id=turn_id,
+            reason="子任务已暂停，审批已失效",
         )
         try:
             await client.interrupt_turn(turn_id, child_thread_id)
@@ -1480,6 +1901,7 @@ class SessionManager:
             request,
             self.resolve_thread_project(source_thread_id or "default", project_id),
             control_event_id=request_id,
+            control_source="user_panel",
         )
         latest = next(
             (
@@ -1504,11 +1926,19 @@ class SessionManager:
         request_id: str | None = None,
         operation_id: str | None = None,
         attempt: int | None = None,
+        control_source: str = "user_panel",
     ) -> dict[str, Any]:
         """Queue a retry on the same child Session and durable operation."""
         source_thread_id = source_thread_id or "default"
         resolved_project_id = self.resolve_thread_project(source_thread_id, project_id)
         request_id = request_id or f"web-retry-{uuid.uuid4().hex}"
+        session_control = await self.session_control_state(
+            source_thread_id, resolved_project_id
+        )
+        if session_control.get("status") != "running":
+            raise ValueError(
+                "parent Session is frozen or resuming; continue it before retrying a child"
+            )
         parent = self._canonical_thread(source_thread_id, resolved_project_id)
         parent_session_id = (
             str(parent.get("session", {}).get("session_id") or "") if parent else ""
@@ -1606,6 +2036,7 @@ class SessionManager:
             int(child.get("operation_attempt") or 1),
             "retry",
             request_id=request_id,
+            control_source=control_source,
         )
         if result.get("status") not in {"queued", "running"}:
             raise ValueError(str(result.get("status") or "retry was not accepted"))
@@ -1636,6 +2067,38 @@ class SessionManager:
             return []
 
         children: list[dict[str, Any]] = []
+        receipt_cursors: dict[tuple[str, str, int], int] = {}
+        parent_session_path = self.session_path_for_thread(
+            source_thread_id, resolved_project_id
+        )
+        if parent_session_path is not None:
+            receipts_path = parent_session_path / "child_report_receipts.json"
+            try:
+                if receipts_path.stat().st_size <= 1024 * 1024:
+                    receipt_data = json.loads(receipts_path.read_text(encoding="utf-8"))
+                    if (
+                        receipt_data.get("version") == 1
+                        and receipt_data.get("session_id") == parent_session_id
+                        and isinstance(receipt_data.get("receipts"), list)
+                    ):
+                        for receipt in receipt_data["receipts"][:4096]:
+                            if not isinstance(receipt, dict):
+                                continue
+                            child_id = receipt.get("child_thread_id")
+                            receipt_operation = receipt.get("operation_id")
+                            attempt_value = receipt.get("attempt")
+                            cursor_value = receipt.get("cursor")
+                            if (
+                                isinstance(child_id, str)
+                                and isinstance(receipt_operation, str)
+                                and isinstance(attempt_value, int)
+                                and isinstance(cursor_value, int)
+                            ):
+                                receipt_cursors[(child_id, receipt_operation, attempt_value)] = cursor_value
+            except FileNotFoundError:
+                pass
+            except (OSError, ValueError, TypeError):
+                logger.warning("Unable to read child report receipts for %s", source_thread_id, exc_info=True)
         sessions = self.list_project_child_sessions(
             resolved_project_id, parent_session_id
         )
@@ -1658,6 +2121,21 @@ class SessionManager:
             if status == "queued":
                 active_turn_id = None
             operation_id = child_task_state.get("operation_id")
+            report_list = list(child_task_state.get("reports") or [])[-32:]
+            receipt_cursor = receipt_cursors.get(
+                (
+                    child_thread_id,
+                    str(operation_id or ""),
+                    int(child_task_state.get("attempt") or 1),
+                ),
+                0,
+            )
+            for report in report_list:
+                report["delivery_status"] = (
+                    "main_received"
+                    if int(report.get("cursor") or 0) <= receipt_cursor
+                    else "reported"
+                )
             phase = None
             runtime_recovery_required = False
             runtime_recovery_reason = None
@@ -1726,6 +2204,7 @@ class SessionManager:
                     "operation_attempt": child_task_state.get("attempt") or 1,
                     "attempt_kind": child_task_state.get("attempt_kind"),
                     "control_request_id": child_task_state.get("control_request_id"),
+                    "control_source": child_task_state.get("control_source"),
                     "control_request": child_task_state.get("control_request"),
                     "pending_follow_up": child_task_state.get("pending_follow_up"),
                     "operation_group_id": child_task_state.get("group_id"),
@@ -1763,11 +2242,11 @@ class SessionManager:
                     "lifecycle": list(child_task_state.get("lifecycle") or [])[
                         -MAX_CHILD_TASK_LIFECYCLE:
                     ],
-                    "reports": list(child_task_state.get("reports") or [])[-32:],
+                    "reports": report_list,
                     "next_cursor": child_task_state.get("next_cursor") or 0,
                     "latest_report": (
-                        (child_task_state.get("reports") or [])[-1]
-                        if child_task_state.get("reports")
+                        report_list[-1]
+                        if report_list
                         else None
                     ),
                     "started_at_ms": child_task_state.get("started_at_ms"),
@@ -3184,9 +3663,32 @@ class SessionManager:
         project_id: str,
         parent_turn_id: str | None = None,
         control_event_id: str | None = None,
+        control_source: str = "main_agent",
     ) -> dict[str, Any]:
         action = request.get("action")
         control_event_id = control_event_id or f"gateway-control-{uuid.uuid4().hex}"
+        try:
+            session_state = await self.session_control_state(
+                parent_thread_id, project_id
+            )
+        except Exception:
+            logger.warning("Unable to check parent Session control before child action", exc_info=True)
+            session_state = {"status": "unknown"}
+        if session_state.get("status") != "running" and (
+            control_source == "main_agent" or action != "cancel"
+        ):
+            outcome = {
+                "action": action,
+                "outcome": "skipped",
+                "error_reasons": {
+                    str(request.get("child_thread_id") or ""):
+                        "parent Session is frozen; continue it before this action"
+                },
+            }
+            self._queue_child_control_outcome(
+                parent_thread_id, project_id, control_event_id, outcome
+            )
+            return outcome
         try:
             children = await self.list_child_tasks(parent_thread_id, project_id)
         except Exception:
@@ -3481,6 +3983,7 @@ class SessionManager:
                         request_id=control_event_id,
                         operation_id=operation_id,
                         attempt=int(child.get("operation_attempt") or 1),
+                        control_source=control_source,
                     )
                     applied = True
                 elif action == "resume":
@@ -3497,6 +4000,7 @@ class SessionManager:
                         int(child.get("operation_attempt") or 1),
                         "resume",
                         request_id=control_event_id,
+                        control_source=control_source,
                     )
                     applied = True
                     should_drain_child_queue = True
@@ -3620,6 +4124,7 @@ class SessionManager:
                             request_id=control_event_id,
                             operation_id=operation_id,
                             attempt=int(child.get("operation_attempt") or 1),
+                            control_source=control_source,
                         )
                     else:
                         skipped_ids.append(child_thread_id)
@@ -3637,6 +4142,7 @@ class SessionManager:
                         request_id=control_event_id,
                         operation_id=operation_id,
                         attempt=int(child.get("operation_attempt") or 1),
+                        control_source=control_source,
                     )
                     applied = True
                 elif action == "cancel_group":
@@ -3656,6 +4162,7 @@ class SessionManager:
                             request_id=control_event_id,
                             operation_id=operation_id,
                             attempt=int(child.get("operation_attempt") or 1),
+                            control_source=control_source,
                         )
                     else:
                         skipped_ids.append(child_thread_id)
@@ -4143,6 +4650,13 @@ class SessionManager:
             await start_lock.acquire()
             start_lock_acquired = True
             if self.get_active_turn(parent_thread_id, project_id):
+                self._child_wake_deferred.add(key)
+                return
+
+            session_control = await self.session_control_state(
+                parent_thread_id, project_id
+            )
+            if session_control.get("status") != "running":
                 self._child_wake_deferred.add(key)
                 return
 

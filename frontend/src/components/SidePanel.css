@@ -321,6 +321,7 @@
 .child-session-latest-report time { color: var(--text-muted); font: 9px var(--font-mono); }
 .child-session-final-error { padding-top: 6px; border-top: 1px solid var(--status-failed-border); color: var(--status-failed); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
 .child-session-view-error { flex: 0 0 auto; padding: 8px 10px; border: 1px solid var(--status-failed-border); border-radius: 6px; background: var(--status-failed-soft); color: var(--status-failed); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.child-session-view-warning { flex: 0 0 auto; padding: 7px 10px; border: 1px solid var(--status-approval-border); border-radius: 6px; background: var(--status-approval-soft); color: var(--text-secondary); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
 .child-session-load-older { flex: 0 0 auto; align-self: center; padding: 5px 9px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-surface); color: var(--text-secondary); font-size: 10px; cursor: pointer; }
 .child-session-load-older:hover:not(:disabled) { border-color: var(--border-focus); color: var(--text-primary); }
 .child-session-load-older:disabled { opacity: .6; cursor: wait; }

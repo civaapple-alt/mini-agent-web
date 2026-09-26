@@ -4,10 +4,12 @@ import { api } from '../api';
 import MessageItem from './MessageItem';
 import {
   filterEmptyMessages,
+  aggregateStreamEvent,
   orderMessagesByTurnHistory,
   restorePersistedTurnPresentation,
 } from '../utils/messageState';
 import { collectInputMessages } from '../utils/inputTrace';
+import { subscribeChildRuntimeEvents } from '../utils/childRuntimeEvents';
 import {
   childTaskStatusLabels,
   formatChildTaskDuration,
@@ -19,6 +21,9 @@ import {
 
 const ITEM_PAGE_SIZE = 128;
 const REFRESH_INTERVAL_MS = 3000;
+const EVENT_PAGE_SIZE = 128;
+const MAX_EVENT_PAGES_PER_REFRESH = 4;
+const MAX_LIVE_EVENTS = 512;
 const ACTIVE_CHILD_STATUSES = new Set([
   'running',
   'in_progress',
@@ -45,6 +50,47 @@ function projectChildMessages(entries, child, projectId) {
   return filterEmptyMessages(orderMessagesByTurnHistory(hydrated, entries));
 }
 
+function eventTurnId(event) {
+  return event?.turnId || event?.turn_id || null;
+}
+
+function eventSequence(event) {
+  const value = Number(event?.sequence);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function projectLiveChildMessages(messages, events, turnId, child, includeOperationPrompt) {
+  if (!turnId) return messages;
+  const turnKey = String(turnId);
+  if (messages.some((message) => (
+    message.role === 'assistant' && String(message.turnId || '') === turnKey
+  ))) return messages;
+  const turnEvents = events.filter((event) => String(eventTurnId(event) || '') === turnKey);
+  const prompt = [...turnEvents].reverse().find((event) => (
+    event.event?.type === 'turn_started' && typeof event.event.prompt === 'string'
+  ))?.event.prompt || (includeOperationPrompt
+    ? child.operation_prompt || child.child_task_state?.prompt || ''
+    : '');
+  let projected = messages;
+
+  if (prompt && !projected.some((message) => (
+    message.role === 'user' && String(message.turnId || '') === turnKey
+  ))) {
+    projected = [...projected, {
+      id: `child-live-input-${turnKey}`,
+      role: 'user',
+      text: prompt,
+      turnId: turnId,
+      historyOrder: Number.MAX_SAFE_INTEGER,
+    }];
+  }
+
+  for (const event of turnEvents) {
+    projected = aggregateStreamEvent(projected, event);
+  }
+  return filterEmptyMessages(projected);
+}
+
 function formatElapsedSince(timestamp) {
   if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
   return formatChildTaskDuration(Math.max(0, Date.now() - timestamp));
@@ -61,8 +107,11 @@ function getTaskResultText(result) {
 }
 
 function isRunning(checkpoint, child) {
-  return Boolean(checkpoint?.turn_active ?? checkpoint?.session?.turn_active)
-    || ACTIVE_CHILD_STATUSES.has(String(child.status || '').toLowerCase());
+  const status = String(child.status || '').toLowerCase();
+  if (ACTIVE_CHILD_STATUSES.has(status)) return true;
+  if (QUEUED_CHILD_STATUSES.has(status)
+    || ['completed', 'failed', 'cancelled', 'paused', 'step_limit'].includes(status)) return false;
+  return Boolean(checkpoint?.turn_active || checkpoint?.session?.turn_active);
 }
 
 function groupMessagesByTurn(messages) {
@@ -96,6 +145,9 @@ export default function ChildSessionViewer({
   const [olderCursor, setOlderCursor] = useState(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
+  const [liveEvents, setLiveEvents] = useState([]);
+  const [replayHasGap, setReplayHasGap] = useState(false);
+  const [replayError, setReplayError] = useState(null);
   const requestRef = useRef(null);
   const checkpointRef = useRef(null);
   const mountedRef = useRef(false);
@@ -105,6 +157,55 @@ export default function ChildSessionViewer({
   const latestKeysRef = useRef(null);
   const olderCursorRef = useRef(null);
   const olderScrollPositionRef = useRef(null);
+  const liveEventsRef = useRef(new Map());
+  const replayCursorRef = useRef(0);
+
+  const mergeLiveEvents = useCallback((incoming) => {
+    let changed = false;
+    for (const event of incoming || []) {
+      const sequence = eventSequence(event);
+      if (sequence === null) continue;
+      const normalized = event.type === 'event' ? event : { type: 'event', ...event };
+      if (!liveEventsRef.current.has(sequence)) {
+        liveEventsRef.current.set(sequence, normalized);
+        changed = true;
+      }
+    }
+    if (!changed) return;
+
+    const sequences = [...liveEventsRef.current.keys()].sort((left, right) => left - right);
+    while (sequences.length > MAX_LIVE_EVENTS) {
+      liveEventsRef.current.delete(sequences.shift());
+    }
+    setLiveEvents([...liveEventsRef.current.values()].sort(
+      (left, right) => eventSequence(left) - eventSequence(right),
+    ));
+  }, []);
+
+  const replayRuntimeEvents = useCallback(async (signal) => {
+    let cursor = replayCursorRef.current;
+    const replayed = [];
+    for (let pageIndex = 0; pageIndex < MAX_EVENT_PAGES_PER_REFRESH; pageIndex += 1) {
+      const page = await api.replayThreadEvents(
+        child.child_thread_id,
+        cursor,
+        EVENT_PAGE_SIZE,
+        { projectId: childProjectId, signal },
+      );
+      if (signal?.aborted) return;
+      if (page.has_gap || page.hasGap) setReplayHasGap(true);
+      const data = Array.isArray(page.data) ? page.data : [];
+      replayed.push(...data);
+      const nextCursor = Number(page.next_cursor ?? page.nextCursor);
+      if (!Number.isSafeInteger(nextCursor) || nextCursor <= cursor) break;
+      cursor = nextCursor;
+      if (data.length < EVENT_PAGE_SIZE) break;
+    }
+    if (signal?.aborted || !mountedRef.current) return;
+    replayCursorRef.current = Math.max(replayCursorRef.current, cursor);
+    mergeLiveEvents(replayed);
+    setReplayError(null);
+  }, [child.child_thread_id, childProjectId, mergeLiveEvents]);
 
   const refresh = useCallback(async ({ quiet = false } = {}) => {
     if (requestRef.current) return;
@@ -144,6 +245,14 @@ export default function ChildSessionViewer({
       setOlderCursor(olderCursorRef.current);
       setError(null);
       setLastUpdatedAt(Date.now());
+      try {
+        await replayRuntimeEvents(controller.signal);
+      } catch (replayFailure) {
+        if (!controller.signal.aborted) {
+          setReplayError(replayFailure.message || '实时事件回放失败');
+          console.debug('Failed to replay child runtime events:', replayFailure);
+        }
+      }
     } catch (requestError) {
       if (!mountedRef.current || requestError?.name === 'AbortError') return;
       setError(requestError.message || '读取子 Session 失败');
@@ -154,26 +263,37 @@ export default function ChildSessionViewer({
       }
       if (requestRef.current === controller) requestRef.current = null;
     }
-  }, [child.child_thread_id, childProjectId]);
+  }, [child.child_thread_id, childProjectId, replayRuntimeEvents]);
 
   useEffect(() => {
     mountedRef.current = true;
     entriesRef.current = [];
+    liveEventsRef.current = new Map();
+    replayCursorRef.current = 0;
     latestKeysRef.current = null;
     olderCursorRef.current = null;
     checkpointRef.current = null;
     setCheckpoint(null);
     setEntries([]);
+    setLiveEvents([]);
+    setReplayHasGap(false);
+    setReplayError(null);
     setOlderCursor(null);
     setError(null);
     setLoading(true);
+    const unsubscribe = subscribeChildRuntimeEvents(
+      childProjectId,
+      child.child_thread_id,
+      (event) => mergeLiveEvents([event]),
+    );
     void refresh();
     return () => {
+      unsubscribe();
       mountedRef.current = false;
       requestRef.current?.abort();
       requestRef.current = null;
     };
-  }, [child.child_thread_id, childProjectId, refresh]);
+  }, [child.child_thread_id, childProjectId, mergeLiveEvents, refresh]);
 
   useEffect(() => {
     if (!isRunning(checkpoint, child)) return undefined;
@@ -193,11 +313,22 @@ export default function ChildSessionViewer({
       return;
     }
     if (pinnedToBottomRef.current) transcript.scrollTop = transcript.scrollHeight;
-  }, [entries, checkpoint]);
+  }, [entries, checkpoint, liveEvents]);
 
-  const messages = useMemo(
+  const persistedMessages = useMemo(
     () => projectChildMessages(entries, child, childProjectId),
     [entries, child, childProjectId],
+  );
+  const activeTurnId = checkpoint?.active_turn_id
+    || checkpoint?.session?.active_turn_id
+    || child.current_turn_id
+    || child.turn_id
+    || [...liveEvents].reverse().map(eventTurnId).find(Boolean)
+    || null;
+  const running = isRunning(checkpoint, child);
+  const messages = useMemo(
+    () => projectLiveChildMessages(persistedMessages, liveEvents, activeTurnId, child, running),
+    [persistedMessages, liveEvents, activeTurnId, child, running],
   );
   const turnGroups = useMemo(() => groupMessagesByTurn(messages), [messages]);
   const lastAssistantIndexByTurn = useMemo(() => {
@@ -209,14 +340,8 @@ export default function ChildSessionViewer({
     });
     return indexByTurn;
   }, [messages]);
-  const running = isRunning(checkpoint, child);
   const status = getChildTaskStatus(child);
   const queued = QUEUED_CHILD_STATUSES.has(status);
-  const activeTurnId = checkpoint?.active_turn_id
-    || checkpoint?.session?.active_turn_id
-    || child.current_turn_id
-    || child.turn_id
-    || null;
   const phase = getChildTaskPhaseLabel(child);
   const failure = checkpoint?.last_turn_error || checkpoint?.session?.last_turn_error;
   const failed = !running && (['failed', 'step_limit'].includes(status) || ['failed', 'error'].includes(String(
@@ -342,6 +467,16 @@ export default function ChildSessionViewer({
       </section>
 
       {error && <div className="child-session-view-error" role="alert">{error}</div>}
+      {replayHasGap && (
+        <div className="child-session-view-warning" role="status">
+          实时事件缓存有缺口，当前显示可回放活动；Turn 结算后会由持久化记录补齐。
+        </div>
+      )}
+      {replayError && (
+        <div className="child-session-view-warning" role="status">
+          实时活动回放暂不可用，正在自动重试；持久化记录仍会继续刷新。
+        </div>
+      )}
       {olderCursor && (
         <button
           type="button"
@@ -365,8 +500,8 @@ export default function ChildSessionViewer({
           <div className="child-session-empty">正在加载子代理消息流…</div>
         ) : messages.length === 0 ? (
           <div className="child-session-empty">
-            <strong>暂无子代理活动</strong>
-            <span>此处只显示子 Session 自己持久化的消息与工具活动。早期任务如果没有本地活动记录，不会回填父会话 checkpoint 内容。</span>
+            <strong>{running ? '正在等待子代理的首条活动' : '暂无子代理活动'}</strong>
+            <span>这里只显示子 Session 自己的活动，不会回填父会话 checkpoint 内容；父 checkpoint 只作为模型上下文。</span>
           </div>
         ) : (
           <div className="child-session-messages">

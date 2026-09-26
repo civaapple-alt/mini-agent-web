@@ -54,6 +54,7 @@ import {
   isInternalCompactionMessage,
 } from './utils/inputTrace.js';
 import { startImplementationTurn } from './utils/planWorkflow.js';
+import { publishChildRuntimeEvent } from './utils/childRuntimeEvents.js';
 import './App.css';
 
 function readThreadMeta(thread, fallbackTitle = null) {
@@ -1212,13 +1213,20 @@ export default function App() {
     if (!data) return;
 
     const eventThread = data.threadId || data.thread_id || data.data?.threadId || data.data?.thread_id;
+    const eventProject = data.projectId
+      || data.project_id
+      || data.data?.projectId
+      || data.data?.project_id
+      || currentThreadProjectRef.current;
+    if (data.type === 'event') {
+      publishChildRuntimeEvent({ ...data, projectId: eventProject });
+    }
     if (!hasActiveThreadRef.current) {
       if (data.type === 'event' && ['turn_finished', 'run_finished', 'run_failed'].includes(data.event?.type)) {
         loadThreads();
       }
       return;
     }
-    const eventProject = data.projectId || data.project_id || data.data?.projectId || data.data?.project_id || currentThreadProjectRef.current;
     const eventKey = scopedThreadKey(eventThread || currentThreadRef.current, eventProject);
     const acceptsEvent = shouldAcceptEventForThread(
       data,

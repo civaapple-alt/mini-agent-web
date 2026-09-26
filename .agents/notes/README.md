@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [子 Session 详情实时活动与事件回放](implemented/bug-fix/2026-09-27-child-session-live-activity.zh.md)
 - [主会话冻结与子任务报告收讫](implemented/architecture/2026-09-27-session-wide-freeze-and-child-report-delivery.zh.md)
 - [子任务 attempt 与 Runtime 快照对账](implemented/bug-fix/2026-09-26-child-attempt-runtime-reconciliation.zh.md)
 - [子任务恢复按父 Session 隔离](implemented/bug-fix/2026-09-26-child-task-recovery-session-scope.zh.md)

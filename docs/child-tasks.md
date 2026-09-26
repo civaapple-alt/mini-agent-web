@@ -9,16 +9,22 @@
 `child_operation_updated` 事件用于及时刷新投影，不是另一份状态账本。刷新或重新打开父会话后，
 消息流和“子智能体”页会从同一份 operation/report 投影恢复状态。
 
-子代理可用 `task_report` 报告有界进展。父代理通过带游标的 `task_read` 读取报告，并可用
-`task_control` 编辑或取消排队任务、引导或取消运行任务、重试失败任务、取消顺序组；需要新增方向时
-继续使用 `delegate_task`。完整工具活动和 transcript 留在各自子 Session，不复制到父消息流。
+子代理可用 `task_report` 报告有界进展。父代理通过带游标的 `task_read` 读取报告，使用有界分页
+`task_list` 查询所有子任务摘要，并可用 `task_control` 修改或停止排队任务、steer 或停止运行任务、
+暂停并继续任务、重试失败或取消的任务、排队一条后续指令、取消顺序组；需要新增方向时继续使用
+`delegate_task`。每项控制都携带 `child_thread_id`、`operation_id` 和预期 `attempt`，Gateway 会拒绝
+已经过期的 attempt。完整工具活动和 transcript 留在各自子 Session，不复制到父消息流。
 
 父代理可在子任务运行期间多次 steer 同一个子 Session。父代理提交 `task_control.assign` 后，Gateway
 按持久状态自动路由：运行中或等待审批时，使用当前 Turn 的 steer；报告后仍在运行的任务也继续 steer
 当前 Turn。子任务成功完成后，assign 会在原 child Session 上创建新的 follow-up Turn，供原子代理处理评审意见，
-不创建替代 Session。请求最多 32 KiB，并用稳定 request ID 去重。
+不创建替代 Session。活动任务最多保留一条待执行后续指令；达到上限会明确拒绝，不覆盖已排队指令。
+当前 attempt 成功后，后续指令以同一 operation 的新 attempt 启动；若当前 attempt 失败，指令保留为受阻状态，
+待用户或父代理重试成功后再启动。取消当前任务时同时取消待执行后续指令。请求最多 32 KiB，并用稳定 request ID 去重。
 若 `turn/steer` 返回 `status: "pending"`，Gateway 会将路由标为 `steer_pending` 并保留服务端原因。
 这表示请求结果尚未确认，指令可能已提交，也可能未提交。Gateway 不会自动重发该请求 ID；父代理应先刷新权威子任务和 Turn 状态，再决定后续操作。
+
+暂停通过协作式中断当前 Turn 请求。面板先显示“暂停中”；只有 App Server 确认 Turn 已结算后，任务才变为“已暂停”并释放并发槽位。继续操作复用原 child Session、operation 和 attempt，不计为重试。停止活动任务也会先显示“停止中”，并在结算后释放槽位。Gateway 重启后会按持久 control request 和 Turn 状态恢复这两种处理中状态。
 
 初次执行、失败重试和完成后的 follow-up 共用稳定的 child Thread、Session 与 operation ID；每轮 attempt 带有
 `initial`、`retry` 或 `follow_up` 类型。`retry` 仍只接受失败、取消或步数受限的任务，并沿用该 attempt 保存的
@@ -51,6 +57,11 @@ Gateway 通过同一 Session 的启动锁串行化用户 Turn 与自动续行，
 列表优先显示需要处理的审批、失败、未开始任务和恢复异常，然后显示运行中及排队任务；顺序任务按组内步骤排列。
 完成和取消项默认收起并分页。选择任务后，详情仍在该页中打开，
 可以返回列表。存在对应子 Session 时，详情显示只读消息流，不切换主会话或运行状态页。
+
+运行面板与主线程工具调用共享 Gateway 控制执行器，面板不维护第二份子任务账本。运行中提供停止、暂停、
+steer 和“排队后续”；排队中提供修改提示词和停止；暂停后提供继续与停止；失败或取消后可在同一 Session 重试。
+提交后显示服务端确认结果。处理中状态由持久 operation/control request 投影恢复；请求过期、启动拒绝或后续队列已满时，
+面板显示服务端原因，保留当前权威状态并要求刷新或重新选择操作。
 
 详情抽屉可吸附在主会话右侧，也可作为覆盖浮层打开。偏好会保存在当前浏览器；窗口宽度低于
 1200 像素时，抽屉使用浮层布局以保留可读的主消息流。

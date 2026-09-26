@@ -6,6 +6,8 @@ export const childTaskStatusLabels = {
   in_progress: '运行中',
   awaiting_approval: '等待审批',
   cancelling: '正在取消',
+  pausing: '暂停处理中',
+  paused: '已暂停',
   idle: '空闲',
   not_started: '未开始',
   completed: '已完成',
@@ -23,6 +25,8 @@ export const childTaskLifecycleLabels = {
   in_progress: '已开始',
   awaiting_approval: '等待审批',
   cancelling: '正在取消',
+  pausing: '暂停处理中',
+  paused: '已暂停',
   completed: '已完成',
   failed: '失败',
   cancelled: '已取消',
@@ -30,8 +34,8 @@ export const childTaskLifecycleLabels = {
 };
 
 const collapsedChildTaskStatuses = new Set(['completed', 'cancelled']);
-const runningChildTaskStatuses = new Set(['running', 'in_progress', 'cancelling']);
-const attentionChildTaskStatuses = new Set(['awaiting_approval', 'failed', 'step_limit', 'not_started']);
+const runningChildTaskStatuses = new Set(['running', 'in_progress', 'pausing', 'cancelling']);
+const attentionChildTaskStatuses = new Set(['awaiting_approval', 'paused', 'failed', 'step_limit', 'not_started']);
 
 function childTaskPriority(task) {
   const status = getChildTaskStatus(task);

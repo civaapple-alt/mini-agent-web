@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any
@@ -591,7 +592,13 @@ class SessionManager:
                 and (
                     child.get("turn_active")
                     or (child.get("child_task_state") or {}).get("status")
-                    in {"running", "awaiting_approval", "in_progress"}
+                    in {
+                        "running",
+                        "awaiting_approval",
+                        "in_progress",
+                        "pausing",
+                        "cancelling",
+                    }
                     or (
                         resolved_project_id,
                         str(child.get("thread_id") or ""),
@@ -681,7 +688,13 @@ class SessionManager:
             same_group_active = any(
                 child.get("turn_active")
                 or (child.get("child_task_state") or {}).get("status")
-                in {"running", "awaiting_approval", "in_progress"}
+                in {
+                    "running",
+                    "awaiting_approval",
+                    "in_progress",
+                    "pausing",
+                    "cancelling",
+                }
                 or (
                     resolved_project_id,
                     str(child.get("thread_id") or ""),
@@ -775,6 +788,24 @@ class SessionManager:
             if not turn_id and isinstance(submission_reason, str):
                 result["operation_error"] = submission_reason[:2048]
             if not turn_id:
+                await self._persist_child_start_failure(
+                    child_thread_id=new_thread_id,
+                    parent_thread_id=source_thread_id,
+                    operation_id=operation_id,
+                    attempt=operation_attempt,
+                    project_id=resolved_project_id,
+                    error=(
+                        submission_reason
+                        if isinstance(submission_reason, str)
+                        else "App Server did not return a Turn ID"
+                    ),
+                )
+                try:
+                    await self._broadcast_child_operation(result)
+                except Exception:
+                    logger.debug(
+                        "Unable to publish rejected child start", exc_info=True
+                    )
                 return result
 
             task = asyncio.create_task(
@@ -827,6 +858,7 @@ class SessionManager:
                         "failed",
                         "cancelled",
                         "step_limit",
+                        "paused",
                     }:
                         self._queue_child_parent_wakeup(
                             parent_thread_id,
@@ -848,9 +880,7 @@ class SessionManager:
             try:
                 await self._drain_child_queue(parent_thread_id or thread_id, project_id)
             except Exception:
-                logger.exception(
-                    "Unable to drain queued child tasks for %s", thread_id
-                )
+                logger.exception("Unable to drain queued child tasks for %s", thread_id)
 
     async def _wait_for_turn_until_settled(
         self, client: MiniAgentClient, turn_id: str, owner: str
@@ -876,7 +906,38 @@ class SessionManager:
         if should_retry:
             self._schedule_child_queue_retry(source_thread_id, project_id)
 
-    def _schedule_child_queue_retry(self, source_thread_id: str, project_id: str) -> None:
+    async def _persist_child_start_failure(
+        self,
+        *,
+        child_thread_id: str,
+        parent_thread_id: str,
+        operation_id: str,
+        attempt: int,
+        project_id: str,
+        error: str,
+    ) -> None:
+        """Keep a rejected start visible on its still-queued operation."""
+        try:
+            client = await self.get_client_for_thread(child_thread_id, project_id)
+            await client.child_task_action(
+                child_thread_id,
+                parent_thread_id,
+                operation_id,
+                attempt,
+                "start_failure",
+                request_id=f"child-start:{operation_id}:{attempt}"[:192],
+                error=(error.strip() or "App Server rejected the child start")[:2048],
+            )
+        except Exception:
+            logger.warning(
+                "Unable to persist rejected Child start for %s",
+                child_thread_id,
+                exc_info=True,
+            )
+
+    def _schedule_child_queue_retry(
+        self, source_thread_id: str, project_id: str
+    ) -> None:
         """Coalesce bounded retries for one parent's durable child queue."""
         key = (project_id, source_thread_id)
         current = self._child_queue_retry_jobs.get(key)
@@ -927,7 +988,13 @@ class SessionManager:
                 child
                 for child in children
                 if child.get("status")
-                in {"running", "awaiting_approval", "in_progress"}
+                in {
+                    "running",
+                    "awaiting_approval",
+                    "in_progress",
+                    "pausing",
+                    "cancelling",
+                }
                 and child.get("turn_id")
             ]
             capacity = limit - len(active)
@@ -976,7 +1043,13 @@ class SessionManager:
                         ]
                         if any(
                             item.get("status")
-                            in {"running", "awaiting_approval", "in_progress"}
+                            in {
+                                "running",
+                                "awaiting_approval",
+                                "in_progress",
+                                "pausing",
+                                "cancelling",
+                            }
                             or (item.get("status") == "queued" and item.get("turn_id"))
                             for item in siblings
                         ):
@@ -1031,6 +1104,22 @@ class SessionManager:
                     )
                     started_turn_id = str(getattr(submission, "turn_id", None) or "")
                     if not started_turn_id:
+                        reason = getattr(submission, "reason", None)
+                        await self._persist_child_start_failure(
+                            child_thread_id=child_thread_id,
+                            parent_thread_id=source_thread_id,
+                            operation_id=str(candidate.get("operation_id") or ""),
+                            attempt=int(candidate.get("operation_attempt") or 1),
+                            project_id=project_id,
+                            error=(
+                                reason
+                                if isinstance(reason, str)
+                                else "App Server did not return a Turn ID"
+                            ),
+                        )
+                        await self._broadcast_child_operation(
+                            {**candidate, "operation_error": reason, "status": "queued"}
+                        )
                         return True
                     task = asyncio.create_task(
                         self._wait_for_child_turn(
@@ -1052,7 +1141,22 @@ class SessionManager:
                     )
                     queued.remove(candidate)
                     capacity -= 1
-                except Exception:
+                except Exception as error:
+                    await self._persist_child_start_failure(
+                        child_thread_id=child_thread_id,
+                        parent_thread_id=source_thread_id,
+                        operation_id=str(candidate.get("operation_id") or ""),
+                        attempt=int(candidate.get("operation_attempt") or 1),
+                        project_id=project_id,
+                        error=str(error),
+                    )
+                    await self._broadcast_child_operation(
+                        {
+                            **candidate,
+                            "operation_error": str(error)[:512],
+                            "status": "queued",
+                        }
+                    )
                     logger.exception("Unable to start queued child %s", child_thread_id)
                     return True
             return False
@@ -1084,7 +1188,14 @@ class SessionManager:
                 continue
             parents.add(parent)
             if (
-                status in {"running", "awaiting_approval", "in_progress"}
+                status
+                in {
+                    "running",
+                    "awaiting_approval",
+                    "in_progress",
+                    "pausing",
+                    "cancelling",
+                }
                 and turn_id
                 and (project_id, thread_id) not in self._active_turns_by_project
             ):
@@ -1096,6 +1207,15 @@ class SessionManager:
                         )
                     )
                     self.set_active_turn(thread_id, turn_id, task, project_id)
+                    if status in {"pausing", "cancelling"}:
+                        try:
+                            await client.interrupt_turn(turn_id, thread_id)
+                        except Exception:
+                            logger.warning(
+                                "Unable to replay persisted Child %s interruption",
+                                thread_id,
+                                exc_info=True,
+                            )
                 except Exception:
                     logger.warning(
                         "Unable to reattach Child %s during recovery",
@@ -1122,9 +1242,16 @@ class SessionManager:
         asyncio.create_task(recover())
 
     async def cancel_child_task(
-        self, source_thread_id: str, child_thread_id: str, project_id: str | None = None
+        self,
+        source_thread_id: str,
+        child_thread_id: str,
+        project_id: str | None = None,
+        *,
+        request_id: str | None = None,
+        operation_id: str | None = None,
+        attempt: int | None = None,
     ) -> dict[str, Any]:
-        """Request cooperative cancellation through the child App Server."""
+        """Persist stop intent, then cooperatively interrupt the child Turn."""
         resolved_project_id = self.resolve_thread_project(
             source_thread_id or "default", project_id
         )
@@ -1138,28 +1265,177 @@ class SessionManager:
         )
         if child is None:
             raise KeyError(f"Child Thread '{child_thread_id}' not found")
+        if operation_id and child.get("operation_id") != operation_id:
+            raise ValueError("child task operation changed; refresh before retrying")
+        if attempt is not None and int(child.get("operation_attempt") or 1) != attempt:
+            raise ValueError("child task attempt changed; refresh before retrying")
+        request_id = request_id or f"web-stop-{uuid.uuid4().hex}"
         turn_id = str(child.get("turn_id") or "")
-        if not turn_id or child.get("status") not in {
-            "queued",
+        status = child.get("status")
+        client = await self.get_client_for_thread(child_thread_id, resolved_project_id)
+        if status == "queued" or status == "paused":
+            await client.child_task_action(
+                child_thread_id,
+                source_thread_id,
+                str(child.get("operation_id") or f"child:{child_thread_id}"),
+                int(child.get("operation_attempt") or 1),
+                "cancel_queued",
+                request_id=request_id,
+            )
+            await self._drain_child_queue(source_thread_id, resolved_project_id)
+            return {**child, "status": "cancelled", "turn_id": None}
+        if not turn_id or status not in {
             "running",
             "awaiting_approval",
             "in_progress",
+            "pausing",
+            "cancelling",
         }:
             raise ValueError("child task is not active")
-        client = await self.get_client_for_thread(child_thread_id, resolved_project_id)
-        await client.interrupt_turn(turn_id, child_thread_id)
+        await client.child_task_action(
+            child_thread_id,
+            source_thread_id,
+            str(child.get("operation_id") or f"child:{child_thread_id}"),
+            int(child.get("operation_attempt") or 1),
+            "cancel_active",
+            request_id=request_id,
+            turn_id=turn_id,
+        )
+        try:
+            await client.interrupt_turn(turn_id, child_thread_id)
+        except Exception:
+            logger.warning(
+                "Stop for Child %s was persisted but interrupt submission failed",
+                child_thread_id,
+                exc_info=True,
+            )
         return {
             **child,
             "status": "cancelling",
             "turn_id": turn_id,
+            "control_request_id": request_id,
+        }
+
+    async def pause_child_task(
+        self,
+        source_thread_id: str,
+        child_thread_id: str,
+        project_id: str | None = None,
+        *,
+        request_id: str | None = None,
+        operation_id: str | None = None,
+        attempt: int | None = None,
+    ) -> dict[str, Any]:
+        """Request a cooperative pause and return before Turn settlement."""
+        resolved_project_id = self.resolve_thread_project(
+            source_thread_id or "default", project_id
+        )
+        children = await self.list_child_tasks(source_thread_id, resolved_project_id)
+        child = next(
+            (
+                item
+                for item in children
+                if item.get("child_thread_id") == child_thread_id
+            ),
+            None,
+        )
+        if child is None:
+            raise KeyError(f"Child Thread '{child_thread_id}' not found")
+        if operation_id and child.get("operation_id") != operation_id:
+            raise ValueError("child task operation changed; refresh before retrying")
+        if attempt is not None and int(child.get("operation_attempt") or 1) != attempt:
+            raise ValueError("child task attempt changed; refresh before retrying")
+        turn_id = str(child.get("turn_id") or "")
+        if not turn_id or child.get("status") not in {
+            "running",
+            "awaiting_approval",
+            "in_progress",
+        }:
+            raise ValueError("child task is not running")
+        request_id = request_id or f"web-pause-{uuid.uuid4().hex}"
+        client = await self.get_client_for_thread(child_thread_id, resolved_project_id)
+        await client.child_task_action(
+            child_thread_id,
+            source_thread_id,
+            str(child.get("operation_id") or f"child:{child_thread_id}"),
+            int(child.get("operation_attempt") or 1),
+            "pause",
+            request_id=request_id,
+            turn_id=turn_id,
+        )
+        try:
+            await client.interrupt_turn(turn_id, child_thread_id)
+        except Exception:
+            logger.warning(
+                "Pause for Child %s was persisted but interrupt submission failed",
+                child_thread_id,
+                exc_info=True,
+            )
+        return {
+            **child,
+            "status": "pausing",
+            "turn_id": turn_id,
+            "control_request_id": request_id,
+        }
+
+    async def control_child_task(
+        self,
+        source_thread_id: str,
+        child_thread_id: str,
+        action: str,
+        operation_id: str,
+        attempt: int,
+        request_id: str,
+        project_id: str | None = None,
+        *,
+        prompt: str | None = None,
+        text: str | None = None,
+    ) -> dict[str, Any]:
+        """Use the same Gateway executor as parent-agent task_control."""
+        request: dict[str, Any] = {
+            "action": action,
+            "child_thread_id": child_thread_id,
+            "operation_id": operation_id,
+            "attempt": attempt,
+        }
+        if prompt is not None:
+            request["prompt"] = prompt
+        if text is not None:
+            request["text"] = text
+        outcome = await self._apply_child_control(
+            source_thread_id or "default",
+            request,
+            self.resolve_thread_project(source_thread_id or "default", project_id),
+            control_event_id=request_id,
+        )
+        latest = next(
+            (
+                item
+                for item in await self.list_child_tasks(source_thread_id, project_id)
+                if item.get("child_thread_id") == child_thread_id
+            ),
+            None,
+        )
+        return {
+            "request_id": request_id,
+            "outcome": outcome,
+            "child": latest,
         }
 
     async def retry_child_task(
-        self, source_thread_id: str, child_thread_id: str, project_id: str | None = None
+        self,
+        source_thread_id: str,
+        child_thread_id: str,
+        project_id: str | None = None,
+        *,
+        request_id: str | None = None,
+        operation_id: str | None = None,
+        attempt: int | None = None,
     ) -> dict[str, Any]:
-        """Resume a failed/cancelled child Session with a bounded new attempt."""
+        """Queue a retry on the same child Session and durable operation."""
         source_thread_id = source_thread_id or "default"
         resolved_project_id = self.resolve_thread_project(source_thread_id, project_id)
+        request_id = request_id or f"web-retry-{uuid.uuid4().hex}"
         unmaterialized = next(
             (
                 (key, receipt)
@@ -1176,12 +1452,25 @@ class SessionManager:
         ):
             receipt_key, receipt = unmaterialized
             async with self._child_task_lock:
+                if receipt.get("last_retry_request_id") == request_id:
+                    return {
+                        "parent_thread_id": source_thread_id,
+                        "child_thread_id": child_thread_id,
+                        "operation_id": receipt.get("operation_id"),
+                        "operation_attempt": _nonnegative_int(
+                            receipt.get("operation_attempt")
+                        ),
+                        "status": str(receipt.get("status") or "pending"),
+                        "request_id": request_id,
+                        "child_session_available": False,
+                    }
                 if receipt.get("status") != "failed":
                     raise ValueError(
                         "unmaterialized child failure is no longer retryable"
                     )
                 attempt = _nonnegative_int(receipt.get("operation_attempt")) + 1
                 receipt["operation_attempt"] = attempt
+                receipt["last_retry_request_id"] = request_id
                 receipt["timestamp_ms"] = int(time.time() * 1000)
                 receipt["status"] = "pending"
                 receipt.pop("failed_at_ms", None)
@@ -1215,74 +1504,44 @@ class SessionManager:
                     "child_session_available": False,
                 },
             )
-        async with self._child_task_lock:
-            child = next(
-                (
-                    item
-                    for item in await self.list_child_tasks(
-                        source_thread_id, project_id
-                    )
-                    if item.get("child_thread_id") == child_thread_id
-                ),
-                None,
-            )
-            if child is None:
-                raise KeyError(f"Child Thread '{child_thread_id}' not found")
-            if child.get("status") not in {"failed", "cancelled", "step_limit"}:
-                raise ValueError("only a settled failed child task can be retried")
-            prompt = str(child.get("last_turn_prompt") or "").strip()
-            if not prompt:
-                raise ValueError("child task prompt is unavailable for retry")
-            operation_id = str(child.get("operation_id") or f"child:{child_thread_id}")
-            attempt = int(child.get("operation_attempt") or 1) + 1
-            client = await self.get_client_for_thread(
-                child_thread_id, resolved_project_id
-            )
-            retry_kwargs: dict[str, Any] = {
-                "prompt": prompt,
-                "mode": "start",
-                "thread_id": child_thread_id,
-                "effort": self.get_settings(resolved_project_id).get(
-                    "reasoning_effort", "high"
-                ),
-                "operation_id": operation_id,
-                "operation_attempt": attempt,
-                "operation_attempt_kind": "retry",
-            }
-            if (
-                child.get("operation_group_id")
-                or child.get("execution_mode") != "parallel"
-                or child.get("group_sequence") is not None
-            ):
-                retry_kwargs.update(
-                    {
-                        "operation_group_id": child.get("operation_group_id"),
-                        "execution_mode": child.get("execution_mode"),
-                        "group_sequence": child.get("group_sequence"),
-                    }
+        child = next(
+            (
+                item
+                for item in await self.list_child_tasks(source_thread_id, project_id)
+                if item.get("child_thread_id") == child_thread_id
+            ),
+            None,
+        )
+        if child is None:
+            raise KeyError(f"Child Thread '{child_thread_id}' not found")
+        if operation_id and child.get("operation_id") != operation_id:
+            raise ValueError("child task operation changed; refresh before retrying")
+        if attempt is not None and int(child.get("operation_attempt") or 1) != attempt:
+            raise ValueError("child task attempt changed; refresh before retrying")
+        client = await self.get_client_for_thread(child_thread_id, resolved_project_id)
+        operation_id = str(child.get("operation_id") or f"child:{child_thread_id}")
+        result = await client.child_task_action(
+            child_thread_id,
+            source_thread_id,
+            operation_id,
+            int(child.get("operation_attempt") or 1),
+            "retry",
+            request_id=request_id,
+        )
+        if result.get("status") not in {"queued", "running"}:
+            raise ValueError(str(result.get("status") or "retry was not accepted"))
+        await self._drain_child_queue(source_thread_id, resolved_project_id)
+        latest = next(
+            (
+                item
+                for item in await self.list_child_tasks(
+                    source_thread_id, resolved_project_id
                 )
-            submission = await client.start_turn(**retry_kwargs)
-            turn_id = str(getattr(submission, "turn_id", None) or "")
-            if turn_id:
-                task = asyncio.create_task(
-                    self._wait_for_child_turn(
-                        client,
-                        child_thread_id,
-                        resolved_project_id,
-                        turn_id,
-                        source_thread_id,
-                    )
-                )
-                self.set_active_turn(
-                    child_thread_id, turn_id, task, resolved_project_id
-                )
-            return {
-                **child,
-                "operation_id": operation_id,
-                "operation_attempt": attempt,
-                "turn_id": turn_id or None,
-                "status": "running" if turn_id else "not_started",
-            }
+                if item.get("child_thread_id") == child_thread_id
+            ),
+            None,
+        )
+        return {**(latest or child), "request_id": request_id}
 
     async def list_child_tasks(
         self, source_thread_id: str, project_id: str | None = None
@@ -1328,12 +1587,15 @@ class SessionManager:
                         "failed",
                         "cancelled",
                         "step_limit",
+                        "paused",
                     }
                     if not persisted_terminal:
                         active_turn_id = runtime.turn_id or active_turn_id
                         operation_id = operation_id or runtime.operation_id
                         phase = runtime.phase
-                        if runtime.phase == "waiting_approval":
+                        if status in {"pausing", "cancelling"}:
+                            pass
+                        elif runtime.phase == "waiting_approval":
                             status = "awaiting_approval"
                         elif runtime.phase not in (None, "idle"):
                             status = "running"
@@ -1361,9 +1623,9 @@ class SessionManager:
                     "operation_id": operation_id,
                     "operation_attempt": child_task_state.get("attempt") or 1,
                     "attempt_kind": child_task_state.get("attempt_kind"),
-                    "control_request_id": child_task_state.get(
-                        "control_request_id"
-                    ),
+                    "control_request_id": child_task_state.get("control_request_id"),
+                    "control_request": child_task_state.get("control_request"),
+                    "pending_follow_up": child_task_state.get("pending_follow_up"),
                     "operation_group_id": child_task_state.get("group_id"),
                     "execution_mode": child_task_state.get("execution_mode"),
                     "group_sequence": child_task_state.get("sequence"),
@@ -1379,7 +1641,13 @@ class SessionManager:
                         status,
                     ),
                     "recovery_required": status
-                    in {"queued", "running", "awaiting_approval"}
+                    in {
+                        "queued",
+                        "running",
+                        "awaiting_approval",
+                        "pausing",
+                        "cancelling",
+                    }
                     and not session.get("process_online", False)
                     and client is None,
                     "last_turn_status": session.get("last_turn_status"),
@@ -2559,13 +2827,22 @@ class SessionManager:
         self, payload: dict[str, Any], project_id: str | None
     ) -> None:
         event = payload.get("event")
-        if not isinstance(event, dict) or event.get("type") != "tool_started":
+        if (
+            not isinstance(event, dict)
+            or event.get("type") != "tool_finished"
+            or event.get("name") != "task_control"
+            or event.get("is_error") is True
+            or event.get("truncated") is True
+        ):
             return
-        call = event.get("call")
-        if not isinstance(call, dict) or call.get("name") != "task_control":
+        content = event.get("content")
+        if not isinstance(content, str):
             return
-        arguments = call.get("arguments")
-        if not isinstance(arguments, dict):
+        try:
+            intent = json.loads(content)
+        except (TypeError, ValueError):
+            return
+        if not isinstance(intent, dict) or intent.get("status") != "requested":
             return
         parent_thread_id = str(payload.get("threadId") or "")
         if not parent_thread_id:
@@ -2573,14 +2850,19 @@ class SessionManager:
         parent_turn_id = payload.get("turnId") or payload.get("turn_id")
         if not isinstance(parent_turn_id, str):
             parent_turn_id = None
-        call_id = event.get("item_id") or event.get("itemId") or call.get("id")
+        call_id = (
+            event.get("call_id")
+            or event.get("callId")
+            or event.get("item_id")
+            or event.get("itemId")
+        )
         if not isinstance(call_id, str) or not call_id:
             call_id = str(time.monotonic_ns())
         control_event_id = f"{parent_turn_id or 'turn'}:{call_id}"[:192]
         asyncio.create_task(
             self._apply_child_control(
                 parent_thread_id,
-                dict(arguments),
+                intent,
                 project_id or self._current_project_id,
                 parent_turn_id,
                 control_event_id,
@@ -2594,8 +2876,9 @@ class SessionManager:
         project_id: str,
         parent_turn_id: str | None = None,
         control_event_id: str | None = None,
-    ) -> None:
+    ) -> dict[str, Any]:
         action = request.get("action")
+        control_event_id = control_event_id or f"gateway-control-{uuid.uuid4().hex}"
         try:
             children = await self.list_child_tasks(parent_thread_id, project_id)
         except Exception:
@@ -2619,7 +2902,7 @@ class SessionManager:
                     ),
                 },
             )
-            return
+            return {"action": action, "outcome": "failed"}
         if action == "cancel_group":
             group_id = request.get("group_id")
             targets = [
@@ -2634,11 +2917,23 @@ class SessionManager:
         else:
             child_thread_id = request.get("child_thread_id")
             operation_id = request.get("operation_id")
+            attempt = request.get("attempt")
+            attempt_is_valid = (
+                isinstance(attempt, int)
+                and not isinstance(attempt, bool)
+                and attempt > 0
+            )
             targets = [
                 child
                 for child in children
                 if child.get("child_thread_id") == child_thread_id
                 and child.get("operation_id") == operation_id
+                and attempt_is_valid
+                and (
+                    int(child.get("operation_attempt") or 1) == attempt
+                    or action in {"retry", "queue_follow_up", "assign"}
+                    and child.get("control_request_id") == control_event_id
+                )
             ]
         if not targets:
             logger.warning(
@@ -2653,6 +2948,11 @@ class SessionManager:
                 {
                     "action": action,
                     "outcome": "stale",
+                    "stale_child_ids": (
+                        [requested_child_id]
+                        if isinstance(requested_child_id, str)
+                        else []
+                    ),
                     "requested_child_ids": (
                         [requested_child_id]
                         if isinstance(requested_child_id, str)
@@ -2660,13 +2960,14 @@ class SessionManager:
                     ),
                 },
             )
-            return
+            return {"action": action, "outcome": "stale"}
         applied_ids: list[str] = []
         failed_ids: list[str] = []
         skipped_ids: list[str] = []
         stale_ids: list[str] = []
         replayed_ids: list[str] = []
         pending_ids: list[str] = []
+        failure_reasons: dict[str, str] = {}
         routes: dict[str, str] = {}
         route_reasons: dict[str, str] = {}
         should_drain_child_queue = False
@@ -2684,9 +2985,7 @@ class SessionManager:
             child_id: str, result: dict[str, Any], fallback_route: str
         ) -> bool:
             nonlocal should_drain_child_queue
-            request_action = result.get("requestAction") or result.get(
-                "request_action"
-            )
+            request_action = result.get("requestAction") or result.get("request_action")
             route = (
                 request_action
                 if request_action in {"steer", "queue_follow_up"}
@@ -2702,6 +3001,15 @@ class SessionManager:
                 reason = result.get("reason")
                 if isinstance(reason, str) and reason.strip():
                     route_reasons[child_id] = reason.strip()[:256]
+                return False
+            if result.get("status") in {
+                "cancelled",
+                "superseded",
+                "not_accepted",
+            }:
+                if child_id not in stale_ids:
+                    stale_ids.append(child_id)
+                routes[child_id] = str(result.get("status"))
                 return False
             if route == "queue_follow_up":
                 # The accepted follow-up intent is durable even if the RPC is a
@@ -2721,6 +3029,54 @@ class SessionManager:
             status = child.get("status")
             applied = False
             try:
+                if (
+                    action in {"retry", "queue_follow_up", "assign"}
+                    and child.get("control_request_id") == control_event_id
+                    and int(child.get("operation_attempt") or 1)
+                    > int(request.get("attempt") or 0)
+                ):
+                    replayed_ids.append(child_thread_id)
+                    continue
+                if (
+                    action == "resume"
+                    and status == "queued"
+                    and child.get("control_request_id") == control_event_id
+                ):
+                    replayed_ids.append(child_thread_id)
+                    continue
+                if (
+                    action == "resume"
+                    and status in {"running", "in_progress", "awaiting_approval"}
+                    and child.get("control_request_id") == control_event_id
+                ):
+                    replayed_ids.append(child_thread_id)
+                    continue
+                if (
+                    action == "cancel"
+                    and status == "cancelled"
+                    and child.get("control_request_id") == control_event_id
+                ):
+                    replayed_ids.append(child_thread_id)
+                    continue
+                if (
+                    (
+                        action == "pause"
+                        and status == "pausing"
+                        and child.get("control_request_id") == control_event_id
+                    )
+                    or (
+                        action == "pause"
+                        and status == "paused"
+                        and child.get("control_request_id") == control_event_id
+                    )
+                    or (
+                        action == "cancel"
+                        and status == "cancelling"
+                        and child.get("control_request_id") == control_event_id
+                    )
+                ):
+                    replayed_ids.append(child_thread_id)
+                    continue
                 if action == "update_queued":
                     prompt = request.get("prompt")
                     if status != "queued" or not isinstance(prompt, str):
@@ -2736,6 +3092,7 @@ class SessionManager:
                         int(child.get("operation_attempt") or 1),
                         "update_queued",
                         prompt=prompt,
+                        request_id=control_event_id,
                     )
                     applied = True
                     should_drain_child_queue = True
@@ -2768,6 +3125,73 @@ class SessionManager:
                         steer_result if isinstance(steer_result, dict) else {},
                         "steer",
                     )
+                elif action == "queue_follow_up":
+                    prompt = request.get("prompt")
+                    if (
+                        status
+                        not in {
+                            "running",
+                            "awaiting_approval",
+                            "in_progress",
+                            "paused",
+                            "completed",
+                            "failed",
+                        }
+                        or not isinstance(prompt, str)
+                        or not prompt.strip()
+                        or len(prompt.encode("utf-8")) > MAX_CHILD_TASK_PROMPT_BYTES
+                    ):
+                        skipped_ids.append(child_thread_id)
+                        continue
+                    client = await self.get_client_for_thread(
+                        child_thread_id, project_id
+                    )
+                    follow_up_result = await client.child_task_action(
+                        child_thread_id,
+                        parent_thread_id,
+                        operation_id,
+                        int(child.get("operation_attempt") or 1),
+                        "queue_follow_up",
+                        prompt=prompt.strip(),
+                        request_id=control_event_id,
+                    )
+                    applied = record_assignment_route(
+                        child_thread_id, follow_up_result, "queue_follow_up"
+                    )
+                elif action == "pause":
+                    turn_id = str(child.get("turn_id") or "")
+                    if (
+                        status not in {"running", "awaiting_approval", "in_progress"}
+                        or not turn_id
+                    ):
+                        skipped_ids.append(child_thread_id)
+                        continue
+                    await self.pause_child_task(
+                        parent_thread_id,
+                        child_thread_id,
+                        project_id,
+                        request_id=control_event_id,
+                        operation_id=operation_id,
+                        attempt=int(child.get("operation_attempt") or 1),
+                    )
+                    applied = True
+                elif action == "resume":
+                    if status != "paused":
+                        skipped_ids.append(child_thread_id)
+                        continue
+                    client = await self.get_client_for_thread(
+                        child_thread_id, project_id
+                    )
+                    await client.child_task_action(
+                        child_thread_id,
+                        parent_thread_id,
+                        operation_id,
+                        int(child.get("operation_attempt") or 1),
+                        "resume",
+                        request_id=control_event_id,
+                    )
+                    applied = True
+                    should_drain_child_queue = True
                 elif action == "assign":
                     prompt = request.get("prompt")
                     if (
@@ -2831,7 +3255,13 @@ class SessionManager:
                                 current is not None
                                 and current.get("operation_id") == operation_id
                                 and current.get("status")
-                                in {"running", "awaiting_approval", "in_progress"}
+                                in {
+                                    "running",
+                                    "awaiting_approval",
+                                    "in_progress",
+                                    "pausing",
+                                    "cancelling",
+                                }
                                 and current.get("turn_id") == turn_id
                             ):
                                 stale_ids.append(child_thread_id)
@@ -2866,20 +3296,22 @@ class SessionManager:
                         skipped_ids.append(child_thread_id)
                         continue
                 elif action == "cancel":
-                    if status == "queued":
-                        client = await self.get_client_for_thread(
-                            child_thread_id, project_id
-                        )
-                        await client.child_task_action(
-                            child_thread_id,
-                            parent_thread_id,
-                            operation_id,
-                            int(child.get("operation_attempt") or 1),
-                            "cancel_queued",
-                        )
-                    elif status in {"running", "awaiting_approval", "in_progress"}:
+                    if status in {
+                        "queued",
+                        "paused",
+                        "running",
+                        "awaiting_approval",
+                        "in_progress",
+                        "pausing",
+                        "cancelling",
+                    }:
                         await self.cancel_child_task(
-                            parent_thread_id, child_thread_id, project_id
+                            parent_thread_id,
+                            child_thread_id,
+                            project_id,
+                            request_id=control_event_id,
+                            operation_id=operation_id,
+                            attempt=int(child.get("operation_attempt") or 1),
                         )
                     else:
                         skipped_ids.append(child_thread_id)
@@ -2891,24 +3323,31 @@ class SessionManager:
                     "step_limit",
                 }:
                     await self.retry_child_task(
-                        parent_thread_id, child_thread_id, project_id
+                        parent_thread_id,
+                        child_thread_id,
+                        project_id,
+                        request_id=control_event_id,
+                        operation_id=operation_id,
+                        attempt=int(child.get("operation_attempt") or 1),
                     )
                     applied = True
                 elif action == "cancel_group":
-                    if status == "queued":
-                        client = await self.get_client_for_thread(
-                            child_thread_id, project_id
-                        )
-                        await client.child_task_action(
-                            child_thread_id,
-                            parent_thread_id,
-                            operation_id,
-                            int(child.get("operation_attempt") or 1),
-                            "cancel_queued",
-                        )
-                    elif status in {"running", "awaiting_approval", "in_progress"}:
+                    if status in {
+                        "queued",
+                        "paused",
+                        "running",
+                        "awaiting_approval",
+                        "in_progress",
+                        "pausing",
+                        "cancelling",
+                    }:
                         await self.cancel_child_task(
-                            parent_thread_id, child_thread_id, project_id
+                            parent_thread_id,
+                            child_thread_id,
+                            project_id,
+                            request_id=control_event_id,
+                            operation_id=operation_id,
+                            attempt=int(child.get("operation_attempt") or 1),
                         )
                     else:
                         skipped_ids.append(child_thread_id)
@@ -2917,7 +3356,8 @@ class SessionManager:
                 else:
                     skipped_ids.append(child_thread_id)
                     continue
-            except Exception:
+            except Exception as error:
+                failure_reasons[child_thread_id] = str(error)[:512]
                 logger.warning(
                     "Unable to apply child control %s to %s",
                     action,
@@ -2976,7 +3416,13 @@ class SessionManager:
                         if (
                             action == "assign"
                             and status
-                            in {"running", "awaiting_approval", "in_progress"}
+                            in {
+                                "running",
+                                "awaiting_approval",
+                                "in_progress",
+                                "pausing",
+                                "cancelling",
+                            }
                             and current is not None
                             and current.get("operation_id") == operation_id
                             and current.get("status") == "completed"
@@ -3089,6 +3535,17 @@ class SessionManager:
                 ],
             },
         )
+        return {
+            "action": action,
+            "outcome": outcome,
+            "applied_child_ids": applied_ids,
+            "failed_child_ids": failed_ids,
+            "skipped_child_ids": skipped_ids,
+            "stale_child_ids": stale_ids,
+            "replayed_child_ids": replayed_ids,
+            "pending_child_ids": pending_ids,
+            "error_reasons": failure_reasons,
+        }
 
     @staticmethod
     def _child_control_outcome(
@@ -3206,9 +3663,11 @@ class SessionManager:
                 terminal = {"completed", "failed", "cancelled", "step_limit"}
                 if existing.get("status") in terminal and status not in terminal:
                     task = {**task, **existing}
-            if existing is None and sum(
-                not item.startswith("@") for item in pending
-            ) >= MAX_CHILD_WAKE_PENDING_CHILDREN:
+            if (
+                existing is None
+                and sum(not item.startswith("@") for item in pending)
+                >= MAX_CHILD_WAKE_PENDING_CHILDREN
+            ):
                 overflow = pending.setdefault(
                     "@overflow", {"kind": "overflow", "count": 0, "sample": []}
                 )
@@ -3382,9 +3841,8 @@ class SessionManager:
             client = await self.get_client_for_thread(parent_thread_id, project_id)
             runtime = await client.get_runtime_status(parent_thread_id)
             phase = str(getattr(runtime, "phase", "idle") or "idle")
-            if (
-                phase not in {"idle", "completed", "failed"}
-                or self.get_active_turn(parent_thread_id, project_id)
+            if phase not in {"idle", "completed", "failed"} or self.get_active_turn(
+                parent_thread_id, project_id
             ):
                 self._child_wake_deferred.add(key)
                 return
@@ -3415,10 +3873,11 @@ class SessionManager:
                     if error:
                         description += f"; Session creation failed: {error}"
                 task_descriptions.append(description)
-                if (
-                    value.get("child_session_available") is not False
-                    and status not in {"queued", "not_started", "idle"}
-                ):
+                if value.get("child_session_available") is not False and status not in {
+                    "queued",
+                    "not_started",
+                    "idle",
+                }:
                     read_child_ids.add(child_id)
 
             prompt_parts = [

@@ -71,9 +71,7 @@ async def test_child_report_reaches_parent_wakeup_and_gateway_projection(
             operation_prompt="Inspect the failing branch.",
             execution_mode="parallel",
         )
-        child = await session_manager.get_client_for_thread(
-            child_thread_id, project_id
-        )
+        child = await session_manager.get_client_for_thread(child_thread_id, project_id)
 
         # Model an in-flight parent Turn. Reports must be durably recorded and
         # coalesced, but they must neither steer nor start another Turn.
@@ -257,7 +255,10 @@ async def test_child_report_reaches_parent_wakeup_and_gateway_projection(
             except Exception as error:  # noqa: BLE001
                 shutdown_errors.append(error)
             else:
-                if session_manager._project_clients.get((project_id, thread_id)) is client:
+                if (
+                    session_manager._project_clients.get((project_id, thread_id))
+                    is client
+                ):
                     session_manager._project_clients.pop((project_id, thread_id), None)
                 if session_manager._clients.get(thread_id) is client:
                     session_manager._clients.pop(thread_id, None)
@@ -271,7 +272,9 @@ async def test_child_report_reaches_parent_wakeup_and_gateway_projection(
         session_manager._thread_metadata_by_project.clear()
         session_manager._thread_metadata_by_project.update(project_metadata_before)
         if shutdown_errors:
-            raise RuntimeError("Failed to stop scenario App Server clients") from shutdown_errors[0]
+            raise RuntimeError(
+                "Failed to stop scenario App Server clients"
+            ) from shutdown_errors[0]
 
 
 @pytest.mark.asyncio
@@ -331,9 +334,9 @@ async def test_completed_child_assign_persists_follow_up_and_starts_same_thread(
             json.loads(line)
             for line in child_path.read_text(encoding="utf-8").splitlines()
         ]
-        next_sequence = max(
-            (int(record.get("seq", 0)) for record in records), default=0
-        ) + 1
+        next_sequence = (
+            max((int(record.get("seq", 0)) for record in records), default=0) + 1
+        )
         records.append(
             {
                 "seq": next_sequence,
@@ -406,6 +409,7 @@ async def test_completed_child_assign_persists_follow_up_and_starts_same_thread(
                 "action": "assign",
                 "child_thread_id": child_thread_id,
                 "operation_id": operation_id,
+                "attempt": 1,
                 "prompt": "Address the review findings in this same session.",
             },
             project_id,
@@ -434,14 +438,46 @@ async def test_completed_child_assign_persists_follow_up_and_starts_same_thread(
         assert persisted_operation["attempt"] == 2
         assert persisted_operation["attempt_kind"] == "follow_up"
         assert persisted_operation["control_request_id"] == request_id
-        assert persisted_operation["prompt"] == "Address the review findings in this same session."
+        assert (
+            persisted_operation["prompt"]
+            == "Address the review findings in this same session."
+        )
+
+        # Replaying the same operation/attempt/request identity is a no-op even
+        # when the durable follow-up has advanced to a queued next attempt.
+        child_action = child_client.child_task_action
+        replay_calls: list[object] = []
+
+        async def record_child_action(*args: object, **kwargs: object):
+            replay_calls.append((args, kwargs))
+            return await child_action(*args, **kwargs)
+
+        child_client.child_task_action = record_child_action
+        await session_manager._apply_child_control(
+            parent_thread_id,
+            {
+                "action": "assign",
+                "child_thread_id": child_thread_id,
+                "operation_id": operation_id,
+                "attempt": 1,
+                "prompt": "Address the review findings in this same session.",
+            },
+            project_id,
+            "scenario-parent-turn",
+            request_id,
+        )
+        assert replay_calls == []
+        assert outcomes[-1]["outcome"] == "replayed"
 
         # Simulate a child App Server restart after allocation but before the
         # scheduler's terminal turn/start call. Reopen the same Thread/Session
         # from its durable queue and let the real Gateway drain path resume it.
         first_child_client = child_client
         await first_child_client.stop()
-        if session_manager._project_clients.get((project_id, child_thread_id)) is first_child_client:
+        if (
+            session_manager._project_clients.get((project_id, child_thread_id))
+            is first_child_client
+        ):
             session_manager._project_clients.pop((project_id, child_thread_id), None)
         if session_manager._clients.get(child_thread_id) is first_child_client:
             session_manager._clients.pop(child_thread_id, None)
@@ -463,7 +499,9 @@ async def test_completed_child_assign_persists_follow_up_and_starts_same_thread(
         assert queued_after_restart[0]["status"] == "queued"
         assert queued_after_restart[0]["operation_attempt"] == 2
         assert queued_after_restart[0]["attempt_kind"] == "follow_up"
-        assert queued_after_restart[0]["operation_prompt"] == persisted_operation["prompt"]
+        assert (
+            queued_after_restart[0]["operation_prompt"] == persisted_operation["prompt"]
+        )
 
         await reconcile_queue(parent_thread_id, project_id)
 
@@ -487,7 +525,10 @@ async def test_completed_child_assign_persists_follow_up_and_starts_same_thread(
             try:
                 await client.stop()
             finally:
-                if session_manager._project_clients.get((project_id, thread_id)) is client:
+                if (
+                    session_manager._project_clients.get((project_id, thread_id))
+                    is client
+                ):
                     session_manager._project_clients.pop((project_id, thread_id), None)
                 if session_manager._clients.get(thread_id) is client:
                     session_manager._clients.pop(thread_id, None)

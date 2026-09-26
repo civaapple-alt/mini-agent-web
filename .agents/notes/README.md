@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [运行面板的子任务接管与共享控制](implemented/feature/2026-09-26-child-task-runtime-controls.zh.md)
 - [新活动按钮跳到当前 Turn 最新执行段](implemented/bug-fix/2026-09-20-new-activity-jump-to-latest-segment.zh.md)
 - [重启恢复保留输入与执行段边界](implemented/bug-fix/2026-09-20-session-history-steer-and-segment-restore.zh.md)
 - [Steer 期间隐藏过期结果并弱化标识](implemented/bug-fix/2026-09-20-steer-turn-result-banner-and-visual-weight.zh.md)

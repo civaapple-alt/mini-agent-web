@@ -979,6 +979,8 @@ class SessionCatalog:
         child_task_operation: dict[str, Any] | None = None
         child_task_lifecycle: list[dict[str, int | str | None]] = []
         child_task_reports: list[dict[str, int | str]] = []
+        child_task_follow_up: dict[str, Any] | None = None
+        child_task_control: dict[str, Any] | None = None
         first_user_prompt = _first_user_prompt(records)
         for record in records:
             kind = record.get("kind")
@@ -1138,6 +1140,7 @@ class SessionCatalog:
                             or child_task_operation.get("operation_id") != operation_id
                         ):
                             child_task_lifecycle = []
+                            child_task_follow_up = None
                         lifecycle_entry: dict[str, int | str | None] = {
                             "status": operation_status,
                             "timestamp_ms": timestamp_ms,
@@ -1153,14 +1156,33 @@ class SessionCatalog:
                             ),
                             None,
                         )
+                        control_request_id = _bounded_text(
+                            record.get("control_request_id"), 192
+                        )
+                        if control_request_id and (
+                            operation_status == "paused"
+                            or previous_attempt_entry
+                            and previous_attempt_entry.get("status") == "paused"
+                            and operation_status == "queued"
+                        ):
+                            lifecycle_entry["control_request_id"] = control_request_id
                         terminal_statuses = {
                             "completed",
                             "failed",
                             "cancelled",
                             "step_limit",
+                            "paused",
                         }
+                        resumed_from_pause = bool(
+                            previous_attempt_entry
+                            and previous_attempt_entry.get("status") == "paused"
+                            and operation_status == "queued"
+                            and previous_attempt_entry.get("control_request_id")
+                            != lifecycle_entry["control_request_id"]
+                        )
                         stale_regression = bool(
                             previous_attempt_entry
+                            and not resumed_from_pause
                             and (
                                 previous_attempt_entry.get("status")
                                 in terminal_statuses
@@ -1187,6 +1209,29 @@ class SessionCatalog:
                             child_task_operation["operation_timestamp_ms"] = (
                                 timestamp_ms
                             )
+                            child_task_control = (
+                                {
+                                    "action": (
+                                        "pause"
+                                        if operation_status == "pausing"
+                                        else "cancel_active"
+                                    ),
+                                    "request_id": operation_projection.get(
+                                        "operation_control_request_id"
+                                    ),
+                                    "status": (
+                                        "pending"
+                                        if operation_status == "pausing"
+                                        else "accepted"
+                                    ),
+                                    "attempt": attempt,
+                                    "turn_id": operation_projection.get(
+                                        "operation_turn_id"
+                                    ),
+                                }
+                                if operation_status in {"pausing", "cancelling"}
+                                else None
+                            )
                             if (
                                 not child_task_operation.get(
                                     "operation_parent_thread_id"
@@ -1200,6 +1245,26 @@ class SessionCatalog:
                                         "operation_parent_thread_id"
                                     )
                                 )
+            elif kind == "child_control_request" and child_task_operation:
+                request_operation_id = _bounded_text(record.get("operation_id"), 128)
+                request_action = _bounded_text(record.get("action"), 32)
+                request_status = _bounded_text(record.get("request_status"), 32)
+                if request_operation_id == child_task_operation.get("operation_id"):
+                    if request_action == "queue_follow_up":
+                        child_task_follow_up = {
+                            "request_id": _bounded_text(record.get("request_id"), 192),
+                            "status": request_status or "accepted",
+                            "prompt": _bounded_text(record.get("prompt"), 32 * 1024),
+                            "attempt": _bounded_int(record.get("attempt")) or 1,
+                        }
+                    elif request_action in {"pause", "cancel_active"}:
+                        child_task_control = {
+                            "action": request_action,
+                            "request_id": _bounded_text(record.get("request_id"), 192),
+                            "status": request_status or "accepted",
+                            "attempt": _bounded_int(record.get("attempt")) or 1,
+                            "turn_id": _bounded_text(record.get("turn_id"), 128),
+                        }
             elif kind == "child_report" and child_task_operation:
                 report = _bounded_text(record.get("report"), 4096)
                 operation_id = _bounded_text(record.get("operation_id"), 128)
@@ -1359,6 +1424,23 @@ class SessionCatalog:
                 "started_at_ms": started_at_ms or None,
                 "finished_at_ms": finished_at_ms or None,
                 "duration_ms": duration_ms,
+                "pending_follow_up": (
+                    child_task_follow_up
+                    if child_task_follow_up
+                    and child_task_follow_up.get("status") in {"accepted", "blocked"}
+                    else None
+                ),
+                "control_request": (
+                    child_task_control
+                    if child_task_control
+                    and (
+                        child_task_control.get("action") == "pause"
+                        and child_task_control.get("status") == "pending"
+                        or child_task_control.get("action") == "cancel_active"
+                        and child_task_control.get("status") == "accepted"
+                    )
+                    else None
+                ),
                 "reports": child_task_reports,
                 "next_cursor": child_task_reports[-1]["cursor"]
                 if child_task_reports
@@ -1368,6 +1450,12 @@ class SessionCatalog:
                 child_task_state["attempt_kind"] = child_task_operation.get(
                     "operation_attempt_kind"
                 )
+            if child_task_state.get("control_request"):
+                control = child_task_state["control_request"]
+                if control.get("action") == "pause":
+                    child_task_state["status"] = "pausing"
+                elif control.get("action") == "cancel_active":
+                    child_task_state["status"] = "cancelling"
         if not thread_id:
             return None
 

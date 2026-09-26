@@ -1017,6 +1017,8 @@ class MiniAgentClient:
         report_id: str | None = None,
         prompt: str | None = None,
         request_id: str | None = None,
+        turn_id: str | None = None,
+        error: str | None = None,
     ) -> dict[str, Any]:
         """Persist one parent-authorized child-task action in its Session."""
         params: dict[str, Any] = {
@@ -1034,6 +1036,10 @@ class MiniAgentClient:
             params["prompt"] = prompt
         if request_id is not None:
             params["requestId"] = request_id
+        if turn_id is not None:
+            params["turnId"] = turn_id
+        if error is not None:
+            params["error"] = error
         result = await self._send_request("child/task", params)
         value = result.get("value", result) if isinstance(result, dict) else result
         return value if isinstance(value, dict) else {}
@@ -1334,14 +1340,18 @@ class MiniAgentClient:
             reasoning_selection=reasoning_selection,
         )
 
-    async def get_thread_model_settings(self, thread_id: str | None = None) -> dict[str, Any]:
+    async def get_thread_model_settings(
+        self, thread_id: str | None = None
+    ) -> dict[str, Any]:
         """Read the persisted Thread model reference and reasoning effort."""
         return await self._send_request(
             "thread/model-settings/get",
             {"threadId": thread_id or self._active_thread_id},
         )
 
-    async def manage_model_catalog(self, operation: str, **params: Any) -> dict[str, Any]:
+    async def manage_model_catalog(
+        self, operation: str, **params: Any
+    ) -> dict[str, Any]:
         """Read or update Host-owned machine-wide provider and model settings."""
         if operation not in {
             "get",

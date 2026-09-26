@@ -117,6 +117,32 @@ export const threadApi = {
     return res.json();
   },
 
+  async controlChildTask(sourceThreadId, childThreadId, action, options = {}) {
+    const parent = sourceThreadId || 'default';
+    const res = await request(
+      `/api/threads/${encodeURIComponent(parent)}/children/${encodeURIComponent(childThreadId)}/control`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          operation_id: options.operationId,
+          attempt: options.attempt,
+          request_id: options.requestId,
+          prompt: options.prompt,
+          text: options.text,
+        }),
+        ...requestSignal(options),
+      },
+      options.projectId,
+    );
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || `Failed to ${action} child task ${childThreadId}`);
+    }
+    return res.json();
+  },
+
   async readNotebook(threadId = 'default', options = {}) {
     const targetThread = threadId || 'default';
     const params = new URLSearchParams();

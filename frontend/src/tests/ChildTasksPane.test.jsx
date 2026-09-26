@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ChildTasksPane from '../components/ChildTasksPane';
 
 describe('ChildTasksPane', () => {
@@ -258,5 +258,124 @@ describe('ChildTasksPane', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '收起已结束任务' }));
     expect(screen.queryByText('Finished 1')).toBeNull();
+  });
+
+  it('offers operation controls for running, queued, paused, and failed tasks', async () => {
+    const onControl = vi.fn(async (child, action) => ({
+      outcome: { outcome: 'applied' },
+      child: { ...child, status: action === 'pause' ? 'pausing' : child.status },
+    }));
+    const { container } = render(
+      <ChildTasksPane
+        children={[
+          {
+            operation_id: 'running-op',
+            child_thread_id: 'running-child',
+            operation_attempt: 1,
+            operation_prompt: 'Inspect the runtime',
+            title: 'Running task',
+            status: 'running',
+          },
+          {
+            operation_id: 'queued-op',
+            child_thread_id: 'queued-child',
+            operation_attempt: 2,
+            operation_prompt: 'Old queued prompt',
+            title: 'Queued task',
+            status: 'queued',
+          },
+          {
+            operation_id: 'paused-op',
+            child_thread_id: 'paused-child',
+            operation_attempt: 1,
+            title: 'Paused task',
+            status: 'paused',
+          },
+          {
+            operation_id: 'failed-op',
+            child_thread_id: 'failed-child',
+            operation_attempt: 1,
+            title: 'Failed task',
+            status: 'failed',
+          },
+        ]}
+        loading={false}
+        error={null}
+        onControl={onControl}
+      />,
+    );
+
+    const rows = [...container.querySelectorAll('.child-task-row')];
+    const running = rows.find((row) => row.textContent.includes('Running task'));
+    const queued = rows.find((row) => row.textContent.includes('Queued task'));
+    const paused = rows.find((row) => row.textContent.includes('Paused task'));
+    const failed = rows.find((row) => row.textContent.includes('Failed task'));
+
+    fireEvent.click(running.querySelector('button[aria-label="排队后续"]')
+      || [...running.querySelectorAll('button')].find((button) => button.textContent.includes('排队后续')));
+    fireEvent.change(screen.getByLabelText('子任务指令'), {
+      target: { value: 'Check the completed output' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '加入后续队列' }));
+    await waitFor(() => expect(onControl).toHaveBeenCalledWith(
+      expect.objectContaining({ child_thread_id: 'running-child' }),
+      'queue_follow_up',
+      { prompt: 'Check the completed output' },
+    ));
+
+    fireEvent.click([...queued.querySelectorAll('button')]
+      .find((button) => button.textContent.includes('修改任务')));
+    expect(screen.getByLabelText('子任务指令').value).toBe('Old queued prompt');
+    fireEvent.change(screen.getByLabelText('子任务指令'), {
+      target: { value: 'Updated prompt' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+    await waitFor(() => expect(onControl).toHaveBeenCalledWith(
+      expect.objectContaining({ child_thread_id: 'queued-child' }),
+      'update_queued',
+      { prompt: 'Updated prompt' },
+    ));
+
+    fireEvent.click([...paused.querySelectorAll('button')]
+      .find((button) => button.textContent.includes('继续')));
+    fireEvent.click([...failed.querySelectorAll('button')]
+      .find((button) => button.textContent.includes('重试')));
+    await waitFor(() => expect(onControl).toHaveBeenCalledWith(
+      expect.objectContaining({ child_thread_id: 'paused-child' }),
+      'resume',
+      undefined,
+    ));
+    expect(onControl).toHaveBeenCalledWith(
+      expect.objectContaining({ child_thread_id: 'failed-child' }),
+      'retry',
+      undefined,
+    );
+  });
+
+  it('surfaces a full follow-up queue rejection', async () => {
+    const onControl = vi.fn().mockRejectedValue(new Error('a child task can have only one pending follow-up'));
+    const { container } = render(
+      <ChildTasksPane
+        children={[{
+          operation_id: 'running-op',
+          child_thread_id: 'running-child',
+          operation_attempt: 1,
+          title: 'Running task',
+          status: 'running',
+        }]}
+        loading={false}
+        error={null}
+        onControl={onControl}
+      />,
+    );
+    fireEvent.click([...container.querySelectorAll('button')]
+      .find((button) => button.textContent.includes('排队后续')));
+    fireEvent.change(screen.getByLabelText('子任务指令'), {
+      target: { value: 'Another instruction' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '加入后续队列' }));
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'a child task can have only one pending follow-up',
+    );
   });
 });

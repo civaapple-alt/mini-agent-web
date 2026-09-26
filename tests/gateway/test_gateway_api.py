@@ -664,3 +664,48 @@ async def test_gateway_history_uses_canonical_session_store(test_app):
         assert data["thread_id"] == "test-persisted"
         assert data["messages"] == []
         mock_client.resume_thread.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_runtime_panel_child_control_uses_operation_bound_gateway_service(
+    test_app, monkeypatch
+):
+    control = AsyncMock(
+        return_value={
+            "request_id": "web-control-1",
+            "outcome": {"action": "pause", "outcome": "applied"},
+            "child": {
+                "child_thread_id": "child-1",
+                "operation_id": "child:child-1",
+                "operation_attempt": 3,
+                "status": "pausing",
+            },
+        }
+    )
+    monkeypatch.setattr(session_manager, "control_child_task", control)
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/threads/parent/children/child-1/control",
+            params={"project_id": "project-1"},
+            json={
+                "action": "pause",
+                "operation_id": "child:child-1",
+                "attempt": 3,
+                "request_id": "web-control-1",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["child"]["status"] == "pausing"
+    control.assert_awaited_once_with(
+        "parent",
+        "child-1",
+        "pause",
+        "child:child-1",
+        3,
+        "web-control-1",
+        "project-1",
+        prompt=None,
+        text=None,
+    )

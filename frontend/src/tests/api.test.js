@@ -91,6 +91,25 @@ test('api client methods construct expected fetch endpoints and payloads', async
     calls[calls.length - 1].url,
     '/api/threads/t-123/children/t-child/retry?project_id=project-1',
   );
+  await api.controlChildTask('t-123', 't-child', 'queue_follow_up', {
+    projectId: 'project-1',
+    operationId: 'child:t-child',
+    attempt: 3,
+    requestId: 'web-request-1',
+    prompt: 'review the current result',
+  });
+  const controlCall = calls[calls.length - 1];
+  assert.equal(
+    controlCall.url,
+    '/api/threads/t-123/children/t-child/control?project_id=project-1',
+  );
+  assert.deepEqual(JSON.parse(controlCall.options.body), {
+    action: 'queue_follow_up',
+    operation_id: 'child:t-child',
+    attempt: 3,
+    request_id: 'web-request-1',
+    prompt: 'review the current result',
+  });
   await api.readNotebook('t-123', { projectId: 'project-1' });
   assert.equal(
     calls[calls.length - 1].url,

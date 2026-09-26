@@ -1680,6 +1680,220 @@ def test_session_catalog_projects_follow_up_control_request_id(tmp_path, monkeyp
     )
 
 
+def test_session_catalog_projects_pending_controls_and_same_attempt_resume(
+    tmp_path, monkeypatch
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    session_dir = session_base / "s-child"
+    session_dir.mkdir(parents=True)
+    records = [
+        {
+            "seq": 1,
+            "kind": "session_created",
+            "schema_version": 1,
+            "session_id": "s-child",
+            "timestamp_ms": 1000,
+            "forked_from": {"parent_session_id": "s-parent"},
+        },
+        {"seq": 2, "kind": "thread_started", "thread_id": "t-child"},
+        {
+            "seq": 3,
+            "kind": "operation",
+            "operation_id": "child:t-child",
+            "operation_kind": "child_task",
+            "parent_thread_id": "t-parent",
+            "status": "running",
+            "turn_id": "turn-one",
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "prompt": "Original task",
+            "timestamp_ms": 1100,
+        },
+        {
+            "seq": 4,
+            "kind": "child_control_request",
+            "action": "queue_follow_up",
+            "request_id": "follow-up-1",
+            "request_status": "accepted",
+            "parent_thread_id": "t-parent",
+            "operation_id": "child:t-child",
+            "attempt": 1,
+            "prompt": "Review the result",
+            "timestamp_ms": 1200,
+        },
+        {
+            "seq": 5,
+            "kind": "child_control_request",
+            "action": "pause",
+            "request_id": "pause-1",
+            "request_status": "pending",
+            "parent_thread_id": "t-parent",
+            "operation_id": "child:t-child",
+            "attempt": 1,
+            "turn_id": "turn-one",
+            "timestamp_ms": 1300,
+        },
+        {
+            "seq": 6,
+            "kind": "operation",
+            "operation_id": "child:t-child",
+            "operation_kind": "child_task",
+            "parent_thread_id": "t-parent",
+            "status": "paused",
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "prompt": "Original task",
+            "control_request_id": "pause-1",
+            "timestamp_ms": 1400,
+        },
+        {
+            "seq": 7,
+            "kind": "child_control_request",
+            "action": "pause",
+            "request_id": "pause-1",
+            "request_status": "settled",
+            "status": "paused",
+            "parent_thread_id": "t-parent",
+            "operation_id": "child:t-child",
+            "attempt": 1,
+            "turn_id": "turn-one",
+            "timestamp_ms": 1400,
+        },
+        {
+            "seq": 8,
+            "kind": "child_control_request",
+            "action": "resume",
+            "request_id": "resume-1",
+            "request_status": "accepted",
+            "parent_thread_id": "t-parent",
+            "operation_id": "child:t-child",
+            "attempt": 1,
+            "timestamp_ms": 1500,
+        },
+        {
+            "seq": 9,
+            "kind": "operation",
+            "operation_id": "child:t-child",
+            "operation_kind": "child_task",
+            "parent_thread_id": "t-parent",
+            "status": "queued",
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "prompt": "Original task",
+            "control_request_id": "resume-1",
+            "timestamp_ms": 1510,
+        },
+    ]
+    (session_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_dir / "summary.json").write_text(
+        json.dumps({"created_at_ms": 1000, "updated_at_ms": 1510}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    monkeypatch.setattr("server.session_catalog._process_alive", lambda _pid: False)
+
+    state = SessionCatalog().list_sessions(workspace, "project-1")["data"][0][
+        "child_task_state"
+    ]
+    assert state["status"] == "queued"
+    assert state["attempt"] == 1
+    assert state["control_request_id"] == "resume-1"
+    assert state["pending_follow_up"] == {
+        "request_id": "follow-up-1",
+        "status": "accepted",
+        "prompt": "Review the result",
+        "attempt": 1,
+    }
+    assert [stage["status"] for stage in state["lifecycle"]] == [
+        "running",
+        "paused",
+        "queued",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("status", "action", "control_status"),
+    [("pausing", "pause", "pending"), ("cancelling", "cancel_active", "accepted")],
+)
+def test_session_catalog_projects_active_control_identity_from_operation(
+    tmp_path, monkeypatch, status, action, control_status
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    session_dir = session_base / "s-child"
+    session_dir.mkdir(parents=True)
+    records = [
+        {
+            "seq": 1,
+            "kind": "session_created",
+            "schema_version": 1,
+            "session_id": "s-child",
+            "timestamp_ms": 1000,
+            "forked_from": {"parent_session_id": "s-parent"},
+        },
+        {"seq": 2, "kind": "thread_started", "thread_id": "t-child"},
+        {
+            "seq": 3,
+            "kind": "operation",
+            "operation_id": "child:t-child",
+            "operation_kind": "child_task",
+            "status": "running",
+            "turn_id": "turn-one",
+            "parent_thread_id": "t-parent",
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "prompt": "Original task",
+            "timestamp_ms": 1100,
+        },
+        {
+            "seq": 4,
+            "kind": "operation",
+            "operation_id": "child:t-child",
+            "operation_kind": "child_task",
+            "status": status,
+            "turn_id": "turn-one",
+            "parent_thread_id": "t-parent",
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "prompt": "Original task",
+            "control_action": action,
+            "control_request_id": "control-request-1",
+            "timestamp_ms": 1200,
+        },
+    ]
+    (session_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_dir / "summary.json").write_text(
+        json.dumps({"created_at_ms": 1000, "updated_at_ms": 1200}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    monkeypatch.setattr("server.session_catalog._process_alive", lambda _pid: False)
+
+    state = SessionCatalog().list_sessions(workspace, "project-1")["data"][0][
+        "child_task_state"
+    ]
+
+    assert state["status"] == status
+    assert state["control_request"] == {
+        "action": action,
+        "request_id": "control-request-1",
+        "status": control_status,
+        "attempt": 1,
+        "turn_id": "turn-one",
+    }
+
+
 def test_session_catalog_keeps_missing_child_operation_times_unknown(
     tmp_path, monkeypatch
 ):
@@ -3505,7 +3719,29 @@ async def test_four_parallel_children_drain_two_at_a_time(
     ]
 
     first, second, third, fourth = children
-    first["child_task_state"].update(status="completed", turn_id=None)
+    stopping = await mock_session_manager.cancel_child_task(
+        "parent",
+        first["thread_id"],
+        "default",
+        request_id="user-stop-child-1",
+        operation_id="child:child-1",
+        attempt=1,
+    )
+    assert stopping["status"] == "cancelling"
+    clients["child-1"].child_task_action.assert_awaited_once_with(
+        "child-1",
+        "parent",
+        "child:child-1",
+        1,
+        "cancel_active",
+        request_id="user-stop-child-1",
+        turn_id=initial[0]["turn_id"],
+    )
+    clients["child-1"].interrupt_turn.assert_awaited_once_with(
+        initial[0]["turn_id"], "child-1"
+    )
+    first["child_task_state"].update(status="cancelled", turn_id=None)
+    first.pop("active_turn_id", None)
     mock_session_manager.clear_active_turn(
         first["thread_id"],
         "default",
@@ -3813,9 +4049,7 @@ async def test_cancel_group_only_targets_the_parent_turn_group(
     )
     get_client = AsyncMock(return_value=client)
     monkeypatch.setattr(mock_session_manager, "get_client_for_thread", get_client)
-    monkeypatch.setattr(
-        mock_session_manager, "_drain_child_queue", AsyncMock()
-    )
+    monkeypatch.setattr(mock_session_manager, "_drain_child_queue", AsyncMock())
     broadcast = AsyncMock()
     monkeypatch.setattr(mock_session_manager, "_broadcast_child_operation", broadcast)
 
@@ -3833,6 +4067,10 @@ async def test_cancel_group_only_targets_the_parent_turn_group(
         "child:child-current",
         1,
         "cancel_queued",
+        request_id=client.child_task_action.await_args.kwargs["request_id"],
+    )
+    assert client.child_task_action.await_args.kwargs["request_id"].startswith(
+        "gateway-control-"
     )
     assert [call.args[0]["child_thread_id"] for call in broadcast.await_args_list] == [
         "child-current"
@@ -3952,7 +4190,9 @@ async def test_equal_report_cursors_from_different_children_both_wake_parent(
 ):
     client = AsyncMock()
     client.get_runtime_status.return_value = SimpleNamespace(phase="idle", turn_id=None)
-    client.start_turn.return_value = SimpleNamespace(turn_id="parent-wake-after-reports")
+    client.start_turn.return_value = SimpleNamespace(
+        turn_id="parent-wake-after-reports"
+    )
     client.child_task_action.return_value = {"cursor": 27, "attempt": 1}
     monkeypatch.setattr(
         mock_session_manager,
@@ -3973,9 +4213,7 @@ async def test_equal_report_cursors_from_different_children_both_wake_parent(
         ),
     )
     mock_session_manager.set_active_turn("parent", "parent-turn", project_id="default")
-    monkeypatch.setattr(
-        mock_session_manager, "_broadcast_child_operation", AsyncMock()
-    )
+    monkeypatch.setattr(mock_session_manager, "_broadcast_child_operation", AsyncMock())
     drain_started = asyncio.Event()
     release_drain = asyncio.Event()
     drain = mock_session_manager._drain_child_parent_wakeups
@@ -4048,9 +4286,7 @@ async def test_child_wake_starts_a_new_turn_when_parent_is_idle(
         lambda _project_id=None: {"reasoning_effort": "medium"},
     )
     key = ("default", "parent")
-    mock_session_manager._child_wake_pending[key] = {
-        "child": {"status": "completed"}
-    }
+    mock_session_manager._child_wake_pending[key] = {"child": {"status": "completed"}}
 
     await mock_session_manager._drain_child_parent_wakeups("default", "parent")
 
@@ -4088,7 +4324,9 @@ async def test_child_wake_reads_only_bounded_materialized_updates(
     await mock_session_manager._drain_child_parent_wakeups("default", "parent")
 
     prompt = client.start_turn.await_args.kwargs["prompt"]
-    read_line = next(line for line in prompt.split(". ") if line.startswith("Use task_read"))
+    read_line = next(
+        line for line in prompt.split(". ") if line.startswith("Use task_read")
+    )
     assert "child-00" not in read_line
     assert "child-01" not in read_line
     assert "child-02" in read_line
@@ -4166,7 +4404,9 @@ async def test_child_wake_updates_during_auto_turn_wait_for_next_idle_boundary(
     second_turn_finished = asyncio.Event()
 
     async def wait_for_turn(turn_id):
-        event = first_turn_finished if turn_id == "parent-wake-1" else second_turn_finished
+        event = (
+            first_turn_finished if turn_id == "parent-wake-1" else second_turn_finished
+        )
         await event.wait()
         return SimpleNamespace(turn_id=turn_id)
 
@@ -4194,23 +4434,20 @@ async def test_child_wake_updates_during_auto_turn_wait_for_next_idle_boundary(
     assert key not in mock_session_manager._child_wake_jobs
 
     first_turn_finished.set()
-    first_wait = mock_session_manager._active_tasks_by_project[
-        ("default", "parent")
-    ]
+    first_wait = mock_session_manager._active_tasks_by_project[("default", "parent")]
     await first_wait
 
     assert client.start_turn.await_count == 2
     assert client.start_turn.await_args_list[0].kwargs["turn_source"] == "child_wakeup"
     assert client.start_turn.await_args_list[1].kwargs["turn_source"] == "child_wakeup"
-    assert "child-two [child-two] (completed)" in client.start_turn.await_args_list[1].kwargs[
-        "prompt"
-    ]
+    assert (
+        "child-two [child-two] (completed)"
+        in client.start_turn.await_args_list[1].kwargs["prompt"]
+    )
     assert mock_session_manager.get_active_turn("parent", "default") == "parent-wake-2"
 
     second_turn_finished.set()
-    second_wait = mock_session_manager._active_tasks_by_project[
-        ("default", "parent")
-    ]
+    second_wait = mock_session_manager._active_tasks_by_project[("default", "parent")]
     await second_wait
 
 
@@ -4327,6 +4564,7 @@ async def test_child_control_uses_projected_operation_attempt(
             "action": "update_queued",
             "child_thread_id": "child",
             "operation_id": "child:one",
+            "attempt": 2,
             "prompt": "Inspect the updated path.",
         },
         "default",
@@ -4339,6 +4577,7 @@ async def test_child_control_uses_projected_operation_attempt(
         2,
         "update_queued",
         prompt="Inspect the updated path.",
+        request_id=client.child_task_action.await_args.kwargs["request_id"],
     )
     mock_session_manager._drain_child_queue.assert_awaited_once_with(
         "parent", "default"
@@ -4378,6 +4617,7 @@ async def test_child_assign_routes_active_child_to_idempotent_steer(
             "action": "assign",
             "child_thread_id": "child",
             "operation_id": "child:one",
+            "attempt": 2,
             "prompt": "Inspect the new concern.",
         },
         "default",
@@ -4437,9 +4677,7 @@ async def test_child_assign_not_submitted_race_routes_completed_attempt_to_follo
     )
     drain = AsyncMock()
     monkeypatch.setattr(mock_session_manager, "_drain_child_queue", drain)
-    monkeypatch.setattr(
-        mock_session_manager, "_broadcast_child_operation", AsyncMock()
-    )
+    monkeypatch.setattr(mock_session_manager, "_broadcast_child_operation", AsyncMock())
     monkeypatch.setattr(
         mock_session_manager,
         "_queue_child_control_outcome",
@@ -4452,6 +4690,7 @@ async def test_child_assign_not_submitted_race_routes_completed_attempt_to_follo
             "action": "assign",
             "child_thread_id": "child",
             "operation_id": "child:one",
+            "attempt": 1,
             "prompt": "Continue as a new review turn.",
         },
         "default",
@@ -4514,9 +4753,7 @@ async def test_child_assign_queues_follow_up_for_completed_child(
     )
     drain = AsyncMock()
     monkeypatch.setattr(mock_session_manager, "_drain_child_queue", drain)
-    monkeypatch.setattr(
-        mock_session_manager, "_broadcast_child_operation", AsyncMock()
-    )
+    monkeypatch.setattr(mock_session_manager, "_broadcast_child_operation", AsyncMock())
     monkeypatch.setattr(
         mock_session_manager,
         "_queue_child_control_outcome",
@@ -4529,6 +4766,7 @@ async def test_child_assign_queues_follow_up_for_completed_child(
             "action": "assign",
             "child_thread_id": "child",
             "operation_id": "child:one",
+            "attempt": 1,
             "prompt": "Fix the issue identified by review.",
         },
         "default",
@@ -4560,6 +4798,7 @@ async def test_child_assign_replay_keeps_original_follow_up_route_after_start(
         "operation_id": "child:one",
         "operation_attempt": 2,
         "attempt_kind": "follow_up",
+        "control_request_id": "parent-turn:tool-assign-follow-up-duplicate",
         "status": "running",
         "turn_id": "turn-child-follow-up",
     }
@@ -4584,9 +4823,7 @@ async def test_child_assign_replay_keeps_original_follow_up_route_after_start(
     )
     drain = AsyncMock()
     monkeypatch.setattr(mock_session_manager, "_drain_child_queue", drain)
-    monkeypatch.setattr(
-        mock_session_manager, "_broadcast_child_operation", AsyncMock()
-    )
+    monkeypatch.setattr(mock_session_manager, "_broadcast_child_operation", AsyncMock())
     monkeypatch.setattr(
         mock_session_manager,
         "_queue_child_control_outcome",
@@ -4599,6 +4836,7 @@ async def test_child_assign_replay_keeps_original_follow_up_route_after_start(
             "action": "assign",
             "child_thread_id": "child",
             "operation_id": "child:one",
+            "attempt": 1,
             "prompt": "The follow-up request was already accepted.",
         },
         "default",
@@ -4606,15 +4844,12 @@ async def test_child_assign_replay_keeps_original_follow_up_route_after_start(
         "parent-turn:tool-assign-follow-up-duplicate",
     )
 
-    client.steer_turn.assert_awaited_once()
+    client.steer_turn.assert_not_awaited()
     client.child_task_action.assert_not_awaited()
-    drain.assert_awaited_once_with("parent", "default")
+    drain.assert_not_awaited()
     assert outcomes[-1]["outcome"] == "replayed"
     assert outcomes[-1]["applied_child_ids"] == []
     assert outcomes[-1]["replayed_child_ids"] == ["child"]
-    assert outcomes[-1]["routes"] == [
-        {"child_thread_id": "child", "route": "follow_up_started"}
-    ]
 
 
 @pytest.mark.asyncio
@@ -4659,6 +4894,7 @@ async def test_child_assign_replay_keeps_original_steer_route_after_completion(
             "action": "assign",
             "child_thread_id": "child",
             "operation_id": "child:one",
+            "attempt": 1,
             "prompt": "The earlier steer already handled this request.",
         },
         "default",
@@ -4680,9 +4916,7 @@ async def test_child_assign_replay_keeps_original_steer_route_after_completion(
     assert outcomes[-1]["outcome"] == "replayed"
     assert outcomes[-1]["applied_child_ids"] == []
     assert outcomes[-1]["replayed_child_ids"] == ["child"]
-    assert outcomes[-1]["routes"] == [
-        {"child_thread_id": "child", "route": "steer"}
-    ]
+    assert outcomes[-1]["routes"] == [{"child_thread_id": "child", "route": "steer"}]
 
 
 @pytest.mark.asyncio
@@ -4722,6 +4956,7 @@ async def test_explicit_child_steer_replay_is_not_reported_as_a_new_steer(
             "action": "steer",
             "child_thread_id": "child",
             "operation_id": "child:one",
+            "attempt": 1,
             "text": "This steer was already accepted.",
         },
         "default",
@@ -4732,9 +4967,182 @@ async def test_explicit_child_steer_replay_is_not_reported_as_a_new_steer(
     assert outcomes[-1]["outcome"] == "replayed"
     assert outcomes[-1]["applied_child_ids"] == []
     assert outcomes[-1]["replayed_child_ids"] == ["child"]
-    assert outcomes[-1]["routes"] == [
-        {"child_thread_id": "child", "route": "steer"}
-    ]
+    assert outcomes[-1]["routes"] == [{"child_thread_id": "child", "route": "steer"}]
+
+
+@pytest.mark.asyncio
+async def test_child_control_rejects_an_expired_attempt_before_rpc(
+    mock_session_manager, monkeypatch
+):
+    child = {
+        "child_thread_id": "child",
+        "operation_id": "child:one",
+        "operation_attempt": 2,
+        "status": "running",
+        "turn_id": "turn-child-2",
+    }
+    client = AsyncMock()
+    outcomes = []
+    monkeypatch.setattr(
+        mock_session_manager, "list_child_tasks", AsyncMock(return_value=[child])
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_client_for_thread",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_queue_child_control_outcome",
+        lambda *_args: outcomes.append(_args[-1]),
+    )
+
+    await mock_session_manager._apply_child_control(
+        "parent",
+        {
+            "action": "cancel",
+            "child_thread_id": "child",
+            "operation_id": "child:one",
+            "attempt": 1,
+        },
+        "default",
+        "parent-turn",
+        "parent-turn:old-attempt-stop",
+    )
+
+    client.child_task_action.assert_not_awaited()
+    client.interrupt_turn.assert_not_awaited()
+    assert outcomes[-1]["outcome"] == "stale"
+    assert outcomes[-1]["stale_child_ids"] == ["child"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("action", "status"),
+    [("pause", "paused"), ("resume", "running")],
+)
+async def test_settled_pause_and_started_resume_replay_by_request_identity(
+    mock_session_manager, monkeypatch, action, status
+):
+    request_id = f"parent-turn:{action}-once"
+    child = {
+        "child_thread_id": "child",
+        "operation_id": "child:one",
+        "operation_attempt": 2,
+        "control_request_id": request_id,
+        "status": status,
+        "turn_id": "turn-child-2" if status == "running" else None,
+    }
+    client = AsyncMock()
+    outcomes = []
+    monkeypatch.setattr(
+        mock_session_manager, "list_child_tasks", AsyncMock(return_value=[child])
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_client_for_thread",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_queue_child_control_outcome",
+        lambda *_args: outcomes.append(_args[-1]),
+    )
+
+    await mock_session_manager._apply_child_control(
+        "parent",
+        {
+            "action": action,
+            "child_thread_id": "child",
+            "operation_id": "child:one",
+            "attempt": 2,
+        },
+        "default",
+        "parent-turn",
+        request_id,
+    )
+
+    client.child_task_action.assert_not_awaited()
+    client.interrupt_turn.assert_not_awaited()
+    assert outcomes[-1]["outcome"] == "replayed"
+    assert outcomes[-1]["replayed_child_ids"] == ["child"]
+
+
+@pytest.mark.asyncio
+async def test_task_control_dispatch_waits_for_validated_tool_result(
+    mock_session_manager, monkeypatch
+):
+    apply = AsyncMock()
+    monkeypatch.setattr(mock_session_manager, "_apply_child_control", apply)
+    started = {
+        "threadId": "parent",
+        "turnId": "parent-turn",
+        "event": {
+            "type": "tool_started",
+            "call": {
+                "name": "task_control",
+                "id": "control-call-1",
+                "arguments": {
+                    "action": "cancel",
+                    "child_thread_id": "child",
+                    "operation_id": "child:one",
+                    "attempt": 1,
+                },
+            },
+        },
+    }
+    mock_session_manager._schedule_child_control(started, "default")
+    await asyncio.sleep(0)
+    apply.assert_not_awaited()
+
+    failed = {
+        **started,
+        "event": {
+            "type": "tool_finished",
+            "name": "task_control",
+            "call_id": "control-call-1",
+            "is_error": True,
+            "content": "invalid intent",
+        },
+    }
+    mock_session_manager._schedule_child_control(failed, "default")
+    await asyncio.sleep(0)
+    apply.assert_not_awaited()
+
+    completed = {
+        **failed,
+        "event": {
+            "type": "tool_finished",
+            "name": "task_control",
+            "call_id": "control-call-1",
+            "is_error": False,
+            "truncated": False,
+            "content": json.dumps(
+                {
+                    "status": "requested",
+                    "action": "cancel",
+                    "child_thread_id": "child",
+                    "operation_id": "child:one",
+                    "attempt": 1,
+                }
+            ),
+        },
+    }
+    mock_session_manager._schedule_child_control(completed, "default")
+    await asyncio.sleep(0)
+    apply.assert_awaited_once_with(
+        "parent",
+        {
+            "status": "requested",
+            "action": "cancel",
+            "child_thread_id": "child",
+            "operation_id": "child:one",
+            "attempt": 1,
+        },
+        "default",
+        "parent-turn",
+        "parent-turn:control-call-1",
+    )
 
 
 @pytest.mark.asyncio
@@ -4778,6 +5186,7 @@ async def test_child_assign_persists_uncertain_steer_as_pending_without_retry(
             "action": "assign",
             "child_thread_id": "child",
             "operation_id": "child:one",
+            "attempt": 1,
             "prompt": "Check the current attempt state.",
         },
         "default",
@@ -4808,9 +5217,7 @@ def test_child_control_wakeup_preserves_pending_route_reason(mock_session_manage
             "applied_child_ids": [],
             "pending_child_ids": ["child"],
             "route_reasons": {"child": "SessionStore confirmation timed out."},
-            "routes": [
-                {"child_thread_id": "child", "route": "steer_pending"}
-            ],
+            "routes": [{"child_thread_id": "child", "route": "steer_pending"}],
         },
     )
 
@@ -4858,6 +5265,7 @@ async def test_child_assign_does_not_start_noncompleted_settled_task(
             "action": "assign",
             "child_thread_id": "child",
             "operation_id": "child:one",
+            "attempt": 1,
             "prompt": "Continue with review changes.",
         },
         "default",
@@ -4903,6 +5311,7 @@ async def test_child_control_rpc_failure_wakes_parent_with_failed_child_id(
             "action": "update_queued",
             "child_thread_id": "child-failed",
             "operation_id": "child:failed",
+            "attempt": 2,
             "prompt": "Inspect the updated path.",
         },
         "default",
@@ -4923,7 +5332,10 @@ async def test_child_control_rpc_failure_wakes_parent_with_failed_child_id(
     assert "child-failed" in parent_prompt
     assert "App Server offline" not in parent_prompt
     assert "known task state before deciding" in parent_prompt
-    assert "Use task_read only for these reported or settled child sessions" not in parent_prompt
+    assert (
+        "Use task_read only for these reported or settled child sessions"
+        not in parent_prompt
+    )
 
 
 @pytest.mark.asyncio
@@ -4953,6 +5365,7 @@ async def test_child_control_projection_failure_notifies_parent(
             "action": "cancel",
             "child_thread_id": "child-requested",
             "operation_id": "child:requested",
+            "attempt": 1,
         },
         "default",
         "parent-turn",
@@ -4991,9 +5404,7 @@ async def test_child_control_applied_outcome_reaches_idle_parent(
         mock_session_manager, "get_client_for_thread", AsyncMock(return_value=client)
     )
     monkeypatch.setattr(mock_session_manager, "_drain_child_queue", AsyncMock())
-    monkeypatch.setattr(
-        mock_session_manager, "_broadcast_child_operation", AsyncMock()
-    )
+    monkeypatch.setattr(mock_session_manager, "_broadcast_child_operation", AsyncMock())
 
     await mock_session_manager._apply_child_control(
         "parent",
@@ -5001,6 +5412,7 @@ async def test_child_control_applied_outcome_reaches_idle_parent(
             "action": "update_queued",
             "child_thread_id": "child-updated",
             "operation_id": "child:updated",
+            "attempt": 1,
             "prompt": "Inspect the updated path.",
         },
         "default",
@@ -5017,13 +5429,16 @@ async def test_child_control_applied_outcome_reaches_idle_parent(
         1,
         "update_queued",
         prompt="Inspect the updated path.",
+        request_id="parent-turn:control-applied",
     )
     client.start_turn.assert_awaited_once()
     parent_prompt = client.start_turn.await_args.kwargs["prompt"]
     assert client.start_turn.await_args.kwargs["turn_source"] == "child_wakeup"
     assert "outcome=applied" in parent_prompt
     assert "child-updated" in parent_prompt
-    assert "App Server child operation projection remains authoritative" in parent_prompt
+    assert (
+        "App Server child operation projection remains authoritative" in parent_prompt
+    )
 
 
 @pytest.mark.asyncio
@@ -5083,9 +5498,7 @@ async def test_child_control_reports_partial_group_outcome(
 
     monkeypatch.setattr(mock_session_manager, "get_client_for_thread", get_client)
     monkeypatch.setattr(mock_session_manager, "_drain_child_queue", AsyncMock())
-    monkeypatch.setattr(
-        mock_session_manager, "_broadcast_child_operation", AsyncMock()
-    )
+    monkeypatch.setattr(mock_session_manager, "_broadcast_child_operation", AsyncMock())
     mock_session_manager.set_active_turn("parent", "parent-turn", project_id="default")
 
     await mock_session_manager._apply_child_control(
@@ -5322,6 +5735,7 @@ async def test_completed_assign_recovers_persisted_follow_up_after_rpc_error(
             "action": "assign",
             "child_thread_id": "child",
             "operation_id": "child:one",
+            "attempt": 1,
             "prompt": "Apply the review feedback.",
         },
         "default",
@@ -5385,9 +5799,7 @@ async def test_child_queue_retries_start_failure_with_coalesced_bounded_backoff(
         AsyncMock(return_value=child_client),
     )
     monkeypatch.setattr(mock_session_manager, "_wait_for_child_turn", AsyncMock())
-    monkeypatch.setattr(
-        mock_session_manager, "_broadcast_child_operation", AsyncMock()
-    )
+    monkeypatch.setattr(mock_session_manager, "_broadcast_child_operation", AsyncMock())
 
     await mock_session_manager._drain_child_queue("parent", "default")
     retry_job = mock_session_manager._child_queue_retry_jobs[("default", "parent")]

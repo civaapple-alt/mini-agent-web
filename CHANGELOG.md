@@ -62,6 +62,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as a new Turn on that same Session. Route assignments to a live child as an
   idempotent steer, persist follow-up work when concurrency is full, and show
   initial, retry, and follow-up rounds in one stable child card.
+- Add parent-side paginated `task_list` and operation/attempt-bound child control
+  for update, steer, stop, pause/resume, retry, and follow-up scheduling. Keep one
+  pending follow-up per child operation, preserve it as blocked across failure,
+  and restore pause/stop transitions after Gateway restart. Give the Web Studio
+  child panel the same control service with server-confirmed feedback.
 - Recover a durable follow-up after a lost `child/task` response by matching
   its operation, attempt, and `control_request_id`. Retry transient queue start
   failures with coalesced backoff and reconcile queued work after restart.

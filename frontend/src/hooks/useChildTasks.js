@@ -27,7 +27,7 @@ export default function useChildTasks(threadId, projectId, enabled = true) {
   const requestController = useRef(null);
   const hasActiveChildren = useRef(false);
   hasActiveChildren.current = children.some((child) => (
-    ['queued', 'running', 'in_progress', 'awaiting_approval', 'cancelling']
+    ['queued', 'running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling']
       .includes(child.status)
   ));
 
@@ -59,6 +59,33 @@ export default function useChildTasks(threadId, projectId, enabled = true) {
       if (epoch === requestEpoch.current) setLoading(false);
     }
   }, [enabled, projectId, threadId]);
+
+  const control = useCallback(async (child, action, payload = {}) => {
+    if (!enabled || !threadId) throw new Error('当前会话不可控制子任务');
+    const response = await api.controlChildTask(
+      threadId,
+      child.child_thread_id,
+      action,
+      {
+        projectId,
+        operationId: child.operation_id,
+        attempt: child.operation_attempt,
+        requestId: payload.requestId || createControlRequestId(),
+        prompt: payload.prompt,
+        text: payload.text,
+      },
+    );
+    const outcome = response?.outcome?.outcome;
+    if (response?.child) {
+      setChildren((current) => mergeChildUpdate(current, response.child));
+    }
+    await load();
+    if (['failed', 'stale', 'skipped'].includes(outcome)) {
+      const reason = response?.outcome?.error_reasons?.[child.child_thread_id];
+      throw new Error(reason || controlOutcomeMessage(outcome));
+    }
+    return response;
+  }, [enabled, load, projectId, threadId]);
 
   useEffect(() => {
     if (!enabled || !threadId) {
@@ -98,5 +125,16 @@ export default function useChildTasks(threadId, projectId, enabled = true) {
     };
   }, [enabled, load, projectId, threadId]);
 
-  return { children, loading, error, refresh: load };
+  return { children, loading, error, refresh: load, control };
+}
+
+function createControlRequestId() {
+  if (globalThis.crypto?.randomUUID) return `web-${globalThis.crypto.randomUUID()}`;
+  return `web-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function controlOutcomeMessage(outcome) {
+  if (outcome === 'stale') return '子任务状态已变化，请刷新后再操作';
+  if (outcome === 'skipped') return '当前状态不支持此操作';
+  return '服务端未能接受这次子任务操作';
 }

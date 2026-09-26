@@ -442,6 +442,7 @@ export default function SidePanel({
   childTasksLoading = false,
   childTasksError = null,
   onRefreshChildTasks,
+  onControlChildTask,
 }) {
   const [activeTab, setActiveTab] = useState(() => normalizePanelTab(initialTab));
   const [selectedChild, setSelectedChild] = useState(null);
@@ -1123,6 +1124,7 @@ export default function SidePanel({
                 loading={childTasksLoading}
                 error={childTasksError}
                 onRefresh={onRefreshChildTasks}
+                onControl={onControlChildTask}
               />
             )
           )}

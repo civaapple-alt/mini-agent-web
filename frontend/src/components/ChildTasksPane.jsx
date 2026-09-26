@@ -18,7 +18,18 @@ import ChildTaskAttemptHistory from './ChildTaskAttemptHistory';
 
 const FINISHED_PAGE_SIZE = 5;
 
-function ChildTaskRow({ child, projectId, onOpenThread, sequenceCount = null }) {
+function ChildTaskRow({
+  child,
+  projectId,
+  onOpenThread,
+  onControl,
+  sequenceCount = null,
+}) {
+  const [editorAction, setEditorAction] = useState(null);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [controlError, setControlError] = useState('');
+  const [controlFeedback, setControlFeedback] = useState('');
   const status = getChildTaskStatus(child);
   const failureDetail = child.error || child.operation_error || child.last_turn_error;
   const waitingReason = getChildTaskWaitingReason(child);
@@ -37,6 +48,35 @@ function ChildTaskRow({ child, projectId, onOpenThread, sequenceCount = null }) 
     && Number.isInteger(child.group_sequence)
     ? `第 ${child.group_sequence + 1}${Number.isInteger(sequenceCount) ? `/${sequenceCount}` : ''} 步`
     : null;
+  const active = ['running', 'in_progress', 'awaiting_approval'].includes(status);
+  const queued = status === 'queued';
+  const paused = status === 'paused';
+  const retryable = ['failed', 'cancelled', 'step_limit'].includes(status);
+  const pendingFollowUp = child.pending_follow_up;
+
+  const beginEditor = (action) => {
+    setControlError('');
+    setControlFeedback('');
+    setDraft(action === 'update_queued' ? child.operation_prompt || '' : '');
+    setEditorAction(action);
+  };
+
+  const submit = async (action, value) => {
+    if (!onControl) return;
+    setBusy(true);
+    setControlError('');
+    setControlFeedback('');
+    try {
+      const response = await onControl(child, action, value);
+      const outcome = response?.outcome?.outcome;
+      setControlFeedback(outcome === 'pending' ? '已提交，等待运行时确认' : '服务端已确认');
+      setEditorAction(null);
+    } catch (cause) {
+      setControlError(cause?.message || '子任务操作失败');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <article className={`child-task-row ${status}${child.recovery_required ? ' recovery-required' : ''}`}>
@@ -65,6 +105,12 @@ function ChildTaskRow({ child, projectId, onOpenThread, sequenceCount = null }) 
           <span>等待：</span>{waitingReason}
         </div>
       )}
+      {pendingFollowUp && (
+        <div className={`child-task-follow-up ${pendingFollowUp.status}`}>
+          {pendingFollowUp.status === 'blocked' ? '后续指令受阻，重试成功后继续' : '已有一条后续指令排队'}
+          {pendingFollowUp.prompt && <span title={pendingFollowUp.prompt}>{pendingFollowUp.prompt}</span>}
+        </div>
+      )}
       {latestReport && (
         <div className="child-task-report" aria-label="子代理进展">
           <span>{latestReport.attempt
@@ -77,6 +123,82 @@ function ChildTaskRow({ child, projectId, onOpenThread, sequenceCount = null }) 
         </div>
       )}
       <ChildTaskAttemptHistory task={child} />
+      {onControl && (
+        <div className="child-task-controls" aria-label="子任务控制">
+          {active && (
+            <>
+              <button type="button" className="btn-action-small danger" disabled={busy} onClick={() => submit('cancel')}>
+                停止
+              </button>
+              <button type="button" className="btn-action-small" disabled={busy} onClick={() => submit('pause')}>
+                暂停
+              </button>
+              <button type="button" className="btn-action-small" disabled={busy} onClick={() => beginEditor('steer')}>
+                发送指令
+              </button>
+              <button type="button" className="btn-action-small" disabled={busy || Boolean(pendingFollowUp)} onClick={() => beginEditor('queue_follow_up')}>
+                排队后续
+              </button>
+            </>
+          )}
+          {queued && (
+            <>
+              <button type="button" className="btn-action-small" disabled={busy} onClick={() => beginEditor('update_queued')}>
+                修改任务
+              </button>
+              <button type="button" className="btn-action-small danger" disabled={busy} onClick={() => submit('cancel')}>
+                停止
+              </button>
+            </>
+          )}
+          {paused && (
+            <>
+              <button type="button" className="btn-action-small" disabled={busy} onClick={() => submit('resume')}>
+                继续
+              </button>
+              <button type="button" className="btn-action-small danger" disabled={busy} onClick={() => submit('cancel')}>
+                停止
+              </button>
+            </>
+          )}
+          {retryable && (
+            <button type="button" className="btn-action-small" disabled={busy} onClick={() => submit('retry')}>
+              重试
+            </button>
+          )}
+          {editorAction && (
+            <div className="child-task-editor">
+              <textarea
+                aria-label="子任务指令"
+                value={draft}
+                maxLength={32768}
+                disabled={busy}
+                onChange={(event) => setDraft(event.target.value)}
+              />
+              {editorAction === 'steer' ? (
+                <button type="button" className="btn-action-small" disabled={busy || !draft.trim()} onClick={() => submit('steer', { text: draft.trim() })}>
+                  发送到本轮
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-action-small"
+                  disabled={busy || !draft.trim() || (editorAction === 'queue_follow_up' && Boolean(pendingFollowUp))}
+                  onClick={() => submit(editorAction, { prompt: draft.trim() })}
+                >
+                  {editorAction === 'update_queued' ? '保存修改' : '加入后续队列'}
+                </button>
+              )}
+              <button type="button" className="btn-action-small" disabled={busy} onClick={() => setEditorAction(null)}>
+                取消编辑
+              </button>
+            </div>
+          )}
+          {busy && <span className="child-task-control-feedback">正在提交…</span>}
+          {controlFeedback && <span className="child-task-control-feedback">{controlFeedback}</span>}
+          {controlError && <span className="child-task-control-error" role="alert">{controlError}</span>}
+        </div>
+      )}
       {[
         'queued',
         'cancelled',
@@ -110,6 +232,7 @@ export default function ChildTasksPane({
   loading = false,
   error = null,
   onRefresh,
+  onControl,
 }) {
   const [finishedVisibleCount, setFinishedVisibleCount] = useState(0);
   const orderedChildren = orderChildTasksForRuntime(children);
@@ -166,6 +289,7 @@ export default function ChildTasksPane({
                   child={child}
                   projectId={projectId}
                   onOpenThread={onOpenThread}
+                  onControl={onControl}
                   sequenceCount={sequenceCountFor(child)}
                 />
               ))}
@@ -191,6 +315,7 @@ export default function ChildTasksPane({
                         child={child}
                         projectId={projectId}
                         onOpenThread={onOpenThread}
+                        onControl={onControl}
                         sequenceCount={sequenceCountFor(child)}
                       />
                     ))}

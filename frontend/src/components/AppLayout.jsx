@@ -393,6 +393,7 @@ export default function AppLayout({
             childTasksLoading={childTasks.loading}
             childTasksError={childTasks.error}
             onRefreshChildTasks={childTasks.refresh}
+            onControlChildTask={childTasks.control}
           />
         </ErrorBoundary>
       </div>

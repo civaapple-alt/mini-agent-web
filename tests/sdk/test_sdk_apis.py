@@ -58,7 +58,12 @@ async def test_sdk_model_catalog_request_and_thread_model_settings():
     client._send_request = fake_send
     await client.manage_model_catalog(
         "upsert_provider",
-        provider={"id": "deepseek", "name": "DeepSeek", "kind": "deepseek", "baseUrl": ""},
+        provider={
+            "id": "deepseek",
+            "name": "DeepSeek",
+            "kind": "deepseek",
+            "baseUrl": "",
+        },
         apiKey="private-key",
     )
     settings = await client.update_thread_settings(
@@ -169,6 +174,31 @@ async def test_sdk_child_task_action_unwraps_action_result():
             },
         )
     ]
+
+    calls.clear()
+    await client.child_task_action(
+        "child-1",
+        "parent-1",
+        "child:child-1",
+        2,
+        "pause",
+        request_id="parent-turn:pause-1",
+        turn_id="child-turn-2",
+    )
+    assert calls[0][1]["turnId"] == "child-turn-2"
+    assert calls[0][1]["requestId"] == "parent-turn:pause-1"
+
+    calls.clear()
+    await client.child_task_action(
+        "child-1",
+        "parent-1",
+        "child:child-1",
+        2,
+        "start_failure",
+        request_id="parent-turn:start-failure-1",
+        error="App Server rejected turn/start",
+    )
+    assert calls[0][1]["error"] == "App Server rejected turn/start"
 
 
 @pytest.mark.skipif(

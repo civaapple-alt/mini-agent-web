@@ -140,6 +140,23 @@ class ChildTaskRequest(BaseModel):
     sequence: int | None = Field(default=None, ge=0)
 
 
+class ChildTaskControlRequest(BaseModel):
+    action: Literal[
+        "update_queued",
+        "steer",
+        "queue_follow_up",
+        "pause",
+        "resume",
+        "cancel",
+        "retry",
+    ]
+    operation_id: str = Field(..., min_length=1, max_length=128)
+    attempt: int = Field(..., ge=1)
+    request_id: str = Field(..., min_length=1, max_length=192)
+    prompt: str | None = Field(default=None, max_length=MAX_CHILD_TASK_PROMPT_BYTES)
+    text: str | None = Field(default=None, max_length=4096)
+
+
 class NotebookWriteRequest(BaseModel):
     key: str = Field(..., min_length=1, max_length=128)
     content: str = Field(..., max_length=4096)
@@ -707,6 +724,37 @@ async def cancel_child_task(
     try:
         return await session_manager.cancel_child_task(
             thread_id, child_thread_id, project_id
+        )
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except ValueError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except (ServerProcessError, AppServerError) as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+
+
+@router.post(
+    "/{thread_id}/children/{child_thread_id}/control",
+    summary="Control a child task",
+)
+async def control_child_task(
+    thread_id: str,
+    child_thread_id: str,
+    req: ChildTaskControlRequest,
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """Apply one operation-bound, idempotent runtime-panel action."""
+    try:
+        return await session_manager.control_child_task(
+            thread_id,
+            child_thread_id,
+            req.action,
+            req.operation_id,
+            req.attempt,
+            req.request_id,
+            project_id,
+            prompt=req.prompt,
+            text=req.text,
         )
     except KeyError as err:
         raise HTTPException(status_code=404, detail=str(err)) from err

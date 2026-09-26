@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Bound WebSocket notification delivery so a slow browser cannot stall the
+  App Server stdout reader. Disconnect slow consumers and let them recover from
+  the bounded event replay path. Treat an individual `turn/read` RPC timeout as
+  a transient observation failure; keep waiting for the same child Turn instead
+  of clearing its active registration or prematurely draining the child queue.
 - Stream child Session runtime events directly into the read-only detail view.
   Subscribe by project and child Thread identity, replay the bounded event cache
   on open and refresh, deduplicate by sequence, and continue using settled

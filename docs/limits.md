@@ -10,8 +10,8 @@ it does not reinterpret them or create another execution limit model.
 | Boundary | Limit | Behavior |
 | --- | ---: | --- |
 | JSON-RPC stdio line | 2 MiB | The SDK rejects an oversized App Server line before JSON parsing. |
-| JSON-RPC request | 30 seconds by default | The SDK removes the pending request and raises a process error on timeout. |
-| `wait_for_turn` | 60 seconds by default | The caller can choose a different positive timeout. |
+| JSON-RPC request | 30 seconds by default | One total deadline covers writing and waiting for the correlated response; timeout raises `AppServerRequestTimeoutError`, a `ServerProcessError` subtype. |
+| `wait_for_turn` | 60 seconds by default | The caller can choose a different positive timeout. Transient `turn/read` timeouts are retried within this deadline; expiry raises `TurnTimeoutError`. |
 
 The SDK preserves unknown event types as generic events. This lets an older
 SDK display bounded data from a newer App Server without inventing semantics.

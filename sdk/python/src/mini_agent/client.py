@@ -17,6 +17,7 @@ from typing import Any, Self
 from mini_agent.approval_logging import approval_log_fields
 from mini_agent.errors import (
     AppServerError,
+    AppServerRequestTimeoutError,
     ProtocolVersionMismatchError,
     ServerProcessError,
     TurnTimeoutError,
@@ -394,7 +395,10 @@ class MiniAgentClient:
     # -------------------------------------------------------------------------
 
     async def _send_request(
-        self, method: str, params: dict[str, Any] | None = None
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
     ) -> Any:
         """Send a JSON-RPC request and wait for correlated response."""
         if not self._proc or not self._proc.stdin or self._proc.returncode is not None:
@@ -412,6 +416,8 @@ class MiniAgentClient:
         data = json.dumps(payload) + "\n"
 
         loop = asyncio.get_running_loop()
+        request_timeout = self.request_timeout if timeout is None else timeout
+        deadline = loop.time() + request_timeout
         future: asyncio.Future[Any] = loop.create_future()
         self._pending_requests[req_id] = future
 
@@ -421,14 +427,13 @@ class MiniAgentClient:
         )
         try:
             await asyncio.wait_for(
-                self._write_request(data), timeout=self.request_timeout
+                self._write_request(data), timeout=max(0, deadline - loop.time())
             )
-            return await asyncio.wait_for(future, timeout=self.request_timeout)
+            return await asyncio.wait_for(
+                future, timeout=max(0, deadline - loop.time())
+            )
         except asyncio.TimeoutError as err:
-            raise ServerProcessError(
-                f"App Server request '{method}' timed out after "
-                f"{self.request_timeout:g}s"
-            ) from err
+            raise AppServerRequestTimeoutError(method, request_timeout) from err
         finally:
             # The reader normally removes completed requests. On a timeout or
             # transport failure there is no response left to correlate.
@@ -1067,7 +1072,14 @@ class MiniAgentClient:
 
     async def read_turn(self, turn_id: str) -> TurnReadResult:
         """Read settled result and history of a turn."""
-        res = await self._send_request("turn/read", {"turnId": turn_id})
+        return await self._read_turn(turn_id)
+
+    async def _read_turn(
+        self, turn_id: str, request_timeout: float | None = None
+    ) -> TurnReadResult:
+        res = await self._send_request(
+            "turn/read", {"turnId": turn_id}, timeout=request_timeout
+        )
         return TurnReadResult.from_dict(res)
 
     async def wait_for_turn(
@@ -1080,18 +1092,39 @@ class MiniAgentClient:
         Wait/poll until a turn settles (completes, cancels, or fails),
         and return its TurnReadResult.
         """
-        deadline = asyncio.get_running_loop().time() + timeout
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
         while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise TurnTimeoutError(
+                    f"Turn {turn_id} did not complete within {timeout}s"
+                )
             try:
-                return await self.read_turn(turn_id)
+                return await self._read_turn(
+                    turn_id, request_timeout=min(self.request_timeout, remaining)
+                )
+            except AppServerRequestTimeoutError as err:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    raise TurnTimeoutError(
+                        f"Turn {turn_id} could not be observed within {timeout}s"
+                    ) from err
+                logger.warning(
+                    "Transient App Server turn/read timeout for %s; retrying for %.1fs",
+                    turn_id,
+                    remaining,
+                )
+                await asyncio.sleep(min(poll_interval, remaining))
             except AppServerError as err:
                 # Code -32000 means thread is busy / turn is active
                 if err.code == -32000 or "active turn" in str(err).lower():
-                    if asyncio.get_running_loop().time() > deadline:
+                    remaining = deadline - loop.time()
+                    if remaining <= 0:
                         raise TurnTimeoutError(
                             f"Turn {turn_id} did not complete within {timeout}s"
                         ) from err
-                    await asyncio.sleep(poll_interval)
+                    await asyncio.sleep(min(poll_interval, remaining))
                 else:
                     raise
 

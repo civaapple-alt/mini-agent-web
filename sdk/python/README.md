@@ -78,7 +78,9 @@ allow-all。Deny、Plan 锁、工具可用性和高风险确认仍由 Host/App S
 
 每个 JSON-RPC 请求默认在 30 秒后超时。你可以通过
 `MiniAgentClient(request_timeout=...)` 为本地环境调整该值。超时会清理 pending
-request 并抛出 `ServerProcessError`。`AppServerError` 保留 JSON-RPC 的 `code`、
+request 并抛出 `AppServerRequestTimeoutError`（它继承 `ServerProcessError`，并提供
+`method` 与 `timeout` 字段）。`wait_for_turn()` 会在自己的超时窗口内重试单次
+`turn/read` 请求超时；窗口到期时抛出 `TurnTimeoutError`。`AppServerError` 保留 JSON-RPC 的 `code`、
 `message` 和 `data`。`session/fork` 的身份或 context-policy 冲突使用
 `SESSION_FORK_CONFLICT_CODE`（`-32001`）。
 

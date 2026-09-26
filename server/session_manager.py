@@ -2547,7 +2547,7 @@ class SessionManager:
                     await ws.close(code=1001, reason="Server shutting down")
                 except Exception:  # noqa: BLE001, S110
                     pass
-            self._active_connections.clear()
+                self._ws_broker.disconnect(ws)
 
             # 2. Cancel any pending approval futures
             for fut in self._pending_approvals.values():

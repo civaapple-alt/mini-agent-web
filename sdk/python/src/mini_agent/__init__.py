@@ -6,6 +6,7 @@ from mini_agent.client import AsyncMiniAgentClient, MiniAgentClient, setup_loggi
 from mini_agent.errors import (
     SESSION_FORK_CONFLICT_CODE,
     AppServerError,
+    AppServerRequestTimeoutError,
     MiniAgentError,
     ProtocolVersionMismatchError,
     ServerProcessError,
@@ -87,6 +88,7 @@ __all__ = [
     "SESSION_FORK_CONFLICT_CODE",
     "AgentEvent",
     "AppServerError",
+    "AppServerRequestTimeoutError",
     "ApprovalPolicy",
     "AssistantReasoningDeltaEvent",
     "AssistantTextDeltaEvent",

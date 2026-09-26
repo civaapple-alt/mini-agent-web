@@ -31,5 +31,14 @@ class ServerProcessError(MiniAgentError):
     """Raised when the App Server subprocess fails to spawn or crashes unexpectedly."""
 
 
+class AppServerRequestTimeoutError(ServerProcessError):
+    """Raised when one JSON-RPC request exceeds the SDK transport timeout."""
+
+    def __init__(self, method: str, timeout: float):
+        super().__init__(f"App Server request '{method}' timed out after {timeout:g}s")
+        self.method = method
+        self.timeout = timeout
+
+
 class TurnTimeoutError(MiniAgentError):
     """Raised when a turn execution exceeds the configured timeout."""

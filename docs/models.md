@@ -8,7 +8,7 @@ Web Studio 的模型设置管理机器级 Responses 供应商目录。Host 负�
 
 供应商必须提供兼容的 Responses 接口。Host 不会改用 Chat Completions。接口不兼容时，当前 Turn 会返回错误。
 
-API Key 保存到运行 Host 的机器凭据库。Web Studio 不会在读取设置时取回 Key，只会显示是否已配置。输入新的 Key 会替换旧值；清除操作会删除系统凭据库中的 Key。
+API Key 以明文保存在运行 Host 用户目录的 `~/.mini-agent/provider-credentials/<providerId>.key` 文件中（Windows 位于 `%USERPROFILE%/.mini-agent/provider-credentials/`）。Unix 会将目录权限限制为 `0700`、密钥文件限制为 `0600`；文件不加密。Web Studio 只显示是否已配置，不会读取或接收 Key 内容。输入新的 Key 会替换旧文件；清除操作会删除该文件。此前保存在系统钥匙串中的 Key 不会自动迁移，需要重新填写；旧钥匙串条目需手动清理。
 
 ## 配置模型
 
@@ -52,4 +52,4 @@ Gateway 将模型管理请求转发给 App Server：
 | `GET /api/threads/{thread_id}/model-settings` | 读取 Thread 的模型覆盖和推理选择。 |
 | `POST /api/threads/{thread_id}/settings` | 更新 Thread 的模型覆盖和推理选择；选择为 `{ "kind": "api_default" }` 或 `{ "kind": "level", "value": "disabled" }` 等模型声明的等级。 |
 
-SDK 和 Gateway 的普通查询响应都不包含 API Key 值。机器级目录位于 `~/.mini-agent/model_catalog.json`；Windows 使用 `%USERPROFILE%/.mini-agent/model_catalog.json`。目录保存模型元数据，API Key 保存到操作系统凭据库。
+SDK 和 Gateway 的普通查询响应都不包含 API Key 值。机器级目录位于 `~/.mini-agent/model_catalog.json`；Windows 使用 `%USERPROFILE%/.mini-agent/model_catalog.json`。目录保存模型元数据，API Key 明文保存在相邻的 `provider-credentials/<providerId>.key` 文件中。

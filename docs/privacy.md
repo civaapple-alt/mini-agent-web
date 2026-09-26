@@ -44,9 +44,12 @@ attachment, browser message, or repository commit. Any content made visible to
 a provider, MCP server, or remote tool is governed by that service's privacy
 policy.
 
-Model API keys entered in Web Studio are stored in the Host machine's operating
-system credential store. Model catalog responses contain only an
-`apiKeyConfigured` flag. The Gateway does not store or return the key value.
+Model API keys entered in Web Studio are stored as plaintext files under the
+Host user's `~/.mini-agent/provider-credentials/` directory (under
+`%USERPROFILE%/.mini-agent/provider-credentials/` on Windows). The files are not
+encrypted. Unix restricts the directory and files to the current user. Model
+catalog responses contain only an `apiKeyConfigured` flag. The Gateway does not
+store or return the key value.
 
 The default CORS allowlist contains local development origins. The Gateway bind
 host defaults to `0.0.0.0`, so do not treat that CORS allowlist as a network

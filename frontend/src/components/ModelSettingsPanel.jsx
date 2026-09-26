@@ -290,7 +290,7 @@ export default function ModelSettingsPanel({ projectId = null, onToast }) {
       <div className="model-settings-toolbar">
         <div>
           <h2>模型供应商</h2>
-          <p>供应商和模型元数据保存在本机，API Key 由系统凭据库保管。</p>
+          <p>供应商和模型保存在本机。API Key 明文存放于用户配置目录，不加密；Unix 上仅当前用户可读写。</p>
         </div>
         <div className="model-toolbar-actions">
           <button type="button" className="model-icon-button" onClick={() => void loadCatalog()} disabled={loading} title="刷新">

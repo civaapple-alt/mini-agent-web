@@ -17,7 +17,41 @@ import {
   shouldIgnoreApprovalWhileInterrupting,
   shouldIgnoreStreamEventWhileInterrupting,
   shouldSettleActiveTurnFromError,
+  settleStaleStreamingPresentation,
 } from '../utils/messageState.js';
+
+test('runtime snapshots settle stale streamed blocks and preserve only the active Turn', () => {
+  const messages = [
+    {
+      id: 'turn_turn-1',
+      role: 'assistant',
+      turnId: 'turn-1',
+      blocks: [
+        { type: 'thinking', content: 'old reasoning', isStreaming: true },
+        { type: 'text', content: 'old answer', isStreaming: true },
+      ],
+    },
+    {
+      id: 'turn_turn-2',
+      role: 'assistant',
+      turnId: 'turn-2',
+      blocks: [
+        { type: 'thinking', content: 'current reasoning', isStreaming: true },
+      ],
+    },
+  ];
+
+  const reconciled = settleStaleStreamingPresentation(messages, 'turn-2');
+
+  assert.equal(reconciled[0].blocks.every((block) => !block.isStreaming), true);
+  assert.equal(reconciled[1].blocks[0].isStreaming, true);
+  assert.equal(
+    settleStaleStreamingPresentation(reconciled).every((message) => (
+      message.blocks.every((block) => !block.isStreaming)
+    )),
+    true,
+  );
+});
 
 test('history messages join their durable Turn by item content and call id', () => {
   const assigned = assignHistoryTurnIds(

@@ -288,6 +288,32 @@ function settleAssistantTextBlocks(messages, targetIndex) {
   return copy;
 }
 
+/** Settle streamed presentation for Turns outside the authoritative active Turn. */
+export function settleStaleStreamingPresentation(messages, activeTurnId = null) {
+  let changed = false;
+  const settled = messages.map((message) => {
+    if (message.role !== 'assistant') return message;
+    const belongsToActiveTurn = activeTurnId && (
+      message.turnId === activeTurnId || message.id === `turn_${activeTurnId}`
+    );
+    if (belongsToActiveTurn) return message;
+
+    let blocksChanged = false;
+    const blocks = (message.blocks || []).map((block) => {
+      if (
+        (block.type !== 'thinking' && block.type !== 'text')
+        || !block.isStreaming
+      ) return block;
+      blocksChanged = true;
+      return { ...block, isStreaming: false };
+    });
+    if (!blocksChanged) return message;
+    changed = true;
+    return { ...message, blocks };
+  });
+  return changed ? settled : messages;
+}
+
 function hasAssistantBlockBoundary(blocks) {
   return blocks.some(
     (block) => block.type === 'tool' || block.type === 'compaction'

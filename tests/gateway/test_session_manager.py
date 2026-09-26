@@ -2759,6 +2759,270 @@ async def test_list_child_tasks_keeps_persisted_terminal_state_over_stale_runtim
 
 
 @pytest.mark.asyncio
+async def test_list_child_tasks_keeps_queued_attempt_over_previous_failed_turn(
+    mock_session_manager, monkeypatch
+):
+    """A prior attempt's failed runtime cannot occupy a queued retry's slot."""
+    monkeypatch.setattr(
+        mock_session_manager,
+        "resolve_thread_project",
+        lambda _thread_id, _project_id=None: "default",
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_canonical_thread",
+        lambda thread_id, _project_id=None: (
+            {"session": {"session_id": "s-parent"}} if thread_id == "parent" else None
+        ),
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "list_project_child_sessions",
+        lambda _project_id, _parent_session_id=None: [
+            {
+                "thread_id": "child",
+                "session_id": "s-child",
+                "parent_session_id": "s-parent",
+                "is_child_task": True,
+                "child_task_state": {
+                    "operation_id": "child:child",
+                    "status": "queued",
+                    "attempt": 2,
+                    "turn_id": "turn-1",
+                    "prompt": "retry this task",
+                },
+                "active_turn_id": None,
+                "turn_active": False,
+                "process_online": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_thread_meta",
+        lambda _thread_id, _project_id=None: {"title": "Queued retry"},
+    )
+    stale_runtime = AsyncMock()
+    stale_runtime.get_runtime_status.return_value = SimpleNamespace(
+        phase="failed",
+        turn_id="turn-1",
+        operation_id="child:child",
+    )
+    mock_session_manager._project_clients[("default", "child")] = stale_runtime
+
+    children = await mock_session_manager.list_child_tasks("parent", "default")
+
+    assert children[0]["status"] == "queued"
+    assert children[0]["turn_id"] is None
+    assert children[0]["phase"] is None
+    stale_runtime.get_runtime_status.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_list_child_tasks_marks_active_operation_without_matching_runtime(
+    mock_session_manager, monkeypatch
+):
+    """An active operation without a live matching Turn is visible for recovery."""
+    monkeypatch.setattr(
+        mock_session_manager,
+        "resolve_thread_project",
+        lambda _thread_id, _project_id=None: "default",
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_canonical_thread",
+        lambda thread_id, _project_id=None: (
+            {"session": {"session_id": "s-parent"}} if thread_id == "parent" else None
+        ),
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "list_project_child_sessions",
+        lambda _project_id, _parent_session_id=None: [
+            {
+                "thread_id": "child",
+                "session_id": "s-child",
+                "parent_session_id": "s-parent",
+                "is_child_task": True,
+                "child_task_state": {
+                    "operation_id": "child:child",
+                    "status": "running",
+                    "turn_id": "turn-1",
+                },
+                "active_turn_id": "turn-1",
+                "turn_active": True,
+                "process_online": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_thread_meta",
+        lambda _thread_id, _project_id=None: {"title": "Needs recovery"},
+    )
+    stale_runtime = AsyncMock()
+    stale_runtime.get_runtime_status.return_value = SimpleNamespace(
+        phase="idle",
+        turn_id="turn-1",
+        operation_id="child:child",
+    )
+    mock_session_manager._project_clients[("default", "child")] = stale_runtime
+
+    children = await mock_session_manager.list_child_tasks("parent", "default")
+
+    assert children[0]["status"] == "running"
+    assert children[0]["turn_id"] is None
+    assert children[0]["recovery_required"] is True
+    assert "没有匹配的活动 Turn" in children[0]["recovery_reason"]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_does_not_interrupt_a_persisted_turn_that_is_not_active(
+    mock_session_manager, monkeypatch
+):
+    """Recovery never replays a stop against an old or already settled Turn."""
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_canonical_thread",
+        lambda thread_id, _project_id=None: (
+            {"session": {"session_id": "s-parent"}} if thread_id == "parent" else None
+        ),
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "list_project_child_sessions",
+        lambda _project_id, _parent_session_id=None: [
+            {
+                "is_child_task": True,
+                "parent_session_id": "s-parent",
+                "child_task_state": {
+                    "parent_thread_id": "parent",
+                    "status": "cancelling",
+                    "turn_id": "turn-old",
+                },
+                "thread_id": "child",
+            }
+        ],
+    )
+    client = AsyncMock()
+    client.get_runtime_status.return_value = SimpleNamespace(
+        phase="idle", turn_id="turn-old"
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_client_for_thread",
+        AsyncMock(return_value=client),
+    )
+    drain = AsyncMock()
+    monkeypatch.setattr(mock_session_manager, "_drain_child_queue", drain)
+
+    await mock_session_manager.reconcile_child_operations("default")
+
+    client.get_runtime_status.assert_awaited_once_with("child")
+    client.interrupt_turn.assert_not_awaited()
+    assert mock_session_manager.get_active_turn("child", "default") is None
+    drain.assert_awaited_once_with("parent", "default")
+
+
+@pytest.mark.asyncio
+async def test_queue_drain_ignores_previous_failed_turns_for_queued_retries(
+    mock_session_manager, monkeypatch
+):
+    """A previous failed runtime does not reserve slots for queued attempts."""
+    monkeypatch.setattr(
+        mock_session_manager,
+        "resolve_thread_project",
+        lambda _thread_id, _project_id=None: "default",
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_canonical_thread",
+        lambda thread_id, _project_id=None: (
+            {"session": {"session_id": "s-parent"}} if thread_id == "parent" else None
+        ),
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_settings",
+        lambda _project_id=None: {
+            "subagent": {"max_concurrent_children": 2},
+            "reasoning_effort": "high",
+        },
+    )
+    children = []
+    for index in range(1, 5):
+        status = "completed" if index < 3 else "queued"
+        children.append(
+            {
+                "thread_id": f"child-{index}",
+                "session_id": f"s-child-{index}",
+                "parent_session_id": "s-parent",
+                "is_child_task": True,
+                "process_online": True,
+                "child_task_state": {
+                    "operation_id": f"child:child-{index}",
+                    "status": status,
+                    "attempt": 2 if index >= 3 else 1,
+                    "turn_id": f"old-turn-{index}",
+                    "prompt": f"retry task {index}",
+                    "execution_mode": "parallel",
+                    "group_id": None,
+                    "sequence": None,
+                },
+            }
+        )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "list_project_child_sessions",
+        lambda _project_id, _parent_session_id=None: children,
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_thread_meta",
+        lambda thread_id, _project_id=None: {"title": thread_id},
+    )
+
+    release_waiters = asyncio.Event()
+    clients = {}
+    for index in (3, 4):
+        client = AsyncMock()
+        client.get_runtime_status.return_value = SimpleNamespace(
+            phase="failed",
+            turn_id=f"old-turn-{index}",
+            operation_id=f"child:child-{index}",
+        )
+        client.start_turn.return_value = SimpleNamespace(
+            turn_id=f"new-turn-{index}", status="started"
+        )
+        clients[f"child-{index}"] = client
+        mock_session_manager._project_clients[("default", f"child-{index}")] = client
+
+    async def get_client(thread_id, _project_id=None):
+        return clients[thread_id]
+
+    async def wait_for_started_turn(*_args):
+        await release_waiters.wait()
+
+    monkeypatch.setattr(mock_session_manager, "get_client_for_thread", get_client)
+    monkeypatch.setattr(
+        mock_session_manager, "_wait_for_child_turn", wait_for_started_turn
+    )
+    monkeypatch.setattr(mock_session_manager, "_broadcast_child_operation", AsyncMock())
+
+    await mock_session_manager._drain_child_queue_once("parent", "default")
+
+    assert clients["child-3"].get_runtime_status.await_count == 0
+    assert clients["child-4"].get_runtime_status.await_count == 0
+    assert clients["child-3"].start_turn.await_count == 1
+    assert clients["child-4"].start_turn.await_count == 1
+    release_waiters.set()
+    await asyncio.gather(
+        mock_session_manager._active_tasks_by_project[("default", "child-3")],
+        mock_session_manager._active_tasks_by_project[("default", "child-4")],
+    )
+
+
+@pytest.mark.asyncio
 async def test_pre_session_delegation_failure_retains_error_and_broadcasts(
     mock_session_manager, monkeypatch
 ):

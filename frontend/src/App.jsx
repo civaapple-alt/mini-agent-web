@@ -14,6 +14,7 @@ import {
   shouldIgnoreApprovalWhileInterrupting,
   shouldIgnoreStreamEventWhileInterrupting,
   shouldSettleActiveTurnFromError,
+  settleStaleStreamingPresentation,
 } from './utils/messageState';
 import {
   appendGoalMessage as appendGoalMessageToMessages,
@@ -169,6 +170,7 @@ export default function App() {
   const eventCursorsRef = useRef(new Map());
   const hasConnectedRef = useRef(false);
   const runtimeGenerationRef = useRef(0);
+  const runtimeStatusRevisionRef = useRef(null);
   const queueDispatchingRef = useRef(false);
   const interruptPendingRef = useRef(false);
   const interruptTurnIdRef = useRef(null);
@@ -362,6 +364,7 @@ export default function App() {
     goalStateRef.current = null;
     setGoalState(null);
     setRuntimeStatus(null);
+    runtimeStatusRevisionRef.current = null;
     setLastWorkflowEvent(null);
     setMessages([]);
     setThreadItems([]);
@@ -740,6 +743,66 @@ export default function App() {
     }
   };
 
+  const applyRuntimeStatus = (status, requestContext = currentSessionRequest()) => {
+    if (!isCurrentSessionRequest(requestContext)) return false;
+    const nextRevision = readStateRevision(status);
+    if (!shouldApplyStateRevision(runtimeStatusRevisionRef.current, nextRevision)) {
+      return false;
+    }
+    if (nextRevision !== null) runtimeStatusRevisionRef.current = nextRevision;
+
+    setRuntimeStatus(status);
+    const runtimeTurnId = status.turn_id || status.turnId;
+    if (status.phase === 'stopping' && runtimeTurnId) {
+      rememberInterruptedTurn(runtimeTurnId);
+      activeTurnIdRef.current = runtimeTurnId;
+      interruptTurnIdRef.current = runtimeTurnId;
+      interruptPendingRef.current = true;
+      setActiveTurnId(runtimeTurnId);
+      setIsGenerating(false);
+      setIsInterrupting(true);
+      return true;
+    }
+    const stoppedTurn = shouldIgnoreApprovalWhileInterrupting(
+      { turnId: runtimeTurnId },
+      interruptPendingRef.current,
+      interruptTurnIdRef.current,
+    );
+    if (ACTIVE_RUNTIME_PHASES.has(status.phase) && !stoppedTurn) {
+      setMessages((messages) => settleStaleStreamingPresentation(
+        messages,
+        runtimeTurnId || null,
+      ));
+      if (
+        interruptPendingRef.current
+        && interruptTurnIdRef.current
+        && runtimeTurnId
+        && String(runtimeTurnId) !== String(interruptTurnIdRef.current)
+      ) {
+        interruptPendingRef.current = false;
+        interruptTurnIdRef.current = null;
+        setIsInterrupting(false);
+      }
+      setIsGenerating(true);
+      if (runtimeTurnId) {
+        activeTurnIdRef.current = runtimeTurnId;
+        setActiveTurnId(runtimeTurnId);
+      }
+    } else if (isRuntimeSettled(status)) {
+      // Runtime snapshots are authoritative after event replay gaps. A
+      // settled snapshot has no active Turn, even if it retains the last
+      // Turn ID for diagnostics; freeze every stale streamed block.
+      setMessages((messages) => settleStaleStreamingPresentation(messages));
+      setIsGenerating(false);
+      setIsInterrupting(false);
+      activeTurnIdRef.current = null;
+      setActiveTurnId(null);
+      interruptPendingRef.current = false;
+      interruptTurnIdRef.current = null;
+    }
+    return true;
+  };
+
   const loadRuntimeStatus = async (
     threadId = currentThreadRef.current,
     projectId = currentThreadProjectRef.current,
@@ -751,50 +814,7 @@ export default function App() {
         projectId,
         signal: requestContext.signal,
       });
-      if (
-        isCurrentSessionRequest(requestContext)
-      ) {
-        setRuntimeStatus(status);
-        const runtimeTurnId = status.turn_id || status.turnId;
-        if (status.phase === 'stopping' && runtimeTurnId) {
-          rememberInterruptedTurn(runtimeTurnId);
-          activeTurnIdRef.current = runtimeTurnId;
-          interruptTurnIdRef.current = runtimeTurnId;
-          interruptPendingRef.current = true;
-          setActiveTurnId(runtimeTurnId);
-          setIsGenerating(false);
-          setIsInterrupting(true);
-        }
-        const stoppedTurn = shouldIgnoreApprovalWhileInterrupting(
-          { turnId: runtimeTurnId },
-          interruptPendingRef.current,
-          interruptTurnIdRef.current,
-        );
-        if (ACTIVE_RUNTIME_PHASES.has(status.phase) && status.phase !== 'stopping' && !stoppedTurn) {
-          if (
-            interruptPendingRef.current
-            && interruptTurnIdRef.current
-            && runtimeTurnId
-            && String(runtimeTurnId) !== String(interruptTurnIdRef.current)
-          ) {
-            interruptPendingRef.current = false;
-            interruptTurnIdRef.current = null;
-            setIsInterrupting(false);
-          }
-          setIsGenerating(true);
-          if (runtimeTurnId) {
-            activeTurnIdRef.current = runtimeTurnId;
-            setActiveTurnId(runtimeTurnId);
-          }
-        } else if (isRuntimeSettled(status)) {
-          setIsGenerating(false);
-          setIsInterrupting(false);
-          activeTurnIdRef.current = null;
-          setActiveTurnId(null);
-          interruptPendingRef.current = false;
-          interruptTurnIdRef.current = null;
-        }
-      }
+      applyRuntimeStatus(status, requestContext);
     } catch (err) {
       if (isAbortError(err) || !isCurrentSessionRequest(requestContext)) return;
       console.debug('Failed to load runtime status:', err);
@@ -1516,6 +1536,7 @@ export default function App() {
           return;
         }
         runtimeGenerationRef.current = nextGeneration;
+        runtimeStatusRevisionRef.current = null;
         workflowRevisionsRef.current.clear();
         loadWorkflows(currentThreadRef.current);
         showToast('运行时已重启，正在同步控制面状态', 'info', 2500);
@@ -1525,22 +1546,12 @@ export default function App() {
           notification.threadId === currentThreadRef.current
           && (!notificationProjectId || notificationProjectId === currentThreadProjectRef.current)
         ) {
-          setRuntimeStatus(notification);
-          const runtimeTurnId = notification.turnId || notification.turn_id;
-          if (notification.phase === 'stopping' && runtimeTurnId) {
-            rememberInterruptedTurn(runtimeTurnId);
-            activeTurnIdRef.current = runtimeTurnId;
-            interruptTurnIdRef.current = runtimeTurnId;
-            interruptPendingRef.current = true;
-            setActiveTurnId(runtimeTurnId);
-            setIsGenerating(false);
-            setIsInterrupting(true);
-          } else if (
-            shouldRefreshAfterInterruptStatus(
-              notification,
-              interruptTurnIdRef.current,
-            )
-          ) {
+          const shouldRefresh = shouldRefreshAfterInterruptStatus(
+            notification,
+            interruptTurnIdRef.current,
+          );
+          const applied = applyRuntimeStatus(notification, currentSessionRequest());
+          if (applied && shouldRefresh) {
             void loadRuntimeStatus(
               currentThreadRef.current,
               currentThreadProjectRef.current,

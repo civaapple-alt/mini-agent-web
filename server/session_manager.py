@@ -47,6 +47,30 @@ MAX_CHILD_WAKE_OVERFLOW_SAMPLE = 8
 MAX_DELEGATION_FAILURES_PER_PARENT = 32
 MAX_NOTEBOOK_ENTRIES = 64
 MAX_NOTEBOOK_ENTRY_BYTES = 4096
+ACTIVE_CHILD_RUNTIME_PHASES = frozenset(
+    {
+        "starting_turn",
+        "model",
+        "tool",
+        "waiting_approval",
+        "stopping",
+        "compaction",
+        "persisting",
+        "goal_verification",
+        "goal_continuation_queued",
+        "resuming",
+    }
+)
+ACTIVE_CHILD_TASK_STATUSES = frozenset(
+    {
+        "running",
+        "awaiting_approval",
+        "in_progress",
+        "pausing",
+        "cancelling",
+    }
+)
+RECONCILABLE_CHILD_TASK_STATUSES = ACTIVE_CHILD_TASK_STATUSES | {"queued"}
 __all__ = ["SessionManager", "session_manager", "to_json_serializable"]
 
 
@@ -1236,6 +1260,20 @@ class SessionManager:
             ):
                 try:
                     client = await self.get_client_for_thread(thread_id, project_id)
+                    runtime = await client.get_runtime_status(thread_id)
+                    if (
+                        str(runtime.turn_id or "") != turn_id
+                        or runtime.phase not in ACTIVE_CHILD_RUNTIME_PHASES
+                    ):
+                        logger.warning(
+                            "Skipping stale Child %s recovery for Turn %s; "
+                            "runtime is %s on Turn %s",
+                            thread_id,
+                            turn_id,
+                            runtime.phase,
+                            runtime.turn_id,
+                        )
+                        continue
                     task = asyncio.create_task(
                         self._wait_for_child_turn(
                             client, thread_id, project_id, turn_id, parent
@@ -1617,10 +1655,17 @@ class SessionManager:
                 if session.get("turn_active")
                 else (session.get("last_turn_status") or "idle")
             )
+            if status == "queued":
+                active_turn_id = None
             operation_id = child_task_state.get("operation_id")
             phase = None
+            runtime_recovery_required = False
+            runtime_recovery_reason = None
             client = self._project_clients.get((resolved_project_id, child_thread_id))
-            if client is not None:
+            # A queued operation owns no current Turn. Its Session may still
+            # expose the last attempt's terminal runtime snapshot, which must
+            # not turn the queued attempt into a running task or consume a slot.
+            if client is not None and status != "queued":
                 try:
                     runtime = await client.get_runtime_status(child_thread_id)
                     persisted_terminal = status in {
@@ -1631,15 +1676,31 @@ class SessionManager:
                         "paused",
                     }
                     if not persisted_terminal:
-                        active_turn_id = runtime.turn_id or active_turn_id
-                        operation_id = operation_id or runtime.operation_id
                         phase = runtime.phase
-                        if status in {"pausing", "cancelling"}:
-                            pass
-                        elif runtime.phase == "waiting_approval":
-                            status = "awaiting_approval"
-                        elif runtime.phase not in (None, "idle"):
-                            status = "running"
+                        expected_turn_id = str(active_turn_id or "")
+                        runtime_turn_id = str(runtime.turn_id or "")
+                        matching_active_turn = (
+                            bool(expected_turn_id)
+                            and runtime_turn_id == expected_turn_id
+                            and runtime.phase in ACTIVE_CHILD_RUNTIME_PHASES
+                        )
+                        if matching_active_turn:
+                            operation_id = operation_id or runtime.operation_id
+                            active_turn_id = runtime_turn_id
+                            if status not in {"pausing", "cancelling"}:
+                                status = (
+                                    "awaiting_approval"
+                                    if runtime.phase == "waiting_approval"
+                                    else "running"
+                                )
+                        else:
+                            active_turn_id = None
+                            if status in ACTIVE_CHILD_TASK_STATUSES:
+                                runtime_recovery_required = True
+                                runtime_recovery_reason = (
+                                    "持久化任务没有匹配的活动 Turn；已停止按旧 Turn 占用并发槽，"
+                                    "请检查任务状态后再控制或重试。"
+                                )
                 except Exception:
                     logger.debug(
                         "Unable to read child runtime %s",
@@ -1682,16 +1743,13 @@ class SessionManager:
                         child_task_state.get("attempt") or 1,
                         status,
                     ),
-                    "recovery_required": status
-                    in {
-                        "queued",
-                        "running",
-                        "awaiting_approval",
-                        "pausing",
-                        "cancelling",
-                    }
-                    and not session.get("process_online", False)
-                    and client is None,
+                    "recovery_required": runtime_recovery_required
+                    or (
+                        status in RECONCILABLE_CHILD_TASK_STATUSES
+                        and not session.get("process_online", False)
+                        and client is None
+                    ),
+                    "recovery_reason": runtime_recovery_reason,
                     "last_turn_status": session.get("last_turn_status"),
                     "last_turn_error": session.get("last_turn_error"),
                     "last_turn_prompt": session.get("summary"),

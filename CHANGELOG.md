@@ -20,7 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   output, and reject an existing Thread owned by a different parent.
 - On event replay gaps, recover from canonical history and the latest runtime
   status without replaying an incomplete retained suffix. Settled snapshots now
-  stop stale thinking indicators and elapsed-time counters.
+  settle stale thinking/text blocks, and elapsed-time counters stop at the
+  streaming-to-settled transition.
+- Keep queued child attempts queued when a previous attempt's runtime snapshot is
+  still terminal. Recovery reattaches or interrupts only a matching active Turn;
+  stale active projections are marked for attention and no longer reserve a
+  concurrency slot or expose controls that cannot reach that Turn.
 - Reconcile child task reads with settled Turns when a terminal operation snapshot
   is missing. Recover the bounded final assistant result in `task_read`, and make
   clear that an empty `reports` list means no explicit progress report was sent.

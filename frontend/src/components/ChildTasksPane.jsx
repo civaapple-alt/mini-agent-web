@@ -57,7 +57,7 @@ function ChildTaskRow({
   const pendingFollowUp = child.pending_follow_up;
   const title = child.title || child.child_thread_id || '子代理任务';
   const activity = child.recovery_required
-    ? '等待子 Session 恢复'
+    ? child.recovery_reason || '等待子 Session 恢复'
     : active
       ? [phase, latestReport ? `最新进展：${latestReport.text}` : null].filter(Boolean).join(' · ') || '正在执行'
     : queued
@@ -120,7 +120,7 @@ function ChildTaskRow({
             <span>查看</span>
           </button>
         )}
-        {onControl && ['running', 'in_progress', 'awaiting_approval', 'queued', 'paused'].includes(status) && (
+        {onControl && !child.recovery_required && ['running', 'in_progress', 'awaiting_approval', 'queued', 'paused'].includes(status) && (
           <button
             type="button"
             className="child-task-stop-quick"
@@ -165,7 +165,7 @@ function ChildTaskRow({
           </div>
           {child.recovery_required && (
             <div className="child-task-recovery">
-              子 Session 需要重新连接，当前运行状态可能尚未恢复。
+              {child.recovery_reason || '子 Session 需要重新连接，当前运行状态可能尚未恢复。'}
             </div>
           )}
           {waitingReason && (
@@ -202,7 +202,7 @@ function ChildTaskRow({
               {failureDetail}
             </div>
           )}
-          {onControl && (active || queued || paused || retryable) && (
+          {onControl && !child.recovery_required && (active || queued || paused || retryable) && (
             <details className="child-task-actions">
               <summary>更多操作</summary>
               <div className="child-task-controls" aria-label="子任务控制">

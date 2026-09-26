@@ -181,10 +181,12 @@ describe('ChildTasksPane', () => {
             title: 'Recovery task',
             status: 'running',
             recovery_required: true,
+            recovery_reason: '持久化任务没有匹配的活动 Turn',
           },
         ]}
         loading={false}
         error={null}
+        onControl={vi.fn()}
       />,
     );
 
@@ -211,8 +213,11 @@ describe('ChildTasksPane', () => {
     expect(retry.querySelectorAll('.child-task-attempt')).toHaveLength(2);
     const recovery = [...container.querySelectorAll('.child-task-row')]
       .find((row) => row.textContent.includes('Recovery task'));
+    expect(recovery.querySelector('.child-task-stop-quick')).toBeNull();
     fireEvent.click(recovery.querySelector('.child-task-summary'));
-    expect(screen.getByText(/需要重新连接/)).toBeTruthy();
+    expect(recovery.querySelector('.child-task-recovery')?.textContent)
+      .toBe('持久化任务没有匹配的活动 Turn');
+    expect(recovery.querySelector('.child-task-actions')).toBeNull();
   });
 
   it('labels initial, retry, and follow-up rounds from persisted attempt kinds', () => {

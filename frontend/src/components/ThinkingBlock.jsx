@@ -14,7 +14,7 @@ export default function ThinkingBlock({
   ));
   const [copied, setCopied] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
-  const startTimeRef = useRef(Date.now());
+  const startTimeRef = useRef(null);
   const finalTimeRef = useRef(null);
   const bodyRef = useRef(null);
   const followLatestRef = useRef(true);
@@ -24,19 +24,28 @@ export default function ThinkingBlock({
   }, [isCurrentBlock, presentationId]);
 
   useEffect(() => {
-    let interval = null;
+    let interval;
     if (isStreaming) {
-      interval = setInterval(() => {
-        const secs = ((Date.now() - startTimeRef.current) / 1000).toFixed(1);
-        setElapsedSec(secs);
-      }, 100);
-    } else if (finalTimeRef.current === null && elapsedSec > 0) {
-      finalTimeRef.current = elapsedSec;
+      if (startTimeRef.current === null) {
+        startTimeRef.current = Date.now();
+        finalTimeRef.current = null;
+        setElapsedSec(0);
+      }
+      const updateElapsed = () => {
+        setElapsedSec(Number(((Date.now() - startTimeRef.current) / 1000).toFixed(1)));
+      };
+      updateElapsed();
+      interval = setInterval(updateElapsed, 100);
+    } else if (startTimeRef.current !== null && finalTimeRef.current === null) {
+      const settledTime = Number(((Date.now() - startTimeRef.current) / 1000).toFixed(1));
+      finalTimeRef.current = settledTime;
+      setElapsedSec(settledTime);
+      startTimeRef.current = null;
     }
     return () => {
-      if (interval) clearInterval(interval);
+      if (interval !== undefined) clearInterval(interval);
     };
-  }, [isStreaming, elapsedSec]);
+  }, [isStreaming]);
 
   useLayoutEffect(() => {
     const body = bodyRef.current;
@@ -50,7 +59,7 @@ export default function ThinkingBlock({
   if (!content && !isStreaming) return null;
 
   const charCount = (content || '').length;
-  const timeDisplay = finalTimeRef.current || elapsedSec;
+  const timeDisplay = finalTimeRef.current ?? elapsedSec;
 
   const handleCopy = (e) => {
     e.stopPropagation();

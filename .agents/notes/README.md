@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [子任务 attempt 与 Runtime 快照对账](implemented/bug-fix/2026-09-26-child-attempt-runtime-reconciliation.zh.md)
 - [子任务恢复按父 Session 隔离](implemented/bug-fix/2026-09-26-child-task-recovery-session-scope.zh.md)
 - [子任务面板状态速览与渐进控制](implemented/feature/2026-09-26-child-task-panel-scanability.zh.md)
 - [子智能体列表折叠状态与数量摘要](implemented/bug-fix/2026-09-26-child-task-list-state-and-counts.zh.md)

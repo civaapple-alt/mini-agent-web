@@ -7,9 +7,10 @@ import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
+from mini_agent import TurnTimeoutError
 
 from server import session_manager as session_manager_module
 from server.control import client_pool as client_pool_module
@@ -3321,6 +3322,45 @@ async def test_start_child_task_persists_full_intent_for_immediate_parallel_chil
         "parallel",
         None,
     )
+
+
+@pytest.mark.asyncio
+async def test_child_turn_wait_continues_after_sdk_timeout(
+    mock_session_manager, monkeypatch
+):
+    """A long-running child stays monitored past the SDK's 60-second poll limit."""
+    client = AsyncMock()
+    client.wait_for_turn = AsyncMock(
+        side_effect=[TurnTimeoutError("turn exceeded wait timeout"), object()]
+    )
+    child = {
+        "child_thread_id": "child",
+        "operation_id": "child:child",
+        "operation_attempt": 1,
+        "status": "completed",
+        "finished_at_ms": 2000,
+    }
+    monkeypatch.setattr(
+        mock_session_manager,
+        "list_child_tasks",
+        AsyncMock(return_value=[child]),
+    )
+    broadcast = AsyncMock()
+    drain = AsyncMock()
+    wake = Mock()
+    monkeypatch.setattr(mock_session_manager, "_broadcast_child_operation", broadcast)
+    monkeypatch.setattr(mock_session_manager, "_drain_child_queue", drain)
+    monkeypatch.setattr(mock_session_manager, "_queue_child_parent_wakeup", wake)
+
+    await mock_session_manager._wait_for_child_turn(
+        client, "child", "default", "turn-child", "parent"
+    )
+
+    assert client.wait_for_turn.await_count == 2
+    broadcast.assert_awaited_once_with(child)
+    wake.assert_called_once()
+    drain.assert_awaited_once_with("parent", "default")
+    assert mock_session_manager.get_active_turn("child", "default") is None
 
 
 @pytest.mark.asyncio

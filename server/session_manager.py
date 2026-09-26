@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import WebSocket
-from mini_agent import MiniAgentClient
+from mini_agent import MiniAgentClient, TurnTimeoutError
 
 from server.config import settings
 from server.control.approval_bridge import ApprovalBridge
@@ -801,7 +801,7 @@ class SessionManager:
         """Keep the child turn registered until its canonical result settles."""
         task = asyncio.current_task()
         try:
-            await client.wait_for_turn(turn_id)
+            await self._wait_for_turn_until_settled(client, turn_id, "Child")
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -848,7 +848,21 @@ class SessionManager:
             try:
                 await self._drain_child_queue(parent_thread_id or thread_id, project_id)
             except Exception:
-                logger.exception("Unable to drain queued child tasks for %s", thread_id)
+                logger.exception(
+                    "Unable to drain queued child tasks for %s", thread_id
+                )
+
+    async def _wait_for_turn_until_settled(
+        self, client: MiniAgentClient, turn_id: str, owner: str
+    ) -> Any:
+        """Continue polling after SDK wait windows; timeouts do not settle Turns."""
+        while True:
+            try:
+                return await client.wait_for_turn(turn_id)
+            except TurnTimeoutError:
+                logger.debug(
+                    "%s Turn %s is still active; continuing to wait", owner, turn_id
+                )
 
     async def _drain_child_queue(self, source_thread_id: str, project_id: str) -> None:
         """Start queued child operations and retry transient start failures."""
@@ -3579,7 +3593,7 @@ class SessionManager:
     ) -> None:
         task = asyncio.current_task()
         try:
-            await client.wait_for_turn(turn_id)
+            await self._wait_for_turn_until_settled(client, turn_id, "Parent wake-up")
         except asyncio.CancelledError:
             raise
         except Exception:

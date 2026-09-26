@@ -197,7 +197,7 @@ export default function StatusDetailsPane({
           <span className="status-child-count">
             {childTasksLoading && childTasks.length === 0
               ? '正在读取'
-              : `运行 ${childTaskCounts.running} · 排队 ${childTaskCounts.queued} · 待处理 ${childTaskCounts.needsAttention} · 共 ${childTasks.length}`}
+              : `运行 ${childTaskCounts.running} · 排队 ${childTaskCounts.queued} · 待处理 ${childTaskCounts.needsAttention} · 已结束 ${childTaskCounts.finished} · 共 ${childTasks.length}`}
           </span>
           {childTasksError && <small className="status-child-error">{childTasksError}</small>}
         </div>

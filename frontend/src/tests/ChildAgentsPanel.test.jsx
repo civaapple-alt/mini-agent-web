@@ -95,8 +95,8 @@ describe('child agents drawer tab', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: '返回子任务' }));
-    fireEvent.click(screen.getByRole('button', { name: '显示已结束任务（1）' }));
     expect(screen.getByText('Review child task')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '收起已结束任务' })).toBeTruthy();
     const childTab = [...container.querySelectorAll('.sidepanel-tabs .panel-tab-btn')]
       .find((button) => button.textContent.includes('子智能体'));
     expect(childTab.className).toContain('active');

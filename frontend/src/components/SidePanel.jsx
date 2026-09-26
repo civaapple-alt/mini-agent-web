@@ -446,6 +446,7 @@ export default function SidePanel({
 }) {
   const [activeTab, setActiveTab] = useState(() => normalizePanelTab(initialTab));
   const [selectedChild, setSelectedChild] = useState(null);
+  const [finishedChildTaskVisibleCount, setFinishedChildTaskVisibleCount] = useState(0);
   const [worldData, setWorldData] = useState(null);
   const [mcpData, setMcpData] = useState(null);
   const [workflowState, setWorkflowState] = useState(goalState || null);
@@ -529,6 +530,7 @@ export default function SidePanel({
     setWorkflowFiles([]);
     setWorkflowState(goalState || null);
     setSelectedChild(null);
+    setFinishedChildTaskVisibleCount(0);
   }, [threadId, projectId]);
 
   useEffect(() => {
@@ -1125,6 +1127,8 @@ export default function SidePanel({
                 error={childTasksError}
                 onRefresh={onRefreshChildTasks}
                 onControl={onControlChildTask}
+                finishedVisibleCount={finishedChildTaskVisibleCount}
+                onFinishedVisibleCountChange={setFinishedChildTaskVisibleCount}
               />
             )
           )}

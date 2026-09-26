@@ -233,8 +233,14 @@ export default function ChildTasksPane({
   error = null,
   onRefresh,
   onControl,
+  finishedVisibleCount: controlledFinishedVisibleCount,
+  onFinishedVisibleCountChange,
 }) {
-  const [finishedVisibleCount, setFinishedVisibleCount] = useState(0);
+  const [localFinishedVisibleCount, setLocalFinishedVisibleCount] = useState(0);
+  const finishedVisibleCount = Number.isInteger(controlledFinishedVisibleCount)
+    ? controlledFinishedVisibleCount
+    : localFinishedVisibleCount;
+  const setFinishedVisibleCount = onFinishedVisibleCountChange || setLocalFinishedVisibleCount;
   const orderedChildren = orderChildTasksForRuntime(children);
   const counts = getChildTaskCounts(children);
   const currentTasks = orderedChildren.filter((child) => !isCollapsedChildTask(child));
@@ -262,8 +268,16 @@ export default function ChildTasksPane({
           <GitBranch size={14} className="text-purple" />
           子智能体
           {children.length > 0 && (
-            <span className="child-task-count">
-              运行 {counts.running} · 排队 {counts.queued} · 待处理 {counts.needsAttention} · 共 {children.length}
+            <span
+              role="group"
+              className="child-task-count"
+              aria-label={`运行 ${counts.running}，排队 ${counts.queued}，待处理 ${counts.needsAttention}，已结束 ${counts.finished}，共 ${children.length}`}
+            >
+              <span>运行 <strong>{counts.running}</strong></span>
+              <span>排队 <strong>{counts.queued}</strong></span>
+              <span>待处理 <strong>{counts.needsAttention}</strong></span>
+              <span>已结束 <strong>{counts.finished}</strong></span>
+              <span>共 <strong>{children.length}</strong></span>
             </span>
           )}
         </span>

@@ -104,17 +104,17 @@ export function isCollapsedChildTask(task) {
 export function getChildTaskCounts(children = []) {
   return (Array.isArray(children) ? children : []).reduce((counts, child) => {
     const status = getChildTaskStatus(child);
-    if (child.recovery_required || attentionChildTaskStatuses.has(status)) {
+    if (collapsedChildTaskStatuses.has(status)) {
+      counts.finished += 1;
+    } else if (child.recovery_required || attentionChildTaskStatuses.has(status)) {
       counts.needsAttention += 1;
     } else if (runningChildTaskStatuses.has(status)) {
       counts.running += 1;
     } else if (status === 'queued' || status === 'pending' || status === 'starting') {
       counts.queued += 1;
-    } else if (status === 'completed') {
-      counts.completed += 1;
     }
     return counts;
-  }, { running: 0, queued: 0, needsAttention: 0, completed: 0 });
+  }, { running: 0, queued: 0, needsAttention: 0, finished: 0 });
 }
 
 export function getChildTaskAttemptGroups(task, maxGroups = null) {

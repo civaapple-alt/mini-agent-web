@@ -192,8 +192,8 @@ describe('ChildTasksPane', () => {
       'Active retry',
       'Queued step',
     ]);
-    expect(container.querySelector('.child-task-count').textContent.replace(/\s+/g, ' ').trim())
-      .toBe('运行 1 · 排队 1 · 待处理 3 · 共 5');
+    expect(container.querySelector('.child-task-count').getAttribute('aria-label'))
+      .toBe('运行 1，排队 1，待处理 3，已结束 0，共 5');
     expect(container.querySelector('.child-task-status.not_started')?.textContent).toBe('未开始');
     expect(screen.getByText('No turn ID returned')).toBeTruthy();
 

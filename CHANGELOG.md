@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep the completed-task expansion and loaded page count when opening a child
+  detail and returning to the list. Include ended tasks in the panel count summary.
 - Clarify that resending a failed Turn starts a new provider request, not a
   continuation of the disconnected stream. Preserve its file attachments and
   workflow selection in the resend action.

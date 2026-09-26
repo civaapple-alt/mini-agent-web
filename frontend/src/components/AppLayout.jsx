@@ -67,7 +67,11 @@ export default function AppLayout({
   onRenameCurrentThread,
   onUpdateCurrentSummary,
   threads,
+  availableProjects = [],
+  onProjectsLoaded,
   currentThreadProject,
+  isNewSessionLanding = false,
+  sessionActive = true,
   isGenerating,
   onSelectThread,
   onNewThread,
@@ -137,7 +141,7 @@ export default function AppLayout({
   ));
   const sidePanelWidthRef = useRef(sidePanelWidth);
   const sidePanelResizeRef = useRef(null);
-  const childTasks = useChildTasks(currentThread, currentThreadProject);
+  const childTasks = useChildTasks(currentThread, currentThreadProject, sessionActive);
   const sidePanelDocked = sidePanelOpen && sidePanelDockPreference && canDockSidePanel;
   const viewportWidth = typeof window === 'undefined' ? 1440 : window.innerWidth;
   const visibleSidePanelWidth = clampSidePanelWidth(sidePanelWidth, viewportWidth);
@@ -216,14 +220,14 @@ export default function AppLayout({
     <div className="app-container">
       <Header
         currentThread={currentThread}
-        threadTitle={threadTitle}
+        threadTitle={isNewSessionLanding ? '新建会话' : threadTitle}
         threadSummary={threadSummary}
         sessionId={sessionId}
         isConnected={isConnected}
         onOpenSidePanel={onOpenSidePanel}
         onOpenSettings={() => onOpenSettings?.('preferences')}
-        onRenameThread={onRenameCurrentThread}
-        onUpdateSummary={onUpdateCurrentSummary}
+        onRenameThread={isNewSessionLanding ? undefined : onRenameCurrentThread}
+        onUpdateSummary={isNewSessionLanding ? undefined : onUpdateCurrentSummary}
         onToast={onToast}
         sidebarOpen={mobileSidebarOpen}
         onToggleSidebar={() => setMobileSidebarOpen((open) => !open)}
@@ -235,17 +239,18 @@ export default function AppLayout({
       >
         <Sidebar
           threads={threads}
-          currentThread={currentThread}
+          currentThread={sessionActive ? currentThread : null}
           currentThreadProject={currentThreadProject}
+          onProjectsLoaded={onProjectsLoaded}
           isGenerating={isGenerating}
           isMobileOpen={mobileSidebarOpen}
           onSelectThread={(...args) => {
             setMobileSidebarOpen(false);
             onSelectThread(...args);
           }}
-          onNewThread={() => {
+          onNewThread={(...args) => {
             setMobileSidebarOpen(false);
-            onNewThread();
+            return onNewThread(...args);
           }}
           onForkThread={onForkThread}
           onCloseThread={onCloseThread}
@@ -264,17 +269,19 @@ export default function AppLayout({
         )}
 
         <main className="app-content">
-          <StatusRail
-            status={statusModel}
-            onOpenDetails={() => onOpenSidePanel('status')}
-            onOpenPlanDetails={() => onOpenSidePanel('plan_view')}
-            onChangeExecution={onChangeExecution}
-            onChangeContinuation={onChangeContinuation}
-            onEnableAutoCopilot={onEnableAutoCopilot}
-            onContinuePlanning={onContinuePlanning}
-            onStartImplementation={onStartImplementation}
-            onClosePlan={onClosePlan}
-          />
+          {sessionActive && (
+            <StatusRail
+              status={statusModel}
+              onOpenDetails={() => onOpenSidePanel('status')}
+              onOpenPlanDetails={() => onOpenSidePanel('plan_view')}
+              onChangeExecution={onChangeExecution}
+              onChangeContinuation={onChangeContinuation}
+              onEnableAutoCopilot={onEnableAutoCopilot}
+              onContinuePlanning={onContinuePlanning}
+              onStartImplementation={onStartImplementation}
+              onClosePlan={onClosePlan}
+            />
+          )}
           <ErrorBoundary title="对话区域渲染异常 (Chat Area Render Error)">
             <ChatArea
               messages={messages}
@@ -295,6 +302,9 @@ export default function AppLayout({
               fontSize={userSettings.font_size}
               isLoadingHistory={isLoadingHistory}
               childTasks={childTasks.children}
+              isNewSessionLanding={isNewSessionLanding}
+              availableProjects={availableProjects}
+              onCreateSessionForProject={onNewThread}
             />
           </ErrorBoundary>
 
@@ -304,6 +314,8 @@ export default function AppLayout({
             sessionReadOnly={sessionReadOnly}
             currentThread={currentThread}
             projectId={currentThreadProject}
+            isNewSessionLanding={isNewSessionLanding}
+            sessionActive={sessionActive}
             onOpenSettings={onOpenSettings}
             pendingApproval={pendingApproval}
             pendingApprovalCount={pendingApprovalCount}

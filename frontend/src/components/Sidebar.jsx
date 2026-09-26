@@ -48,6 +48,7 @@ export default function Sidebar({
   onRenameThread,
   onUpdateSummary,
   onRefreshThreads,
+  onProjectsLoaded,
   onToast,
   isMobileOpen = false,
 }) {
@@ -127,6 +128,13 @@ export default function Sidebar({
       const data = await api.listProjects({ signal: controller.signal });
       if (requestEpoch !== projectRequestEpochRef.current) return null;
       setProjectsData(data);
+      onProjectsLoaded?.(
+        Array.isArray(data?.projects) && data.projects.length > 0
+          ? data.projects
+          : data?.current_project
+            ? [data.current_project]
+            : [],
+      );
       const curId = data?.current_project?.id || data?.current_project?.name;
       if (curId) {
         setExpandedProjects((prev) => ({ ...prev, [curId]: true, [data.current_project.name]: true }));

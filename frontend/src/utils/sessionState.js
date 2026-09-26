@@ -33,6 +33,45 @@ export const ACTIVE_RUNTIME_PHASES = new Set([
 export const MAX_PENDING_SESSION_EVENTS = 128;
 export const SELECTED_SESSION_STORAGE_KEY = 'mini-agent-studio.selected-session';
 
+const SESSION_ROUTE_KEYS = [
+  'thread',
+  'thread_id',
+  'session',
+  'session_id',
+  'project',
+  'project_id',
+];
+
+export function readSessionRoute(search = globalThis.location?.search || '') {
+  const params = new URLSearchParams(search);
+  const threadId = params.get('thread') || params.get('thread_id') || null;
+  const sessionId = params.get('session') || params.get('session_id') || null;
+  const projectId = params.get('project') || params.get('project_id') || null;
+  return {
+    threadId,
+    sessionId: threadId ? null : sessionId,
+    projectId: threadId || sessionId ? projectId : null,
+    hasSessionTarget: Boolean(threadId || sessionId),
+  };
+}
+
+export function writeSessionRoute(
+  { threadId = null, projectId = null } = {},
+  browserWindow = globalThis.window,
+) {
+  if (!browserWindow?.history?.replaceState || !browserWindow.location) return;
+
+  const url = new URL(browserWindow.location.href);
+  SESSION_ROUTE_KEYS.forEach((key) => url.searchParams.delete(key));
+  if (threadId) {
+    url.searchParams.set('thread', threadId);
+    if (projectId) url.searchParams.set('project', projectId);
+  }
+  const query = url.searchParams.toString();
+  const nextUrl = `${url.pathname}${query ? `?${query}` : ''}${url.hash}`;
+  browserWindow.history.replaceState(browserWindow.history.state, '', nextUrl);
+}
+
 export function scopedThreadKey(threadId, projectId) {
   return `${projectId || ''}:${threadId}`;
 }

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
-import { Sparkles, Terminal, Compass, TestTube2, ArrowDown } from 'lucide-react';
+import { Sparkles, Terminal, Compass, TestTube2, ArrowDown, Folder } from 'lucide-react';
 import MessageItem from './MessageItem';
 import SessionTurnRail from './SessionTurnRail';
 import { collectInputMessages, getChildWakeupTurnIds } from '../utils/inputTrace';
@@ -24,6 +24,9 @@ export default function ChatArea({
   fontSize = 13,
   isLoadingHistory = false,
   childTasks = [],
+  isNewSessionLanding = false,
+  availableProjects = [],
+  onCreateSessionForProject,
 }) {
   const scrollRef = useRef(null);
   const messageRefs = useRef(new Map());
@@ -258,7 +261,31 @@ export default function ChatArea({
             基于 Mini Agent JSON-RPC 协议与运行时。支持多轮交互、思维链打字机流式呈现、工具内嵌安全审批与全套工作流。
           </p>
 
-          <div className="quick-prompts-grid">
+          {isNewSessionLanding && (
+            <label className="welcome-project-picker">
+              <span><Folder size={14} /> 选择项目</span>
+              <select
+                aria-label="选择项目以创建会话"
+                value=""
+                disabled={!onCreateSessionForProject || availableProjects.length === 0}
+                onChange={(event) => {
+                  const projectId = event.target.value;
+                  if (projectId) void onCreateSessionForProject(projectId);
+                }}
+              >
+                <option value="">
+                  {availableProjects.length > 0 ? '选择项目并创建空白会话' : '没有可用项目，请先在侧栏添加项目'}
+                </option>
+                {availableProjects.map((project) => (
+                  <option key={project.id || project.name} value={project.id || project.name}>
+                    {project.name || project.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {!isNewSessionLanding && <div className="quick-prompts-grid">
             <button
               className="quick-chip"
               onClick={() => onQuickPrompt('检查当前工作区文件与结构，给出简短摘要')}
@@ -280,7 +307,7 @@ export default function ChatArea({
               <TestTube2 size={12} className="text-emerald" />
               <span>运行单元测试套件</span>
             </button>
-          </div>
+          </div>}
         </div>
       ) : (
         <div className="message-stream-layout">

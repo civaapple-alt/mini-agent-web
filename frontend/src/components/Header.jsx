@@ -149,14 +149,14 @@ export default function Header({
                 </button>
               </div>
             ) : (
-              <div className="title-display-box" onClick={() => {
+              <div className="title-display-box" onClick={onRenameThread ? () => {
                 setNewTitle(threadTitle || currentThread);
                 setIsEditingTitle(true);
-              }}>
-                <span className="thread-title-text" title="点击重命名会话">
+              } : undefined}>
+                <span className="thread-title-text" title={onRenameThread ? '点击重命名会话' : undefined}>
                   {threadTitle || currentThread}
                 </span>
-                <Edit2 size={11} className="title-edit-hint" />
+                {onRenameThread && <Edit2 size={11} className="title-edit-hint" />}
               </div>
             )}
             {sessionId && (

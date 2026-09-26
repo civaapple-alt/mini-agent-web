@@ -19,7 +19,7 @@ function mergeChildUpdate(children, update) {
   ));
 }
 
-export default function useChildTasks(threadId, projectId) {
+export default function useChildTasks(threadId, projectId, enabled = true) {
   const [children, setChildren] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -32,6 +32,12 @@ export default function useChildTasks(threadId, projectId) {
   ));
 
   const load = useCallback(async () => {
+    if (!enabled || !threadId) {
+      setChildren([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     requestController.current?.abort();
     const controller = new AbortController();
     requestController.current = controller;
@@ -52,9 +58,15 @@ export default function useChildTasks(threadId, projectId) {
     } finally {
       if (epoch === requestEpoch.current) setLoading(false);
     }
-  }, [projectId, threadId]);
+  }, [enabled, projectId, threadId]);
 
   useEffect(() => {
+    if (!enabled || !threadId) {
+      setChildren([]);
+      setLoading(false);
+      setError(null);
+      return undefined;
+    }
     setChildren([]);
     setLoading(true);
     setError(null);
@@ -84,7 +96,7 @@ export default function useChildTasks(threadId, projectId) {
       requestController.current?.abort();
       requestEpoch.current += 1;
     };
-  }, [load, projectId, threadId]);
+  }, [enabled, load, projectId, threadId]);
 
   return { children, loading, error, refresh: load };
 }

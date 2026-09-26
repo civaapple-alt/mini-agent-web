@@ -17,6 +17,17 @@ Vite 默认监听 `http://127.0.0.1:5173`，开发时将 `/api` 代理到
 `http://127.0.0.1:8000`，将 `/ws` 代理到 `ws://127.0.0.1:8000`。使用
 Studio 前先启动 Gateway。
 
+直接打开 Studio 根路径会显示空白会话页，不会恢复上次浏览器选择的会话。
+在空白页选择项目会创建一个新的空会话。可通过 URL 指定要恢复的会话：
+
+```text
+/?thread=<thread-id>&project=<project-id>
+/?session=<session-id>&project=<project-id>
+```
+
+`project` 用于区分不同项目下可能同名的 Thread。打开有效的 `session` 链接后，
+地址会规范为对应的 `thread` 和 `project` 参数。
+
 在本目录中运行以下命令检查改动：
 
 ```bash

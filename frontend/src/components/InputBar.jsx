@@ -59,6 +59,8 @@ export default function InputBar({
   sessionReadOnly = false,
   currentThread = null,
   projectId = null,
+  isNewSessionLanding = false,
+  sessionActive = true,
   onOpenSettings,
   pendingApproval,
   pendingApprovalCount = 0,
@@ -221,7 +223,7 @@ export default function InputBar({
   };
 
   const modelSelectionDisabled = !currentThread || modelSettingsLoading || modelSettingsSaving
-    || isGenerating || Boolean(pendingApproval) || sessionReadOnly;
+    || isGenerating || Boolean(pendingApproval) || sessionReadOnly || !sessionActive;
 
   useEffect(() => () => {
     mentionRequestControllerRef.current?.abort();
@@ -609,6 +611,15 @@ export default function InputBar({
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     if (sessionReadOnly) return;
+    if (!sessionActive) {
+      onToast?.(
+        isNewSessionLanding
+          ? '请先选择项目，创建空白会话后再发送。'
+          : '会话正在加载，请稍候再发送。',
+        'info',
+      );
+      return;
+    }
     const text = prompt.trim();
     const parsedWorkflow = parseWorkflowPrompt(text, skillGroups);
     if (parsedWorkflow.unknownWorkflows.length > 0) {

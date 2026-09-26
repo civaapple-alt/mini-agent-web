@@ -30,12 +30,12 @@ import {
 import {
   ACTIVE_RUNTIME_PHASES,
   MAX_PENDING_SESSION_EVENTS,
-  SELECTED_SESSION_STORAGE_KEY,
   formatRunFailure,
   normalizeGoal,
   normalizeInputPayload,
-  readPersistedSessionSelection,
+  readSessionRoute,
   scopedThreadKey,
+  writeSessionRoute,
 } from './utils/sessionState.js';
 import { getStatusViewModel, normalizeTheme } from './utils/statusModel.js';
 import { isIncompleteTurnStatus } from './utils/turnHistory.js';
@@ -91,14 +91,26 @@ async function listThreadItemsForHistory(threadId, projectId, options = {}) {
 }
 
 export default function App() {
+  const initialSessionRouteRef = useRef(null);
+  if (!initialSessionRouteRef.current) {
+    initialSessionRouteRef.current = readSessionRoute();
+  }
+  const initialSessionRoute = initialSessionRouteRef.current;
   const [threads, setThreads] = useState([]);
-  const [currentThread, setCurrentThread] = useState(
-    () => readPersistedSessionSelection().threadId || 'default',
-  );
+  const [availableProjects, setAvailableProjects] = useState([]);
+  const [currentThread, setCurrentThread] = useState(() => initialSessionRoute.threadId || 'default');
   const [currentThreadProject, setCurrentThreadProject] = useState(
-    () => readPersistedSessionSelection().projectId || null,
+    () => initialSessionRoute.projectId || null,
   );
-  const [currentThreadMeta, setCurrentThreadMeta] = useState(() => readThreadMeta());
+  const [isNewSessionLanding, setIsNewSessionLanding] = useState(
+    () => !initialSessionRoute.hasSessionTarget,
+  );
+  const [hasActiveThread, setHasActiveThread] = useState(false);
+  const [currentThreadMeta, setCurrentThreadMeta] = useState(() => (
+    initialSessionRoute.hasSessionTarget
+      ? readThreadMeta()
+      : readThreadMeta({ title: '新建会话' })
+  ));
   const [messages, setMessages] = useState([]);
   const [threadItems, setThreadItems] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -109,7 +121,9 @@ export default function App() {
   const [pendingMessages, setPendingMessages] = useState([]);
   const [composerDraft, setComposerDraft] = useState(null);
   const [lastTurnResult, setLastTurnResult] = useState(null);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(
+    () => initialSessionRoute.hasSessionTarget,
+  );
   const [currentSessionReadOnly, setCurrentSessionReadOnly] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [skillCatalog, setSkillCatalog] = useState([]);
@@ -158,12 +172,13 @@ export default function App() {
   const planActiveRef = useRef(planActive);
   const currentThreadRef = useRef(currentThread);
   const currentThreadProjectRef = useRef(currentThreadProject);
+  const isNewSessionLandingRef = useRef(isNewSessionLanding);
+  const hasActiveThreadRef = useRef(hasActiveThread);
   const goalStateRef = useRef(goalState);
   const pendingApprovalRef = useRef(pendingApproval);
   const pendingApprovalsRef = useRef(pendingApprovals);
   const approvalSubmissionRef = useRef(new Map());
   const resolvedApprovalIdsRef = useRef(new Set());
-  const selectionPersistenceReadyRef = useRef(false);
   const sessionEpochRef = useRef(0);
   const sessionRequestControllerRef = useRef(null);
   const sessionSyncRef = useRef(null);
@@ -177,6 +192,8 @@ export default function App() {
   planActiveRef.current = planActive;
   currentThreadRef.current = currentThread;
   currentThreadProjectRef.current = currentThreadProject;
+  isNewSessionLandingRef.current = isNewSessionLanding;
+  hasActiveThreadRef.current = hasActiveThread;
   pendingApprovalRef.current = pendingApproval;
   pendingApprovalsRef.current = pendingApprovals;
   setActiveProjectId(currentThreadProject);
@@ -349,24 +366,6 @@ export default function App() {
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    if (!selectionPersistenceReadyRef.current) {
-      selectionPersistenceReadyRef.current = true;
-      return;
-    }
-    try {
-      window.localStorage.setItem(
-        SELECTED_SESSION_STORAGE_KEY,
-        JSON.stringify({
-          threadId: currentThread,
-          projectId: currentThreadProject,
-        }),
-      );
-    } catch {
-      // Selection persistence is a convenience; private browsing may reject it.
-    }
-  }, [currentThread, currentThreadProject]);
-
-  useEffect(() => {
     const handleGlobalKeyDown = (e) => {
       if (e.key === 'Escape') {
         setSettingsModalOpen(false);
@@ -395,6 +394,11 @@ export default function App() {
         // rebuild the Web cursor before accepting new notifications.
         workflowRevisionsRef.current.clear();
         runtimeGenerationRef.current = 0;
+        if (!hasActiveThreadRef.current) {
+          hasConnectedRef.current = true;
+          showToast('✓ 已连接到 Agent Gateway 服务端', 'success', 2000);
+          return;
+        }
         const context = currentSessionRequest();
         loadWorkflows(context.threadId, context.projectId, context);
         loadRuntimeStatus(context.threadId, context.projectId, context);
@@ -555,21 +559,25 @@ export default function App() {
     const requestContext = options.context || beginCatalogRequest();
     try {
       const data = await api.listThreads({
-        projectId: requestContext.projectId,
+        projectId: options.projectId ?? requestContext.projectId,
         signal: requestContext.signal,
       });
       if (!isCurrentCatalogRequest(requestContext)) return null;
       let cur = null;
       setThreads(data.threads || []);
       if (data.threads && data.threads.length > 0) {
-        const preferredProject =
-          currentThreadProjectRef.current || data.current_project || null;
-        cur = data.threads.find(
-          (t) =>
-            t.thread_id === currentThreadRef.current &&
-            (!preferredProject || t.project === preferredProject),
-        ) || data.threads.find((t) => t.thread_id === currentThreadRef.current);
-        if (cur) {
+        const requestedProject = options.projectId ?? currentThreadProjectRef.current;
+        const requestedSessionId = options.sessionId || null;
+        const requestedThreadId = options.threadId || currentThreadRef.current;
+        const matches = data.threads.filter((thread) => (
+          requestedSessionId
+            ? thread.session_id === requestedSessionId
+            : thread.thread_id === requestedThreadId
+        ));
+        cur = requestedProject
+          ? matches.find((thread) => thread.project === requestedProject) || null
+          : matches.length === 1 ? matches[0] : null;
+        if (cur && options.syncCurrent !== false && hasActiveThreadRef.current) {
           if (!currentThreadProjectRef.current && cur.project) {
             currentThreadProjectRef.current = cur.project;
             setCurrentThreadProject(cur.project);
@@ -597,22 +605,54 @@ export default function App() {
   }, [isConnected]);
 
   const initializeSession = async () => {
-    const selected = await loadThreads();
+    const route = initialSessionRouteRef.current;
+    if (!route.hasSessionTarget) {
+      setActiveProjectId(null);
+      await Promise.all([
+        loadThreads({ syncCurrent: false }),
+        loadSettings(),
+      ]);
+      return;
+    }
+
+    const selected = await loadThreads({
+      threadId: route.threadId || undefined,
+      sessionId: route.sessionId || undefined,
+      projectId: route.projectId || undefined,
+      syncCurrent: false,
+    });
     if (!selected) {
+      isNewSessionLandingRef.current = true;
+      setIsNewSessionLanding(true);
+      hasActiveThreadRef.current = false;
+      setHasActiveThread(false);
+      currentThreadRef.current = 'default';
+      currentThreadProjectRef.current = null;
+      setCurrentThread('default');
+      setCurrentThreadProject(null);
+      setCurrentThreadMeta(readThreadMeta({ title: '新建会话' }));
+      resetSessionProjections();
+      writeSessionRoute();
       await loadSettings();
+      showToast('未找到该会话，或同名 Thread 无法唯一确定；跨项目链接请补充 project 参数。', 'warning');
       return;
     }
 
     const nextThread = selected.thread_id || 'default';
     const nextProject =
-      selected.project || currentThreadProjectRef.current || null;
+      selected.project || route.projectId || null;
     const context = beginSessionRequest(nextThread, nextProject);
     startSessionSync(nextThread, nextProject);
+    isNewSessionLandingRef.current = false;
+    setIsNewSessionLanding(false);
+    hasActiveThreadRef.current = true;
+    setHasActiveThread(true);
     currentThreadRef.current = nextThread;
     currentThreadProjectRef.current = nextProject;
     setCurrentThread(nextThread);
     setCurrentThreadProject(nextProject);
     setCurrentThreadMeta(readThreadMeta(selected, nextThread));
+    writeSessionRoute({ threadId: nextThread, projectId: nextProject });
 
     // Establish the project-qualified routing context before reading the
     // project-agnostic history/workflow endpoints. A locked external Session
@@ -1054,6 +1094,12 @@ export default function App() {
     if (!data) return;
 
     const eventThread = data.threadId || data.thread_id || data.data?.threadId || data.data?.thread_id;
+    if (!hasActiveThreadRef.current) {
+      if (data.type === 'event' && ['turn_finished', 'run_finished', 'run_failed'].includes(data.event?.type)) {
+        loadThreads();
+      }
+      return;
+    }
     const eventProject = data.projectId || data.project_id || data.data?.projectId || data.data?.project_id || currentThreadProjectRef.current;
     const eventKey = scopedThreadKey(eventThread || currentThreadRef.current, eventProject);
     const acceptsEvent = shouldAcceptEventForThread(
@@ -1554,6 +1600,10 @@ export default function App() {
   };
 
   const handleSendMessage = (inputPayload) => {
+    if (!hasActiveThreadRef.current) {
+      showToast('请先选择项目，创建空白会话后再发送。', 'info');
+      return false;
+    }
     const {
       prompt: promptText,
       images,
@@ -2041,9 +2091,15 @@ export default function App() {
     if (
       threadId === currentThread
       && (nextProject || null) === (currentThreadProject || null)
+      && !isNewSessionLandingRef.current
     ) return;
     const context = beginSessionRequest(threadId, nextProject);
     startSessionSync(threadId, nextProject);
+    isNewSessionLandingRef.current = false;
+    setIsNewSessionLanding(false);
+    hasActiveThreadRef.current = true;
+    setHasActiveThread(true);
+    writeSessionRoute({ threadId, projectId: nextProject });
 
     // Clear every projection before the new session can render. The epoch and
     // AbortController below make late history/workflow/file responses unable
@@ -2098,6 +2154,10 @@ export default function App() {
       await loadThreads();
       const context = beginSessionRequest(tid, nextProject);
       resetSessionProjections();
+      isNewSessionLandingRef.current = false;
+      setIsNewSessionLanding(false);
+      hasActiveThreadRef.current = true;
+      setHasActiveThread(true);
       currentThreadRef.current = tid;
       currentThreadProjectRef.current = nextProject;
       setActiveProjectId(nextProject);
@@ -2108,13 +2168,16 @@ export default function App() {
         summary: '',
         session_id: result.session_id,
       }, tid));
+      writeSessionRoute({ threadId: tid, projectId: nextProject });
       await Promise.all([
         loadSettings(context),
         loadThreadHistory(tid, nextProject, context),
       ]);
       showToast(`已创建新会话: ${finalTitle}`, 'success');
+      return true;
     } catch (err) {
       showToast(`创建新会话失败: ${err.message}`, 'error');
+      return false;
     }
   };
 
@@ -2145,11 +2208,16 @@ export default function App() {
       await loadThreads();
       const context = beginSessionRequest(newId, nextProject);
       resetSessionProjections({ loadingHistory: true });
+      isNewSessionLandingRef.current = false;
+      setIsNewSessionLanding(false);
+      hasActiveThreadRef.current = true;
+      setHasActiveThread(true);
       currentThreadRef.current = newId;
       currentThreadProjectRef.current = nextProject;
       setActiveProjectId(nextProject);
       setCurrentThread(newId);
       setCurrentThreadProject(nextProject);
+      writeSessionRoute({ threadId: newId, projectId: nextProject });
       setCurrentThreadMeta(readThreadMeta({
         title: result.title || `${sourceThreadId} (Fork)`,
         summary: `Forked from ${sourceThreadId}`,
@@ -2187,16 +2255,19 @@ export default function App() {
       await loadThreads();
       if (currentThread === threadId) {
         const context = beginSessionRequest('default', null);
-        resetSessionProjections({ loadingHistory: true });
+        resetSessionProjections();
+        isNewSessionLandingRef.current = true;
+        setIsNewSessionLanding(true);
+        hasActiveThreadRef.current = false;
+        setHasActiveThread(false);
         currentThreadRef.current = 'default';
         currentThreadProjectRef.current = null;
         setActiveProjectId(null);
         setCurrentThread('default');
         setCurrentThreadProject(null);
-        await Promise.all([
-          loadSettings(context),
-          loadThreadHistory('default', null, context),
-        ]);
+        setCurrentThreadMeta(readThreadMeta({ title: '新建会话' }));
+        writeSessionRoute();
+        await loadSettings(context);
       }
       showToast(`已关闭并归档会话: ${threadId}`, 'info');
     } catch (err) {
@@ -2465,7 +2536,11 @@ export default function App() {
       onRenameCurrentThread={(title) => handleRenameThread(currentThread, title)}
       onUpdateCurrentSummary={(summary) => handleUpdateSummary(currentThread, summary)}
       threads={threads}
+      availableProjects={availableProjects}
+      onProjectsLoaded={setAvailableProjects}
       currentThreadProject={currentThreadProject}
+      isNewSessionLanding={isNewSessionLanding}
+      sessionActive={hasActiveThread}
       isGenerating={isGenerating}
       onSelectThread={handleSelectThread}
       onNewThread={handleNewThread}

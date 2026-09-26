@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reconcile child task reads with settled Turns when a terminal operation snapshot
   is missing. Recover the bounded final assistant result in `task_read`, and make
   clear that an empty `reports` list means no explicit progress report was sent.
+- Keep child-task steering within its active Turn and give delegated Turns a
+  bounded 16-step minimum when the configured limit is lower. Expose the exact
+  attempt Turn outcome separately from the latest child Session Turn, and retain
+  step-limit and runtime errors on the operation.
 - Let a persisted settled Turn override stale `pausing` / `cancelling` child state
   after restart, and keep expected stale-PID probes out of Gateway warning logs.
 - Keep the completed-task expansion and loaded page count when opening a child

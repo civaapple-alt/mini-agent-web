@@ -4389,7 +4389,12 @@ async def test_four_parallel_children_drain_two_at_a_time(
             "parent_session_id": "s-parent",
         }
 
+    parent_client = AsyncMock()
+    parent_client.session_control.return_value = {"status": "running"}
+
     async def get_child_client(thread_id, _project_id=None):
+        if thread_id == "parent":
+            return parent_client
         client = clients.get(thread_id)
         if client is None:
             client = AsyncMock()
@@ -4474,6 +4479,7 @@ async def test_four_parallel_children_drain_two_at_a_time(
         "cancel_active",
         request_id="user-stop-child-1",
         turn_id=initial[0]["turn_id"],
+        control_source="user_panel",
     )
     clients["child-1"].interrupt_turn.assert_awaited_once_with(
         initial[0]["turn_id"], "child-1"
@@ -6515,6 +6521,7 @@ async def test_child_queue_retries_start_failure_with_coalesced_bounded_backoff(
         "turn_id": None,
     }
     child_client = AsyncMock()
+    child_client.session_control.return_value = {"status": "running"}
     child_client.start_turn.side_effect = [
         RuntimeError("temporary App Server transport failure"),
         SimpleNamespace(turn_id="turn-follow-up", status="started"),

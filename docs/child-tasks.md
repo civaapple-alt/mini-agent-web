@@ -30,6 +30,10 @@ Gateway 会先按父 Turn 和工具调用 ID 持久化有界 `tool_started` 参�
 `delegate_task`。每项控制都携带 `child_thread_id`、`operation_id` 和预期 `attempt`，Gateway 会拒绝
 已经过期的 attempt。完整工具活动和 transcript 留在各自子 Session，不复制到父消息流。
 `reports` 仅包含显式 `task_report` 进展；空报告列表不表示最终回答缺失。
+`task_list` 和 `task_read` 会把 operation 状态、该 attempt 对应的 `turn_outcome`、以及
+子 Session 的 `latest_session_turn` 分开返回。后续 Turn 完成不会把较早的失败 attempt 改成成功；
+主线程应以 `operation.status` 判断任务结果，并结合 `operation.turn_outcome.stop_reason`、`steps`
+和 `operation.error` 定位失败原因。
 
 父代理可在子任务运行期间多次 steer 同一个子 Session。父代理提交 `task_control.assign` 后，Gateway
 按持久状态自动路由：运行中或等待审批时，使用当前 Turn 的 steer；报告后仍在运行的任务也继续 steer
@@ -47,6 +51,10 @@ Gateway 会先按父 Turn 和工具调用 ID 持久化有界 `tool_started` 参�
 提示词。排队项继续通过 `update_queued` 修改。follow-up 遇到并发上限或顺序组阻塞时持久排队，释放槽位后自动启动。
 提示词更新后，Gateway 会立即尝试排空可运行的排队任务。
 列表和消息流对每个 child Session 保持一张卡，卡内显示各轮状态、当前阶段、最新进展、顺序组位置和恢复异常。
+child Turn 在默认八步上限下会使用 16 步；更高的运行时上限保留，零值仍表示不设步数上限。活动 Goal 显式设置的
+里程碑步数预算仍优先。步数耗尽后，任务保留失败状态并显示 `step_limit`、实际步数和诊断，不会静默开启另一个 Turn。
+父代理可决定是否重试。
+运行中的 child task 接受 steer 后会在同一个 Turn 继续处理，operation 不会因这次 steer 提前失败。
 
 默认最多同时运行 2 个子任务，项目设置可调整为 1–8 个。超出并发槽位的任务会先创建并持久化为
 “排队中”，有任务结束后自动启动；任务提示可以包含普通换行和制表符，单条提示仍限制为 32 KiB。

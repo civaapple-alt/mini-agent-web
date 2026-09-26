@@ -45,6 +45,9 @@ Gateway 会先按父 Turn 和工具调用 ID 持久化有界 `tool_started` 参�
 父代理优先读取运行中或已结束且拥有 Session 的任务。排队任务会自动等待空位，不需要反复查询；
 创建 Session 前失败的任务只从 operation 投影读取状态和诊断，不调用 `task_read`。
 若 Gateway 在 follow-up 持久化后丢失 RPC 响应，它会用 operation、attempt 和 `control_request_id` 识别已排队的轮次并继续排空，不会再创建一轮。暂时性启动错误会触发合并的限次退避重试；Gateway 重启时也会重新扫描持久队列。
+Gateway 重启时会重新连接同一父 Session 下的活动子任务，并排空 App Server 已持久化的排队 operation。
+Gateway 只重试 `parent_session_id` 与当前父 Session 相同的 `pending` 委派回执；缺少 Session 身份或属于旧 Session 的回执不会重放。
+`materialized` 表示 App Server 已接收 operation，恢复时由 operation 状态负责续接，不会再次创建或启动子任务。
 如果 App Server 返回 `not_submitted`，Gateway 会通过 `cancel_queued` 结束仍处于排队状态的 operation，保存拒绝原因，并唤醒父 Session。若取消失败，子任务仍显示权威的排队状态，同时显示保存的拒绝原因。
 
 报告和终态会合并为父会话的待处理唤醒。父 Turn 运行时，Gateway 只更新持久状态和批次卡，

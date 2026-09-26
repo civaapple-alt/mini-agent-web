@@ -3,6 +3,14 @@ export function isRuntimeSettled(status) {
   return ['idle', 'completed', 'failed'].includes(status?.phase);
 }
 
+/** Reload the authoritative snapshot when a stop may have settled or advanced. */
+export function shouldRefreshAfterInterruptStatus(status, interruptedTurnId) {
+  if (!interruptedTurnId) return false;
+  const runtimeTurnId = status?.turn_id || status?.turnId;
+  return isRuntimeSettled(status)
+    || Boolean(runtimeTurnId && String(runtimeTurnId) !== String(interruptedTurnId));
+}
+
 /** Reconcile a replay response after its retained event window has a gap. */
 export function projectReplayPage(page) {
   const events = Array.isArray(page?.data) ? page.data : [];

@@ -94,24 +94,31 @@ async def test_delegated_child_identity_is_scoped_to_the_parent_session(
 ):
     start = AsyncMock()
     monkeypatch.setattr(mock_session_manager, "_start_delegated_child", start)
+    parent_session = {"session": {"session_id": "session-a"}}
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_canonical_thread",
+        lambda thread_id, _project_id=None: (
+            parent_session if thread_id == "main" else None
+        ),
+    )
 
-    for parent_thread_id, turn_id, child_thread_id in (
+    for parent_session_id, child_thread_id in (
         (
-            "main-a",
-            "turn-a",
+            "session-a",
             "ef5d24b7c5e3c18f62c2d610b73a1e00768e4fd506aa524abfde52841b08037c",
         ),
         (
-            "main-b",
-            "turn-b",
+            "session-b",
             "69a0011578fb724d6640ff1038d9d4db5a5925720a1691a56e1f938394eb1954",
         ),
     ):
-        call_id = f"call-{turn_id}"
+        parent_session["session"]["session_id"] = parent_session_id
+        call_id = "call-reused"
         mock_session_manager._schedule_delegated_child(
             {
-                "threadId": parent_thread_id,
-                "turnId": turn_id,
+                "threadId": "main",
+                "turnId": "turn-1",
                 "event": {
                     "type": "tool_started",
                     "call": {
@@ -130,8 +137,8 @@ async def test_delegated_child_identity_is_scoped_to_the_parent_session(
         )
         mock_session_manager._schedule_delegated_child(
             {
-                "threadId": parent_thread_id,
-                "turnId": turn_id,
+                "threadId": "main",
+                "turnId": "turn-1",
                 "event": {
                     "type": "tool_finished",
                     "name": "delegate_task",
@@ -198,7 +205,7 @@ async def test_delegation_keeps_maximum_prompt_out_of_tool_result(
     )
     assert start.await_count == 0
     receipt = mock_session_manager._delegation_receipts[
-        "main-large:turn-large:call-large"
+        "main-large::turn-large:call-large"
     ]
     assert receipt["status"] == "awaiting_result"
     assert receipt["prompt"] == prompt
@@ -259,7 +266,7 @@ async def test_delegate_result_without_start_event_is_visible_as_failed(
         "default",
     )
     await asyncio.sleep(0)
-    receipt = mock_session_manager._delegation_receipts["main-gap:turn-gap:call-gap"]
+    receipt = mock_session_manager._delegation_receipts["main-gap::turn-gap:call-gap"]
     assert receipt["status"] == "failed"
     assert "without its persisted tool arguments" in receipt["error"]
     broadcast.assert_awaited_once()
@@ -591,16 +598,102 @@ def test_delegation_receipts_are_bounded_and_reloadable(mock_session_manager, tm
 
 
 @pytest.mark.asyncio
+async def test_reconcile_restarts_only_pending_receipts_for_current_parent_session(
+    mock_session_manager, monkeypatch
+):
+    start = AsyncMock()
+    monkeypatch.setattr(mock_session_manager, "_start_delegated_child", start)
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_canonical_thread",
+        lambda thread_id, _project_id=None: (
+            {"session": {"session_id": "s-current"}} if thread_id == "parent" else None
+        ),
+    )
+    mock_session_manager._delegation_receipts = {
+        "current-pending": {
+            "parent_thread_id": "parent",
+            "parent_session_id": "s-current",
+            "child_thread_id": "child-pending",
+            "prompt": "recover this queued dispatch",
+            "title": "Current pending",
+            "project_id": "default",
+            "group_id": None,
+            "execution_mode": "parallel",
+            "sequence": None,
+            "status": "pending",
+        },
+        "current-materialized": {
+            "parent_thread_id": "parent",
+            "parent_session_id": "s-current",
+            "child_thread_id": "child-already-persisted",
+            "prompt": "must use the App Server operation",
+            "title": "Already materialized",
+            "project_id": "default",
+            "execution_mode": "parallel",
+            "status": "materialized",
+        },
+        "old-pending": {
+            "parent_thread_id": "parent",
+            "parent_session_id": "s-old",
+            "child_thread_id": "child-from-old-session",
+            "prompt": "must not cross Session identity",
+            "title": "Old pending",
+            "project_id": "default",
+            "execution_mode": "parallel",
+            "status": "pending",
+        },
+        "legacy-pending": {
+            "parent_thread_id": "parent",
+            "child_thread_id": "legacy-child",
+            "prompt": "legacy identity is unknown",
+            "title": "Legacy pending",
+            "project_id": "default",
+            "execution_mode": "parallel",
+            "status": "pending",
+        },
+    }
+
+    await mock_session_manager.reconcile_delegation_receipts("default")
+
+    start.assert_awaited_once_with(
+        "parent",
+        "child-pending",
+        "recover this queued dispatch",
+        "Current pending",
+        "default",
+        None,
+        "parallel",
+        None,
+        "current-pending",
+    )
+
+
+@pytest.mark.asyncio
 async def test_reconcile_child_operations_drains_each_persisted_parent(
     mock_session_manager, monkeypatch
 ):
     """Runtime attach scans durable child operations instead of waiting for a settlement."""
+    parent_sessions = {
+        "parent-a": "s-parent-a",
+        "parent-b": "s-parent-b",
+    }
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_canonical_thread",
+        lambda thread_id, _project_id=None: (
+            {"session": {"session_id": parent_sessions[thread_id]}}
+            if thread_id in parent_sessions
+            else None
+        ),
+    )
     monkeypatch.setattr(
         mock_session_manager,
         "list_project_child_sessions",
         lambda _project_id, _parent_session_id=None: [
             {
                 "is_child_task": True,
+                "parent_session_id": "s-parent-a",
                 "child_task_state": {
                     "parent_thread_id": "parent-a",
                     "status": "queued",
@@ -609,16 +702,29 @@ async def test_reconcile_child_operations_drains_each_persisted_parent(
             },
             {
                 "is_child_task": True,
+                "parent_session_id": "s-parent-b",
                 "child_task_state": {
                     "parent_thread_id": "parent-b",
                     "status": "queued",
                 },
                 "thread_id": "child-b",
             },
+            {
+                "is_child_task": True,
+                "parent_session_id": "s-old-parent-a",
+                "child_task_state": {
+                    "parent_thread_id": "parent-a",
+                    "status": "running",
+                    "turn_id": "stale-turn",
+                },
+                "thread_id": "old-child",
+            },
         ],
     )
     drain = AsyncMock()
     monkeypatch.setattr(mock_session_manager, "_drain_child_queue", drain)
+    get_client = AsyncMock()
+    monkeypatch.setattr(mock_session_manager, "get_client_for_thread", get_client)
 
     await mock_session_manager.reconcile_child_operations("default")
 
@@ -626,6 +732,7 @@ async def test_reconcile_child_operations_drains_each_persisted_parent(
         "parent-a",
         "parent-b",
     }
+    get_client.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -2375,6 +2482,7 @@ async def test_list_child_tasks_uses_canonical_child_state_and_failed_receipts(
     mock_session_manager._delegation_receipts = {
         "parent:turn-1:call-1": {
             "parent_thread_id": "parent",
+            "parent_session_id": "s-parent",
             "child_thread_id": "child-created",
             "project_id": "default",
             "parent_turn_id": "turn-1",
@@ -2386,6 +2494,7 @@ async def test_list_child_tasks_uses_canonical_child_state_and_failed_receipts(
         },
         "parent:turn-2:call-2": {
             "parent_thread_id": "parent",
+            "parent_session_id": "s-parent",
             "child_thread_id": "child-missing",
             "operation_id": "child:child-missing",
             "operation_attempt": 1,
@@ -2400,6 +2509,7 @@ async def test_list_child_tasks_uses_canonical_child_state_and_failed_receipts(
         },
         "parent:turn-3:call-3": {
             "parent_thread_id": "parent",
+            "parent_session_id": "s-parent",
             "child_thread_id": "child-rejected",
             "operation_id": "child:child-rejected",
             "operation_attempt": 1,
@@ -2413,6 +2523,7 @@ async def test_list_child_tasks_uses_canonical_child_state_and_failed_receipts(
         },
         "parent:turn-4:call-4": {
             "parent_thread_id": "parent",
+            "parent_session_id": "s-parent",
             "child_thread_id": "child-unsubmitted",
             "operation_id": "child:child-unsubmitted",
             "operation_attempt": 1,
@@ -2423,6 +2534,33 @@ async def test_list_child_tasks_uses_canonical_child_state_and_failed_receipts(
             "error": "child turn was not submitted",
             "timestamp_ms": 400,
             "failed_at_ms": 450,
+        },
+        "old-session-receipt": {
+            "parent_thread_id": "parent",
+            "parent_session_id": "s-old",
+            "child_thread_id": "child-from-old-session",
+            "operation_id": "child:child-from-old-session",
+            "operation_attempt": 1,
+            "project_id": "default",
+            "parent_turn_id": "turn-1",
+            "title": "Old failure",
+            "status": "failed",
+            "error": "stale parent Session",
+            "timestamp_ms": 500,
+            "failed_at_ms": 550,
+        },
+        "legacy-receipt-without-session": {
+            "parent_thread_id": "parent",
+            "child_thread_id": "legacy-child",
+            "operation_id": "child:legacy-child",
+            "operation_attempt": 1,
+            "project_id": "default",
+            "parent_turn_id": "turn-1",
+            "title": "Legacy failure",
+            "status": "failed",
+            "error": "unknown parent Session",
+            "timestamp_ms": 600,
+            "failed_at_ms": 650,
         },
     }
 
@@ -4077,12 +4215,14 @@ async def test_sequential_child_waits_for_missing_sequence_zero(
     monkeypatch.setattr(
         mock_session_manager,
         "_delegated_child_parent_turn_id",
-        lambda _parent_thread_id, _project_id, child_thread_id: {
-            "prior-child-zero": "previous-parent-turn",
-            "child-one": "parent-turn",
-            "child-zero": "parent-turn",
-            "duplicate-zero": "parent-turn",
-        }.get(child_thread_id),
+        lambda _parent_thread_id, _project_id, child_thread_id, _parent_session_id=None: (
+            {
+                "prior-child-zero": "previous-parent-turn",
+                "child-one": "parent-turn",
+                "child-zero": "parent-turn",
+                "duplicate-zero": "parent-turn",
+            }.get(child_thread_id)
+        ),
     )
 
     async def fork_thread(*args):
@@ -4198,6 +4338,7 @@ async def test_retry_unmaterialized_delegation_reuses_its_sequence_slot(
 ):
     receipt = {
         "parent_thread_id": "parent",
+        "parent_session_id": "s-parent",
         "child_thread_id": "child-step-zero",
         "operation_id": "child:child-step-zero",
         "operation_attempt": 1,
@@ -4217,7 +4358,13 @@ async def test_retry_unmaterialized_delegation_reuses_its_sequence_slot(
         "resolve_thread_project",
         lambda _thread_id, _project_id=None: "default",
     )
-    monkeypatch.setattr(mock_session_manager, "_canonical_thread", lambda *_args: None)
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_canonical_thread",
+        lambda thread_id, _project_id=None: (
+            {"session": {"session_id": "s-parent"}} if thread_id == "parent" else None
+        ),
+    )
     start = AsyncMock()
     monkeypatch.setattr(mock_session_manager, "_start_delegated_child", start)
     monkeypatch.setattr(

@@ -63,6 +63,18 @@ def _nonnegative_int(value: Any) -> int:
     return 0
 
 
+def _delegation_receipt_key(
+    parent_thread_id: str,
+    parent_session_id: str | None,
+    parent_turn_id: str | None,
+    call_id: str,
+) -> str:
+    """Scope a persisted delegate call to the parent Session that created it."""
+    return ":".join(
+        (parent_thread_id, parent_session_id or "", parent_turn_id or "", call_id)
+    )
+
+
 class SessionManager:
     """Manages the backend MiniAgentClient, frontend connections, projects, and metadata."""
 
@@ -232,7 +244,10 @@ class SessionManager:
             and isinstance(child_thread_id, str)
         ):
             parent_turn_id = self._delegated_child_parent_turn_id(
-                parent_thread_id, project_id, child_thread_id
+                parent_thread_id,
+                project_id,
+                child_thread_id,
+                str(child.get("parent_session_id") or "") or None,
             )
         await self.broadcast_ws(
             {
@@ -617,7 +632,10 @@ class SessionManager:
             ):
                 raise ValueError("child task attempt must be a positive integer")
             parent_turn_id = self._delegated_child_parent_turn_id(
-                source_thread_id, resolved_project_id, new_thread_id
+                source_thread_id,
+                resolved_project_id,
+                new_thread_id,
+                parent_session_id,
             )
             group_scope = parent_turn_id or f"session:{parent_session_id}"
 
@@ -625,7 +643,10 @@ class SessionManager:
                 state = child.get("child_task_state") or {}
                 child_thread_id = str(child.get("thread_id") or "")
                 child_parent_turn_id = self._delegated_child_parent_turn_id(
-                    source_thread_id, resolved_project_id, child_thread_id
+                    source_thread_id,
+                    resolved_project_id,
+                    child_thread_id,
+                    parent_session_id,
                 )
                 return (
                     child.get("is_child_task") is True
@@ -668,6 +689,7 @@ class SessionManager:
                 if (
                     receipt.get("parent_thread_id") == source_thread_id
                     and receipt.get("project_id") == resolved_project_id
+                    and receipt.get("parent_session_id") == parent_session_id
                     and receipt.get("group_id") == group_id
                     and receipt.get("execution_mode") == "sequential"
                     and receipt_scope == group_scope
@@ -1169,6 +1191,7 @@ class SessionManager:
             for session in sessions
             if session.get("session_id") and session.get("thread_id")
         }
+        parent_session_ids: dict[str, str] = {}
         parents: set[str] = set()
         for session in sessions:
             child_task_state = session.get("child_task_state") or {}
@@ -1184,6 +1207,18 @@ class SessionManager:
                 session.get("is_child_task") is not True
                 or not isinstance(parent, str)
                 or not parent
+            ):
+                continue
+            if parent not in parent_session_ids:
+                parent_record = self._canonical_thread(parent, project_id)
+                parent_session_ids[parent] = (
+                    str(parent_record.get("session", {}).get("session_id") or "")
+                    if parent_record
+                    else ""
+                )
+            if (
+                not parent_session_ids[parent]
+                or session.get("parent_session_id") != parent_session_ids[parent]
             ):
                 continue
             parents.add(parent)
@@ -1436,12 +1471,18 @@ class SessionManager:
         source_thread_id = source_thread_id or "default"
         resolved_project_id = self.resolve_thread_project(source_thread_id, project_id)
         request_id = request_id or f"web-retry-{uuid.uuid4().hex}"
+        parent = self._canonical_thread(source_thread_id, resolved_project_id)
+        parent_session_id = (
+            str(parent.get("session", {}).get("session_id") or "") if parent else ""
+        )
         unmaterialized = next(
             (
                 (key, receipt)
                 for key, receipt in self._delegation_receipts.items()
                 if receipt.get("parent_thread_id") == source_thread_id
                 and receipt.get("project_id") == resolved_project_id
+                and parent_session_id
+                and receipt.get("parent_session_id") == parent_session_id
                 and receipt.get("child_thread_id") == child_thread_id
                 and receipt.get("status") == "failed"
             ),
@@ -1635,6 +1676,7 @@ class SessionManager:
                     or self._delegation_error_for_child(
                         source_thread_id,
                         resolved_project_id,
+                        parent_session_id,
                         child_thread_id,
                         operation_id,
                         child_task_state.get("attempt") or 1,
@@ -1655,7 +1697,10 @@ class SessionManager:
                     "last_turn_prompt": session.get("summary"),
                     "child_session_available": bool(session.get("session_id")),
                     "parent_turn_id": self._delegated_child_parent_turn_id(
-                        source_thread_id, resolved_project_id, child_thread_id
+                        source_thread_id,
+                        resolved_project_id,
+                        child_thread_id,
+                        parent_session_id,
                     ),
                     "lifecycle": list(child_task_state.get("lifecycle") or [])[
                         -MAX_CHILD_TASK_LIFECYCLE:
@@ -1678,6 +1723,7 @@ class SessionManager:
                 for receipt in self._delegation_receipts.values()
                 if receipt.get("parent_thread_id") == source_thread_id
                 and receipt.get("project_id") == resolved_project_id
+                and receipt.get("parent_session_id") == parent_session_id
                 and receipt.get("status") == "failed"
                 and receipt.get("child_thread_id") not in child_thread_ids
             ),
@@ -1753,6 +1799,7 @@ class SessionManager:
         self,
         parent_thread_id: str,
         project_id: str,
+        parent_session_id: str,
         child_thread_id: str,
         operation_id: str | None,
         attempt: int,
@@ -1767,6 +1814,7 @@ class SessionManager:
             if (
                 receipt.get("parent_thread_id") == parent_thread_id
                 and receipt.get("project_id") == project_id
+                and receipt.get("parent_session_id") == parent_session_id
                 and receipt.get("child_thread_id") == child_thread_id
                 and (receipt.get("operation_id") or f"child:{child_thread_id}")
                 == expected_operation_id
@@ -1780,14 +1828,26 @@ class SessionManager:
         return None
 
     def _delegated_child_parent_turn_id(
-        self, parent_thread_id: str, project_id: str, child_thread_id: str
+        self,
+        parent_thread_id: str,
+        project_id: str,
+        child_thread_id: str,
+        parent_session_id: str | None = None,
     ) -> str | None:
         """Return correlation metadata without using receipts as child state."""
+        if parent_session_id is None:
+            parent = self._canonical_thread(parent_thread_id, project_id)
+            parent_session_id = (
+                str(parent.get("session", {}).get("session_id") or "") if parent else ""
+            )
+        if not parent_session_id:
+            return None
         matches = [
             receipt
             for receipt in self._delegation_receipts.values()
             if receipt.get("parent_thread_id") == parent_thread_id
             and receipt.get("project_id") == project_id
+            and receipt.get("parent_session_id") == parent_session_id
             and receipt.get("child_thread_id") == child_thread_id
             and isinstance(receipt.get("parent_turn_id"), str)
         ]
@@ -2601,6 +2661,15 @@ class SessionManager:
         parent_turn_id = payload.get("turnId") or payload.get("turn_id")
         if not isinstance(parent_turn_id, str):
             parent_turn_id = None
+        resolved_project_id = project_id or self._current_project_id
+        payload_session_id = payload.get("sessionId") or payload.get("session_id")
+        if not isinstance(payload_session_id, str):
+            payload_session_id = None
+        parent = self._canonical_thread(parent_thread_id, resolved_project_id)
+        parent_session_id = payload_session_id or (
+            str(parent.get("session", {}).get("session_id") or "") if parent else ""
+        )
+        parent_session_id = parent_session_id or None
         call_id: Any = None
 
         if event_type == "tool_started":
@@ -2659,7 +2728,9 @@ class SessionManager:
                 and event_timestamp > 0
                 else int(time.time() * 1000)
             )
-            receipt_key = ":".join((parent_thread_id, parent_turn_id or "", call_id))
+            receipt_key = _delegation_receipt_key(
+                parent_thread_id, parent_session_id, parent_turn_id, call_id
+            )
             if self._delegation_receipts.get(receipt_key, {}).get("status") in {
                 "pending",
                 "materialized",
@@ -2670,6 +2741,7 @@ class SessionManager:
                 receipt_key,
                 {
                     "parent_thread_id": parent_thread_id,
+                    "parent_session_id": parent_session_id,
                     "child_key": child_key,
                     "operation_attempt": 1,
                     "parent_turn_id": parent_turn_id,
@@ -2695,8 +2767,20 @@ class SessionManager:
         )
         if not parent_thread_id or not isinstance(call_id, str) or not call_id:
             return
-        receipt_key = ":".join((parent_thread_id, parent_turn_id or "", call_id))
+        receipt_key = _delegation_receipt_key(
+            parent_thread_id, parent_session_id, parent_turn_id, call_id
+        )
         receipt = self._delegation_receipts.get(receipt_key)
+        if receipt is None:
+            legacy_key = ":".join((parent_thread_id, parent_turn_id or "", call_id))
+            legacy_receipt = self._delegation_receipts.get(legacy_key)
+            if (
+                legacy_receipt
+                and parent_session_id
+                and legacy_receipt.get("parent_session_id") == parent_session_id
+            ):
+                receipt_key = legacy_key
+                receipt = legacy_receipt
         if event.get("is_error") is True or event.get("truncated") is True:
             if receipt and receipt.get("status") == "awaiting_result":
                 self._update_delegation_receipt(
@@ -2755,6 +2839,7 @@ class SessionManager:
                 receipt_key,
                 {
                     "parent_thread_id": parent_thread_id,
+                    "parent_session_id": parent_session_id,
                     "child_thread_id": child_thread_id,
                     "child_key": child_key,
                     "operation_id": f"child:{child_thread_id}",
@@ -2816,6 +2901,7 @@ class SessionManager:
             receipt_key,
             {
                 "parent_thread_id": parent_thread_id,
+                "parent_session_id": parent_session_id,
                 "child_thread_id": child_thread_id,
                 "child_key": child_key,
                 "operation_id": operation_id,
@@ -4524,10 +4610,20 @@ class SessionManager:
         for key, receipt in list(self._delegation_receipts.items()):
             if receipt.get("project_id") != project_id:
                 continue
-            if receipt.get("status") not in {"pending", "materialized"}:
+            if receipt.get("status") != "pending":
+                continue
+            parent_thread_id = str(receipt.get("parent_thread_id") or "")
+            parent = self._canonical_thread(parent_thread_id, project_id)
+            parent_session_id = (
+                str(parent.get("session", {}).get("session_id") or "") if parent else ""
+            )
+            if (
+                not parent_session_id
+                or receipt.get("parent_session_id") != parent_session_id
+            ):
                 continue
             await self._start_delegated_child(
-                str(receipt.get("parent_thread_id") or ""),
+                parent_thread_id,
                 str(receipt.get("child_thread_id") or ""),
                 str(receipt.get("prompt") or ""),
                 receipt.get("title"),

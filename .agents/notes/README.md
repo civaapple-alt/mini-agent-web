@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [子任务恢复按父 Session 隔离](implemented/bug-fix/2026-09-26-child-task-recovery-session-scope.zh.md)
 - [子智能体列表折叠状态与数量摘要](implemented/bug-fix/2026-09-26-child-task-list-state-and-counts.zh.md)
 - [运行面板的子任务接管与共享控制](implemented/feature/2026-09-26-child-task-runtime-controls.zh.md)
 - [新活动按钮跳到当前 Turn 最新执行段](implemented/bug-fix/2026-09-20-new-activity-jump-to-latest-segment.zh.md)

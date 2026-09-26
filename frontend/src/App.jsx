@@ -39,7 +39,11 @@ import {
 } from './utils/sessionState.js';
 import { getStatusViewModel, normalizeTheme } from './utils/statusModel.js';
 import { isIncompleteTurnStatus } from './utils/turnHistory.js';
-import { isRuntimeSettled, projectReplayPage } from './utils/sessionRecovery.js';
+import {
+  isRuntimeSettled,
+  projectReplayPage,
+  shouldRefreshAfterInterruptStatus,
+} from './utils/sessionRecovery.js';
 import { parseSkillPrompt, parseWorkflowPrompt } from './utils/skillTokens.js';
 import { buildAutoThreadTitle, isDefaultThreadTitle } from './utils/threadTitle.js';
 import {
@@ -168,6 +172,7 @@ export default function App() {
   const queueDispatchingRef = useRef(false);
   const interruptPendingRef = useRef(false);
   const interruptTurnIdRef = useRef(null);
+  const runtimeStatusLoaderRef = useRef(null);
   const interruptedTurnIdsRef = useRef(new Set());
   const activeTurnIdRef = useRef(activeTurnId);
   const planActiveRef = useRef(planActive);
@@ -766,6 +771,16 @@ export default function App() {
           interruptTurnIdRef.current,
         );
         if (ACTIVE_RUNTIME_PHASES.has(status.phase) && status.phase !== 'stopping' && !stoppedTurn) {
+          if (
+            interruptPendingRef.current
+            && interruptTurnIdRef.current
+            && runtimeTurnId
+            && String(runtimeTurnId) !== String(interruptTurnIdRef.current)
+          ) {
+            interruptPendingRef.current = false;
+            interruptTurnIdRef.current = null;
+            setIsInterrupting(false);
+          }
           setIsGenerating(true);
           if (runtimeTurnId) {
             activeTurnIdRef.current = runtimeTurnId;
@@ -785,6 +800,35 @@ export default function App() {
       console.debug('Failed to load runtime status:', err);
     }
   };
+
+  runtimeStatusLoaderRef.current = loadRuntimeStatus;
+
+  useEffect(() => {
+    if (!isInterrupting || !currentThread) return undefined;
+    let cancelled = false;
+    let timer = null;
+    const refresh = async () => {
+      if (cancelled) return;
+      await runtimeStatusLoaderRef.current?.(
+        currentThread,
+        currentThreadProject,
+        {
+          epoch: sessionEpochRef.current,
+          threadId: currentThreadRef.current,
+          projectId: currentThreadProjectRef.current,
+          signal: sessionRequestControllerRef.current?.signal,
+        },
+      );
+      if (!cancelled && interruptTurnIdRef.current) {
+        timer = window.setTimeout(refresh, 1500);
+      }
+    };
+    timer = window.setTimeout(refresh, 500);
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [currentThread, currentThreadProject, isInterrupting]);
 
   const replayMissedEvents = async (
     threadId = currentThreadRef.current,
@@ -1483,7 +1527,7 @@ export default function App() {
         ) {
           setRuntimeStatus(notification);
           const runtimeTurnId = notification.turnId || notification.turn_id;
-        if (notification.phase === 'stopping' && runtimeTurnId) {
+          if (notification.phase === 'stopping' && runtimeTurnId) {
             rememberInterruptedTurn(runtimeTurnId);
             activeTurnIdRef.current = runtimeTurnId;
             interruptTurnIdRef.current = runtimeTurnId;
@@ -1491,6 +1535,17 @@ export default function App() {
             setActiveTurnId(runtimeTurnId);
             setIsGenerating(false);
             setIsInterrupting(true);
+          } else if (
+            shouldRefreshAfterInterruptStatus(
+              notification,
+              interruptTurnIdRef.current,
+            )
+          ) {
+            void loadRuntimeStatus(
+              currentThreadRef.current,
+              currentThreadProjectRef.current,
+              currentSessionRequest(),
+            );
           }
         }
       } else if (data.method?.startsWith('checkpoint/') || data.method?.startsWith('goal/') || data.method?.startsWith('plan/')) {

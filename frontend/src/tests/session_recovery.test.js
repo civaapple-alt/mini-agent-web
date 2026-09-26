@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isRuntimeSettled, projectReplayPage } from '../utils/sessionRecovery.js';
+import {
+  isRuntimeSettled,
+  projectReplayPage,
+  shouldRefreshAfterInterruptStatus,
+} from '../utils/sessionRecovery.js';
 
 test('idle runtime status settles stale local turn state without a turn id', () => {
   assert.equal(isRuntimeSettled({ phase: 'idle', turn_id: null }), true);
@@ -20,6 +24,32 @@ test('an incomplete event suffix is discarded after snapshot recovery', () => {
   });
 
   assert.deepEqual(replay, { hasGap: true, cursor: 128, events: [] });
+});
+
+test('settled runtime status triggers a refresh for a pending stop', () => {
+  assert.equal(
+    shouldRefreshAfterInterruptStatus(
+      { phase: 'completed', turn_id: 'turn-1' },
+      'turn-1',
+    ),
+    true,
+  );
+  assert.equal(
+    shouldRefreshAfterInterruptStatus({ phase: 'idle', turn_id: null }, 'turn-1'),
+    true,
+  );
+  assert.equal(
+    shouldRefreshAfterInterruptStatus({ phase: 'stopping', turn_id: 'turn-1' }, 'turn-1'),
+    false,
+  );
+  assert.equal(
+    shouldRefreshAfterInterruptStatus({ phase: 'running', turn_id: 'turn-2' }, 'turn-1'),
+    true,
+  );
+  assert.equal(
+    shouldRefreshAfterInterruptStatus({ phase: 'completed', turn_id: 'turn-1' }, null),
+    false,
+  );
 });
 
 test('a gap with no retained suffix advances to just before the oldest event', () => {

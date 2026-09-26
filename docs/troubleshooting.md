@@ -347,6 +347,8 @@ follow-up Turn；运行中或报告后仍运行的任务会 steer 当前 Turn。
 如果控制结果显示 `steer_pending`，请求结果尚未确认，指令可能已提交，也可能未提交。不要自动重发同一 request ID。
 先刷新 `/children` 投影和当前 Turn 状态，并查看返回的原因，再决定是否发起新的控制请求。
 follow-up 已显示“排队中”且并发槽位空闲时，检查 Gateway 日志中的队列启动错误。Gateway 会对暂时性启动错误做合并退避重试；重启 Gateway 也会从 App Server 持久状态恢复排队任务。
+恢复会重新连接同一父 Session 的活动子任务，并继续排空已持久化的队列；不会重新执行已完成任务。
+Gateway 只重试仍处于 `pending` 且带有当前 `parent_session_id` 的委派回执。已由 App Server 接收的 operation 由 operation 状态恢复；旧 Session 或缺少 Session 身份的回执不会重放。
 
 点击正在运行的会话时，Studio 会先载入快照，再按事件序号回放遗漏事件，最后继续接收
 当前会话的 WebSocket 流。若事件已过期或出现缺口，页面会提示“事件回放存在缺口”，
@@ -378,7 +380,9 @@ follow-up 已显示“排队中”且并发槽位空闲时，检查 Gateway 日�
 再撤销该 Project/Thread/Turn 下的所有待审批项。原审批 Future 会以拒绝结束，之后到达的
 同一 Turn 审批也会被拒绝，因此停止后再点击“允许”不能放行工具。App Server worker 会
 优先处理已排队的停止命令，避免审批拒绝让模型进入下一步。界面会暂时显示“停止中”，
-直到收到权威的 `turn_finished`。如果 App Server 没有接受中断，Studio 会恢复“停止”按钮
+直到运行时状态确认 Turn 已结算。若事件流漏掉 `turn_finished`，Studio 会继续读取权威运行状态，
+并在状态结算后解除“停止中”。父会话的“停止”只中断父 Turn，不会批量停止 Child Sessions；
+请在对应子任务卡片上单独停止子任务。如果 App Server 没有接受中断，Studio 会恢复“停止”按钮
 并提示重试，不会把仍在远端运行的 Turn 误报成已完成。Studio 还会丢弃已中断 Turn 的迟到
 reasoning、文本和工具事件，但保留终态事件用于清理界面。已经持久化的历史内容不会被这条
 规则删除。

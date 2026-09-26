@@ -2179,6 +2179,101 @@ def test_session_catalog_projects_active_control_identity_from_operation(
     }
 
 
+@pytest.mark.parametrize(
+    ("operation_status", "turn_status", "expected_status"),
+    [
+        ("pausing", "interrupted", "paused"),
+        ("pausing", "completed", "completed"),
+        ("cancelling", "cancelled", "cancelled"),
+    ],
+)
+def test_session_catalog_settlement_overrides_stale_child_control(
+    tmp_path, monkeypatch, operation_status, turn_status, expected_status
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    session_dir = session_base / "s-child"
+    session_dir.mkdir(parents=True)
+    control_action = "pause" if operation_status == "pausing" else "cancel_active"
+    records = [
+        {
+            "seq": 1,
+            "kind": "session_created",
+            "schema_version": 1,
+            "session_id": "s-child",
+            "timestamp_ms": 1000,
+            "forked_from": {"parent_session_id": "s-parent"},
+        },
+        {"seq": 2, "kind": "thread_started", "thread_id": "t-child"},
+        {
+            "seq": 3,
+            "kind": "turn_started",
+            "thread_id": "t-child",
+            "turn_id": "turn-one",
+            "timestamp_ms": 1100,
+            "prompt": "Original task",
+        },
+        {
+            "seq": 4,
+            "kind": "operation",
+            "operation_id": "child:t-child",
+            "operation_kind": "child_task",
+            "status": "running",
+            "turn_id": "turn-one",
+            "parent_thread_id": "t-parent",
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "prompt": "Original task",
+            "timestamp_ms": 1100,
+        },
+        {
+            "seq": 5,
+            "kind": "operation",
+            "operation_id": "child:t-child",
+            "operation_kind": "child_task",
+            "status": operation_status,
+            "turn_id": "turn-one",
+            "parent_thread_id": "t-parent",
+            "attempt": 1,
+            "attempt_kind": "initial",
+            "prompt": "Original task",
+            "control_action": control_action,
+            "control_request_id": "control-request-1",
+            "timestamp_ms": 1200,
+        },
+        {
+            "seq": 6,
+            "kind": "turn_settled",
+            "thread_id": "t-child",
+            "turn_id": "turn-one",
+            "timestamp_ms": 1300,
+            "status": turn_status,
+        },
+    ]
+    (session_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_dir / "summary.json").write_text(
+        json.dumps({"created_at_ms": 1000, "updated_at_ms": 1300}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    monkeypatch.setattr("server.session_catalog._process_alive", lambda _pid: False)
+
+    state = SessionCatalog().list_sessions(workspace, "project-1")["data"][0][
+        "child_task_state"
+    ]
+
+    assert state["status"] == expected_status
+    assert state["control_request"] is None
+    assert state["lifecycle"][-1]["status"] == expected_status
+    if expected_status == "paused":
+        assert state["turn_id"] is None
+
+
 def test_session_catalog_keeps_missing_child_operation_times_unknown(
     tmp_path, monkeypatch
 ):

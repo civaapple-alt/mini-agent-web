@@ -31,6 +31,7 @@ describe('ChildTasksPane', () => {
 
     expect(screen.getByText('Frontend size estimate')).toBeTruthy();
     expect(screen.getByText('child Session creation failed')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /展开任务详情：Frontend size estimate/ }));
     expect(screen.getByText('模式未知')).toBeTruthy();
     expect(screen.getByText('已分配')).toBeTruthy();
     expect(screen.getAllByText('失败').length).toBeGreaterThan(0);
@@ -69,7 +70,7 @@ describe('ChildTasksPane', () => {
     fireEvent.click(screen.getByRole('button', { name: '查看' }));
     expect(onOpenThread).toHaveBeenCalledWith('child-a', 'memory-card');
     expect(screen.getAllByText('已完成').length).toBeGreaterThan(0);
-    expect(container.querySelector('.child-task-meta').textContent).toContain('2.4s');
+    expect(container.querySelector('.child-task-duration').textContent).toContain('2.4s');
   });
 
   it('prioritizes running work over queued work and shows the current report', () => {
@@ -98,10 +99,13 @@ describe('ChildTasksPane', () => {
       />,
     );
 
-    expect([...container.querySelectorAll('.child-task-row .child-task-main strong')]
+    expect([...container.querySelectorAll('.child-task-row .child-task-summary strong')]
       .map((node) => node.textContent)).toEqual(['Active task', 'Waiting task']);
+    const queuedRow = [...container.querySelectorAll('.child-task-row')]
+      .find((row) => row.textContent.includes('Waiting task'));
+    fireEvent.click(queuedRow.querySelector('.child-task-summary'));
     expect(screen.getByText('等待：')).toBeTruthy();
-    expect(screen.getByText('等待上一顺序步骤成功')).toBeTruthy();
+    expect(screen.getAllByText('等待上一顺序步骤成功').length).toBeGreaterThan(0);
     expect(screen.getByText('已完成文件盘点')).toBeTruthy();
     expect(screen.getByRole('button', { name: '显示已结束任务（1）' })).toBeTruthy();
     expect(screen.queryByText('Finished task')).toBeNull();
@@ -184,7 +188,7 @@ describe('ChildTasksPane', () => {
       />,
     );
 
-    expect([...container.querySelectorAll('.child-task-row .child-task-main strong')]
+    expect([...container.querySelectorAll('.child-task-row .child-task-summary strong')]
       .map((node) => node.textContent)).toEqual([
       'Failed task',
       'Not started task',
@@ -199,11 +203,15 @@ describe('ChildTasksPane', () => {
 
     const retry = [...container.querySelectorAll('.child-task-row')]
       .find((row) => row.textContent.includes('Active retry'));
+    fireEvent.click(retry.querySelector('.child-task-summary'));
     expect(retry.textContent).toContain('第 2 轮');
     expect(retry.textContent).toContain('第 1/2 步');
     expect(retry.textContent).toContain('执行工具');
     expect(retry.textContent).toContain('正在修复评审指出的问题');
     expect(retry.querySelectorAll('.child-task-attempt')).toHaveLength(2);
+    const recovery = [...container.querySelectorAll('.child-task-row')]
+      .find((row) => row.textContent.includes('Recovery task'));
+    fireEvent.click(recovery.querySelector('.child-task-summary'));
     expect(screen.getByText(/需要重新连接/)).toBeTruthy();
   });
 
@@ -233,6 +241,7 @@ describe('ChildTasksPane', () => {
     );
 
     const card = container.querySelector('.child-task-row');
+    fireEvent.click(card.querySelector('.child-task-summary'));
     expect(card.querySelectorAll('.child-task-attempt')).toHaveLength(3);
     expect(card.textContent).toContain('初始执行');
     expect(card.textContent).toContain('重试 · 第 2 轮');
@@ -311,8 +320,13 @@ describe('ChildTasksPane', () => {
     const paused = rows.find((row) => row.textContent.includes('Paused task'));
     const failed = rows.find((row) => row.textContent.includes('Failed task'));
 
-    fireEvent.click(running.querySelector('button[aria-label="排队后续"]')
-      || [...running.querySelectorAll('button')].find((button) => button.textContent.includes('排队后续')));
+    for (const row of [running, queued, paused, failed]) {
+      fireEvent.click(row.querySelector('.child-task-summary'));
+      fireEvent.click(row.querySelector('.child-task-actions > summary'));
+    }
+
+    fireEvent.click([...running.querySelectorAll('button')]
+      .find((button) => button.textContent.includes('排队后续')));
     fireEvent.change(screen.getByLabelText('子任务指令'), {
       target: { value: 'Check the completed output' },
     });
@@ -368,7 +382,10 @@ describe('ChildTasksPane', () => {
         onControl={onControl}
       />,
     );
-    fireEvent.click([...container.querySelectorAll('button')]
+    const row = container.querySelector('.child-task-row');
+    fireEvent.click(row.querySelector('.child-task-summary'));
+    fireEvent.click(row.querySelector('.child-task-actions > summary'));
+    fireEvent.click([...row.querySelectorAll('button')]
       .find((button) => button.textContent.includes('排队后续')));
     fireEvent.change(screen.getByLabelText('子任务指令'), {
       target: { value: 'Another instruction' },
@@ -377,5 +394,53 @@ describe('ChildTasksPane', () => {
     expect((await screen.findByRole('alert')).textContent).toContain(
       'a child task can have only one pending follow-up',
     );
+  });
+
+  it('keeps running controls compact and confirms stop before sending it', async () => {
+    const onControl = vi.fn(async (child) => ({
+      outcome: { outcome: 'applied' },
+      child: { ...child, status: 'cancelling' },
+    }));
+    const { container } = render(
+      <ChildTasksPane
+        children={[{
+          operation_id: 'running-op',
+          child_thread_id: 'running-child',
+          title: 'Running task',
+          status: 'running',
+          phase: 'model',
+          duration_ms: 4_000,
+        }]}
+        loading={false}
+        error={null}
+        onControl={onControl}
+      />,
+    );
+
+    expect(screen.getByRole('group', {
+      name: '运行 1，排队 0，待处理 0，已结束 0，共 1',
+    })).toBeTruthy();
+    expect(screen.getByText('模型处理中')).toBeTruthy();
+    expect(screen.getByText('4.0s')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '暂停' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '发送指令' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '排队后续' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '停止Running task' }));
+    expect(screen.getByRole('group', { name: '停止Running task确认' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '确认停止' }));
+    await waitFor(() => expect(onControl).toHaveBeenCalledWith(
+      expect.objectContaining({ child_thread_id: 'running-child' }),
+      'cancel',
+      undefined,
+    ));
+    expect(screen.getByText('服务端已确认')).toBeTruthy();
+
+    const row = container.querySelector('.child-task-row');
+    fireEvent.click(row.querySelector('.child-task-summary'));
+    fireEvent.click(row.querySelector('.child-task-actions > summary'));
+    expect(screen.getByRole('button', { name: '暂停' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '发送指令' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '排队后续' })).toBeTruthy();
   });
 });

@@ -1018,10 +1018,19 @@ class SessionCatalog:
                         and child_task_operation.get("operation_turn_id")
                         == latest_turn_id
                     ):
+                        pending_control = child_task_operation.get("operation_status")
                         settled_operation_status = {
                             "completed": "completed",
-                            "cancelled": "cancelled",
-                            "interrupted": "cancelled",
+                            "cancelled": (
+                                "paused"
+                                if pending_control == "pausing"
+                                else "cancelled"
+                            ),
+                            "interrupted": (
+                                "paused"
+                                if pending_control == "pausing"
+                                else "cancelled"
+                            ),
                             "failed": "failed",
                             "step_limit": "failed",
                         }.get(latest_turn_status)
@@ -1059,6 +1068,8 @@ class SessionCatalog:
                             child_task_operation["operation_status"] = (
                                 settled_operation_status
                             )
+                            if settled_operation_status == "paused":
+                                child_task_operation["operation_turn_id"] = None
                             child_task_operation["operation_updated_at"] = _timestamp(
                                 latest_turn_timestamp
                             )
@@ -1066,6 +1077,7 @@ class SessionCatalog:
                                 latest_turn_timestamp or None
                             )
                             child_task_operation["operation_error"] = latest_turn_error
+                            child_task_control = None
                             terminal_entry: dict[str, int | str | None] = {
                                 "status": settled_operation_status,
                                 "timestamp_ms": latest_turn_timestamp or None,
@@ -1305,13 +1317,24 @@ class SessionCatalog:
                 )
             )
             and child_task_operation.get("operation_status")
-            in {"queued", "running", "awaiting_approval"}
+            in {
+                "queued",
+                "running",
+                "awaiting_approval",
+                "pausing",
+                "cancelling",
+            }
         )
         if operation_matches_settled_turn and child_task_operation:
+            pending_control = child_task_operation.get("operation_status")
             settled_operation_status = {
                 "completed": "completed",
-                "cancelled": "cancelled",
-                "interrupted": "cancelled",
+                "cancelled": (
+                    "paused" if pending_control == "pausing" else "cancelled"
+                ),
+                "interrupted": (
+                    "paused" if pending_control == "pausing" else "cancelled"
+                ),
                 "failed": "failed",
                 "step_limit": "failed",
             }.get(str(latest_turn_status))
@@ -1345,12 +1368,15 @@ class SessionCatalog:
                         )
                     child_task_lifecycle.append(running_entry)
                 child_task_operation["operation_status"] = settled_operation_status
+                if settled_operation_status == "paused":
+                    child_task_operation["operation_turn_id"] = None
                 child_task_operation["operation_updated_at"] = _timestamp(
                     latest_turn_timestamp
                 )
                 child_task_operation["operation_timestamp_ms"] = (
                     latest_turn_timestamp or None
                 )
+                child_task_control = None
                 terminal_entry: dict[str, int | str | None] = {
                     "status": settled_operation_status,
                     "timestamp_ms": latest_turn_timestamp or None,
@@ -1391,7 +1417,8 @@ class SessionCatalog:
                 (
                     _bounded_int(item.get("timestamp_ms"))
                     for item in reversed(current_lifecycle)
-                    if item.get("status") in {"completed", "failed", "cancelled"}
+                    if item.get("status")
+                    in {"completed", "failed", "cancelled", "paused"}
                     and _bounded_int(item.get("timestamp_ms"))
                 ),
                 0,

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Simplify the Child Agents panel into compact status rows with a color-coded
+  count summary, visible phase/progress, and elapsed time. Keep stop as the only
+  quick action with confirmation; reveal lifecycle details and other controls
+  on demand.
 - Scope delegated child Thread identities to their creating parent Session using
   a canonical capability-generated ID; repeated display titles and parent-local
   keys no longer collide across Sessions. Persist bounded call arguments before
@@ -20,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reconcile child task reads with settled Turns when a terminal operation snapshot
   is missing. Recover the bounded final assistant result in `task_read`, and make
   clear that an empty `reports` list means no explicit progress report was sent.
+- Let a persisted settled Turn override stale `pausing` / `cancelling` child state
+  after restart, and keep expected stale-PID probes out of Gateway warning logs.
 - Keep the completed-task expansion and loaded page count when opening a child
   detail and returning to the list. Include ended tasks in the panel count summary.
 - Clarify that resending a failed Turn starts a new provider request, not a

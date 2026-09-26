@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ExternalLink, GitBranch, RefreshCw } from 'lucide-react';
+import { ChevronDown, ExternalLink, GitBranch, RefreshCw, X } from 'lucide-react';
 import {
   childTaskStatusLabels,
   formatChildTaskDuration,
@@ -25,6 +25,8 @@ function ChildTaskRow({
   onControl,
   sequenceCount = null,
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const [confirmStop, setConfirmStop] = useState(false);
   const [editorAction, setEditorAction] = useState(null);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -53,6 +55,16 @@ function ChildTaskRow({
   const paused = status === 'paused';
   const retryable = ['failed', 'cancelled', 'step_limit'].includes(status);
   const pendingFollowUp = child.pending_follow_up;
+  const title = child.title || child.child_thread_id || '子代理任务';
+  const activity = child.recovery_required
+    ? '等待子 Session 恢复'
+    : active
+      ? [phase, latestReport ? `最新进展：${latestReport.text}` : null].filter(Boolean).join(' · ') || '正在执行'
+    : queued
+      ? failureDetail || waitingReason || sequenceLabel || '等待并发空位'
+      : paused
+        ? waitingReason || '等待继续'
+        : failureDetail || childTaskStatusLabels[status] || status;
 
   const beginEditor = (action) => {
     setControlError('');
@@ -71,6 +83,7 @@ function ChildTaskRow({
       const outcome = response?.outcome?.outcome;
       setControlFeedback(outcome === 'pending' ? '已提交，等待运行时确认' : '服务端已确认');
       setEditorAction(null);
+      setConfirmStop(false);
     } catch (cause) {
       setControlError(cause?.message || '子任务操作失败');
     } finally {
@@ -80,146 +93,179 @@ function ChildTaskRow({
 
   return (
     <article className={`child-task-row ${status}${child.recovery_required ? ' recovery-required' : ''}`}>
-      <div className="child-task-main">
-        <strong title={child.child_thread_id}>{child.title || child.child_thread_id || '子代理任务'}</strong>
-        <span className={`child-task-status ${status}`} aria-label={`状态：${childTaskStatusLabels[status] || status}`}>
-          {childTaskStatusLabels[status] || status}
-        </span>
-      </div>
-      <div className="child-task-meta font-mono">
-        <span>{child.execution_mode === 'sequential'
-          ? '顺序'
-          : child.execution_mode === 'parallel' ? '并行' : '模式未知'}</span>
-        {sequenceLabel && <span title={child.operation_group_id || undefined}>{sequenceLabel}</span>}
-        <span>{currentAttemptLabel}</span>
-        {duration && <span>{duration}</span>}
-      </div>
-      {phase && <div className="child-task-phase">当前阶段：{phase}</div>}
-      {child.recovery_required && (
-        <div className="child-task-recovery">
-          子 Session 需要重新连接，当前运行状态可能尚未恢复。
-        </div>
-      )}
-      {waitingReason && (
-        <div className="child-task-waiting" aria-label="等待原因">
-          <span>等待：</span>{waitingReason}
-        </div>
-      )}
-      {pendingFollowUp && (
-        <div className={`child-task-follow-up ${pendingFollowUp.status}`}>
-          {pendingFollowUp.status === 'blocked' ? '后续指令受阻，重试成功后继续' : '已有一条后续指令排队'}
-          {pendingFollowUp.prompt && <span title={pendingFollowUp.prompt}>{pendingFollowUp.prompt}</span>}
-        </div>
-      )}
-      {latestReport && (
-        <div className="child-task-report" aria-label="子代理进展">
-          <span>{latestReport.attempt
-            ? `${getChildTaskAttemptLabel(attempts.find((attempt) => attempt.attempt === latestReport.attempt) || { attempt: latestReport.attempt })}进展：`
-            : '最新进展：'}</span>
-          <span>{latestReport.text}</span>
-          {latestReport.timestamp_ms && (
-            <time>{formatChildTaskTimestamp(latestReport.timestamp_ms)}</time>
-          )}
-        </div>
-      )}
-      <ChildTaskAttemptHistory task={child} />
-      {onControl && (
-        <div className="child-task-controls" aria-label="子任务控制">
-          {active && (
-            <>
-              <button type="button" className="btn-action-small danger" disabled={busy} onClick={() => submit('cancel')}>
-                停止
-              </button>
-              <button type="button" className="btn-action-small" disabled={busy} onClick={() => submit('pause')}>
-                暂停
-              </button>
-              <button type="button" className="btn-action-small" disabled={busy} onClick={() => beginEditor('steer')}>
-                发送指令
-              </button>
-              <button type="button" className="btn-action-small" disabled={busy || Boolean(pendingFollowUp)} onClick={() => beginEditor('queue_follow_up')}>
-                排队后续
-              </button>
-            </>
-          )}
-          {queued && (
-            <>
-              <button type="button" className="btn-action-small" disabled={busy} onClick={() => beginEditor('update_queued')}>
-                修改任务
-              </button>
-              <button type="button" className="btn-action-small danger" disabled={busy} onClick={() => submit('cancel')}>
-                停止
-              </button>
-            </>
-          )}
-          {paused && (
-            <>
-              <button type="button" className="btn-action-small" disabled={busy} onClick={() => submit('resume')}>
-                继续
-              </button>
-              <button type="button" className="btn-action-small danger" disabled={busy} onClick={() => submit('cancel')}>
-                停止
-              </button>
-            </>
-          )}
-          {retryable && (
-            <button type="button" className="btn-action-small" disabled={busy} onClick={() => submit('retry')}>
-              重试
-            </button>
-          )}
-          {editorAction && (
-            <div className="child-task-editor">
-              <textarea
-                aria-label="子任务指令"
-                value={draft}
-                maxLength={32768}
-                disabled={busy}
-                onChange={(event) => setDraft(event.target.value)}
-              />
-              {editorAction === 'steer' ? (
-                <button type="button" className="btn-action-small" disabled={busy || !draft.trim()} onClick={() => submit('steer', { text: draft.trim() })}>
-                  发送到本轮
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn-action-small"
-                  disabled={busy || !draft.trim() || (editorAction === 'queue_follow_up' && Boolean(pendingFollowUp))}
-                  onClick={() => submit(editorAction, { prompt: draft.trim() })}
-                >
-                  {editorAction === 'update_queued' ? '保存修改' : '加入后续队列'}
-                </button>
-              )}
-              <button type="button" className="btn-action-small" disabled={busy} onClick={() => setEditorAction(null)}>
-                取消编辑
-              </button>
-            </div>
-          )}
-          {busy && <span className="child-task-control-feedback">正在提交…</span>}
-          {controlFeedback && <span className="child-task-control-feedback">{controlFeedback}</span>}
-          {controlError && <span className="child-task-control-error" role="alert">{controlError}</span>}
-        </div>
-      )}
-      {[
-        'queued',
-        'cancelled',
-        'failed',
-        'not_started',
-        'step_limit',
-      ].includes(status) && failureDetail && (
-        <div className="child-task-error" title={failureDetail}>
-          {failureDetail}
-        </div>
-      )}
-      {onOpenThread && child.child_thread_id && child.child_session_available === true && (
+      <div className="child-task-row-head">
         <button
           type="button"
-          className="btn-action-small child-task-open"
-          onClick={() => onOpenThread(child.child_thread_id, child.project_id || projectId)}
-          title="在子智能体标签中查看子会话活动"
+          className="child-task-summary"
+          aria-expanded={expanded}
+          aria-label={`${expanded ? '收起' : '展开'}任务详情：${title}，${childTaskStatusLabels[status] || status}${duration ? `，耗时 ${duration}` : ''}`}
+          onClick={() => setExpanded((value) => !value)}
         >
-          <ExternalLink size={12} />
-          <span>查看</span>
+          <span className={`child-task-status-dot ${status}`} aria-hidden="true" />
+          <strong title={child.child_thread_id}>{title}</strong>
+          <span className={`child-task-status ${status}`}>
+            {childTaskStatusLabels[status] || status}
+          </span>
+          {duration && <span className="child-task-duration font-mono">{duration}</span>}
+          <ChevronDown size={14} className="child-task-expand-icon" aria-hidden="true" />
         </button>
+        {onOpenThread && child.child_thread_id && child.child_session_available === true && (
+          <button
+            type="button"
+            className="btn-action-small child-task-open"
+            onClick={() => onOpenThread(child.child_thread_id, child.project_id || projectId)}
+            title="在子智能体标签中查看子会话活动"
+          >
+            <ExternalLink size={12} />
+            <span>查看</span>
+          </button>
+        )}
+        {onControl && ['running', 'in_progress', 'awaiting_approval', 'queued', 'paused'].includes(status) && (
+          <button
+            type="button"
+            className="child-task-stop-quick"
+            aria-label={`停止${title}`}
+            title="停止子任务"
+            disabled={busy}
+            onClick={() => setConfirmStop((value) => !value)}
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
+        )}
+      </div>
+      <div className={`child-task-activity ${child.recovery_required ? 'attention' : active ? 'active' : queued ? 'queued' : ''}`}>
+        <span>{child.recovery_required ? '需要处理' : active ? '阶段 / 进展' : queued ? '排队原因' : '进度'}</span>
+        <span title={activity}>{activity}</span>
+      </div>
+      {confirmStop && (
+        <div className="child-task-stop-confirm" role="group" aria-label={`停止${title}确认`}>
+          <span>停止“{title}”？</span>
+          <button type="button" className="btn-action-small" disabled={busy} onClick={() => setConfirmStop(false)}>
+            暂不停止
+          </button>
+          <button type="button" className="btn-action-small danger" disabled={busy} onClick={() => submit('cancel')}>
+            确认停止
+          </button>
+        </div>
+      )}
+      {(busy || controlFeedback || controlError) && (
+        <div className="child-task-control-feedback" role={controlError ? 'alert' : undefined}>
+          {busy ? '正在提交…' : controlError || controlFeedback}
+        </div>
+      )}
+      {expanded && (
+        <div className="child-task-details">
+          <div className="child-task-meta font-mono">
+            <span>{child.execution_mode === 'sequential'
+              ? '顺序'
+              : child.execution_mode === 'parallel' ? '并行' : '模式未知'}</span>
+            {sequenceLabel && <span title={child.operation_group_id || undefined}>{sequenceLabel}</span>}
+            <span>{currentAttemptLabel}</span>
+            {phase && <span>阶段：{phase}</span>}
+          </div>
+          {child.recovery_required && (
+            <div className="child-task-recovery">
+              子 Session 需要重新连接，当前运行状态可能尚未恢复。
+            </div>
+          )}
+          {waitingReason && (
+            <div className="child-task-waiting" aria-label="等待原因">
+              <span>等待：</span>{waitingReason}
+            </div>
+          )}
+          {pendingFollowUp && (
+            <div className={`child-task-follow-up ${pendingFollowUp.status}`}>
+              {pendingFollowUp.status === 'blocked' ? '后续指令受阻，重试成功后继续' : '已有一条后续指令排队'}
+              {pendingFollowUp.prompt && <span title={pendingFollowUp.prompt}>{pendingFollowUp.prompt}</span>}
+            </div>
+          )}
+          {latestReport && (
+            <div className="child-task-report" aria-label="子代理进展">
+              <span>{latestReport.attempt
+                ? `${getChildTaskAttemptLabel(attempts.find((attempt) => attempt.attempt === latestReport.attempt) || { attempt: latestReport.attempt })}进展：`
+                : '最新进展：'}</span>
+              <span>{latestReport.text}</span>
+              {latestReport.timestamp_ms && (
+                <time>{formatChildTaskTimestamp(latestReport.timestamp_ms)}</time>
+              )}
+            </div>
+          )}
+          <ChildTaskAttemptHistory task={child} />
+          {[
+            'queued',
+            'cancelled',
+            'failed',
+            'not_started',
+            'step_limit',
+          ].includes(status) && failureDetail && (
+            <div className="child-task-error" title={failureDetail}>
+              {failureDetail}
+            </div>
+          )}
+          {onControl && (active || queued || paused || retryable) && (
+            <details className="child-task-actions">
+              <summary>更多操作</summary>
+              <div className="child-task-controls" aria-label="子任务控制">
+                {active && (
+                  <>
+                    <button type="button" className="btn-action-small" disabled={busy} onClick={() => submit('pause')}>
+                      暂停
+                    </button>
+                    <button type="button" className="btn-action-small" disabled={busy} onClick={() => beginEditor('steer')}>
+                      发送指令
+                    </button>
+                    <button type="button" className="btn-action-small" disabled={busy || Boolean(pendingFollowUp)} onClick={() => beginEditor('queue_follow_up')}>
+                      排队后续
+                    </button>
+                  </>
+                )}
+                {queued && (
+                  <button type="button" className="btn-action-small" disabled={busy} onClick={() => beginEditor('update_queued')}>
+                    修改任务
+                  </button>
+                )}
+                {paused && (
+                  <button type="button" className="btn-action-small" disabled={busy} onClick={() => submit('resume')}>
+                    继续
+                  </button>
+                )}
+                {retryable && (
+                  <button type="button" className="btn-action-small" disabled={busy} onClick={() => submit('retry')}>
+                    重试
+                  </button>
+                )}
+                {editorAction && (
+                  <div className="child-task-editor">
+                    <textarea
+                      aria-label="子任务指令"
+                      value={draft}
+                      maxLength={32768}
+                      disabled={busy}
+                      onChange={(event) => setDraft(event.target.value)}
+                    />
+                    {editorAction === 'steer' ? (
+                      <button type="button" className="btn-action-small" disabled={busy || !draft.trim()} onClick={() => submit('steer', { text: draft.trim() })}>
+                        发送到本轮
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn-action-small"
+                        disabled={busy || !draft.trim() || (editorAction === 'queue_follow_up' && Boolean(pendingFollowUp))}
+                        onClick={() => submit(editorAction, { prompt: draft.trim() })}
+                      >
+                        {editorAction === 'update_queued' ? '保存修改' : '加入后续队列'}
+                      </button>
+                    )}
+                    <button type="button" className="btn-action-small" disabled={busy} onClick={() => setEditorAction(null)}>
+                      取消编辑
+                    </button>
+                  </div>
+                )}
+              </div>
+            </details>
+          )}
+        </div>
       )}
     </article>
   );
@@ -273,11 +319,11 @@ export default function ChildTasksPane({
               className="child-task-count"
               aria-label={`运行 ${counts.running}，排队 ${counts.queued}，待处理 ${counts.needsAttention}，已结束 ${counts.finished}，共 ${children.length}`}
             >
-              <span>运行 <strong>{counts.running}</strong></span>
-              <span>排队 <strong>{counts.queued}</strong></span>
-              <span>待处理 <strong>{counts.needsAttention}</strong></span>
-              <span>已结束 <strong>{counts.finished}</strong></span>
-              <span>共 <strong>{children.length}</strong></span>
+              <span className="running">运行 <strong>{counts.running}</strong></span>
+              <span className="queued">排队 <strong>{counts.queued}</strong></span>
+              <span className="attention">待处理 <strong>{counts.needsAttention}</strong></span>
+              <span className="finished">已结束 <strong>{counts.finished}</strong></span>
+              <span className="total">共 <strong>{children.length}</strong></span>
             </span>
           )}
         </span>

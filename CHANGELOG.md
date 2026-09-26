@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Subscribe by project and child Thread identity, replay the bounded event cache
   on open and refresh, deduplicate by sequence, and continue using settled
   ThreadItems for refresh and recovery. Keep inherited parent checkpoint content
-  out of the child transcript and show when the replay cache has a gap.
+  out of the child transcript and show when the replay cache has a gap. Clear the
+  gap notice after ThreadItems contain assistant activity for the settled Turn.
 - Make main-thread Stop freeze the parent Session and all active child work.
   Persist freeze/resume state in App Server, preserve queued children, block
   automatic wakeups while frozen, and resume parent-frozen children only after

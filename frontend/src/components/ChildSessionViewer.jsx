@@ -114,6 +114,21 @@ function isRunning(checkpoint, child) {
   return Boolean(checkpoint?.turn_active || checkpoint?.session?.turn_active);
 }
 
+function hasSettledPersistedActivity(checkpoint, child, entries, projectId) {
+  const turnActive = checkpoint?.turn_active ?? checkpoint?.session?.turn_active;
+  if (turnActive === true || checkpoint?.active_turn_id || checkpoint?.session?.active_turn_id) return false;
+  if (turnActive !== false && isRunning(checkpoint, child)) return false;
+
+  const turnId = checkpoint?.last_turn_id
+    || checkpoint?.session?.last_turn_id
+    || child.current_turn_id
+    || child.turn_id;
+  if (!turnId) return false;
+  return projectChildMessages(entries, child, projectId).some((message) => (
+    message.role === 'assistant' && String(message.turnId || '') === String(turnId)
+  ));
+}
+
 function groupMessagesByTurn(messages) {
   const groups = [];
   const groupsByKey = new Map();
@@ -159,6 +174,7 @@ export default function ChildSessionViewer({
   const olderScrollPositionRef = useRef(null);
   const liveEventsRef = useRef(new Map());
   const replayCursorRef = useRef(0);
+  const settledTurnPersistedRef = useRef(false);
 
   const mergeLiveEvents = useCallback((incoming) => {
     let changed = false;
@@ -193,7 +209,9 @@ export default function ChildSessionViewer({
         { projectId: childProjectId, signal },
       );
       if (signal?.aborted) return;
-      if (page.has_gap || page.hasGap) setReplayHasGap(true);
+      if (page.has_gap || page.hasGap) {
+        setReplayHasGap(!settledTurnPersistedRef.current);
+      }
       const data = Array.isArray(page.data) ? page.data : [];
       replayed.push(...data);
       const nextCursor = Number(page.next_cursor ?? page.nextCursor);
@@ -240,6 +258,18 @@ export default function ChildSessionViewer({
       latestKeysRef.current = newestKeys;
       entriesRef.current = mergeEntries(entriesRef.current, newest);
       checkpointRef.current = nextCheckpoint;
+      settledTurnPersistedRef.current = hasSettledPersistedActivity(
+        nextCheckpoint,
+        {
+          child_thread_id: child.child_thread_id,
+          current_turn_id: child.current_turn_id,
+          status: child.status,
+          turn_id: child.turn_id,
+        },
+        entriesRef.current,
+        childProjectId,
+      );
+      if (settledTurnPersistedRef.current) setReplayHasGap(false);
       setCheckpoint(nextCheckpoint);
       setEntries(entriesRef.current);
       setOlderCursor(olderCursorRef.current);
@@ -263,7 +293,14 @@ export default function ChildSessionViewer({
       }
       if (requestRef.current === controller) requestRef.current = null;
     }
-  }, [child.child_thread_id, childProjectId, replayRuntimeEvents]);
+  }, [
+    child.child_thread_id,
+    child.current_turn_id,
+    child.status,
+    child.turn_id,
+    childProjectId,
+    replayRuntimeEvents,
+  ]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -273,6 +310,7 @@ export default function ChildSessionViewer({
     latestKeysRef.current = null;
     olderCursorRef.current = null;
     checkpointRef.current = null;
+    settledTurnPersistedRef.current = false;
     setCheckpoint(null);
     setEntries([]);
     setLiveEvents([]);
@@ -469,7 +507,7 @@ export default function ChildSessionViewer({
       {error && <div className="child-session-view-error" role="alert">{error}</div>}
       {replayHasGap && (
         <div className="child-session-view-warning" role="status">
-          实时事件缓存有缺口，当前显示可回放活动；Turn 结算后会由持久化记录补齐。
+          较早的实时片段未能回放；Turn 结算并写入持久化活动后，这条提示会自动消失。
         </div>
       )}
       {replayError && (

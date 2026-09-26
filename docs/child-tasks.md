@@ -51,9 +51,10 @@ Gateway 会先按父 Turn 和工具调用 ID 持久化有界 `tool_started` 参�
 提示词。排队项继续通过 `update_queued` 修改。follow-up 遇到并发上限或顺序组阻塞时持久排队，释放槽位后自动启动。
 提示词更新后，Gateway 会立即尝试排空可运行的排队任务。
 列表和消息流对每个 child Session 保持一张卡，卡内显示各轮状态、当前阶段、最新进展、顺序组位置和恢复异常。
-child Turn 在默认八步上限下会使用 16 步；更高的运行时上限保留，零值仍表示不设步数上限。活动 Goal 显式设置的
-里程碑步数预算仍优先。步数耗尽后，任务保留失败状态并显示 `step_limit`、实际步数和诊断，不会静默开启另一个 Turn。
-父代理可决定是否重试。
+child operation Turn 使用 main“连续执行”相同的 loop profile：`max_steps=0` 并允许上下文压缩。它会在同一个 Turn
+内持续运行到最终回答、失败或明确的控制请求；活动 Goal 显式设置的里程碑步数预算仍优先。当前 WebStudio 子任务路径
+没有五分钟总时限。Gateway 的 SDK 等待窗口为 60 秒，超时后会继续轮询同一 Turn。显式预算导致步数耗尽时，operation
+会显示 `step_limit`、实际步数和诊断，不会静默开启另一个 Turn；父代理可决定是否重试。
 运行中的 child task 接受 steer 后会在同一个 Turn 继续处理，operation 不会因这次 steer 提前失败。
 
 默认最多同时运行 2 个子任务，项目设置可调整为 1–8 个。超出并发槽位的任务会先创建并持久化为

@@ -4280,11 +4280,11 @@ async def test_start_child_task_persists_full_intent_for_immediate_parallel_chil
 async def test_child_turn_wait_continues_after_sdk_timeout(
     mock_session_manager, monkeypatch
 ):
-    """A long-running child stays monitored past the SDK's 60-second poll limit."""
+    """A long-running child stays monitored past five 60-second SDK wait windows."""
     client = AsyncMock()
-    client.wait_for_turn = AsyncMock(
-        side_effect=[TurnTimeoutError("turn exceeded wait timeout"), object()]
-    )
+    wait_windows = [TurnTimeoutError("turn exceeded wait timeout") for _ in range(5)]
+    wait_windows.append(object())
+    client.wait_for_turn = AsyncMock(side_effect=wait_windows)
     child = {
         "child_thread_id": "child",
         "operation_id": "child:child",
@@ -4308,7 +4308,7 @@ async def test_child_turn_wait_continues_after_sdk_timeout(
         client, "child", "default", "turn-child", "parent"
     )
 
-    assert client.wait_for_turn.await_count == 2
+    assert client.wait_for_turn.await_count == 6
     broadcast.assert_awaited_once_with(child)
     wake.assert_called_once()
     drain.assert_awaited_once_with("parent", "default")

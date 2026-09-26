@@ -646,9 +646,9 @@ class SessionManager:
                     str(state.get("status") or "queued")
                 )
 
-            # Failed pre-Session intents are the only task state the Gateway
-            # supplements from receipts. Canonical Session operations remain the
-            # source of truth for every materialized child.
+            # Receipts may supplement diagnostics and failed pre-Session
+            # intents; canonical Session operations remain the source of truth
+            # for every materialized child's lifecycle state.
             materialized_child_ids = {
                 str(child.get("thread_id") or "") for child in same_group_children
             }
@@ -708,21 +708,13 @@ class SessionManager:
                 operation_id,
                 operation_attempt,
             )
-            if (
-                queued
-                or group_id
-                or execution_mode != "parallel"
-                or sequence is not None
-            ):
-                fork = await self.fork_thread(
-                    *fork_args,
-                    prompt,
-                    group_id,
-                    execution_mode,
-                    sequence,
-                )
-            else:
-                fork = await self.fork_thread(*fork_args)
+            fork = await self.fork_thread(
+                *fork_args,
+                prompt,
+                group_id,
+                execution_mode,
+                sequence,
+            )
             if queued:
                 result = {
                     "parent_thread_id": source_thread_id,
@@ -779,6 +771,9 @@ class SessionManager:
                 if turn_id
                 else str(getattr(submission, "status", "not_started")),
             }
+            submission_reason = getattr(submission, "reason", None)
+            if not turn_id and isinstance(submission_reason, str):
+                result["operation_error"] = submission_reason[:2048]
             if not turn_id:
                 return result
 
@@ -1360,7 +1355,15 @@ class SessionManager:
                     "group_sequence": child_task_state.get("sequence"),
                     "operation_prompt": child_task_state.get("prompt"),
                     "operation_result": child_task_state.get("result"),
-                    "operation_error": child_task_state.get("error"),
+                    "operation_error": child_task_state.get("error")
+                    or self._delegation_error_for_child(
+                        source_thread_id,
+                        resolved_project_id,
+                        child_thread_id,
+                        operation_id,
+                        child_task_state.get("attempt") or 1,
+                        status,
+                    ),
                     "recovery_required": status
                     in {"queued", "running", "awaiting_approval"}
                     and not session.get("process_online", False)
@@ -1463,6 +1466,36 @@ class SessionManager:
                 }
             )
         return children
+
+    def _delegation_error_for_child(
+        self,
+        parent_thread_id: str,
+        project_id: str,
+        child_thread_id: str,
+        operation_id: str | None,
+        attempt: int,
+        status: str,
+    ) -> str | None:
+        """Return a Gateway start error without replacing the Session status."""
+        if status not in {"queued", "cancelled", "not_started"}:
+            return None
+        expected_operation_id = operation_id or f"child:{child_thread_id}"
+        expected_attempt = _nonnegative_int(attempt) or 1
+        for receipt in reversed(list(self._delegation_receipts.values())):
+            if (
+                receipt.get("parent_thread_id") == parent_thread_id
+                and receipt.get("project_id") == project_id
+                and receipt.get("child_thread_id") == child_thread_id
+                and (receipt.get("operation_id") or f"child:{child_thread_id}")
+                == expected_operation_id
+                and (_nonnegative_int(receipt.get("operation_attempt")) or 1)
+                == expected_attempt
+                and receipt.get("status") == "failed"
+            ):
+                error = receipt.get("error")
+                if isinstance(error, str) and error.strip():
+                    return error[:2048]
+        return None
 
     def _delegated_child_parent_turn_id(
         self, parent_thread_id: str, project_id: str, child_thread_id: str
@@ -2691,6 +2724,7 @@ class SessionManager:
                         prompt=prompt,
                     )
                     applied = True
+                    should_drain_child_queue = True
                 elif action == "steer":
                     turn_id = str(child.get("turn_id") or "")
                     text = request.get("text")
@@ -3553,6 +3587,143 @@ class SessionManager:
         finally:
             self.clear_active_turn(parent_thread_id, project_id, turn_id, task)
 
+    async def _handle_unsubmitted_child_start(
+        self,
+        parent_thread_id: str,
+        child_thread_id: str,
+        project_id: str,
+        title: str | None,
+        receipt_key: str | None,
+        start_result: dict[str, Any],
+    ) -> None:
+        """Close an unsubmitted queued operation and report its reason."""
+        operation_id = str(start_result.get("operation_id") or "")
+        attempt = _nonnegative_int(start_result.get("operation_attempt")) or 1
+        error = str(
+            start_result.get("operation_error") or "App Server rejected the child start"
+        )[:2048]
+
+        async def find_child() -> dict[str, Any] | None:
+            children = await self.list_child_tasks(parent_thread_id, project_id)
+            return next(
+                (
+                    child
+                    for child in children
+                    if child.get("child_thread_id") == child_thread_id
+                ),
+                None,
+            )
+
+        try:
+            child = await find_child()
+        except Exception:
+            child = None
+            logger.exception(
+                "Unable to read Child %s after an unsubmitted start",
+                child_thread_id,
+            )
+
+        same_attempt = bool(
+            child
+            and child.get("operation_id") == operation_id
+            and (_nonnegative_int(child.get("operation_attempt")) or 1) == attempt
+        )
+        if (
+            same_attempt
+            and child.get("status") == "queued"
+            and not child.get("turn_id")
+        ):
+            try:
+                client = await self.get_client_for_thread(child_thread_id, project_id)
+                await client.child_task_action(
+                    child_thread_id,
+                    parent_thread_id,
+                    operation_id,
+                    attempt,
+                    "cancel_queued",
+                )
+            except Exception as cancel_error:
+                error = (f"{error}; unable to close queued operation: {cancel_error}")[
+                    :2048
+                ]
+                logger.exception(
+                    "Unable to close rejected queued Child %s",
+                    child_thread_id,
+                )
+
+        if same_attempt:
+            try:
+                refreshed_child = await find_child()
+                if refreshed_child is not None:
+                    child = refreshed_child
+            except Exception:
+                logger.exception(
+                    "Unable to refresh Child %s after its start was rejected",
+                    child_thread_id,
+                )
+        same_attempt = bool(
+            child
+            and child.get("operation_id") == operation_id
+            and (_nonnegative_int(child.get("operation_attempt")) or 1) == attempt
+        )
+        if same_attempt and (
+            child.get("status")
+            in {
+                "running",
+                "awaiting_approval",
+                "in_progress",
+                "completed",
+                "failed",
+                "step_limit",
+            }
+            or child.get("turn_id")
+        ):
+            if receipt_key:
+                self._update_delegation_receipt(receipt_key, "materialized")
+            await self._broadcast_child_operation(child)
+            await self.reconcile_child_operations(project_id)
+            return
+
+        if receipt_key:
+            self._update_delegation_receipt(receipt_key, "failed", error=error)
+        if child is None:
+            try:
+                child = await find_child()
+            except Exception:
+                logger.exception(
+                    "Unable to refresh Child %s after rejecting its start",
+                    child_thread_id,
+                )
+        if child is None:
+            child = {
+                **start_result,
+                "parent_thread_id": parent_thread_id,
+                "child_thread_id": child_thread_id,
+                "project": project_id,
+                "title": title or child_thread_id,
+                "status": "not_started",
+                "child_session_available": True,
+            }
+        current_attempt_matches = bool(
+            child.get("operation_id") == operation_id
+            and (_nonnegative_int(child.get("operation_attempt")) or 1) == attempt
+        )
+        if current_attempt_matches:
+            child["operation_error"] = error
+        await self._broadcast_child_operation(child)
+        self._queue_child_parent_wakeup(
+            parent_thread_id,
+            child_thread_id,
+            project_id,
+            f"start-rejected:{operation_id}:{attempt}",
+            status="failed",
+            attempt=attempt,
+            child_session_available=True,
+            title=title,
+            operation_error=error,
+        )
+        logger.error("App Server rejected Child %s start: %s", child_thread_id, error)
+
     async def _start_delegated_child(
         self,
         parent_thread_id: str,
@@ -3574,7 +3745,7 @@ class SessionManager:
                     project_id or self._current_project_id
                 )
                 return
-            await self.start_child_task(
+            start_result = await self.start_child_task(
                 parent_thread_id,
                 child_thread_id,
                 prompt,
@@ -3592,6 +3763,16 @@ class SessionManager:
                     or 1
                 ),
             )
+            if start_result.get("status") == "not_submitted":
+                await self._handle_unsubmitted_child_start(
+                    parent_thread_id,
+                    child_thread_id,
+                    project_id or self._current_project_id,
+                    title if isinstance(title, str) else None,
+                    receipt_key,
+                    start_result,
+                )
+                return
             if receipt_key:
                 self._update_delegation_receipt(receipt_key, "materialized")
         except Exception as err:

@@ -23,6 +23,7 @@
 初次执行、失败重试和完成后的 follow-up 共用稳定的 child Thread、Session 与 operation ID；每轮 attempt 带有
 `initial`、`retry` 或 `follow_up` 类型。`retry` 仍只接受失败、取消或步数受限的任务，并沿用该 attempt 保存的
 提示词。排队项继续通过 `update_queued` 修改。follow-up 遇到并发上限或顺序组阻塞时持久排队，释放槽位后自动启动。
+提示词更新后，Gateway 会立即尝试排空可运行的排队任务。
 列表和消息流对每个 child Session 保持一张卡，卡内显示各轮状态、当前阶段、最新进展、顺序组位置和恢复异常。
 
 默认最多同时运行 2 个子任务，项目设置可调整为 1–8 个。超出并发槽位的任务会先创建并持久化为
@@ -30,6 +31,7 @@
 父代理优先读取运行中或已结束且拥有 Session 的任务。排队任务会自动等待空位，不需要反复查询；
 创建 Session 前失败的任务只从 operation 投影读取状态和诊断，不调用 `task_read`。
 若 Gateway 在 follow-up 持久化后丢失 RPC 响应，它会用 operation、attempt 和 `control_request_id` 识别已排队的轮次并继续排空，不会再创建一轮。暂时性启动错误会触发合并的限次退避重试；Gateway 重启时也会重新扫描持久队列。
+如果 App Server 返回 `not_submitted`，Gateway 会通过 `cancel_queued` 结束仍处于排队状态的 operation，保存拒绝原因，并唤醒父 Session。若取消失败，子任务仍显示权威的排队状态，同时显示保存的拒绝原因。
 
 报告和终态会合并为父会话的待处理唤醒。父 Turn 运行时，Gateway 只更新持久状态和批次卡，
 不发送 `steer`。父 Turn 结束后，Gateway 合并待处理更新并启动一轮带

@@ -77,7 +77,13 @@ function ChildTaskRow({ child, projectId, onOpenThread, sequenceCount = null }) 
         </div>
       )}
       <ChildTaskAttemptHistory task={child} />
-      {['failed', 'not_started', 'step_limit'].includes(status) && failureDetail && (
+      {[
+        'queued',
+        'cancelled',
+        'failed',
+        'not_started',
+        'step_limit',
+      ].includes(status) && failureDetail && (
         <div className="child-task-error" title={failureDetail}>
           {failureDetail}
         </div>

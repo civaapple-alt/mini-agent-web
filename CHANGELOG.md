@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Persist the full child operation intent before both immediate and queued starts.
+  Cancel a queued operation when App Server rejects its start, retain the reason,
+  and notify the parent instead of leaving the task queued without an explanation.
+  Drain the queue after `task_control.update_queued` changes a task prompt.
 - Open Web Studio at `/` as a blank session-creation page instead of restoring
   the last browser-selected Thread. Use pathname links in the form
   `/threads/{thread_id}?project_id={project_id}`; project scope distinguishes

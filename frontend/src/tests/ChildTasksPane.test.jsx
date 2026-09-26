@@ -107,6 +107,35 @@ describe('ChildTasksPane', () => {
     expect(screen.queryByText('Finished task')).toBeNull();
   });
 
+  it('shows a rejected start reason for queued and cancelled children', () => {
+    render(
+      <ChildTasksPane
+        children={[
+          {
+            operation_id: 'queued-rejected',
+            title: 'Queued start rejected',
+            status: 'queued',
+            operation_error: 'App Server rejected the child start',
+          },
+          {
+            operation_id: 'cancelled-rejected',
+            title: 'Cancelled start rejected',
+            status: 'cancelled',
+            operation_error: 'The queued operation was cancelled after rejection',
+          },
+        ]}
+        loading={false}
+        error={null}
+      />,
+    );
+
+    expect(screen.getByText('App Server rejected the child start')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '显示已结束任务（1）' }));
+    expect(
+      screen.getByText('The queued operation was cancelled after rejection'),
+    ).toBeTruthy();
+  });
+
   it('groups retry stages, shows sequence position, and prioritizes recovery and failures', () => {
     const { container } = render(
       <ChildTasksPane

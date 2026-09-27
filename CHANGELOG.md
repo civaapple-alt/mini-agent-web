@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep the initial missing-model status available to assistive technology without
+  adding a second row to the composer controls.
 - Only close the model editor on a backdrop click that starts and ends outside
   the dialog, so dragging to select text does not ask to discard the model.
 - Move provider, credential, and default-model setup to the Web Studio model

@@ -1283,7 +1283,10 @@ export default function InputBar({
                   </button>
                 )}
                 {(modelSettingsError || effectiveModelProblem) && (
-                  <span className="composer-model-warning" role="status">
+                  <span
+                    className={`composer-model-warning${needsInitialModelConfig && !modelSettingsError ? ' sr-only' : ''}`}
+                    role="status"
+                  >
                     {modelSettingsError || effectiveModelProblem}
                   </span>
                 )}

@@ -5175,6 +5175,16 @@ class SessionManager:
                     "the latest lifecycle and reports; omit after_cursor for the "
                     "first page and follow next_cursor for additional report pages."
                 )
+                prompt_parts.append(
+                    "When an attempt is settled, compare its final answer with the "
+                    "delegated goal; operation status describes execution, not answer "
+                    "quality. While it is active, a missing final answer is not a gap; "
+                    "use its report to decide whether to wait or address a concrete "
+                    "issue. For a clear gap, use task_control.assign with one specific "
+                    "follow-up in the same child Session. When settled and adequate, "
+                    "summarize what the result supports and state any blocker or "
+                    "uncertainty. Do not copy the child transcript."
+                )
             if isinstance(control_bucket, dict):
                 prompt_parts.append(
                     "Control notifications describe the Gateway RPC outcome. "

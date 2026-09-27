@@ -5156,6 +5156,11 @@ async def test_child_wake_reads_only_bounded_materialized_updates(
         "get_client_for_thread",
         AsyncMock(return_value=client),
     )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "session_control_state",
+        AsyncMock(return_value={"status": "running"}),
+    )
     key = ("default", "parent")
     mock_session_manager._child_wake_pending[key] = {
         f"child-{index:02}": {
@@ -5176,6 +5181,9 @@ async def test_child_wake_reads_only_bounded_materialized_updates(
     assert "child-01" not in read_line
     assert "child-02" in read_line
     assert f"child-{MAX_CHILD_WAKE_BATCH_CHILDREN:02}" not in prompt
+    assert "operation status describes execution, not answer quality" in prompt
+    assert "a missing final answer is not a gap" in prompt
+    assert "Do not copy the child transcript" in prompt
     assert len(mock_session_manager._child_wake_pending[key]) == (
         MAX_CHILD_WAKE_BATCH_CHILDREN + 4
     )

@@ -34,6 +34,8 @@ uv run pytest tests/smoke/ -q
 子 Session、触发空闲父会话续行，并从 `/children` 还原报告投影。场景还验证重复
 报告幂等和过期 attempt 被拒绝。它只替换父续行的模型入口，不发送模型请求；App
 Server 和 Gateway 的会话、JSON-RPC、持久化及投影路径均真实运行。
+场景同时检查续行指令要求父代理对照委派目标复核当前结果、只对明确缺口追问同一
+子 Session，并把阻塞和不确定性说清楚；报告正文和完整子会话 transcript 不会被复制进父 prompt。
 
 同一文件中的 completed-child assign 场景使用 JSONL Session fixture 提供已完成的
 child operation，再验证 Gateway 通过真实 `child/task` RPC 分配后续 attempt、App

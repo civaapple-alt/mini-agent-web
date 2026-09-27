@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Clarify parent/child handoffs: delegate with a natural-language goal and
+  expected result, report only meaningful progress or blockers, and review a
+  child's current result before deciding whether to follow up in the same
+  Session or summarize it.
 - Show a bounded final-result preview in completed child task rows and point the
   existing child Session action to the full result.
 - Mark Sessions that need attention with a small notification icon in the

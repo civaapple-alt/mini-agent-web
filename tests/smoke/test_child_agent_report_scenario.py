@@ -176,6 +176,12 @@ async def test_child_report_reaches_parent_wakeup_and_gateway_projection(
         assert child_thread_id in prompt
         assert "task_read" in prompt
         assert "omit after_cursor" in prompt
+        assert "operation status describes execution, not answer quality" in prompt
+        assert "a missing final answer is not a gap" in prompt
+        assert "task_control.assign" in prompt
+        assert "same child Session" in prompt
+        assert "state any blocker or uncertainty" in prompt
+        assert "Do not copy the child transcript" in prompt
         assert report_text not in prompt
         assert len(prompt.encode("utf-8")) <= 2048
 
@@ -503,6 +509,9 @@ async def test_completed_child_assign_persists_follow_up_and_starts_same_thread(
             queued_after_restart[0]["operation_prompt"] == persisted_operation["prompt"]
         )
 
+        # This scenario stops at the intercepted turn/start request. The
+        # background waiter has no terminal model Turn to observe.
+        monkeypatch.setattr(session_manager, "_wait_for_child_turn", AsyncMock())
         await reconcile_queue(parent_thread_id, project_id)
 
         assert len(start_calls) == 1

@@ -24,11 +24,15 @@ Gateway 会先按父 Turn 和工具调用 ID 持久化有界 `tool_started` 参�
 任务显示为“需要处理”，释放并发槽并隐藏无法作用于旧 Turn 的控制按钮；Gateway 不会自动中断或重启
 该 Turn。用户可查看诊断并决定后续处理。
 
-子代理可用 `task_report` 报告有界进展。父代理通过带游标的 `task_read` 读取报告，使用有界分页
-`task_list` 查询所有子任务摘要，并可用 `task_control` 修改或停止排队任务、steer 或停止运行任务、
-暂停并继续任务、重试失败或取消的任务、排队一条后续指令、取消顺序组；需要新增方向时继续使用
-`delegate_task`。每项控制都携带 `child_thread_id`、`operation_id` 和预期 `attempt`，Gateway 会拒绝
-已经过期的 attempt。完整工具活动和 transcript 留在各自子 Session，不复制到父消息流。
+子代理只在有实质进展或遇到阻塞时用 `task_report` 发送简短更新；最终交付留在正常的 assistant 最终回答中，
+自然说明结果、依据、未完成项和不确定处，不要求固定格式。父代理通过带游标的 `task_read` 读取报告和有界结果，
+并对照委派目标做轻量复核。`operation.status` 表示该 attempt 的执行结果，不代表内容已符合要求；任务仍在运行时，
+缺少最终回答不算缺口，父代理根据最新报告决定等待或处理具体问题。任务结算后，发现明确缺口时用
+`task_control.assign` 在同一子 Session 中给出具体追问；结果满足目标时就总结结果及其依据，并说明剩余不确定性。
+父代理使用有界分页 `task_list` 查询所有子任务摘要，也可用 `task_control` 修改或停止排队任务、steer 或停止运行任务、
+暂停并继续任务、重试失败或取消的任务、排队一条后续指令、取消顺序组；需要新增方向时继续使用 `delegate_task`。
+每项控制都携带 `child_thread_id`、`operation_id` 和预期 `attempt`，Gateway 会拒绝已经过期的 attempt。完整工具活动和
+transcript 留在各自子 Session，不复制到父消息流。
 `reports` 仅包含显式 `task_report` 进展；空报告列表不表示最终回答缺失。
 `task_list` 和 `task_read` 会把 operation 状态、该 attempt 对应的 `turn_outcome`、以及
 子 Session 的 `latest_session_turn` 分开返回。后续 Turn 完成不会把较早的失败 attempt 改成成功；

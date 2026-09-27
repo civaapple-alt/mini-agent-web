@@ -1,6 +1,32 @@
 import { request, requestSignal, resolveProjectId } from './request.js';
 
 export const threadApi = {
+  async inspectProjectSessions(projectId, options = {}) {
+    const res = await request(
+      `/api/threads/project/${encodeURIComponent(projectId)}/sessions/doctor`,
+      { method: 'POST', ...requestSignal(options) },
+      projectId,
+    );
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error.detail || '检查 Session 失败');
+    }
+    return res.json();
+  },
+
+  async repairProjectSession(projectId, sessionId, options = {}) {
+    const res = await request(
+      `/api/threads/project/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/doctor/repair`,
+      { method: 'POST', ...requestSignal(options) },
+      projectId,
+    );
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error.detail || `修复 Session ${sessionId} 失败`);
+    }
+    return res.json();
+  },
+
   async listThreads(options = {}) {
     const res = await request('/api/threads', requestSignal(options), options.projectId);
     if (!res.ok) throw new Error('Failed to list threads');

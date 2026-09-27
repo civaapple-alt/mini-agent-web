@@ -49,7 +49,7 @@ uv run mini-agent-server-dev
 | --- | --- | --- |
 | `routes/agent_turns.py` | `/api/agent`、`/api/approval` | HTTP Turn、stream、steer、interrupt 与审批响应 |
 | `routes/agent_ws.py` | `/ws/agent` | 按 Project 过滤的实时 Turn 与控制消息 |
-| `routes/threads.py` | `/api/threads` | Thread attach、history、事件重放、Child Session、Notebook 与后台/定时任务视图 |
+| `routes/threads.py` | `/api/threads` | Thread attach、history、事件重放、Child Session、Notebook、后台/定时任务视图和 Session Doctor |
 | `routes/world_*.py` | `/api/world`、`/api/projects`、`/api/workflows`、`/api/skills`、`/api/mcp` | Project 设置、执行设置、本地探测、workflow、Skill 与 MCP 状态 |
 | `routes/settings.py` | `/api/settings` | Gateway UI 偏好 |
 

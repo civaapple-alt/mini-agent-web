@@ -4,6 +4,7 @@ Thread management endpoints with metadata enrichment (title, summary, date group
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -16,6 +17,11 @@ from mini_agent.errors import (
 from pydantic import BaseModel, Field
 
 from server.control.fork_errors import SessionForkConflictError
+from server.session_doctor import (
+    SessionDoctorError,
+    inspect_project_sessions,
+    repair_project_session,
+)
 from server.session_manager import (
     MAX_CHILD_TASK_PROMPT_BYTES,
     session_manager,
@@ -24,6 +30,41 @@ from server.session_manager import (
 from server.thread_titles import is_default_thread_title
 
 router = APIRouter(prefix="/api/threads", tags=["Threads"])
+
+
+@router.post(
+    "/project/{project_id}/sessions/doctor", summary="Inspect Project Sessions"
+)
+async def inspect_project_session_logs(project_id: str) -> dict[str, Any]:
+    """Inspect the registered Project's Session logs without attaching a Session."""
+    try:
+        return await asyncio.to_thread(inspect_project_sessions, project_id)
+    except SessionDoctorError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=error.public_message,
+        ) from error
+
+
+@router.post(
+    "/project/{project_id}/sessions/{session_id}/doctor/repair",
+    summary="Back Up and Repair a Session Tail",
+)
+async def repair_project_session_log(
+    project_id: str, session_id: str
+) -> dict[str, Any]:
+    """Revalidate, back up, and truncate one incomplete Session log tail."""
+    try:
+        return await asyncio.to_thread(
+            repair_project_session,
+            project_id,
+            session_id,
+        )
+    except SessionDoctorError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=error.public_message,
+        ) from error
 
 
 def _background_task_json(value: Any) -> dict[str, Any]:

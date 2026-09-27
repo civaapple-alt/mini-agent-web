@@ -386,6 +386,10 @@ class SessionManager:
         """Active project working directory path."""
         return self._project_registry.current_project_path
 
+    def project_primary_path(self, project_id: str) -> Path:
+        """Resolve a registered Project without falling back to the active Project."""
+        return self._project_registry.primary_path(project_id)
+
     @property
     def current_source_folders(self) -> list[dict[str, Any]]:
         """Active project configured multi-source folders."""

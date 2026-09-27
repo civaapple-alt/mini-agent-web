@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-No changes yet.
+- Add a project-menu Session Doctor. It inspects Session logs through the App
+  Server maintenance command and offers a confirmed, backed-up repair for an
+  incomplete final record.
 
 ## [0.9.0] - 2026-09-27
 

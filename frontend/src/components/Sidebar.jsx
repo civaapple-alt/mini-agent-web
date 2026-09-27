@@ -11,9 +11,11 @@ import {
   Pin,
   Settings,
   SquarePen,
+  RefreshCw,
 } from 'lucide-react';
 import { api } from '../api';
 import ThreadRow from './sidebar/ThreadRow';
+import SessionDoctorModal from './SessionDoctorModal';
 import { compareThreadActivity } from '../utils/relativeTime';
 import './Sidebar.css';
 
@@ -67,6 +69,7 @@ export default function Sidebar({
 
   // Project Detail Popover (Image 1)
   const [activeProjectPopover, setActiveProjectPopover] = useState(null);
+  const [sessionDoctorProject, setSessionDoctorProject] = useState(null);
 
   // Edit Project Modal (Image 2)
   const [editingProject, setEditingProject] = useState(null);
@@ -172,6 +175,12 @@ export default function Sidebar({
     setShowAddFolderInput(false);
     setNewFolderNameInput('');
     setNewFolderPathInput('');
+  };
+
+  const handleOpenSessionDoctor = (event, proj) => {
+    event.stopPropagation();
+    setActiveProjectPopover(null);
+    setSessionDoctorProject({ ...proj, id: proj.id || proj.name });
   };
 
   // Save Project Edits (Create or Update)
@@ -749,6 +758,14 @@ export default function Sidebar({
 
                     <div className="popover-divider"></div>
 
+                    <button
+                      className="popover-btn-edit-project"
+                      onClick={(event) => handleOpenSessionDoctor(event, proj)}
+                    >
+                      <RefreshCw size={13} />
+                      <span>检查 Session 数据</span>
+                    </button>
+
                     {/* Bottom Edit Action */}
                     <button
                       className="popover-btn-edit-project"
@@ -1275,6 +1292,13 @@ export default function Sidebar({
             })()}
           </div>
         </div>
+      )}
+
+      {sessionDoctorProject && (
+        <SessionDoctorModal
+          project={sessionDoctorProject}
+          onClose={() => setSessionDoctorProject(null)}
+        />
       )}
     </aside>
   );

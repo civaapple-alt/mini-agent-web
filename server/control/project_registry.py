@@ -313,6 +313,15 @@ class ProjectRegistry:
             "recent_projects": projects,
         }
 
+    def primary_path(self, project_id: str) -> Path:
+        project = self._owner._projects_registry.get(project_id)
+        if project is None:
+            raise KeyError(f"Project '{project_id}' not found")
+        primary_path = project.get("primary_path")
+        if not isinstance(primary_path, str) or not primary_path.strip():
+            raise KeyError(f"Project '{project_id}' has no primary workspace")
+        return Path(primary_path).resolve()
+
     def create_project(
         self,
         name: str,

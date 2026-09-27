@@ -290,6 +290,15 @@ Mini Agent 默认使用跨平台且现代的 **PowerShell 7 (`pwsh`)**。
 - 如果仍然无法恢复，先刷新 Web Studio，再检查对应 Project 的 SessionStore 和
   App Server 日志，避免删除 Session 文件来绕过锁。
 
+### 检查 Session 日志
+
+打开项目菜单并选择 **检查 Session 数据**。检查会报告日志能否读取、历史是否连续，以及
+App Server 能否从 settled checkpoint 恢复。存在 Session 锁时，检查不会读取日志或尝试清理锁。
+
+如果末尾记录只写了一部分，Studio 会提供“备份并修复”。确认后，App Server 会先保存完整原始
+日志，再截去不完整的尾部。序号断档、历史缺口、无效完整记录和缺少 settled checkpoint 都不能
+用此操作修复。对这些情况，请恢复自己的备份或创建新的 Session。
+
 ### 查看实际 Session ID
 
 Web Studio 的会话标题是可编辑的展示名称，不等同于磁盘上的 SessionStore

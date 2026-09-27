@@ -9,6 +9,8 @@ vi.mock('../api', () => ({
     listProjects: vi.fn(),
     createProject: vi.fn(),
     startThread: vi.fn(),
+    inspectProjectSessions: vi.fn(),
+    repairProjectSession: vi.fn(),
   },
 }));
 
@@ -184,6 +186,69 @@ describe('Sidebar session actions', () => {
     await waitFor(() => expect(screen.getByText(thread.title)).toBeTruthy());
     fireEvent.click(screen.getByTitle('会话选项'));
   };
+
+  it('opens the project Session doctor and requires confirmation before repairing a tail', async () => {
+    const report = {
+      schema_version: 1,
+      scanned_sessions: 1,
+      sessions_truncated: false,
+      findings_truncated: false,
+      counts: {
+        inspection: { inspected: 1, locked_unverified: 0, unreadable: 0 },
+        integrity: { complete: 0, history_incomplete: 0, invalid: 0, unknown: 0 },
+        recovery: { resumable: 1, unavailable: 0, unknown: 0 },
+        repairable_tails: 1,
+      },
+      findings: [{
+        session_id: 's-tail',
+        issue_code: 'incomplete_tail',
+        inspection: 'inspected',
+        integrity: 'complete',
+        recovery: 'resumable',
+        incomplete_tail: true,
+        repair_available: true,
+        byte_offset: 128,
+        line: 4,
+        recommendation: '末尾记录未完整写入。可先备份，再截去不完整尾部。',
+      }],
+    };
+    const repairedReport = {
+      ...report,
+      counts: {
+        ...report.counts,
+        repairable_tails: 0,
+        integrity: { ...report.counts.integrity, complete: 1 },
+      },
+      findings: [{ ...report.findings[0], issue_code: 'healthy', incomplete_tail: false, repair_available: false }],
+    };
+    api.inspectProjectSessions
+      .mockResolvedValueOnce(report)
+      .mockResolvedValueOnce(repairedReport);
+    api.repairProjectSession.mockResolvedValue({
+      session_id: 's-tail',
+      backup_path: 'recovery-backups/workspace/s-tail/backup.jsonl',
+      finding: repairedReport.findings[0],
+    });
+
+    renderSessionSidebar();
+    await waitFor(() => expect(screen.getByText(thread.title)).toBeTruthy());
+    fireEvent.click(screen.getByTitle('项目详情与工作区'));
+    fireEvent.click(screen.getByRole('button', { name: '检查 Session 数据' }));
+
+    expect(await screen.findByRole('dialog', { name: '检查 Session 数据' })).toBeTruthy();
+    expect(await screen.findByText('位置：第 4 行')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '备份并修复' }));
+    expect(api.repairProjectSession).not.toHaveBeenCalled();
+    expect(screen.getByText(/历史缺口不会被补造/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '备份并修复' }));
+    await waitFor(() => {
+      expect(api.repairProjectSession).toHaveBeenCalledWith('memory-card', 's-tail');
+      expect(api.inspectProjectSessions).toHaveBeenCalledTimes(2);
+    });
+    expect(await screen.findByText(/原始日志备份在 recovery-backups\/workspace\/s-tail\/backup.jsonl/)).toBeTruthy();
+    expect(screen.getByText('历史：历史完整')).toBeTruthy();
+  });
 
   it('uses an in-app dialog for renaming instead of the native prompt', async () => {
     const onRenameThread = vi.fn();

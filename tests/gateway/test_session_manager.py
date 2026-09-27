@@ -5822,6 +5822,79 @@ async def test_settled_pause_and_started_resume_replay_by_request_identity(
 
 
 @pytest.mark.asyncio
+async def test_child_resume_rebinds_the_original_operation_before_resuming_checkpoint(
+    mock_session_manager, monkeypatch
+):
+    child = {
+        "child_thread_id": "child",
+        "operation_id": "child:one",
+        "operation_attempt": 1,
+        "status": "failed",
+        "turn_id": "turn-original",
+    }
+    checkpoint = SimpleNamespace(
+        execution_recovery={
+            "turn_id": "turn-original",
+            "status": "waiting_for_continue",
+            "checkpoint_seq": 11,
+        }
+    )
+    client = AsyncMock()
+    client.read_thread.return_value = checkpoint
+    resume_execution = AsyncMock(
+        return_value={"turn_id": "turn-original", "status": "started"}
+    )
+    children = AsyncMock(side_effect=[[child], [child]])
+    monkeypatch.setattr(
+        mock_session_manager,
+        "session_control_state",
+        AsyncMock(return_value={"status": "running"}),
+    )
+    monkeypatch.setattr(mock_session_manager, "list_child_tasks", children)
+    monkeypatch.setattr(
+        mock_session_manager, "get_client_for_thread", AsyncMock(return_value=client)
+    )
+    monkeypatch.setattr(mock_session_manager, "resume_execution_turn", resume_execution)
+    monkeypatch.setattr(mock_session_manager, "_broadcast_child_operation", AsyncMock())
+    monkeypatch.setattr(
+        mock_session_manager, "_queue_child_control_outcome", lambda *_args: None
+    )
+
+    await mock_session_manager._apply_child_control(
+        "parent",
+        {
+            "action": "resume",
+            "child_thread_id": "child",
+            "operation_id": "child:one",
+            "attempt": 1,
+        },
+        "default",
+        control_event_id="resume-checkpoint-request",
+        control_source="user_panel",
+    )
+
+    client.child_task_action.assert_awaited_once_with(
+        "child",
+        "parent",
+        "child:one",
+        1,
+        "resume",
+        request_id="resume-checkpoint-request",
+        turn_id="turn-original",
+        control_source="user_panel",
+    )
+    resume_execution.assert_awaited_once_with(
+        "child",
+        "turn-original",
+        11,
+        "resume-checkpoint-request",
+        "default",
+        parent_thread_id="parent",
+        client=client,
+    )
+
+
+@pytest.mark.asyncio
 async def test_task_control_dispatch_waits_for_validated_tool_result(
     mock_session_manager, monkeypatch
 ):
@@ -6984,9 +7057,7 @@ async def test_parent_freeze_pauses_active_children_and_preserves_queued_work(
         AsyncMock(return_value=client),
     )
     monkeypatch.setattr(mock_session_manager, "mark_turn_interrupted", Mock())
-    monkeypatch.setattr(
-        mock_session_manager, "cancel_pending_approvals", AsyncMock()
-    )
+    monkeypatch.setattr(mock_session_manager, "cancel_pending_approvals", AsyncMock())
 
     projected, errors = await mock_session_manager._request_freeze_for_children(
         "parent", "default", "freeze-request"
@@ -7006,7 +7077,9 @@ async def test_parent_freeze_pauses_active_children_and_preserves_queued_work(
         control_source="parent_freeze",
     )
     client.interrupt_turn.assert_awaited_once_with("turn-pausing", "child-pausing")
-    assert "child-queued" not in [call.args[0] for call in client.interrupt_turn.await_args_list]
+    assert "child-queued" not in [
+        call.args[0] for call in client.interrupt_turn.await_args_list
+    ]
 
 
 @pytest.mark.asyncio
@@ -7037,14 +7110,14 @@ async def test_continue_resumes_only_parent_frozen_children_then_drains_queue(
         "status": "running",
         "requestId": "resume-request",
     }
-    child_clients = {thread_id: AsyncMock() for thread_id in ("parent-paused", "user-paused")}
+    child_clients = {
+        thread_id: AsyncMock() for thread_id in ("parent-paused", "user-paused")
+    }
 
     async def client_for(thread_id, _project_id=None):
         return parent_client if thread_id == "parent" else child_clients[thread_id]
 
-    monkeypatch.setattr(
-        mock_session_manager, "get_client_for_thread", client_for
-    )
+    monkeypatch.setattr(mock_session_manager, "get_client_for_thread", client_for)
     monkeypatch.setattr(
         mock_session_manager,
         "_drain_child_queue",
@@ -7073,7 +7146,9 @@ async def test_continue_resumes_only_parent_frozen_children_then_drains_queue(
         control_source="parent_freeze",
     )
     child_clients["user-paused"].child_task_action.assert_not_awaited()
-    mock_session_manager._drain_child_queue.assert_awaited_once_with("parent", "default")
+    mock_session_manager._drain_child_queue.assert_awaited_once_with(
+        "parent", "default"
+    )
     parent_client.session_control.assert_awaited_once_with(
         "resume_settled", request_id="resume-request", thread_id="parent"
     )
@@ -7081,7 +7156,9 @@ async def test_continue_resumes_only_parent_frozen_children_then_drains_queue(
 
 
 @pytest.mark.asyncio
-async def test_frozen_parent_does_not_dispatch_queued_children(mock_session_manager, monkeypatch):
+async def test_frozen_parent_does_not_dispatch_queued_children(
+    mock_session_manager, monkeypatch
+):
     parent = {"session": {"session_id": "s-parent"}}
     monkeypatch.setattr(
         mock_session_manager,
@@ -7095,7 +7172,9 @@ async def test_frozen_parent_does_not_dispatch_queued_children(mock_session_mana
     list_children = AsyncMock()
     monkeypatch.setattr(mock_session_manager, "list_child_tasks", list_children)
 
-    should_retry = await mock_session_manager._drain_child_queue_once("parent", "default")
+    should_retry = await mock_session_manager._drain_child_queue_once(
+        "parent", "default"
+    )
 
     assert should_retry is False
     list_children.assert_not_awaited()

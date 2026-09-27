@@ -10,6 +10,7 @@ vi.mock('../api', () => ({
   api: {
     readThread: vi.fn(),
     listThreadItems: vi.fn(),
+    replayThreadEvents: vi.fn(),
   },
 }));
 
@@ -45,6 +46,11 @@ describe('child agents drawer tab', () => {
         { role: 'user', text: 'INHERITED_PARENT_PROMPT' },
         { role: 'assistant', text: 'INHERITED_PARENT_RESPONSE' },
       ],
+    });
+    api.replayThreadEvents.mockResolvedValue({
+      data: [],
+      next_cursor: null,
+      has_gap: false,
     });
     api.listThreadItems.mockResolvedValue({
       data: [
@@ -85,7 +91,7 @@ describe('child agents drawer tab', () => {
     expect(screen.getByText('Review child task')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '查看' }));
 
-    await waitFor(() => expect(screen.getAllByText('CHILD_LOCAL_RESULT').length).toBe(2));
+    await waitFor(() => expect(screen.getAllByText('CHILD_LOCAL_RESULT').length).toBe(1));
     expect(screen.getByText(/来源父会话/)).toBeTruthy();
     expect(screen.queryByText('INHERITED_PARENT_PROMPT')).toBeNull();
     expect(screen.queryByText('INHERITED_PARENT_RESPONSE')).toBeNull();
@@ -216,6 +222,67 @@ describe('child agents drawer tab', () => {
     expect(screen.queryByText('最终回复')).toBeNull();
   });
 
+  it('resumes a child from its saved execution checkpoint with a stable request id', async () => {
+    const onControl = vi.fn().mockResolvedValue({ outcome: { outcome: 'applied' } });
+    api.readThread.mockResolvedValue({
+      turn_active: false,
+      execution_recovery: {
+        turn_id: 'child-turn-recovery',
+        status: 'waiting_for_continue',
+        phase: 'model_request',
+        checkpoint_seq: 17,
+        reason: 'temporary_model_error',
+        last_progress_ms: 1234,
+      },
+      messages: [],
+    });
+    render(
+      <ChildSessionViewer
+        child={{ ...child, status: 'failed' }}
+        projectId="project-a"
+        onBack={vi.fn()}
+        onControl={onControl}
+      />,
+    );
+
+    await screen.findByText('执行已停滞，等待继续');
+    fireEvent.click(screen.getByRole('button', { name: '继续当前 Turn' }));
+
+    await waitFor(() => expect(onControl).toHaveBeenCalledWith(
+      expect.objectContaining({ child_thread_id: 'child-a' }),
+      'resume',
+      { requestId: 'child-turn-resume:child-turn-recovery:17' },
+    ));
+    expect(api.readThread).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps an unknown tool result in reconciliation state and links to activity', async () => {
+    api.readThread.mockResolvedValue({
+      turn_active: false,
+      execution_recovery: {
+        turn_id: 'child-turn-reconcile',
+        status: 'needs_reconciliation',
+        phase: 'tool_batch',
+        checkpoint_seq: 18,
+        reason: 'shell result is unknown',
+      },
+      messages: [],
+    });
+    render(
+      <ChildSessionViewer
+        child={{ ...child, status: 'failed' }}
+        projectId="project-a"
+        onBack={vi.fn()}
+        onControl={vi.fn()}
+      />,
+    );
+
+    await screen.findByText('工具结果需要核对');
+    expect(screen.getByText('shell result is unknown')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '继续当前 Turn' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '查看执行记录' }));
+  });
+
   it('shows completed follow-up Turns under the same child Session card', async () => {
     api.listThreadItems.mockResolvedValue({
       data: [
@@ -250,7 +317,7 @@ describe('child agents drawer tab', () => {
     await waitFor(() => expect(container.querySelectorAll('.child-session-turn')).toHaveLength(2));
     expect(screen.getByText('Turn 1')).toBeTruthy();
     expect(screen.getByText('Turn 2')).toBeTruthy();
-    expect(screen.getAllByText('相同的结果')).toHaveLength(3);
+    expect(screen.getAllByText('相同的结果')).toHaveLength(2);
     expect(screen.getByText('根据评审意见继续修改')).toBeTruthy();
   });
 

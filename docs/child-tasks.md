@@ -99,6 +99,18 @@ attempt，不启动新任务。冻结完成后状态变为 `frozen`。Gateway �
 并投影为“主线程已收到”（`main_received`）。停止期间收到的报告不会唤醒冻结的 parent；用户继续后，
 parent 从现有报告与任务状态恢复，不会因重复读取产生额外报告或重复任务。
 
+## Main 与 Child 的执行检查点
+
+Session checkpoint 保存已结算 Turn 的对话上下文，供后续 Turn 和 Child fork 使用。Execution checkpoint 保存当前逻辑 Turn 的输入、模型上下文、阶段和下一步位置，供同一个 Turn 接续。Main 与每个 Child 都把 execution journal 追加到各自的 App Server SessionStore。
+
+App Server 在每次模型请求前和整批工具完成后保存 execution checkpoint。工具批次记录意图、每个工具调用的开始和结果。重启后，已记录的工具结果可供恢复复用；工具已开始但没有记录结果时，任务进入“待核对”，不会自动重放该调用。
+
+服务重启、模型暂时错误或采样停滞不会自行启动恢复执行。持久化的活动 Turn 会显示为“停滞待继续”，并显示阶段与最近进展时间。用户通过“继续当前 Turn”从最新 checkpoint 恢复原 Turn。`turn/read` 的 `in_progress` 只表示执行尚未结算；Gateway SDK 会继续读取，直到收到终态或等待超时。恢复请求绑定原 Turn ID、checkpoint 序号和稳定 request ID，不会创建新 attempt。
+
+App Server 每 10 秒记录一次执行器心跳。Responses provider 在 120 秒没有收到 provider 数据时结束当前采样并等待用户继续；识别出的暂时传输错误、不完整流和 HTTP 408、429、5xx 响应会按 1、2、4、8 秒退避，最多 5 次且总窗口不超过 120 秒。失败采样段的部分事件不会并入恢复后的回答。
+
+`turn/read` 和子任务投影提供有界的恢复状态、阶段、最后心跳和进展时间、checkpoint 序号及原因。恢复或核对结束前，App Server 拒绝覆盖该 checkpoint 的新 `turn/start`。运行面板刷新或重新连接只重建这些状态，不会启动恢复请求。Main 的会话恢复入口和 Child 详情的继续入口都使用 App Server 的 `turn/resume`；待核对状态保留到任务执行记录的入口，由用户核实未知的工具副作用。
+
 ## 运行面板与会话入口
 
 右侧抽屉的“子智能体”顶层页显示父会话的全部子任务，包括排队、运行、完成、失败和取消项。

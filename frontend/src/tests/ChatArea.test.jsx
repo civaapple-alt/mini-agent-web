@@ -1,6 +1,6 @@
 import React from 'react';
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import ChatArea from '../components/ChatArea';
 
 describe('ChatArea turn status', () => {
@@ -24,6 +24,55 @@ describe('ChatArea turn status', () => {
     expect(screen.getByText(/原因：model request failed: transport error/)).toBeDefined();
     expect(screen.getByText(/重新发送此提示词.*不会续接已断开的请求/)).toBeDefined();
     expect(screen.queryByText('本轮未完整结束')).toBeNull();
+  });
+
+  it('offers the execution record entry when a tool result needs reconciliation', () => {
+    render(
+      <ChatArea
+        messages={[]}
+        isGenerating={false}
+        pendingApproval={null}
+        lastTurnResult={{
+          status: 'in_progress',
+          turnId: 'turn-reconcile',
+          error: 'unknown tool result',
+          recovery: {
+            turn_id: 'turn-reconcile',
+            status: 'needs_reconciliation',
+            reason: 'shell result is unknown',
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/工具执行结果需要核对后才能继续/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '查看待核对活动' })).toBeTruthy();
+  });
+
+  it('shows the saved checkpoint progress and resumes the same Turn on request', () => {
+    const onResumeExecution = vi.fn();
+    render(
+      <ChatArea
+        messages={[]}
+        isGenerating={false}
+        pendingApproval={null}
+        lastTurnResult={{
+          status: 'in_progress',
+          turnId: 'turn-recovery',
+          recovery: {
+            status: 'waiting_for_continue',
+            phase: 'tool_batch',
+            last_progress_ms: new Date(2026, 0, 2, 3, 4, 5).getTime(),
+          },
+        }}
+        onResumeExecution={onResumeExecution}
+      />,
+    );
+
+    expect(screen.getByText(/阶段：工具批次/)).toBeTruthy();
+    expect(screen.getByText(/最近进展/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '继续当前 Turn' }));
+    expect(onResumeExecution).toHaveBeenCalledTimes(1);
   });
 
   it('hides a previous incomplete result while a steer continuation is active', () => {

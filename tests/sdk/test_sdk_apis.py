@@ -11,6 +11,7 @@ from mini_agent import (
     ThreadCheckpoint,
     ThreadGoal,
     TurnEventsResult,
+    TurnReadResult,
 )
 from mini_agent.client import _redact_secrets
 from mini_agent.errors import ServerProcessError
@@ -194,11 +195,109 @@ async def test_sdk_child_task_action_unwraps_action_result():
         "parent-1",
         "child:child-1",
         2,
+        "resume",
+        request_id="parent-turn:resume-1",
+        turn_id="child-turn-2",
+    )
+    assert calls[0][1]["turnId"] == "child-turn-2"
+    assert calls[0][1]["action"] == "resume"
+
+    calls.clear()
+    await client.child_task_action(
+        "child-1",
+        "parent-1",
+        "child:child-1",
+        2,
         "start_failure",
         request_id="parent-turn:start-failure-1",
         error="App Server rejected turn/start",
     )
     assert calls[0][1]["error"] == "App Server rejected turn/start"
+
+
+@pytest.mark.asyncio
+async def test_sdk_resumes_the_matching_execution_checkpoint():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {"value": {"turnId": "turn-resume", "status": "started"}}
+
+    client._send_request = fake_send
+    result = await client.resume_turn(
+        "turn-resume",
+        14,
+        "resume-request-14",
+        thread_id="child-1",
+    )
+
+    assert result.turn_id == "turn-resume"
+    assert result.status == "started"
+    assert calls == [
+        (
+            "turn/resume",
+            {
+                "threadId": "child-1",
+                "turnId": "turn-resume",
+                "checkpointSeq": 14,
+                "requestId": "resume-request-14",
+            },
+        )
+    ]
+
+
+def test_sdk_reads_bounded_execution_recovery_metadata():
+    recovery = {
+        "turnId": "turn-recovery",
+        "status": "waiting_for_continue",
+        "phase": "model_request",
+        "checkpointSeq": 14,
+        "reason": "temporary_model_error",
+    }
+
+    checkpoint = ThreadCheckpoint.from_dict(
+        {"threadId": "child-1", "status": "idle", "executionRecovery": recovery}
+    )
+    turn = TurnReadResult.from_dict(
+        {"turnId": "turn-recovery", "status": "failed", "recovery": recovery}
+    )
+
+    assert checkpoint.execution_recovery == recovery
+    assert turn.recovery == recovery
+
+
+@pytest.mark.asyncio
+async def test_sdk_wait_for_turn_keeps_polling_while_execution_is_recoverable():
+    client = MiniAgentClient()
+    reads = []
+    results = [
+        TurnReadResult.from_dict(
+            {
+                "turnId": "turn-recovery",
+                "status": "in_progress",
+                "recovery": {
+                    "status": "running",
+                    "phase": "model_request",
+                    "checkpointSeq": 14,
+                },
+            }
+        ),
+        TurnReadResult.from_dict(
+            {"turnId": "turn-recovery", "status": "completed", "steps": 3}
+        ),
+    ]
+
+    async def fake_read_turn(turn_id, request_timeout=None):
+        reads.append((turn_id, request_timeout))
+        return results.pop(0)
+
+    client._read_turn = fake_read_turn
+
+    result = await client.wait_for_turn("turn-recovery", timeout=1, poll_interval=0)
+
+    assert result.status == "completed"
+    assert len(reads) == 2
 
 
 @pytest.mark.asyncio

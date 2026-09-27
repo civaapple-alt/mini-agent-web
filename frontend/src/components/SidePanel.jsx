@@ -1120,6 +1120,7 @@ export default function SidePanel({
                 child={activeChild}
                 projectId={activeChild.project_id || projectId}
                 onBack={() => setSelectedChild(null)}
+                onControl={onControlChildTask}
               />
             ) : (
               <ChildTasksPane

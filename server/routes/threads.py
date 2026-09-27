@@ -145,6 +145,11 @@ class SessionControlRequest(BaseModel):
     request_id: str | None = Field(default=None, min_length=1, max_length=192)
 
 
+class ResumeTurnRequest(BaseModel):
+    checkpoint_seq: int = Field(..., ge=1)
+    request_id: str = Field(..., min_length=1, max_length=128)
+
+
 class ChildTaskControlRequest(BaseModel):
     action: Literal[
         "update_queued",
@@ -902,6 +907,19 @@ async def read_thread(
     try:
         canonical = session_manager.read_any_project_thread(thread_id, project_id)
         if canonical:
+            try:
+                runtime_client = await session_manager.get_client_for_thread(
+                    thread_id, project_id
+                )
+                runtime_checkpoint = await runtime_client.read_thread(thread_id)
+                canonical["execution_recovery"] = (
+                    runtime_checkpoint.execution_recovery
+                )
+            except (RuntimeError, ServerProcessError, AppServerError):
+                # The catalog remains a valid historical projection when the
+                # owning runtime is unavailable. It cannot expose a live
+                # execution checkpoint until the App Server can be read.
+                canonical["execution_recovery"] = None
             meta = session_manager.get_thread_meta(thread_id, project_id)
             catalog_title = canonical.get("session", {}).get("title")
             if is_default_thread_title(meta.get("title"), thread_id) and catalog_title:
@@ -923,15 +941,72 @@ async def read_thread(
         return {
             "thread_id": cp.thread_id if cp else thread_id,
             "status": cp.status if cp else "active",
-            "next_turn_number": cp.next_turn_number if cp else 1,
-            "messages": cp.messages if cp else [],
-            "metadata": meta,
+                "next_turn_number": cp.next_turn_number if cp else 1,
+                "messages": cp.messages if cp else [],
+                "execution_recovery": cp.execution_recovery if cp else None,
+                "metadata": meta,
             "raw": cp.raw if cp else {},
         }
     except ServerProcessError as err:
         raise HTTPException(status_code=503, detail=str(err)) from err
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.get("/{thread_id}/turns/{turn_id}", summary="Read Turn recovery status")
+async def read_turn_recovery(
+    thread_id: str,
+    turn_id: str,
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """Read bounded Turn status and execution-recovery metadata."""
+    try:
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
+        turn = await client.read_turn(turn_id)
+        return {
+            "thread_id": thread_id,
+            "turn_id": turn.turn_id,
+            "status": turn.status,
+            "error": turn.error,
+            "recovery": turn.recovery,
+        }
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.post(
+    "/{thread_id}/turns/{turn_id}/resume",
+    summary="Continue a Turn from its execution checkpoint",
+)
+async def resume_turn(
+    thread_id: str,
+    turn_id: str,
+    req: ResumeTurnRequest,
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """Explicitly resume one durable execution checkpoint."""
+    try:
+        return await session_manager.resume_execution_turn(
+            thread_id,
+            turn_id,
+            req.checkpoint_seq,
+            req.request_id,
+            project_id,
+        )
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except ValueError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
 
 
 @router.get("/{thread_id}/items", summary="List ThreadItem projections")

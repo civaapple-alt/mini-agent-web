@@ -91,6 +91,8 @@ export default function AppLayout({
   messages,
   threadItems,
   lastTurnResult,
+  onResumeExecution,
+  resumeExecutionBusy = false,
   policy,
   onSendMessage,
   userSettings,
@@ -290,6 +292,13 @@ export default function AppLayout({
               isGenerating={isGenerating}
               pendingApproval={pendingApproval}
               lastTurnResult={lastTurnResult}
+              onResumeExecution={() => {
+                if (childTasks.sessionControl?.status === 'frozen') {
+                  return childTasks.controlSession('continue');
+                }
+                return onResumeExecution?.();
+              }}
+              resumeExecutionBusy={resumeExecutionBusy}
               policy={policy}
               onQuickPrompt={onSendMessage}
               onRetryPrompt={onSendMessage}

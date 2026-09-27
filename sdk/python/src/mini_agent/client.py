@@ -1074,6 +1074,29 @@ class MiniAgentClient:
         """Read settled result and history of a turn."""
         return await self._read_turn(turn_id)
 
+    async def resume_turn(
+        self,
+        turn_id: str,
+        checkpoint_seq: int,
+        request_id: str,
+        thread_id: str | None = None,
+    ) -> TurnSubmissionResult:
+        """Explicitly continue one persisted Turn from its execution checkpoint."""
+        if checkpoint_seq < 1:
+            raise ValueError("checkpoint_seq must be positive")
+        if not request_id or len(request_id.encode("utf-8")) > 128:
+            raise ValueError("request_id must be non-empty and at most 128 bytes")
+        result = await self._send_request(
+            "turn/resume",
+            {
+                "threadId": thread_id or self._active_thread_id,
+                "turnId": turn_id,
+                "checkpointSeq": checkpoint_seq,
+                "requestId": request_id,
+            },
+        )
+        return TurnSubmissionResult.from_dict(result)
+
     async def _read_turn(
         self, turn_id: str, request_timeout: float | None = None
     ) -> TurnReadResult:
@@ -1101,9 +1124,17 @@ class MiniAgentClient:
                     f"Turn {turn_id} did not complete within {timeout}s"
                 )
             try:
-                return await self._read_turn(
+                result = await self._read_turn(
                     turn_id, request_timeout=min(self.request_timeout, remaining)
                 )
+                if result.status != "in_progress":
+                    return result
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    raise TurnTimeoutError(
+                        f"Turn {turn_id} did not complete within {timeout}s"
+                    )
+                await asyncio.sleep(min(poll_interval, remaining))
             except AppServerRequestTimeoutError as err:
                 remaining = deadline - loop.time()
                 if remaining <= 0:

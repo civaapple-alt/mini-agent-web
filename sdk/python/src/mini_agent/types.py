@@ -287,6 +287,7 @@ class TurnReadResult:
     messages: list[dict[str, Any]] = field(default_factory=list)
     items: list[ThreadItem] = field(default_factory=list)
     error: str | None = None
+    recovery: dict[str, Any] | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -301,6 +302,9 @@ class TurnReadResult:
             messages=val.get("messages", []),
             items=[ThreadItem.from_dict(item) for item in val.get("items", [])],
             error=val.get("error"),
+            recovery=val.get("recovery")
+            if isinstance(val.get("recovery"), dict)
+            else None,
             raw=data,
         )
 
@@ -370,13 +374,22 @@ class BackgroundTask:
             state=val.get("state", "lost"),
             command_summary=val.get("commandSummary") or val.get("command_summary", ""),
             command_hash=val.get("commandHash") or val.get("command_hash", ""),
-            working_directory=val.get("workingDirectory") or val.get("working_directory", ""),
-            process_id=val.get("processId") if "processId" in val else val.get("process_id"),
+            working_directory=val.get("workingDirectory")
+            or val.get("working_directory", ""),
+            process_id=val.get("processId")
+            if "processId" in val
+            else val.get("process_id"),
             started_at=val.get("startedAt", val.get("started_at", 0)),
-            stopped_at=val.get("stoppedAt") if "stoppedAt" in val else val.get("stopped_at"),
-            exit_code=val.get("exitCode") if "exitCode" in val else val.get("exit_code"),
+            stopped_at=val.get("stoppedAt")
+            if "stoppedAt" in val
+            else val.get("stopped_at"),
+            exit_code=val.get("exitCode")
+            if "exitCode" in val
+            else val.get("exit_code"),
             log_bytes=val.get("logBytes", val.get("log_bytes", 0)),
-            log_truncated=bool(val.get("logTruncated", val.get("log_truncated", False))),
+            log_truncated=bool(
+                val.get("logTruncated", val.get("log_truncated", False))
+            ),
             raw=data,
         )
 
@@ -476,6 +489,7 @@ class ThreadCheckpoint:
     context_revision: int = 0
     last_turn_id: str | None = None
     next_event_sequence: int = 1
+    execution_recovery: dict[str, Any] | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -493,6 +507,14 @@ class ThreadCheckpoint:
             last_turn_id=val.get("last_turn_id") or val.get("lastTurnId"),
             next_event_sequence=val.get("next_event_sequence")
             or val.get("nextEventSequence", 1),
+            execution_recovery=(
+                val.get("execution_recovery") or val.get("executionRecovery")
+                if isinstance(
+                    val.get("execution_recovery") or val.get("executionRecovery"),
+                    dict,
+                )
+                else None
+            ),
             raw=data,
         )
 
@@ -720,13 +742,11 @@ class ThreadSettingsResult:
             ),
             continuation_mode=val.get("continuationMode")
             or val.get("continuation_mode", "manual"),
-            model_selection=val.get("modelSelection")
-            or val.get("model_selection"),
+            model_selection=val.get("modelSelection") or val.get("model_selection"),
             reasoning_selection=val.get("reasoningSelection")
             if "reasoningSelection" in val
             else val.get("reasoning_selection"),
-            reasoning_effort=val.get("reasoningEffort")
-            or val.get("reasoning_effort"),
+            reasoning_effort=val.get("reasoningEffort") or val.get("reasoning_effort"),
             state_revision=(
                 data.get("stateRevision")
                 if isinstance(data, dict) and "stateRevision" in data

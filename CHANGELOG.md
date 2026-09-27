@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Persist bounded execution checkpoints and tool-call outcomes for Main and
+  Child Turns. Resume the same logical Turn only after an explicit user action;
+  show unknown tool outcomes as requiring reconciliation.
 - Keep the current conversation visible while runtime recovery reloads its
   canonical history. A failed snapshot request no longer clears messages already
   displayed in the selected Session.

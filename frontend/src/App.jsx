@@ -75,6 +75,11 @@ function readThreadMeta(thread, fallbackTitle = null) {
 
 const HISTORY_PAGE_SIZE = 128;
 
+function createTurnResumeRequestId() {
+  if (globalThis.crypto?.randomUUID) return `web-execution-${globalThis.crypto.randomUUID()}`;
+  return `web-execution-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 async function listThreadItemsForHistory(threadId, projectId, options = {}) {
   const entries = [];
   let cursor = null;
@@ -122,6 +127,7 @@ export default function App() {
   const [threadItems, setThreadItems] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isInterrupting, setIsInterrupting] = useState(false);
+  const [resumeExecutionBusy, setResumeExecutionBusy] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState(null);
   const [pendingApproval, setPendingApproval] = useState(null);
   const [pendingApprovals, setPendingApprovals] = useState([]);
@@ -1004,7 +1010,21 @@ export default function App() {
       activeTurnIdRef.current = restoredTurnId;
       setActiveTurnId(restoredTurnId);
       const persistedTurn = cp.last_turn_status || cp.session?.last_turn_status;
-      if (!turnActive && isIncompleteTurnStatus(persistedTurn)) {
+      const executionRecovery = cp.execution_recovery || cp.executionRecovery || null;
+      if (executionRecovery && executionRecovery.status !== 'settled') {
+        setLastTurnResult({
+          status: 'in_progress',
+          turnId: executionRecovery.turn_id
+            || executionRecovery.turnId
+            || cp.last_turn_id
+            || cp.session?.last_turn_id
+            || null,
+          error: executionRecovery.status === 'needs_reconciliation'
+            ? executionRecovery.reason || null
+            : null,
+          recovery: executionRecovery,
+        });
+      } else if (!turnActive && isIncompleteTurnStatus(persistedTurn)) {
         setLastTurnResult({
           status: persistedTurn,
           stopReason: cp.last_stop_reason || cp.session?.last_stop_reason || null,
@@ -2157,6 +2177,59 @@ export default function App() {
     });
   };
 
+  const handleResumeExecution = async () => {
+    if (currentSessionReadOnly) {
+      showToast('当前会话由其他进程运行，只能查看，暂不能继续。', 'info', 3000);
+      return;
+    }
+    const recovery = lastTurnResult?.recovery;
+    const turnId = recovery?.turn_id || recovery?.turnId || lastTurnResult?.turnId;
+    const checkpointSeq = Number(recovery?.checkpoint_seq ?? recovery?.checkpointSeq);
+    if (recovery?.status !== 'waiting_for_continue' || !turnId || !Number.isSafeInteger(checkpointSeq)) {
+      showToast('执行检查点已变化，请刷新会话状态后再继续。', 'warning', 3500);
+      return;
+    }
+    setResumeExecutionBusy(true);
+    setIsGenerating(true);
+    activeTurnIdRef.current = turnId;
+    setActiveTurnId(turnId);
+    try {
+      const result = await api.resumeTurn(
+        currentThread,
+        turnId,
+        checkpointSeq,
+        createTurnResumeRequestId(),
+        { projectId: currentThreadProject },
+      );
+      if (result.status !== 'started' || result.turn_id !== turnId) {
+        throw new Error(result.reason || '服务端未接受恢复请求');
+      }
+      setLastTurnResult((current) => current?.turnId === turnId
+        ? { ...current, recovery: { ...recovery, status: 'running' } }
+        : current);
+    } catch (error) {
+      try {
+        const latest = await api.readTurn(currentThread, turnId, {
+          projectId: currentThreadProject,
+        });
+        if (latest?.recovery?.status === 'running') {
+          setLastTurnResult((current) => current?.turnId === turnId
+            ? { ...current, recovery: latest.recovery }
+            : current);
+          return;
+        }
+      } catch {
+        // The server may be reconnecting; keep the checkpoint banner available.
+      }
+      setIsGenerating(false);
+      activeTurnIdRef.current = null;
+      setActiveTurnId(null);
+      showToast(`继续当前 Turn 失败：${error.message || '服务端未确认'}`, 'error', 4500);
+    } finally {
+      setResumeExecutionBusy(false);
+    }
+  };
+
   const handleRespondApproval = async (
     requestId,
     decision,
@@ -2720,6 +2793,8 @@ export default function App() {
       messages={messages}
       threadItems={threadItems}
       lastTurnResult={lastTurnResult}
+      onResumeExecution={handleResumeExecution}
+      resumeExecutionBusy={resumeExecutionBusy}
       policy={policy}
       onSendMessage={handleSendMessage}
       userSettings={userSettings}

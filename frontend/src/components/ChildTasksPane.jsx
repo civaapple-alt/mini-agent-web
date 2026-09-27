@@ -10,6 +10,9 @@ import {
   getChildTaskPhaseLabel,
   getChildTaskStatus,
   getChildTaskWaitingReason,
+  getChildExecutionRecovery,
+  getChildExecutionRecoveryStatus,
+  getChildExecutionResumeRequestId,
   getLatestChildTaskReport,
   isCollapsedChildTask,
   orderChildTasksForRuntime,
@@ -34,6 +37,16 @@ function ChildTaskRow({
   const [controlError, setControlError] = useState('');
   const [controlFeedback, setControlFeedback] = useState('');
   const status = getChildTaskStatus(child);
+  const executionRecovery = getChildExecutionRecovery(child);
+  const executionRecoveryStatus = getChildExecutionRecoveryStatus(child);
+  const waitingForExecutionResume = executionRecoveryStatus === 'waiting_for_continue';
+  const needsReconciliation = executionRecoveryStatus === 'needs_reconciliation';
+  const executionRecoveryPending = waitingForExecutionResume || needsReconciliation;
+  const statusLabel = waitingForExecutionResume
+    ? '停滞待继续'
+    : needsReconciliation
+      ? '工具结果待核对'
+      : childTaskStatusLabels[status] || status;
   const failureDetail = child.error || child.operation_error || child.last_turn_error;
   const waitingReason = getChildTaskWaitingReason(child);
   const latestReport = getLatestChildTaskReport(child);
@@ -51,7 +64,8 @@ function ChildTaskRow({
     && Number.isInteger(child.group_sequence)
     ? `第 ${child.group_sequence + 1}${Number.isInteger(sequenceCount) ? `/${sequenceCount}` : ''} 步`
     : null;
-  const active = ['running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling'].includes(status);
+  const active = !waitingForExecutionResume
+    && ['running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling'].includes(status);
   const attemptStartedAtMs = currentAttemptGroup?.stages
     .filter((stage) => ['running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling'].includes(String(stage?.status || '').toLowerCase()))
     .map((stage) => Number(stage.timestamp_ms))
@@ -65,11 +79,15 @@ function ChildTaskRow({
   const duration = formatChildTaskDuration(durationMs);
   const queued = status === 'queued';
   const paused = status === 'paused';
-  const retryable = ['failed', 'cancelled', 'step_limit'].includes(status);
+  const retryable = !executionRecoveryPending && ['failed', 'cancelled', 'step_limit'].includes(status);
   const pendingFollowUp = child.pending_follow_up;
   const title = child.title || child.child_thread_id || '子代理任务';
-  const activity = child.recovery_required
+  const activity = child.recovery_required && !waitingForExecutionResume
     ? child.recovery_reason || '等待子 Session 恢复'
+    : waitingForExecutionResume
+      ? executionRecovery?.reason || '最近执行进度已保存，等待继续'
+      : needsReconciliation
+        ? executionRecovery?.reason || '有工具调用结果未知，需要先核对执行记录'
     : active
       ? [phase, latestReport ? `最新进展：${latestReport.text}` : null].filter(Boolean).join(' · ') || '正在执行'
     : queued
@@ -104,19 +122,19 @@ function ChildTaskRow({
   };
 
   return (
-    <article className={`child-task-row ${status}${child.recovery_required ? ' recovery-required' : ''}`}>
+    <article className={`child-task-row ${status}${child.recovery_required ? ' recovery-required' : ''}${executionRecoveryPending ? ' execution-recovery-pending' : ''}`}>
       <div className="child-task-row-head">
         <button
           type="button"
           className="child-task-summary"
           aria-expanded={expanded}
-          aria-label={`${expanded ? '收起' : '展开'}任务详情：${title}，${childTaskStatusLabels[status] || status}${duration ? `，${active ? '已运行' : '耗时'} ${duration}` : ''}`}
+          aria-label={`${expanded ? '收起' : '展开'}任务详情：${title}，${statusLabel}${duration ? `，${active ? '已运行' : '耗时'} ${duration}` : ''}`}
           onClick={() => setExpanded((value) => !value)}
         >
           <span className={`child-task-status-dot ${status}`} aria-hidden="true" />
           <strong title={child.child_thread_id}>{title}</strong>
-          <span className={`child-task-status ${status}`}>
-            {childTaskStatusLabels[status] || status}
+          <span className={`child-task-status ${waitingForExecutionResume || needsReconciliation ? 'attention' : status}`}>
+            {statusLabel}
           </span>
           {duration && (
             <span className="child-task-duration font-mono" title={active ? `已运行 ${duration}` : `耗时 ${duration}`}>
@@ -136,7 +154,19 @@ function ChildTaskRow({
             <span>查看</span>
           </button>
         )}
-        {onControl && !child.recovery_required && ['running', 'in_progress', 'awaiting_approval', 'queued', 'paused'].includes(status) && (
+        {waitingForExecutionResume && onControl && (
+          <button
+            type="button"
+            className="btn-action-small"
+            disabled={busy}
+            onClick={() => submit('resume', {
+              requestId: getChildExecutionResumeRequestId(child),
+            })}
+          >
+            {busy ? '继续中…' : '继续'}
+          </button>
+        )}
+        {onControl && !child.recovery_required && !executionRecoveryPending && ['running', 'in_progress', 'awaiting_approval', 'queued', 'paused'].includes(status) && (
           <button
             type="button"
             className="child-task-stop-quick"
@@ -149,8 +179,8 @@ function ChildTaskRow({
           </button>
         )}
       </div>
-      <div className={`child-task-activity ${child.recovery_required ? 'attention' : active ? 'active' : queued ? 'queued' : ''}`}>
-        <span>{child.recovery_required ? '需要处理' : active ? '阶段 / 进展' : queued ? '排队原因' : '进度'}</span>
+      <div className={`child-task-activity ${child.recovery_required || executionRecoveryPending ? 'attention' : active ? 'active' : queued ? 'queued' : ''}`}>
+        <span>{child.recovery_required || executionRecoveryPending ? '恢复状态' : active ? '阶段 / 进展' : queued ? '排队原因' : '进度'}</span>
         <span title={activity}>{activity}</span>
       </div>
       {confirmStop && (
@@ -179,9 +209,18 @@ function ChildTaskRow({
             <span>{currentAttemptLabel}</span>
             {phase && <span>阶段：{phase}</span>}
           </div>
-          {child.recovery_required && (
+          {child.recovery_required && !waitingForExecutionResume && (
             <div className="child-task-recovery">
               {child.recovery_reason || '子 Session 需要重新连接，当前运行状态可能尚未恢复。'}
+            </div>
+          )}
+          {executionRecoveryPending && (
+            <div className="child-task-recovery">
+              <strong>{waitingForExecutionResume ? '执行检查点可继续' : '等待核对工具结果'}</strong>
+              <span>{executionRecovery?.reason || '刷新或重连不会自动启动执行。'}</span>
+              {executionRecovery?.last_progress_ms && (
+                <time>{`最近进展 ${formatChildTaskTimestamp(executionRecovery.last_progress_ms)}`}</time>
+              )}
             </div>
           )}
           {waitingReason && (
@@ -221,7 +260,7 @@ function ChildTaskRow({
               {failureDetail}
             </div>
           )}
-          {onControl && !child.recovery_required && (active || queued || paused || retryable) && (
+          {onControl && !executionRecoveryPending && !child.recovery_required && (active || queued || paused || retryable) && (
             <details className="child-task-actions">
               <summary>更多操作</summary>
               <div className="child-task-controls" aria-label="子任务控制">

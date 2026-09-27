@@ -365,6 +365,27 @@
   overflow-wrap: anywhere;
 }
 
+.turn-recovery-progress {
+  flex-basis: 100%;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.turn-recovery-button {
+  padding: 4px 9px;
+  border: 1px solid var(--status-running);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--status-running);
+  cursor: pointer;
+  font: inherit;
+}
+
+.turn-recovery-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .goal-verification-message {
   width: 100%;
   max-width: 860px;

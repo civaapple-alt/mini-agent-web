@@ -27,11 +27,23 @@ function TurnDurationLabel({ entry, nowMs, isRunning }) {
   return <div className="turn-duration-label" aria-label={label}>{label}</div>;
 }
 
+function formatRecoveryProgressTime(value) {
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
 export default function ChatArea({
   messages,
   isGenerating,
   pendingApproval,
   lastTurnResult,
+  onResumeExecution,
+  resumeExecutionBusy = false,
   threadItems = [],
   statusModel = null,
   policy = 'interactive',
@@ -59,6 +71,14 @@ export default function ChatArea({
     || Boolean(pendingApproval)
     || Boolean(statusModel?.process?.turnActive)
     || ['running', 'approval', 'stopping'].includes(statusModel?.lifecycle);
+  const recoveryProgressTime = formatRecoveryProgressTime(
+    lastTurnResult?.recovery?.last_progress_ms
+      ?? lastTurnResult?.recovery?.lastProgressMs,
+  );
+  const recoveryPhaseLabel = {
+    model_request: '模型请求',
+    tool_batch: '工具批次',
+  }[lastTurnResult?.recovery?.phase] || null;
 
   const turnEntries = useMemo(() => buildTurnHistoryEntries({
     messages,
@@ -440,8 +460,46 @@ export default function ChatArea({
             {' '}{lastTurnResult.status === 'failed'
               || lastTurnResult.stopReason === 'failed'
               ? '重试请点本轮输入旁的“重新发送此提示词”；这会发起新请求，不会续接已断开的请求。'
+              : lastTurnResult.recovery?.status === 'needs_reconciliation'
+                ? `工具执行结果需要核对后才能继续。${lastTurnResult.recovery.reason ? ` 原因：${lastTurnResult.recovery.reason}` : ''}`
+                : lastTurnResult.recovery?.status === 'waiting_for_continue'
+                  ? '执行进度已保存，可以从最近完成的步骤继续。'
               : '当前回答可能不完整，可以继续发送指令推进下一轮。'}
           </span>
+          {(recoveryPhaseLabel || recoveryProgressTime) && (
+            <small className="turn-recovery-progress">
+              {recoveryPhaseLabel && `阶段：${recoveryPhaseLabel}`}
+              {recoveryPhaseLabel && recoveryProgressTime && ' · '}
+              {recoveryProgressTime && `最近进展 ${recoveryProgressTime}`}
+            </small>
+          )}
+          {lastTurnResult.recovery?.status === 'waiting_for_continue' && onResumeExecution && (
+            <button
+              type="button"
+              className="turn-recovery-button"
+              disabled={resumeExecutionBusy}
+              onClick={onResumeExecution}
+            >
+              {resumeExecutionBusy ? '正在继续…' : '继续当前 Turn'}
+            </button>
+          )}
+          {lastTurnResult.recovery?.status === 'needs_reconciliation' && (
+            <button
+              type="button"
+              className="turn-recovery-button"
+              onClick={() => {
+                const turnId = lastTurnResult.recovery?.turn_id
+                  || lastTurnResult.recovery?.turnId
+                  || lastTurnResult.turnId;
+                const entry = turnEntries.find((item) => (
+                  String(item.turnId || item.id || '') === String(turnId || '')
+                ));
+                if (!scrollToEntry(entry)) scrollToCurrentTurn();
+              }}
+            >
+              查看待核对活动
+            </button>
+          )}
         </div>
       )}
 

@@ -4,6 +4,41 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ChildTasksPane from '../components/ChildTasksPane';
 
 describe('ChildTasksPane', () => {
+  it('counts a saved execution checkpoint as attention and exposes one continue action', async () => {
+    const onControl = vi.fn().mockResolvedValue({ outcome: { outcome: 'applied' } });
+    const { container } = render(
+      <ChildTasksPane
+        children={[{
+          operation_id: 'operation-recovery',
+          child_thread_id: 'child-recovery',
+          title: 'Recover long task',
+          status: 'running',
+          operation_attempt: 1,
+          execution_recovery: {
+            turn_id: 'turn-recovery',
+            checkpoint_seq: 9,
+            status: 'waiting_for_continue',
+            reason: '采样停滞',
+          },
+        }]}
+        loading={false}
+        error={null}
+        onControl={onControl}
+      />,
+    );
+
+    expect(container.querySelector('.child-task-count').getAttribute('aria-label'))
+      .toBe('运行 0，排队 0，待处理 1，已结束 0，共 1');
+    expect(screen.getByText('停滞待继续')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    await waitFor(() => expect(onControl).toHaveBeenCalledWith(
+      expect.objectContaining({ child_thread_id: 'child-recovery' }),
+      'resume',
+      { requestId: 'child-turn-resume:turn-recovery:9' },
+    ));
+    expect(container.querySelector('.child-task-actions')).toBeNull();
+  });
+
   it('shows child lifecycle and diagnostics but does not open a child without a Session', () => {
     render(
       <ChildTasksPane

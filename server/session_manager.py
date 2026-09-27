@@ -478,9 +478,7 @@ class SessionManager:
         client = await self.get_client_for_thread(target, resolved_project)
         return await client.session_control("read", thread_id=target)
 
-    def _session_control_lock(
-        self, thread_id: str, project_id: str
-    ) -> asyncio.Lock:
+    def _session_control_lock(self, thread_id: str, project_id: str) -> asyncio.Lock:
         key = (project_id, thread_id)
         lock = self._session_control_locks.get(key)
         if lock is None:
@@ -505,6 +503,144 @@ class SessionManager:
         )
         return f"session-{action}:{hashlib.sha256(identity.encode()).hexdigest()[:48]}"
 
+    @staticmethod
+    def _execution_resume_request_id(
+        parent_request_id: str,
+        thread_id: str,
+        turn_id: str,
+        checkpoint_seq: int,
+    ) -> str:
+        identity = ":".join(
+            (parent_request_id, thread_id, turn_id, str(checkpoint_seq))
+        )
+        return (
+            f"web-execution-resume:{hashlib.sha256(identity.encode()).hexdigest()[:48]}"
+        )
+
+    @staticmethod
+    def _execution_recovery(checkpoint: Any) -> dict[str, Any] | None:
+        recovery = getattr(checkpoint, "execution_recovery", None)
+        return recovery if isinstance(recovery, dict) else None
+
+    def _track_resumed_execution(
+        self,
+        client: MiniAgentClient,
+        thread_id: str,
+        project_id: str,
+        turn_id: str,
+        parent_thread_id: str | None = None,
+    ) -> None:
+        if parent_thread_id:
+            task = asyncio.create_task(
+                self._wait_for_child_turn(
+                    client, thread_id, project_id, turn_id, parent_thread_id
+                )
+            )
+        else:
+            task = asyncio.create_task(
+                self._wait_for_parent_child_wakeup_turn(
+                    client, thread_id, project_id, turn_id
+                )
+            )
+        self.set_active_turn(thread_id, turn_id, task, project_id)
+
+    async def resume_execution_turn(
+        self,
+        thread_id: str,
+        turn_id: str,
+        checkpoint_seq: int,
+        request_id: str,
+        project_id: str | None = None,
+        *,
+        parent_thread_id: str | None = None,
+        client: MiniAgentClient | None = None,
+    ) -> dict[str, Any]:
+        """Resume one matching durable execution checkpoint and track its Turn."""
+        target = thread_id or "default"
+        resolved_project = self.resolve_thread_project(target, project_id)
+        runtime = client or await self.get_client_for_thread(target, resolved_project)
+        checkpoint = await runtime.read_thread(target)
+        recovery = self._execution_recovery(checkpoint)
+        if not recovery:
+            raise ValueError("no recoverable execution checkpoint is available")
+        recovery_turn_id = str(recovery.get("turn_id") or recovery.get("turnId") or "")
+        recovery_checkpoint_seq = _nonnegative_int(
+            recovery.get("checkpoint_seq") or recovery.get("checkpointSeq")
+        )
+        if recovery_turn_id != turn_id or recovery_checkpoint_seq != checkpoint_seq:
+            raise ValueError("execution checkpoint changed; refresh before continuing")
+        status = str(recovery.get("status") or "")
+        if status == "needs_reconciliation":
+            reason = str(recovery.get("reason") or "工具执行结果需要核对")
+            raise ValueError(f"execution requires reconciliation: {reason}")
+        if status != "waiting_for_continue":
+            raise ValueError(f"execution checkpoint is {status or 'unavailable'}")
+        stable_request_id = self._execution_resume_request_id(
+            request_id, target, turn_id, checkpoint_seq
+        )
+        submission = await runtime.resume_turn(
+            turn_id,
+            checkpoint_seq,
+            stable_request_id,
+            thread_id=target,
+        )
+        submitted_turn_id = str(submission.turn_id or "")
+        if submission.status != "started" or submitted_turn_id != turn_id:
+            raise RuntimeError(
+                submission.reason or "App Server did not accept execution recovery"
+            )
+        self._track_resumed_execution(
+            runtime,
+            target,
+            resolved_project,
+            turn_id,
+            parent_thread_id,
+        )
+        return {
+            "thread_id": target,
+            "turn_id": turn_id,
+            "status": submission.status,
+            "request_id": stable_request_id,
+        }
+
+    async def _resume_available_execution_checkpoint(
+        self,
+        client: MiniAgentClient,
+        thread_id: str,
+        project_id: str,
+        parent_request_id: str,
+        *,
+        parent_thread_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        checkpoint = await client.read_thread(thread_id)
+        recovery = self._execution_recovery(checkpoint)
+        if not recovery:
+            return None
+        status = str(recovery.get("status") or "")
+        turn_id = str(recovery.get("turn_id") or recovery.get("turnId") or "")
+        checkpoint_seq = _nonnegative_int(
+            recovery.get("checkpoint_seq") or recovery.get("checkpointSeq")
+        )
+        if status == "needs_reconciliation":
+            return {"status": status, "turn_id": turn_id, "recovery": recovery}
+        if status == "waiting_for_continue" and turn_id and checkpoint_seq:
+            result = await self.resume_execution_turn(
+                thread_id,
+                turn_id,
+                checkpoint_seq,
+                parent_request_id,
+                project_id,
+                parent_thread_id=parent_thread_id,
+                client=client,
+            )
+            return {**result, "recovery": recovery}
+        if status == "running" and turn_id:
+            self._track_resumed_execution(
+                client, thread_id, project_id, turn_id, parent_thread_id
+            )
+            return {"status": status, "turn_id": turn_id, "recovery": recovery}
+        return None
+
     async def _interrupt_parent_for_freeze(
         self, thread_id: str, project_id: str
     ) -> str | None:
@@ -515,7 +651,9 @@ class SessionManager:
             if str(getattr(runtime, "phase", "idle")) in ACTIVE_CHILD_RUNTIME_PHASES:
                 turn_id = turn_id or str(getattr(runtime, "turn_id", "") or "") or None
         except Exception:
-            logger.warning("Unable to inspect parent runtime during freeze", exc_info=True)
+            logger.warning(
+                "Unable to inspect parent runtime during freeze", exc_info=True
+            )
         if not turn_id:
             return None
         self.mark_turn_interrupted(thread_id, turn_id, project_id)
@@ -543,11 +681,7 @@ class SessionManager:
             status = child.get("status")
             turn_id = str(child.get("turn_id") or "")
             child_id = str(child.get("child_thread_id") or "")
-            if (
-                not child_id
-                or not turn_id
-                or status not in ACTIVE_CHILD_TASK_STATUSES
-            ):
+            if not child_id or not turn_id or status not in ACTIVE_CHILD_TASK_STATUSES:
                 continue
             try:
                 if status in {"running", "awaiting_approval", "in_progress"}:
@@ -578,7 +712,9 @@ class SessionManager:
             except Exception as error:
                 errors.append(f"{child_id}: {error}")
                 logger.warning(
-                    "Unable to freeze child %s for parent Session", child_id, exc_info=True
+                    "Unable to freeze child %s for parent Session",
+                    child_id,
+                    exc_info=True,
                 )
         return children, errors
 
@@ -606,13 +742,17 @@ class SessionManager:
             state = await client.session_control(
                 "freeze", request_id=freeze_request_id, thread_id=target
             )
-            await self.broadcast_ws({
-                "type": "session_control_updated",
-                "threadId": target,
-                "projectId": resolved_project,
-                "sessionControl": state,
-            })
-            self._schedule_session_freeze_settlement(target, resolved_project, freeze_request_id)
+            await self.broadcast_ws(
+                {
+                    "type": "session_control_updated",
+                    "threadId": target,
+                    "projectId": resolved_project,
+                    "sessionControl": state,
+                }
+            )
+            self._schedule_session_freeze_settlement(
+                target, resolved_project, freeze_request_id
+            )
             return {"session_control": state, "request_id": freeze_request_id}
 
     def _schedule_session_freeze_settlement(
@@ -634,13 +774,19 @@ class SessionManager:
                     parent_idle = not self.get_active_turn(thread_id, project_id)
                     try:
                         runtime = await client.get_runtime_status(thread_id)
-                        runtime_active = str(getattr(runtime, "phase", "idle")) in ACTIVE_CHILD_RUNTIME_PHASES
-                        parent_idle = (
-                            not runtime_active
-                            and not self.get_active_turn(thread_id, project_id)
+                        runtime_active = (
+                            str(getattr(runtime, "phase", "idle"))
+                            in ACTIVE_CHILD_RUNTIME_PHASES
                         )
-                        if runtime_active or self.get_active_turn(thread_id, project_id):
-                            await self._interrupt_parent_for_freeze(thread_id, project_id)
+                        parent_idle = not runtime_active and not self.get_active_turn(
+                            thread_id, project_id
+                        )
+                        if runtime_active or self.get_active_turn(
+                            thread_id, project_id
+                        ):
+                            await self._interrupt_parent_for_freeze(
+                                thread_id, project_id
+                            )
                     except (MiniAgentError, asyncio.TimeoutError, OSError) as error:
                         # An unreadable App Server snapshot is not evidence that
                         # the parent Turn settled. Keep the durable freeze pending.
@@ -659,16 +805,23 @@ class SessionManager:
                         and child.get("turn_id")
                         for child in children
                     )
-                    if state.get("status") == "freezing" and parent_idle and children_idle and not self.get_active_turn(thread_id, project_id):
+                    if (
+                        state.get("status") == "freezing"
+                        and parent_idle
+                        and children_idle
+                        and not self.get_active_turn(thread_id, project_id)
+                    ):
                         settled = await client.session_control(
                             "freeze_settled", request_id=request_id, thread_id=thread_id
                         )
-                        await self.broadcast_ws({
-                            "type": "session_control_updated",
-                            "threadId": thread_id,
-                            "projectId": project_id,
-                            "sessionControl": settled,
-                        })
+                        await self.broadcast_ws(
+                            {
+                                "type": "session_control_updated",
+                                "threadId": thread_id,
+                                "projectId": project_id,
+                                "sessionControl": settled,
+                            }
+                        )
                         return
                     if state.get("status") == "frozen":
                         return
@@ -676,14 +829,20 @@ class SessionManager:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.warning("Unable to settle parent Session freeze for %s", thread_id, exc_info=True)
+                logger.warning(
+                    "Unable to settle parent Session freeze for %s",
+                    thread_id,
+                    exc_info=True,
+                )
                 retry = True
             finally:
                 if self._session_control_jobs.get(key) is asyncio.current_task():
                     self._session_control_jobs.pop(key, None)
             if retry:
                 await asyncio.sleep(1.0)
-                self._schedule_session_freeze_settlement(thread_id, project_id, request_id)
+                self._schedule_session_freeze_settlement(
+                    thread_id, project_id, request_id
+                )
 
         self._session_control_jobs[key] = asyncio.create_task(settle())
 
@@ -708,18 +867,21 @@ class SessionManager:
             stored_request_id = current.get("requestId")
             resume_request_id = (
                 stored_request_id
-                if current.get("status") == "resuming" and isinstance(stored_request_id, str)
+                if current.get("status") == "resuming"
+                and isinstance(stored_request_id, str)
                 else request_id or f"web-resume-{uuid.uuid4().hex}"
             )
             state = await client.session_control(
                 "resume", request_id=resume_request_id, thread_id=target
             )
-            await self.broadcast_ws({
-                "type": "session_control_updated",
-                "threadId": target,
-                "projectId": resolved_project,
-                "sessionControl": state,
-            })
+            await self.broadcast_ws(
+                {
+                    "type": "session_control_updated",
+                    "threadId": target,
+                    "projectId": resolved_project,
+                    "sessionControl": state,
+                }
+            )
         return await self._finish_session_resume(
             client, target, resolved_project, resume_request_id, state
         )
@@ -735,28 +897,86 @@ class SessionManager:
         async with self._child_task_lock:
             children = await self.list_child_tasks(thread_id, project_id)
             errors: list[str] = []
+            reconciliation_required: list[dict[str, str]] = []
             for child in children:
-                if child.get("status") != "paused" or child.get("control_source") != "parent_freeze":
+                if (
+                    child.get("status") != "paused"
+                    or child.get("control_source") != "parent_freeze"
+                ):
                     continue
                 child_id = str(child.get("child_thread_id") or "")
                 try:
-                    child_client = await self.get_client_for_thread(child_id, project_id)
+                    child_client = await self.get_client_for_thread(
+                        child_id, project_id
+                    )
+                    checkpoint = await child_client.read_thread(child_id)
+                    recovery = self._execution_recovery(checkpoint)
+                    recovery_status = str((recovery or {}).get("status") or "")
+                    if recovery_status == "needs_reconciliation":
+                        reconciliation_required.append(
+                            {
+                                "child_thread_id": child_id,
+                                "reason": str(
+                                    (recovery or {}).get("reason")
+                                    or "工具执行结果需要核对"
+                                ),
+                            }
+                        )
+                        continue
+                    resume_control_id = self._session_control_child_request_id(
+                        "resume", request_id, child
+                    )
+                    recovery_turn_id = None
+                    recovery_checkpoint_seq = 0
+                    if recovery_status == "waiting_for_continue":
+                        recovery_turn_id = str(
+                            (recovery or {}).get("turn_id")
+                            or (recovery or {}).get("turnId")
+                            or ""
+                        )
+                        recovery_checkpoint_seq = _nonnegative_int(
+                            (recovery or {}).get("checkpoint_seq")
+                            or (recovery or {}).get("checkpointSeq")
+                        )
+                        if not recovery_turn_id or recovery_checkpoint_seq < 1:
+                            raise ValueError("子任务执行检查点身份不完整，请刷新后重试")
+                    resume_kwargs = {
+                        "request_id": resume_control_id,
+                        "control_source": "parent_freeze",
+                    }
+                    if recovery_turn_id:
+                        resume_kwargs["turn_id"] = recovery_turn_id
                     await child_client.child_task_action(
                         child_id,
                         thread_id,
                         str(child.get("operation_id") or f"child:{child_id}"),
                         int(child.get("operation_attempt") or 1),
                         "resume",
-                        request_id=self._session_control_child_request_id(
-                            "resume", request_id, child
-                        ),
-                        control_source="parent_freeze",
+                        **resume_kwargs,
                     )
+                    if recovery_status == "waiting_for_continue":
+                        await self.resume_execution_turn(
+                            child_id,
+                            recovery_turn_id,
+                            recovery_checkpoint_seq,
+                            resume_control_id,
+                            project_id,
+                            parent_thread_id=thread_id,
+                            client=child_client,
+                        )
                 except Exception as error:
                     errors.append(f"{child_id}: {error}")
-                    logger.warning("Unable to resume child %s after parent continue", child_id, exc_info=True)
+                    logger.warning(
+                        "Unable to resume child %s after parent continue",
+                        child_id,
+                        exc_info=True,
+                    )
         if errors:
-            return {"session_control": state, "request_id": request_id, "errors": errors}
+            return {
+                "session_control": state,
+                "request_id": request_id,
+                "errors": errors,
+            }
 
         await self._drain_child_queue(thread_id, project_id)
         active_turn = self.get_active_turn(thread_id, project_id)
@@ -764,37 +984,90 @@ class SessionManager:
             settled = await client.session_control(
                 "resume_settled", request_id=request_id, thread_id=thread_id
             )
-            await self.broadcast_ws({
-                "type": "session_control_updated",
-                "threadId": thread_id,
-                "projectId": project_id,
-                "sessionControl": settled,
-            })
-            return {"session_control": settled, "request_id": request_id, "turn_id": active_turn}
+            await self.broadcast_ws(
+                {
+                    "type": "session_control_updated",
+                    "threadId": thread_id,
+                    "projectId": project_id,
+                    "sessionControl": settled,
+                }
+            )
+            return {
+                "session_control": settled,
+                "request_id": request_id,
+                "turn_id": active_turn,
+            }
         try:
             runtime = await client.get_runtime_status(thread_id)
             if str(getattr(runtime, "phase", "idle")) in ACTIVE_CHILD_RUNTIME_PHASES:
                 turn_id = str(getattr(runtime, "turn_id", "") or "")
                 if turn_id:
                     task = asyncio.create_task(
-                        self._wait_for_parent_child_wakeup_turn(client, thread_id, project_id, turn_id)
+                        self._wait_for_parent_child_wakeup_turn(
+                            client, thread_id, project_id, turn_id
+                        )
                     )
                     self.set_active_turn(thread_id, turn_id, task, project_id)
                     settled = await client.session_control(
                         "resume_settled", request_id=request_id, thread_id=thread_id
                     )
-                    await self.broadcast_ws({
-                        "type": "session_control_updated",
-                        "threadId": thread_id,
-                        "projectId": project_id,
-                        "sessionControl": settled,
-                    })
-                    return {"session_control": settled, "request_id": request_id, "turn_id": turn_id}
+                    await self.broadcast_ws(
+                        {
+                            "type": "session_control_updated",
+                            "threadId": thread_id,
+                            "projectId": project_id,
+                            "sessionControl": settled,
+                        }
+                    )
+                    return {
+                        "session_control": settled,
+                        "request_id": request_id,
+                        "turn_id": turn_id,
+                    }
         except Exception:
-            logger.warning("Unable to inspect parent runtime before continue", exc_info=True)
+            logger.warning(
+                "Unable to inspect parent runtime before continue", exc_info=True
+            )
         control = await client.session_control("read", thread_id=thread_id)
-        if control.get("status") != "resuming" or control.get("requestId") != request_id:
-            return {"session_control": control, "request_id": request_id, "status": "superseded"}
+        if (
+            control.get("status") != "resuming"
+            or control.get("requestId") != request_id
+        ):
+            return {
+                "session_control": control,
+                "request_id": request_id,
+                "status": "superseded",
+            }
+        try:
+            resumed = await self._resume_available_execution_checkpoint(
+                client, thread_id, project_id, request_id
+            )
+        except (MiniAgentError, ValueError, RuntimeError) as error:
+            return {
+                "session_control": state,
+                "request_id": request_id,
+                "error": str(error),
+                "child_reconciliation_required": reconciliation_required,
+            }
+        if resumed:
+            settled = await client.session_control(
+                "resume_settled", request_id=request_id, thread_id=thread_id
+            )
+            await self.broadcast_ws(
+                {
+                    "type": "session_control_updated",
+                    "threadId": thread_id,
+                    "projectId": project_id,
+                    "sessionControl": settled,
+                }
+            )
+            return {
+                "session_control": settled,
+                "request_id": request_id,
+                "turn_id": resumed.get("turn_id"),
+                "execution_recovery": resumed.get("recovery"),
+                "child_reconciliation_required": reconciliation_required,
+            }
         submission = await client.start_turn(
             prompt=(
                 "Continue the interrupted parent Session from its last settled point. "
@@ -809,23 +1082,37 @@ class SessionManager:
         )
         turn_id = str(getattr(submission, "turn_id", None) or "")
         if not turn_id:
-            reason = getattr(submission, "reason", None) or getattr(submission, "status", "not submitted")
-            return {"session_control": state, "request_id": request_id, "error": str(reason)}
+            reason = getattr(submission, "reason", None) or getattr(
+                submission, "status", "not submitted"
+            )
+            return {
+                "session_control": state,
+                "request_id": request_id,
+                "error": str(reason),
+            }
         task = asyncio.create_task(
-            self._wait_for_parent_child_wakeup_turn(client, thread_id, project_id, turn_id)
+            self._wait_for_parent_child_wakeup_turn(
+                client, thread_id, project_id, turn_id
+            )
         )
         self.set_active_turn(thread_id, turn_id, task, project_id)
         settled = await client.session_control(
             "resume_settled", request_id=request_id, thread_id=thread_id
         )
-        await self.broadcast_ws({
-            "type": "session_control_updated",
-            "threadId": thread_id,
-            "projectId": project_id,
-            "sessionControl": settled,
-        })
+        await self.broadcast_ws(
+            {
+                "type": "session_control_updated",
+                "threadId": thread_id,
+                "projectId": project_id,
+                "sessionControl": settled,
+            }
+        )
         self._resume_child_parent_wakeup(project_id, thread_id)
-        return {"session_control": settled, "request_id": request_id, "turn_id": turn_id}
+        return {
+            "session_control": settled,
+            "request_id": request_id,
+            "turn_id": turn_id,
+        }
 
     async def get_background_task_target(
         self, thread_id: str, project_id: str | None = None
@@ -1425,7 +1712,13 @@ class SessionManager:
             capacity = limit - len(active)
             if capacity <= 0:
                 return False
-            queued = [child for child in children if child.get("status") == "queued"]
+            queued = [
+                child
+                for child in children
+                if child.get("status") == "queued"
+                and str((child.get("execution_recovery") or {}).get("status") or "")
+                not in {"waiting_for_continue", "needs_reconciliation"}
+            ]
             queued.sort(
                 key=lambda child: (
                     child.get("operation_group_id") or "",
@@ -2094,11 +2387,17 @@ class SessionManager:
                                 and isinstance(attempt_value, int)
                                 and isinstance(cursor_value, int)
                             ):
-                                receipt_cursors[(child_id, receipt_operation, attempt_value)] = cursor_value
+                                receipt_cursors[
+                                    (child_id, receipt_operation, attempt_value)
+                                ] = cursor_value
             except FileNotFoundError:
                 pass
             except (OSError, ValueError, TypeError):
-                logger.warning("Unable to read child report receipts for %s", source_thread_id, exc_info=True)
+                logger.warning(
+                    "Unable to read child report receipts for %s",
+                    source_thread_id,
+                    exc_info=True,
+                )
         sessions = self.list_project_child_sessions(
             resolved_project_id, parent_session_id
         )
@@ -2139,46 +2438,80 @@ class SessionManager:
             phase = None
             runtime_recovery_required = False
             runtime_recovery_reason = None
+            execution_recovery = None
             client = self._project_clients.get((resolved_project_id, child_thread_id))
-            # A queued operation owns no current Turn. Its Session may still
-            # expose the last attempt's terminal runtime snapshot, which must
-            # not turn the queued attempt into a running task or consume a slot.
-            if client is not None and status != "queued":
+            recovery_status = ""
+            # A queued operation owns no live runtime Turn. Read its execution
+            # checkpoint only to distinguish a recoverable continuation from
+            # ordinary queued work; never project the stale runtime snapshot.
+            if client is not None:
                 try:
-                    runtime = await client.get_runtime_status(child_thread_id)
-                    persisted_terminal = status in {
-                        "completed",
-                        "failed",
-                        "cancelled",
-                        "step_limit",
+                    if status in ACTIVE_CHILD_TASK_STATUSES or status in {
                         "paused",
-                    }
-                    if not persisted_terminal:
-                        phase = runtime.phase
-                        expected_turn_id = str(active_turn_id or "")
-                        runtime_turn_id = str(runtime.turn_id or "")
-                        matching_active_turn = (
-                            bool(expected_turn_id)
-                            and runtime_turn_id == expected_turn_id
-                            and runtime.phase in ACTIVE_CHILD_RUNTIME_PHASES
+                        "failed",
+                        "step_limit",
+                        "queued",
+                    }:
+                        checkpoint = await client.read_thread(child_thread_id)
+                        execution_recovery = self._execution_recovery(checkpoint)
+                        recovery_status = str(
+                            (execution_recovery or {}).get("status") or ""
                         )
-                        if matching_active_turn:
-                            operation_id = operation_id or runtime.operation_id
-                            active_turn_id = runtime_turn_id
-                            if status not in {"pausing", "cancelling"}:
-                                status = (
-                                    "awaiting_approval"
-                                    if runtime.phase == "waiting_approval"
-                                    else "running"
-                                )
-                        else:
-                            active_turn_id = None
-                            if status in ACTIVE_CHILD_TASK_STATUSES:
-                                runtime_recovery_required = True
-                                runtime_recovery_reason = (
-                                    "持久化任务没有匹配的活动 Turn；已停止按旧 Turn 占用并发槽，"
-                                    "请检查任务状态后再控制或重试。"
-                                )
+                        if execution_recovery:
+                            recovery_turn_id = str(
+                                execution_recovery.get("turn_id")
+                                or execution_recovery.get("turnId")
+                                or ""
+                            )
+                            if (
+                                status == "paused"
+                                or recovery_status
+                                in {"waiting_for_continue", "needs_reconciliation"}
+                            ) and recovery_turn_id:
+                                active_turn_id = recovery_turn_id
+
+                    if status != "queued":
+                        runtime = await client.get_runtime_status(child_thread_id)
+                        persisted_terminal = status in {
+                            "completed",
+                            "failed",
+                            "cancelled",
+                            "step_limit",
+                            "paused",
+                        }
+                        if not persisted_terminal:
+                            phase = runtime.phase
+                            expected_turn_id = str(active_turn_id or "")
+                            runtime_turn_id = str(runtime.turn_id or "")
+                            matching_active_turn = (
+                                bool(expected_turn_id)
+                                and runtime_turn_id == expected_turn_id
+                                and runtime.phase in ACTIVE_CHILD_RUNTIME_PHASES
+                            )
+                            if matching_active_turn:
+                                operation_id = operation_id or runtime.operation_id
+                                active_turn_id = runtime_turn_id
+                                if status not in {"pausing", "cancelling"}:
+                                    status = (
+                                        "awaiting_approval"
+                                        if runtime.phase == "waiting_approval"
+                                        else "running"
+                                    )
+                            else:
+                                active_turn_id = None
+                                if (
+                                    status in ACTIVE_CHILD_TASK_STATUSES
+                                    and recovery_status
+                                    not in {
+                                        "waiting_for_continue",
+                                        "needs_reconciliation",
+                                    }
+                                ):
+                                    runtime_recovery_required = True
+                                    runtime_recovery_reason = (
+                                        "持久化任务没有匹配的活动 Turn；已停止按旧 Turn 占用并发槽，"
+                                        "请检查任务状态后再控制或重试。"
+                                    )
                 except Exception:
                     logger.debug(
                         "Unable to read child runtime %s",
@@ -2200,6 +2533,11 @@ class SessionManager:
                     "status": status,
                     "phase": phase,
                     "turn_id": active_turn_id,
+                    "execution_recovery": execution_recovery,
+                    "execution_recovery_required": str(
+                        (execution_recovery or {}).get("status") or ""
+                    )
+                    in {"waiting_for_continue", "needs_reconciliation"},
                     "operation_id": operation_id,
                     "operation_attempt": child_task_state.get("attempt") or 1,
                     "attempt_kind": child_task_state.get("attempt_kind"),
@@ -2228,7 +2566,8 @@ class SessionManager:
                         and not session.get("process_online", False)
                         and client is None
                     ),
-                    "recovery_reason": runtime_recovery_reason,
+                    "recovery_reason": runtime_recovery_reason
+                    or (execution_recovery or {}).get("reason"),
                     "last_turn_status": session.get("last_turn_status"),
                     "last_turn_error": session.get("last_turn_error"),
                     "last_turn_prompt": session.get("summary"),
@@ -2244,11 +2583,7 @@ class SessionManager:
                     ],
                     "reports": report_list,
                     "next_cursor": child_task_state.get("next_cursor") or 0,
-                    "latest_report": (
-                        report_list[-1]
-                        if report_list
-                        else None
-                    ),
+                    "latest_report": (report_list[-1] if report_list else None),
                     "started_at_ms": child_task_state.get("started_at_ms"),
                     "finished_at_ms": child_task_state.get("finished_at_ms"),
                     "duration_ms": child_task_state.get("duration_ms"),
@@ -3672,7 +4007,10 @@ class SessionManager:
                 parent_thread_id, project_id
             )
         except Exception:
-            logger.warning("Unable to check parent Session control before child action", exc_info=True)
+            logger.warning(
+                "Unable to check parent Session control before child action",
+                exc_info=True,
+            )
             session_state = {"status": "unknown"}
         if session_state.get("status") != "running" and (
             control_source == "main_agent" or action != "cancel"
@@ -3681,8 +4019,9 @@ class SessionManager:
                 "action": action,
                 "outcome": "skipped",
                 "error_reasons": {
-                    str(request.get("child_thread_id") or ""):
-                        "parent Session is frozen; continue it before this action"
+                    str(
+                        request.get("child_thread_id") or ""
+                    ): "parent Session is frozen; continue it before this action"
                 },
             }
             self._queue_child_control_outcome(
@@ -3849,15 +4188,10 @@ class SessionManager:
                     continue
                 if (
                     action == "resume"
-                    and status == "queued"
-                    and child.get("control_request_id") == control_event_id
-                ):
-                    replayed_ids.append(child_thread_id)
-                    continue
-                if (
-                    action == "resume"
                     and status in {"running", "in_progress", "awaiting_approval"}
                     and child.get("control_request_id") == control_event_id
+                    and str((child.get("execution_recovery") or {}).get("status") or "")
+                    != "waiting_for_continue"
                 ):
                     replayed_ids.append(child_thread_id)
                     continue
@@ -3987,23 +4321,89 @@ class SessionManager:
                     )
                     applied = True
                 elif action == "resume":
-                    if status != "paused":
+                    if status not in {
+                        "paused",
+                        "queued",
+                        "running",
+                        "in_progress",
+                        "awaiting_approval",
+                        "failed",
+                    }:
                         skipped_ids.append(child_thread_id)
                         continue
                     client = await self.get_client_for_thread(
                         child_thread_id, project_id
                     )
-                    await client.child_task_action(
-                        child_thread_id,
-                        parent_thread_id,
-                        operation_id,
-                        int(child.get("operation_attempt") or 1),
-                        "resume",
-                        request_id=control_event_id,
-                        control_source=control_source,
-                    )
-                    applied = True
-                    should_drain_child_queue = True
+                    checkpoint = await client.read_thread(child_thread_id)
+                    recovery = self._execution_recovery(checkpoint)
+                    recovery_status = str((recovery or {}).get("status") or "")
+                    if recovery_status == "needs_reconciliation":
+                        failed_ids.append(child_thread_id)
+                        failure_reasons[child_thread_id] = str(
+                            (recovery or {}).get("reason") or "工具执行结果需要核对"
+                        )[:512]
+                        continue
+                    if recovery_status == "waiting_for_continue":
+                        recovery_turn_id = str(
+                            (recovery or {}).get("turn_id")
+                            or (recovery or {}).get("turnId")
+                            or ""
+                        )
+                        recovery_checkpoint_seq = _nonnegative_int(
+                            (recovery or {}).get("checkpoint_seq")
+                            or (recovery or {}).get("checkpointSeq")
+                        )
+                        if not recovery_turn_id or recovery_checkpoint_seq < 1:
+                            failed_ids.append(child_thread_id)
+                            failure_reasons[child_thread_id] = (
+                                "执行检查点身份不完整，请刷新子任务状态"
+                            )
+                            continue
+                        await client.child_task_action(
+                            child_thread_id,
+                            parent_thread_id,
+                            operation_id,
+                            int(child.get("operation_attempt") or 1),
+                            "resume",
+                            request_id=control_event_id,
+                            turn_id=recovery_turn_id,
+                            control_source=control_source,
+                        )
+                        await self.resume_execution_turn(
+                            child_thread_id,
+                            recovery_turn_id,
+                            recovery_checkpoint_seq,
+                            control_event_id,
+                            project_id,
+                            parent_thread_id=parent_thread_id,
+                            client=client,
+                        )
+                        applied = True
+                    elif recovery_status == "running":
+                        self._track_resumed_execution(
+                            client,
+                            child_thread_id,
+                            project_id,
+                            str((recovery or {}).get("turn_id") or ""),
+                            parent_thread_id,
+                        )
+                        applied = True
+                    elif status == "paused":
+                        await client.child_task_action(
+                            child_thread_id,
+                            parent_thread_id,
+                            operation_id,
+                            int(child.get("operation_attempt") or 1),
+                            "resume",
+                            request_id=control_event_id,
+                            control_source=control_source,
+                        )
+                        applied = True
+                        should_drain_child_queue = True
+                    elif child.get("control_request_id") == control_event_id:
+                        replayed_ids.append(child_thread_id)
+                    else:
+                        skipped_ids.append(child_thread_id)
                 elif action == "assign":
                     prompt = request.get("prompt")
                     if (

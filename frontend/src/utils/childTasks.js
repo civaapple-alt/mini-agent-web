@@ -37,9 +37,41 @@ const collapsedChildTaskStatuses = new Set(['completed', 'cancelled']);
 const runningChildTaskStatuses = new Set(['running', 'in_progress', 'pausing', 'cancelling']);
 const attentionChildTaskStatuses = new Set(['awaiting_approval', 'paused', 'failed', 'step_limit', 'not_started']);
 
+export function getChildExecutionRecovery(task) {
+  const recovery = task?.execution_recovery || task?.executionRecovery;
+  return recovery && typeof recovery === 'object' && !Array.isArray(recovery)
+    ? recovery
+    : null;
+}
+
+export function getChildExecutionRecoveryStatus(task) {
+  return getChildExecutionRecovery(task)?.status || '';
+}
+
+export function getChildExecutionResumeRequestId(task) {
+  const recovery = getChildExecutionRecovery(task);
+  const turnId = recovery?.turn_id || recovery?.turnId;
+  const checkpointSeq = recovery?.checkpoint_seq ?? recovery?.checkpointSeq;
+  const parsedCheckpointSeq = Number(checkpointSeq);
+  if (
+    typeof turnId !== 'string'
+    || !turnId
+    || !Number.isSafeInteger(parsedCheckpointSeq)
+    || parsedCheckpointSeq < 1
+  ) {
+    return null;
+  }
+  return `child-turn-resume:${turnId}:${parsedCheckpointSeq}`;
+}
+
 function childTaskPriority(task) {
   const status = getChildTaskStatus(task);
-  if (task.recovery_required || attentionChildTaskStatuses.has(status)) return 0;
+  const recoveryStatus = getChildExecutionRecoveryStatus(task);
+  if (
+    task.recovery_required
+    || ['waiting_for_continue', 'needs_reconciliation'].includes(recoveryStatus)
+    || attentionChildTaskStatuses.has(status)
+  ) return 0;
   if (runningChildTaskStatuses.has(status)) return 1;
   if (status === 'queued' || status === 'pending' || status === 'starting') return 2;
   return 3;
@@ -104,9 +136,16 @@ export function isCollapsedChildTask(task) {
 export function getChildTaskCounts(children = []) {
   return (Array.isArray(children) ? children : []).reduce((counts, child) => {
     const status = getChildTaskStatus(child);
-    if (collapsedChildTaskStatuses.has(status)) {
+    const recoveryStatus = getChildExecutionRecoveryStatus(child);
+    if (['waiting_for_continue', 'needs_reconciliation'].includes(recoveryStatus)) {
+      counts.needsAttention += 1;
+    } else if (collapsedChildTaskStatuses.has(status)) {
       counts.finished += 1;
-    } else if (child.recovery_required || attentionChildTaskStatuses.has(status)) {
+    } else if (
+      child.recovery_required
+      || ['waiting_for_continue', 'needs_reconciliation'].includes(recoveryStatus)
+      || attentionChildTaskStatuses.has(status)
+    ) {
       counts.needsAttention += 1;
     } else if (runningChildTaskStatuses.has(status)) {
       counts.running += 1;

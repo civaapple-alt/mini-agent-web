@@ -232,6 +232,34 @@ export const threadApi = {
     return res.json();
   },
 
+  async readTurn(threadId, turnId, options = {}) {
+    const res = await request(
+      `/api/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(turnId)}`,
+      requestSignal(options),
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to read Turn ${turnId}`);
+    return res.json();
+  },
+
+  async resumeTurn(threadId, turnId, checkpointSeq, requestId, options = {}) {
+    const res = await request(
+      `/api/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(turnId)}/resume`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checkpoint_seq: checkpointSeq, request_id: requestId }),
+        ...requestSignal(options),
+      },
+      options.projectId,
+    );
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || `Failed to resume Turn ${turnId}`);
+    }
+    return res.json();
+  },
+
   async listThreadItems(threadId, options = {}) {
     const params = new URLSearchParams();
     if (options.turnId) params.set('turn_id', options.turnId);

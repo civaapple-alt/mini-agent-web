@@ -16,6 +16,7 @@ import {
   formatChildTaskTimestamp,
   getChildTaskPhaseLabel,
   getChildTaskStatus,
+  getChildExecutionResumeRequestId,
   getLatestChildTaskReport,
 } from '../utils/childTasks';
 
@@ -107,6 +108,14 @@ function getTaskResultText(result) {
 }
 
 function isRunning(checkpoint, child) {
+  const recovery = checkpoint?.execution_recovery
+    || checkpoint?.executionRecovery
+    || child.execution_recovery
+    || child.executionRecovery;
+  if (['waiting_for_continue', 'needs_reconciliation', 'settled'].includes(recovery?.status)) {
+    return false;
+  }
+  if (recovery?.status === 'running') return true;
   const status = String(child.status || '').toLowerCase();
   if (ACTIVE_CHILD_STATUSES.has(status)) return true;
   if (QUEUED_CHILD_STATUSES.has(status)
@@ -150,6 +159,7 @@ export default function ChildSessionViewer({
   child,
   projectId,
   onBack,
+  onControl,
 }) {
   const childProjectId = child.project_id || projectId;
   const [checkpoint, setCheckpoint] = useState(null);
@@ -163,6 +173,8 @@ export default function ChildSessionViewer({
   const [liveEvents, setLiveEvents] = useState([]);
   const [replayHasGap, setReplayHasGap] = useState(false);
   const [replayError, setReplayError] = useState(null);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryError, setRecoveryError] = useState('');
   const requestRef = useRef(null);
   const checkpointRef = useRef(null);
   const mountedRef = useRef(false);
@@ -379,10 +391,18 @@ export default function ChildSessionViewer({
     return indexByTurn;
   }, [messages]);
   const status = getChildTaskStatus(child);
+  const executionRecovery = checkpoint?.execution_recovery
+    || checkpoint?.executionRecovery
+    || child.execution_recovery
+    || child.executionRecovery
+    || null;
+  const recoveryStatus = executionRecovery?.status || '';
+  const recoveryWaiting = recoveryStatus === 'waiting_for_continue';
+  const needsReconciliation = recoveryStatus === 'needs_reconciliation';
   const queued = QUEUED_CHILD_STATUSES.has(status);
   const phase = getChildTaskPhaseLabel(child);
   const failure = checkpoint?.last_turn_error || checkpoint?.session?.last_turn_error;
-  const failed = !running && (['failed', 'step_limit'].includes(status) || ['failed', 'error'].includes(String(
+  const failed = !running && !recoveryWaiting && !needsReconciliation && (['failed', 'step_limit'].includes(status) || ['failed', 'error'].includes(String(
     checkpoint?.last_turn_status || checkpoint?.session?.last_turn_status || '',
   ).toLowerCase()));
   const latestReport = getLatestChildTaskReport(child);
@@ -406,6 +426,38 @@ export default function ChildSessionViewer({
   const finalReplyFallback = hasFinalTurnReply ? null : getTaskResultText(child.result);
   const showFinalReplyFallback = !running && !queued && !failed && Boolean(finalReplyFallback);
   const failureDetail = failure || child.error || child.operation_error;
+
+  const resumeExecution = async () => {
+    const turnId = executionRecovery?.turn_id || executionRecovery?.turnId;
+    const checkpointSeq = Number(
+      executionRecovery?.checkpoint_seq ?? executionRecovery?.checkpointSeq,
+    );
+    if (!onControl || !turnId || !Number.isSafeInteger(checkpointSeq) || checkpointSeq < 1) {
+      setRecoveryError('执行检查点信息不完整，请刷新子任务状态。');
+      return;
+    }
+    setRecoveryBusy(true);
+    setRecoveryError('');
+    try {
+      await onControl(child, 'resume', {
+        requestId: getChildExecutionResumeRequestId(child)
+          || `child-turn-resume:${turnId}:${checkpointSeq}`,
+      });
+      await refresh();
+    } catch (cause) {
+      setRecoveryError(cause?.message || '继续子任务失败');
+      await refresh({ quiet: true });
+    } finally {
+      setRecoveryBusy(false);
+    }
+  };
+
+  const showExecutionActivity = () => {
+    const transcript = transcriptRef.current;
+    if (!transcript) return;
+    transcript.scrollTop = transcript.scrollHeight;
+    pinnedToBottomRef.current = true;
+  };
 
   const loadOlder = async () => {
     if (!olderCursorRef.current || loadingOlder || requestRef.current) return;
@@ -453,7 +505,13 @@ export default function ChildSessionViewer({
             {child.title || child.child_thread_id}
           </strong>
           <span className={`child-task-status ${running ? 'running' : status}`}>
-            {running ? '运行中' : (childTaskStatusLabels[status] || status)}
+            {running
+              ? '运行中'
+              : recoveryWaiting
+                ? '停滞待继续'
+                : needsReconciliation
+                  ? '工具结果待核对'
+                  : (childTaskStatusLabels[status] || status)}
           </span>
         </div>
         <button
@@ -472,6 +530,10 @@ export default function ChildSessionViewer({
         <div className="child-session-overview-heading">
           <strong>{running
             ? '子代理正在执行'
+            : recoveryWaiting
+              ? '执行已停滞，等待继续'
+              : needsReconciliation
+                ? '工具结果需要核对'
             : queued
               ? '等待调度'
               : status === 'step_limit'
@@ -501,6 +563,39 @@ export default function ChildSessionViewer({
           <div className="child-session-final-error">{failureDetail}</div>
         )}
       </section>
+
+      {(recoveryWaiting || needsReconciliation) && (
+        <div className="child-session-view-warning" role="status">
+          <div>
+            <strong>{recoveryWaiting ? '已保存最近执行进度' : '存在结果未知的工具调用'}</strong>
+            <span>
+              {executionRecovery?.reason
+                || (recoveryWaiting
+                  ? '继续后会从该检查点接续同一个 Turn。'
+                  : '先核对子会话中的工具活动，确认外部副作用后再决定如何继续。')}
+            </span>
+            {executionRecovery?.last_progress_ms && (
+              <time>最近进展 {formatChildTaskTimestamp(executionRecovery.last_progress_ms)}</time>
+            )}
+          </div>
+          {recoveryWaiting && onControl && (
+            <button
+              type="button"
+              className="btn-action-small"
+              disabled={recoveryBusy}
+              onClick={() => void resumeExecution()}
+            >
+              {recoveryBusy ? '正在继续…' : '继续当前 Turn'}
+            </button>
+          )}
+          {needsReconciliation && (
+            <button type="button" className="btn-action-small" onClick={showExecutionActivity}>
+              查看执行记录
+            </button>
+          )}
+        </div>
+      )}
+      {recoveryError && <div className="child-session-view-error" role="alert">{recoveryError}</div>}
 
       {error && <div className="child-session-view-error" role="alert">{error}</div>}
       {replayHasGap && (
@@ -536,7 +631,13 @@ export default function ChildSessionViewer({
           <div className="child-session-empty">正在加载子代理消息流…</div>
         ) : messages.length === 0 && !showFinalReplyFallback ? (
           <div className="child-session-empty">
-            <strong>{running ? '正在等待子代理的首条活动' : '暂无子代理活动'}</strong>
+            <strong>{running
+              ? '正在等待子代理的首条活动'
+              : recoveryWaiting
+                ? '执行进度已保存，等待继续'
+                : needsReconciliation
+                  ? '等待核对工具执行结果'
+                  : '暂无子代理活动'}</strong>
             <span>这里只显示子 Session 自己的活动，不会回填父会话 checkpoint 内容；父 checkpoint 只作为模型上下文。</span>
           </div>
         ) : (

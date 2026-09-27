@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { KeyRound, Plus, RefreshCw, Save, Sparkles, Trash2, X } from 'lucide-react';
 import { api } from '../api';
 import './ModelSettingsPanel.css';
@@ -138,6 +138,9 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
   const [testModelId, setTestModelId] = useState('');
   const [connectionMessage, setConnectionMessage] = useState('');
   const [confirmation, setConfirmation] = useState(null);
+  const [providerMenuOpen, setProviderMenuOpen] = useState(false);
+  const providerMenuRef = useRef(null);
+  const providerMenuButtonRef = useRef(null);
 
   const selectedProvider = catalog.providers.find((provider) => provider.id === selectedProviderId) || null;
   const providerDraftDirty = providerIsNew
@@ -206,6 +209,27 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
     ));
     setConnectionMessage('');
   }, [selectedProviderId, catalog.providers]);
+
+  useEffect(() => {
+    if (!providerMenuOpen) return undefined;
+    const closeWhenClickedOutside = (event) => {
+      if (!providerMenuRef.current?.contains(event.target)) {
+        setProviderMenuOpen(false);
+      }
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') {
+        setProviderMenuOpen(false);
+        providerMenuButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', closeWhenClickedOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeWhenClickedOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [providerMenuOpen]);
 
   const runMutation = async (operation, fields) => {
     setSaving(true);
@@ -495,13 +519,44 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
           <button type="button" className="model-icon-button" onClick={() => void loadCatalog()} disabled={loading} title="刷新">
             <RefreshCw size={15} />
           </button>
-          <div className="model-add-menu">
-            <button type="button" className="model-primary-button" disabled={saving}>
+          <div
+            className="model-add-menu"
+            ref={providerMenuRef}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) {
+                setProviderMenuOpen(false);
+              }
+            }}
+          >
+            <button
+              type="button"
+              className="model-primary-button"
+              ref={providerMenuButtonRef}
+              aria-expanded={providerMenuOpen}
+              aria-controls="model-provider-kind-options"
+              onClick={() => setProviderMenuOpen((open) => !open)}
+              disabled={saving}
+            >
               <Plus size={15} /> 添加供应商
             </button>
-            <div className="model-add-menu-options">
+            <div
+              id="model-provider-kind-options"
+              className={`model-add-menu-options${providerMenuOpen ? ' open' : ''}`}
+              role="group"
+              aria-label="选择供应商类型"
+            >
               {PROVIDER_KINDS.map(([kind, name, id, baseUrl]) => (
-                <button type="button" key={kind} onClick={() => requestProviderDraft(kind, name, id, baseUrl)}>{name}</button>
+                <button
+                  type="button"
+                  key={kind}
+                  onClick={() => {
+                    setProviderMenuOpen(false);
+                    providerMenuButtonRef.current?.focus();
+                    requestProviderDraft(kind, name, id, baseUrl);
+                  }}
+                >
+                  {name}
+                </button>
               ))}
             </div>
           </div>

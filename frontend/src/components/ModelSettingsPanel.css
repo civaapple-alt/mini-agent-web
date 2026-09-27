@@ -86,8 +86,7 @@
   background: var(--bg-surface);
   box-shadow: 0 10px 26px rgb(0 0 0 / 22%);
 }
-.model-add-menu:focus-within .model-add-menu-options,
-.model-add-menu:hover .model-add-menu-options { display: grid; }
+.model-add-menu-options.open { display: grid; }
 .model-add-menu-options button { border: 0; border-radius: 4px; padding: 8px; background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; }
 .model-add-menu-options button:hover { background: var(--bg-card-hover); }
 

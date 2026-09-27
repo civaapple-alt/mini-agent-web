@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Show a bounded final-result preview in completed child task rows and point the
+  existing child Session action to the full result.
 - Mark Sessions that need attention with a small notification icon in the
   existing sidebar list. Selecting the row still opens the same Session view.
 - Keep Context-only checkpoint refreshes from making older Sessions appear

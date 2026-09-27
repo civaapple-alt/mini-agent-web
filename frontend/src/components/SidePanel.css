@@ -282,6 +282,10 @@
 .child-task-report { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-secondary); }
 .child-task-report > span:first-child { color: var(--text-muted); }
 .child-task-report time { margin-left: 6px; color: var(--text-muted); font-family: var(--font-mono); }
+.child-task-result { display: flex; min-width: 0; flex-direction: column; gap: 3px; margin: 0; color: var(--text-secondary); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+.child-task-result > span:first-child, .child-task-result > small { color: var(--text-muted); }
+.child-task-result > span:nth-child(2) { white-space: pre-wrap; }
+.child-task-result > small { font-size: inherit; }
 .child-task-error { grid-column: 1 / -1; color: var(--text-danger, #dc2626); font-size: 10px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .child-task-actions { padding-top: 6px; border-top: 1px solid var(--border-subtle); }
 .child-task-actions > summary { width: fit-content; color: var(--text-muted); font-size: 10px; cursor: pointer; }

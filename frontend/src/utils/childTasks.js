@@ -99,6 +99,8 @@ const childTaskAttemptLabels = {
   follow_up: '后续委托',
 };
 
+const MAX_CHILD_TASK_RESULT_PREVIEW_CHARS = 240;
+
 function currentAttemptKind(task) {
   return task?.attempt_kind || task?.attemptKind
     || task?.operation_attempt_kind || task?.operationAttemptKind || null;
@@ -218,6 +220,18 @@ export function getChildTaskPhaseLabel(task) {
 
 function nonEmptyText(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+export function getChildTaskResultPreview(task) {
+  if (getChildTaskStatus(task) !== 'completed') return null;
+  const result = nonEmptyText(task?.operation_result);
+  if (!result) return null;
+
+  const characters = Array.from(result);
+  return {
+    text: characters.slice(0, MAX_CHILD_TASK_RESULT_PREVIEW_CHARS).join(''),
+    truncated: characters.length > MAX_CHILD_TASK_RESULT_PREVIEW_CHARS,
+  };
 }
 
 function reportText(report) {

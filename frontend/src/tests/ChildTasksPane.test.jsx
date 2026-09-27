@@ -108,6 +108,61 @@ describe('ChildTasksPane', () => {
     expect(container.querySelector('.child-task-duration').textContent).toContain('2.4s');
   });
 
+  it('shows a bounded result preview for the completed attempt and opens its child Session', () => {
+    const onOpenThread = vi.fn();
+    const { container } = render(
+      <ChildTasksPane
+        projectId="memory-card"
+        onOpenThread={onOpenThread}
+        children={[
+          {
+            operation_id: 'operation-completed',
+            child_thread_id: 'child-completed',
+            title: 'Completed review',
+            status: 'completed',
+            operation_attempt: 2,
+            child_session_available: true,
+            operation_result: '结论'.repeat(150),
+            lifecycle: [
+              { status: 'queued', attempt: 1 },
+              { status: 'failed', attempt: 1 },
+              { status: 'queued', attempt: 2, attempt_kind: 'retry' },
+              { status: 'completed', attempt: 2, attempt_kind: 'retry' },
+            ],
+          },
+          {
+            operation_id: 'operation-running',
+            child_thread_id: 'child-running',
+            title: 'Running retry',
+            status: 'running',
+            operation_attempt: 2,
+            operation_result: '旧 attempt 的结果',
+          },
+        ]}
+        loading={false}
+        error={null}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '显示已结束任务（1）' }));
+    const completedRow = [...container.querySelectorAll('.child-task-row')]
+      .find((row) => row.textContent.includes('Completed review'));
+    fireEvent.click(completedRow.querySelector('.child-task-summary'));
+
+    const preview = completedRow.querySelector('.child-task-result');
+    expect(preview.getAttribute('aria-label')).toBe('本轮最终结果预览');
+    expect(Array.from(preview.querySelectorAll('span')[1].textContent)).toHaveLength(241);
+    expect(preview.textContent).toContain('预览已截断');
+    expect(completedRow.querySelector('.child-task-meta').textContent).toContain('重试 · 第 2 轮');
+    fireEvent.click(screen.getByRole('button', { name: '查看结果' }));
+    expect(onOpenThread).toHaveBeenCalledWith('child-completed', 'memory-card');
+
+    const runningRow = [...container.querySelectorAll('.child-task-row')]
+      .find((row) => row.textContent.includes('Running retry'));
+    fireEvent.click(runningRow.querySelector('.child-task-summary'));
+    expect(runningRow.querySelector('.child-task-result')).toBeNull();
+  });
+
   it('prioritizes running work over queued work and shows the current report', () => {
     const { container } = render(
       <ChildTasksPane

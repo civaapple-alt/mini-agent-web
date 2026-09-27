@@ -13,6 +13,7 @@ import {
   getChildExecutionRecovery,
   getChildExecutionRecoveryStatus,
   getChildExecutionResumeRequestId,
+  getChildTaskResultPreview,
   getLatestChildTaskReport,
   isCollapsedChildTask,
   orderChildTasksForRuntime,
@@ -50,6 +51,7 @@ function ChildTaskRow({
   const failureDetail = child.error || child.operation_error || child.last_turn_error;
   const waitingReason = getChildTaskWaitingReason(child);
   const latestReport = getLatestChildTaskReport(child);
+  const resultPreview = getChildTaskResultPreview(child);
   const attempts = getChildTaskAttemptGroups(child);
   const currentAttempt = Number.isInteger(child.operation_attempt)
     ? child.operation_attempt
@@ -82,6 +84,9 @@ function ChildTaskRow({
   const retryable = !executionRecoveryPending && ['failed', 'cancelled', 'step_limit'].includes(status);
   const pendingFollowUp = child.pending_follow_up;
   const title = child.title || child.child_thread_id || '子代理任务';
+  const canViewChildSession = Boolean(
+    onOpenThread && child.child_thread_id && child.child_session_available === true,
+  );
   const activity = child.recovery_required && !waitingForExecutionResume
     ? child.recovery_reason || '等待子 Session 恢复'
     : waitingForExecutionResume
@@ -143,15 +148,15 @@ function ChildTaskRow({
           )}
           <ChevronDown size={14} className="child-task-expand-icon" aria-hidden="true" />
         </button>
-        {onOpenThread && child.child_thread_id && child.child_session_available === true && (
+        {canViewChildSession && (
           <button
             type="button"
             className="btn-action-small child-task-open"
             onClick={() => onOpenThread(child.child_thread_id, child.project_id || projectId)}
-            title="在子智能体标签中查看子会话活动"
+            title={resultPreview ? '在子智能体标签中查看完整结果和会话活动' : '在子智能体标签中查看子会话活动'}
           >
             <ExternalLink size={12} />
-            <span>查看</span>
+            <span>{resultPreview ? '查看结果' : '查看'}</span>
           </button>
         )}
         {waitingForExecutionResume && onControl && (
@@ -232,6 +237,17 @@ function ChildTaskRow({
             <div className={`child-task-follow-up ${pendingFollowUp.status}`}>
               {pendingFollowUp.status === 'blocked' ? '后续指令受阻，重试成功后继续' : '已有一条后续指令排队'}
               {pendingFollowUp.prompt && <span title={pendingFollowUp.prompt}>{pendingFollowUp.prompt}</span>}
+            </div>
+          )}
+          {resultPreview && (
+            <div className="child-task-result" role="group" aria-label="本轮最终结果预览">
+              <span>本轮结果：</span>
+              <span>{resultPreview.text}{resultPreview.truncated ? '…' : ''}</span>
+              {resultPreview.truncated && (
+                <small>{canViewChildSession
+                  ? '预览已截断；点击“查看结果”打开子会话查看完整回复。'
+                  : '预览已截断；子会话当前不可用，无法查看完整回复。'}</small>
+              )}
             </div>
           )}
           {latestReport && (

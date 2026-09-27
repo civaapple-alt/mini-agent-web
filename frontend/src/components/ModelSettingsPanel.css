@@ -188,6 +188,9 @@
 .model-chip-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .model-chip-list button { padding: 6px 9px; border: 1px solid var(--border-color); border-radius: 6px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 11px; cursor: pointer; }
 .model-chip-list button.active { border-color: var(--border-focus); background: var(--bg-card-hover); color: var(--text-primary); }
+.model-chip-list button:disabled { cursor: not-allowed; opacity: .62; }
+.model-chip-list button.locked { display: inline-flex; align-items: center; gap: 5px; }
+.model-capability-hint { display: block; margin-top: 7px; color: var(--text-muted); font-size: 11px; line-height: 1.45; }
 .model-reasoning-level-editor { display: flex; align-items: center; gap: 7px; margin-top: 8px; }
 .model-reasoning-level-editor input { flex: 1; }
 .model-reasoning-level-editor .model-secondary-button { flex: 0 0 auto; }

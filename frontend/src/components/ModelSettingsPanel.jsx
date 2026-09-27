@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { KeyRound, Plus, RefreshCw, Save, Sparkles, Trash2, X } from 'lucide-react';
+import { KeyRound, LockKeyhole, Plus, RefreshCw, Save, Sparkles, Trash2, X } from 'lucide-react';
 import { api } from '../api';
 import './ModelSettingsPanel.css';
 
@@ -143,6 +143,34 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
   const modelEditorBackdropPointerDown = useRef(false);
 
   const selectedProvider = catalog.providers.find((provider) => provider.id === selectedProviderId) || null;
+  const providerSearchSupport = selectedProvider?.webSearchSupport || 'unknown';
+  const providerSearchSetting = providerDraft
+    ? (providerDraft.webSearch ?? null)
+    : (selectedProvider?.webSearch ?? null);
+  const providerSearchConfigDirty = Boolean(providerDraft && selectedProvider && (
+    providerDraft.baseUrl !== selectedProvider.baseUrl
+    || (providerDraft.webSearch ?? null) !== (selectedProvider.webSearch ?? null)
+  ));
+  const modelWebSearchEnabled = Boolean(selectedProvider?.webSearchEnabled)
+    && !providerSearchConfigDirty;
+  const providerSearchHelp = providerIsNew
+    ? '保存供应商后，Host 会识别接口能力；自定义接口可在确认兼容后手动开启。'
+    : providerSearchConfigDirty
+    ? '供应商接口或搜索设置有未保存修改。保存后 Host 会重新判断能力。'
+    : providerSearchSupport === 'unsupported'
+      ? 'Host 判定此接口不支持 Responses API 内置 web_search；此能力只读。'
+      : selectedProvider?.webSearchEnabled
+        ? providerSearchSupport === 'supported'
+          ? 'Host 已识别并启用此接口的内置 web_search。'
+          : '供应商搜索已手动启用；请确认此接口支持 Responses API 内置 web_search。'
+        : providerSearchSupport === 'supported'
+          ? 'Host 已识别此接口支持内置 web_search，但当前设置为关闭。'
+          : 'Host 未能自动确认此接口兼容内置 web_search；当前关闭，确认支持后可手动开启。';
+  const modelWebSearchLockReason = providerSearchConfigDirty
+    ? '保存供应商接口或搜索设置后，才能编辑此模型能力。'
+    : providerSearchSupport === 'unsupported'
+      ? 'Host 已确认此接口不支持内置 web_search，此项只读。'
+      : '先在供应商设置中启用并保存搜索能力，才能编辑此模型能力。';
   const providerDraftDirty = providerIsNew
     ? Boolean(providerDraft)
     : Boolean(providerDraft && selectedProvider
@@ -606,10 +634,12 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
                 <label>Base URL<input value={providerDraft?.baseUrl ?? selectedProvider?.baseUrl ?? ''} onChange={(event) => setProviderDraft({ ...(providerDraft || selectedProvider), baseUrl: event.target.value })} placeholder="Responses API 地址前缀" /></label>
                 <label>API Key<input type="password" value={apiKeyDraft} onChange={(event) => setApiKeyDraft(event.target.value)} placeholder={selectedProvider?.apiKeyConfigured ? '已配置；输入新值可替换' : '输入 API Key'} autoComplete="new-password" /><small>{selectedProvider?.apiKeyConfigured ? 'API Key 已配置，保存的 Key 不会显示。' : '尚未配置 API Key。'}</small></label>
                 <label>供应商搜索能力<select
-                  value={(() => {
-                    const setting = providerDraft?.webSearch ?? selectedProvider?.webSearch ?? null;
-                    return setting === null ? 'auto' : setting ? 'enabled' : 'disabled';
-                  })()}
+                  value={providerSearchSupport === 'unsupported'
+                    ? 'unsupported'
+                    : providerSearchSetting === null
+                      ? 'auto'
+                      : providerSearchSetting ? 'enabled' : 'disabled'}
+                  disabled={providerSearchSupport === 'unsupported' || providerSearchConfigDirty}
                   onChange={(event) => setProviderDraft({
                     ...(providerDraft || selectedProvider),
                     webSearch: event.target.value === 'auto'
@@ -617,10 +647,11 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
                       : event.target.value === 'enabled',
                   })}
                 >
-                  <option value="auto">自动，按接口地址判断</option>
+                  <option value="auto">自动，按接口判断；未知时关闭</option>
                   <option value="enabled">开启</option>
                   <option value="disabled">关闭</option>
-                </select></label>
+                  {providerSearchSupport === 'unsupported' && <option value="unsupported">接口不支持（只读）</option>}
+                </select><small>{providerSearchHelp}</small></label>
               </div>
               <div className="model-provider-save-row">
                 {selectedProvider?.apiKeyConfigured && <button type="button" className="model-text-button" onClick={clearApiKey}>清除 API Key</button>}
@@ -716,7 +747,31 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
               <label>显示名称<input value={modelDraft.name} onChange={(event) => setModelDraft({ ...modelDraft, name: event.target.value, smartManaged: false })} /></label>
               <div className="model-numeric-grid"><label>上下文窗口<input type="number" min="1" value={modelDraft.contextWindow} onChange={(event) => setModelDraft({ ...modelDraft, contextWindow: event.target.value, smartManaged: false })} placeholder="例如 200000" /></label><label>最大输出 Token<input type="number" min="1" value={modelDraft.maxOutputTokens} onChange={(event) => setModelDraft({ ...modelDraft, maxOutputTokens: event.target.value, smartManaged: false })} placeholder="手动填写" /></label></div>
               <fieldset><legend>输入模态</legend><div className="model-chip-list">{MODALITIES.map((item) => <button key={item} type="button" className={modelDraft.inputModalities.includes(item) ? 'active' : ''} onClick={() => toggleValue('inputModalities', item)}>{item}</button>)}</div></fieldset>
-              <fieldset><legend>模型能力</legend><div className="model-chip-list">{CAPABILITIES.map((item) => <button key={item} type="button" className={modelDraft.capabilities.includes(item) ? 'active' : ''} onClick={() => toggleValue('capabilities', item)}>{item}</button>)}</div></fieldset>
+              <fieldset>
+                <legend>模型能力</legend>
+                <div className="model-chip-list">
+                  {CAPABILITIES.map((item) => {
+                    const locked = item === 'web_search' && !modelWebSearchEnabled;
+                    const configured = modelDraft.capabilities.includes(item);
+                    const active = configured && !locked;
+                    return (
+                      <button
+                        key={item}
+                        type="button"
+                        className={`${active ? 'active' : ''}${locked ? ' locked' : ''}`}
+                        onClick={() => toggleValue('capabilities', item)}
+                        disabled={locked}
+                        aria-pressed={active}
+                        title={locked ? modelWebSearchLockReason : undefined}
+                      >
+                        {locked && configured ? `${item}（已配置但未生效）` : item}
+                        {locked && <LockKeyhole size={11} aria-hidden="true" />}
+                      </button>
+                    );
+                  })}
+                </div>
+                {!modelWebSearchEnabled && <small className="model-capability-hint">{modelWebSearchLockReason}</small>}
+              </fieldset>
               <fieldset>
                 <legend>推理等级</legend>
                 <div className="model-chip-list">
@@ -767,7 +822,7 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
               <label>推理参数映射（JSON）<textarea rows="5" value={JSON.stringify(modelDraft.reasoningParameterMap, null, 2)} onChange={(event) => { try { setModelDraft({ ...modelDraft, reasoningParameterMap: JSON.parse(event.target.value), smartManaged: false }); } catch { setModelDraft({ ...modelDraft, reasoningParameterMap: event.target.value, smartManaged: false }); } }} /></label>
               {typeof modelDraft.reasoningParameterMap === 'string' && <span className="model-form-error">请输入合法 JSON 对象</span>}
             </div>
-            <footer><span>{modelDraft.smartManaged ? '本地资料匹配；手动修改后将转为手动管理。' : '模型能力由本地配置决定。'}</span><button type="button" className="model-primary-button" onClick={() => void saveModel()} disabled={saving || !modelDraft.id.trim() || !modelDraft.name.trim() || typeof modelDraft.reasoningParameterMap === 'string'}><Save size={14} />保存模型</button></footer>
+            <footer><span>{modelDraft.smartManaged ? '本地资料匹配；手动修改后将转为手动管理。' : '供应商不支持或未启用的能力会显示为只读。'}</span><button type="button" className="model-primary-button" onClick={() => void saveModel()} disabled={saving || !modelDraft.id.trim() || !modelDraft.name.trim() || typeof modelDraft.reasoningParameterMap === 'string'}><Save size={14} />保存模型</button></footer>
           </div>
         </div>
       )}

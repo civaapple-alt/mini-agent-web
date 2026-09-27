@@ -872,7 +872,7 @@ export default function App() {
         // canonical history is authoritative. Applying the retained suffix
         // afterward could replay an old turn_started over a settled snapshot.
         showToast('事件回放存在缺口，已从最近会话快照恢复。', 'warning', 3500);
-        await loadThreadHistory(threadId, projectId, requestContext);
+        await loadThreadHistory(threadId, projectId, requestContext, { preserveVisible: true });
       }
       if (replay.cursor !== null) {
         eventCursorsRef.current.set(
@@ -889,7 +889,7 @@ export default function App() {
     } catch (err) {
       console.debug('Failed to replay runtime events:', err);
       if (isAbortError(err) || !isCurrentSessionRequest(requestContext)) return;
-      await loadThreadHistory(threadId, projectId, requestContext);
+      await loadThreadHistory(threadId, projectId, requestContext, { preserveVisible: true });
       await loadRuntimeStatus(threadId, projectId, requestContext);
     }
   };
@@ -964,9 +964,10 @@ export default function App() {
     threadId,
     projectId = currentThreadProjectRef.current,
     context = null,
+    { preserveVisible = false } = {},
   ) => {
     const requestContext = context || currentSessionRequest();
-    setIsLoadingHistory(true);
+    if (!preserveVisible) setIsLoadingHistory(true);
     try {
       const [cp, itemEntries] = await Promise.all([
         api.readThread(threadId, { projectId, signal: requestContext.signal }),
@@ -1127,7 +1128,8 @@ export default function App() {
       if (isAbortError(err) || !isCurrentSessionRequest(requestContext)) return;
       console.error(`Failed to load thread ${threadId}:`, err);
       showToast(`加载会话历史失败: ${err.message}`, 'error');
-      setMessages([]);
+      // Failed refreshes must not erase a valid projection already on screen.
+      // Session navigation clears the previous thread before starting this read.
     } finally {
       if (isCurrentSessionRequest(requestContext)) setIsLoadingHistory(false);
     }
@@ -1178,7 +1180,7 @@ export default function App() {
           );
         }
         await Promise.all([
-          loadThreadHistory(threadId, projectId, context),
+          loadThreadHistory(threadId, projectId, context, { preserveVisible: true }),
           loadWorkflows(threadId, projectId, context),
           loadRuntimeStatus(threadId, projectId, context),
           loadPendingApproval(threadId, projectId, context),

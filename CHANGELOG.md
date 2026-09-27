@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep the current conversation visible while runtime recovery reloads its
+  canonical history. A failed snapshot request no longer clears messages already
+  displayed in the selected Session.
 - Show a live elapsed duration on running child task rows and show the processed
   duration at the start of each main conversation Turn. Freeze both displays
   when their execution settles; estimate historical Turn duration from durable

@@ -177,9 +177,6 @@ class SessionManager:
 
         # Runtime system settings
         self._settings: dict[str, Any] = {
-            "host": settings.host,
-            "port": settings.port,
-            "default_mode": "chat",  # chat | plan | goal
             "reasoning_effort": "high",
             "theme": "light",
             "auto_scroll": True,

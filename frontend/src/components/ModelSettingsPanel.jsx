@@ -134,9 +134,8 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
   const [defaults, setDefaults] = useState({ primary: '', reasoning: API_DEFAULT_REASONING, verifier: '' });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [testingConnection, setTestingConnection] = useState(false);
-  const [testModelId, setTestModelId] = useState('');
-  const [connectionMessage, setConnectionMessage] = useState('');
+  const [testingModelKey, setTestingModelKey] = useState('');
+  const [connectionResult, setConnectionResult] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const providerMenuRef = useRef(null);
@@ -203,12 +202,8 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
   }, [hasUnsavedChanges, onDraftChange]);
 
   useEffect(() => {
-    const models = selectedProvider?.models?.filter((model) => model.enabled) || [];
-    setTestModelId((current) => (
-      models.some((model) => model.id === current) ? current : models[0]?.id || ''
-    ));
-    setConnectionMessage('');
-  }, [selectedProviderId, catalog.providers]);
+    setConnectionResult(null);
+  }, [selectedProviderId, providerDraftDirty, catalog.providers]);
 
   useEffect(() => {
     if (!providerMenuOpen) return undefined;
@@ -384,25 +379,27 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
     );
   };
 
-  const testConnection = async () => {
-    if (!selectedProvider || !testModelId) return;
-    setTestingConnection(true);
-    setConnectionMessage('');
+  const testConnection = async (modelId) => {
+    if (!selectedProvider || !modelId) return;
+    const providerId = selectedProvider.id;
+    const modelKey = `${providerId}::${modelId}`;
+    setTestingModelKey(modelKey);
+    setConnectionResult(null);
     try {
       const result = await api.manageModelCatalog('test_connection', {
-        providerId: selectedProvider.id,
-        modelId: testModelId,
+        providerId,
+        modelId,
       });
       const status = result?.connectionTest?.status || 'failed';
       const message = CONNECTION_MESSAGES[status] || CONNECTION_MESSAGES.failed;
-      setConnectionMessage(message);
+      setConnectionResult({ providerId, modelId, status, message });
       onToast?.(message, status === 'succeeded' ? 'success' : 'error');
     } catch (error) {
       const message = error?.message || '连接测试失败，请检查供应商配置。';
-      setConnectionMessage(message.slice(0, 256));
+      setConnectionResult({ providerId, modelId, status: 'failed', message: message.slice(0, 256) });
       onToast?.(message, 'error');
     } finally {
-      setTestingConnection(false);
+      setTestingModelKey('');
     }
   };
 
@@ -614,13 +611,33 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
 
               {!providerIsNew && selectedProvider && (
                 <div className="model-list-section">
-                  <div className="model-list-heading"><h4>模型列表</h4><div className="model-row-actions"><button type="button" className="model-secondary-button" onClick={addSuggestedModel} disabled={!SMART_MATCHES.some((item) => item.provider === selectedProvider.kind)}><Sparkles size={14} />添加本地建议</button><button type="button" className="model-secondary-button" onClick={() => { setModelIndex(null); setModelDraft(emptyModel()); setNewReasoningLevel(''); }}><Plus size={14} />手动添加</button></div></div>
+                  <div className="model-list-heading">
+                    <div className="model-list-title"><h4>模型列表</h4><small>测试连接会发送一次短请求，可能产生供应商费用。</small></div>
+                    <div className="model-row-actions">
+                      <button type="button" className="model-secondary-button" onClick={addSuggestedModel} disabled={!SMART_MATCHES.some((item) => item.provider === selectedProvider.kind)}><Sparkles size={14} />添加本地建议</button>
+                      <button type="button" className="model-secondary-button" onClick={() => { setModelIndex(null); setModelDraft(emptyModel()); setNewReasoningLevel(''); }}><Plus size={14} />手动添加</button>
+                    </div>
+                  </div>
                   {(selectedProvider.models || []).length ? (
                     <div className="model-list">
                       {selectedProvider.models.map((model, index) => (
                         <div className="model-list-row" key={`${model.id}-${index}`}>
-                          <div><strong>{model.name || model.id}</strong><small>{model.id}</small>{model.smartManaged && <span className="model-smart-badge"><Sparkles size={11} />智能匹配</span>}</div>
+                          <div className="model-list-model">
+                            <div className="model-list-model-heading"><strong>{model.name || model.id}</strong><small>{model.id}</small>{model.smartManaged && <span className="model-smart-badge"><Sparkles size={11} />智能匹配</span>}</div>
+                            {connectionResult?.providerId === selectedProvider.id
+                              && connectionResult.modelId === model.id
+                              && <span className={`model-connection-result ${connectionResult.status}`} role="status">{connectionResult.message}</span>}
+                          </div>
                           <div className="model-row-actions">
+                            <button
+                              type="button"
+                              className="model-secondary-button model-test-button"
+                              onClick={() => void testConnection(model.id)}
+                              disabled={Boolean(testingModelKey) || providerDraftDirty || !selectedProvider.apiKeyConfigured || !selectedProvider.baseUrl || !model.enabled}
+                              title={providerDraftDirty ? '请先保存供应商和 API Key。' : '测试连接会发送一次短请求，可能产生供应商费用。'}
+                            >
+                              {testingModelKey === `${selectedProvider.id}::${model.id}` ? '测试中...' : '测试连接'}
+                            </button>
                             <button type="button" className="model-text-button" onClick={() => { setModelIndex(index); setModelDraft(normalizeModel(model)); setNewReasoningLevel(''); }}>编辑</button>
                             <button type="button" className="model-text-button danger" onClick={() => askConfirmation('删除模型？', `将删除模型“${model.name || model.id}”及其默认值引用。`, '删除模型', () => runMutation('delete_model', { providerId: selectedProvider.id, modelId: model.id }))}>删除</button>
                             <label className="model-switch"><input type="checkbox" checked={model.enabled} onChange={() => void runMutation('upsert_model', { providerId: selectedProvider.id, model: { ...model, enabled: !model.enabled } })} /><span /></label>
@@ -629,12 +646,6 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
                       ))}
                     </div>
                   ) : <div className="model-empty-list">尚未配置模型。可从本地建议添加，或手动填写模型 ID。</div>}
-                  <div className="model-connection-test">
-                    <label>测试模型<select value={testModelId} onChange={(event) => setTestModelId(event.target.value)} disabled={!selectedProvider.models?.some((model) => model.enabled)}><option value="">选择模型</option>{selectedProvider.models?.filter((model) => model.enabled).map((model) => <option key={model.id} value={model.id}>{model.name || model.id}</option>)}</select></label>
-                    <button type="button" className="model-secondary-button" onClick={() => void testConnection()} disabled={testingConnection || providerDraftDirty || !selectedProvider.apiKeyConfigured || !selectedProvider.baseUrl || !testModelId}>{testingConnection ? '测试中...' : '测试连接'}</button>
-                    <small>{providerDraftDirty ? '先保存供应商与 API Key，再测试连接。' : '只在点击时发送一次短请求，可能产生供应商费用。'}</small>
-                    {connectionMessage && <span className="model-connection-result" role="status">{connectionMessage}</span>}
-                  </div>
                 </div>
               )}
             </>

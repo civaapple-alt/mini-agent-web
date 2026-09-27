@@ -158,7 +158,6 @@ export default function App() {
   const [userSettings, setUserSettings] = useState({
     access: 'project',
     policy: 'interactive',
-    default_mode: 'chat',
     theme: 'light',
     auto_scroll: true,
     word_wrap: true,

@@ -1137,6 +1137,7 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
             "thread_id": "t-1",
             "turn_id": "turn-1",
             "prompt": "inspect project",
+            "timestamp_ms": 1100,
         },
         {
             "seq": 4,
@@ -1155,13 +1156,37 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
             "status": "step_limit",
             "steps": 8,
             "error": "model request failed: transport error",
+            "timestamp_ms": 1900,
         },
         {
             "seq": 6,
             "kind": "checkpoint",
             "thread_id": "t-1",
             "messages": [{"role": "user", "text": "inspect project"}],
-            "timestamp_ms": 2000,
+            "timestamp_ms": 1900,
+        },
+        {
+            "seq": 7,
+            "kind": "item",
+            "item_id": "context-1",
+            "thread_id": "t-1",
+            "turn_id": None,
+            "item_kind": "context",
+            "timestamp_ms": 3000,
+            "message": {
+                "role": "context",
+                "text": "<world_state>refreshed</world_state>",
+            },
+        },
+        {
+            "seq": 8,
+            "kind": "checkpoint",
+            "thread_id": "t-1",
+            "messages": [
+                {"role": "user", "text": "inspect project"},
+                {"role": "context", "text": "<world_state>refreshed</world_state>"},
+            ],
+            "timestamp_ms": 3000,
         },
     ]
     (session_dir / "session.jsonl").write_text(
@@ -1172,7 +1197,7 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
             {
                 "id": "s-1",
                 "created_at_ms": 1000,
-                "updated_at_ms": 2000,
+                "updated_at_ms": 1900,
                 "turn_count": 1,
                 "last_prompt": "inspect project",
                 # Deliberately stale: the settled record is authoritative.
@@ -1214,6 +1239,7 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     assert listed["data"][0]["last_turn_id"] == "turn-1"
     assert listed["data"][0]["last_turn_steps"] == 8
     assert listed["data"][0]["last_turn_complete"] is False
+    assert listed["data"][0]["updated_at"] == "1970-01-01T00:00:01.900000+00:00"
     assert listed["data"][0]["continuation_mode"] == "continuous"
     history = catalog.read_thread(workspace, "project-1", "t-1")
     assert history["messages"][0]["text"] == "inspect project"
@@ -1224,6 +1250,72 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     assert history["last_turn_status"] == "step_limit"
     assert history["last_turn_error"] == "model request failed: transport error"
     assert history["last_turn_id"] == "turn-1"
+
+
+def test_session_catalog_uses_active_turn_start_over_context_checkpoint(
+    tmp_path, monkeypatch
+):
+    """Context refreshes do not make an old active Turn look newly active."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    session_dir = session_base / "s-active"
+    session_dir.mkdir(parents=True)
+    records = [
+        {
+            "seq": 1,
+            "kind": "session_created",
+            "schema_version": 1,
+            "session_id": "s-active",
+            "timestamp_ms": 1000,
+        },
+        {"seq": 2, "kind": "thread_started", "thread_id": "t-active"},
+        {
+            "seq": 3,
+            "kind": "turn_started",
+            "thread_id": "t-active",
+            "turn_id": "turn-active",
+            "prompt": "continue work",
+            "timestamp_ms": 2500,
+        },
+        {
+            "seq": 4,
+            "kind": "item",
+            "item_id": "context-active",
+            "thread_id": "t-active",
+            "turn_id": None,
+            "item_kind": "context",
+            "timestamp_ms": 3000,
+            "message": {
+                "role": "context",
+                "text": "<world_state>refreshed</world_state>",
+            },
+        },
+        {
+            "seq": 5,
+            "kind": "checkpoint",
+            "thread_id": "t-active",
+            "messages": [
+                {"role": "context", "text": "<world_state>refreshed</world_state>"}
+            ],
+            "timestamp_ms": 3000,
+        },
+    ]
+    (session_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_dir / "summary.json").write_text(
+        json.dumps({"created_at_ms": 1000, "updated_at_ms": 1900}), encoding="utf-8"
+    )
+    monkeypatch.setattr("server.session_catalog._process_alive", lambda _pid: False)
+
+    listed = SessionCatalog().list_sessions(workspace, "project-1")
+
+    assert listed["data"][0]["last_turn_status"] == "in_progress"
+    assert listed["data"][0]["updated_at"] == "1970-01-01T00:00:02.500000+00:00"
 
 
 def test_session_catalog_title_uses_first_prompt_for_multi_turn_history(

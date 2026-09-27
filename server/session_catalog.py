@@ -1441,9 +1441,7 @@ class SessionCatalog:
                 "control_request_id": child_task_operation.get(
                     "operation_control_request_id"
                 ),
-                "control_source": child_task_operation.get(
-                    "operation_control_source"
-                ),
+                "control_source": child_task_operation.get("operation_control_source"),
                 "status": child_task_operation.get("operation_status"),
                 "prompt": child_task_operation.get("operation_prompt"),
                 "group_id": child_task_operation.get("operation_group_id"),
@@ -1520,11 +1518,10 @@ class SessionCatalog:
             else "historical"
         )
         updated_ms = _bounded_int(summary.get("updated_at_ms"))
-        updated_ms = max(updated_ms, latest_turn_timestamp)
-        if latest_checkpoint:
-            updated_ms = max(
-                updated_ms, _bounded_int(latest_checkpoint.get("timestamp_ms"))
-            )
+        # A checkpoint can be rewritten when Gateway synchronizes runtime
+        # context, without any user-visible Session activity. Keep sidebar
+        # recency tied to the latest Turn start/settlement instead.
+        updated_ms = max(updated_ms, latest_turn_timestamp, latest_turn_started_at)
         if latest_turn_id and not latest_turn_settled:
             last_turn_status = "in_progress"
             last_stop_reason = None

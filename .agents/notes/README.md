@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [侧栏活动时间忽略 Context 同步检查点](implemented/bug-fix/2026-09-27-sidebar-activity-ignores-context-checkpoints.zh.md)
 - [运行时恢复失败时保留已显示会话流](implemented/bug-fix/2026-09-27-preserve-thread-history-on-runtime-disconnect.zh.md)
 - [主 Turn 与子任务的实时耗时显示](implemented/bug-fix/2026-09-27-live-turn-and-child-duration.zh.md)
 - [子 Session 活动详情按执行段阅读](implemented/bug-fix/2026-09-27-child-session-detail-reading.zh.md)

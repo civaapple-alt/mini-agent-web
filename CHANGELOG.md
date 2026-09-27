@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep Context-only checkpoint refreshes from making older Sessions appear
+  recently active in the Studio sidebar.
 - Add a project-menu Session Doctor. It inspects Session logs through the App
   Server maintenance command and offers a confirmed, backed-up repair for an
   incomplete final record.

@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Bell,
   Copy,
   Edit2,
   FileText,
@@ -9,6 +10,26 @@ import {
 } from 'lucide-react';
 import { getThreadStatusPresentation } from '../../utils/threadStatus';
 import { formatRelativeTime, parseActivityTime } from '../../utils/relativeTime';
+
+const attentionReasonLabels = {
+  pending_approval: '有待处理的审批',
+  execution_recovery: '执行恢复待确认',
+  turn_failed: '上一轮执行未完成',
+  plan_review_pending: '计划待确认',
+  cleanup_pending: '有待清理项',
+  child_pending_approval: '子任务有待处理的审批',
+  child_task_failed: '子任务失败或达到步数上限',
+  child_report: '子任务有新报告',
+  child_recovery: '子任务恢复待确认',
+};
+
+function getAttentionLabel(reasons) {
+  if (!Array.isArray(reasons) || reasons.length === 0) return '';
+  const labels = [...new Set(reasons)].map(
+    (reason) => attentionReasonLabels[reason] || '有新状态需要留意',
+  );
+  return `需要留意：${labels.join('、')}`;
+}
 
 export default function ThreadRow({
   thread,
@@ -29,6 +50,7 @@ export default function ThreadRow({
   const threadKey = `${thread.project || 'unknown'}:${thread.thread_id}`;
   const relativeTime = formatRelativeTime(thread.updated_at, now);
   const activityTimestamp = parseActivityTime(thread.updated_at);
+  const attentionLabel = getAttentionLabel(thread.attention_reasons);
   const rowTitle = [
     thread.title,
     thread.session_id ? `Session ID: ${thread.session_id}` : null,
@@ -66,6 +88,16 @@ export default function ThreadRow({
       )}
 
       <div className="thread-tail-indicators">
+        {attentionLabel && (
+          <span
+            className="thread-attention-indicator"
+            role="img"
+            aria-label={attentionLabel}
+            title={attentionLabel}
+          >
+            <Bell size={12} />
+          </span>
+        )}
         <button
           className="btn-thread-menu-trigger"
           onClick={(event) => {

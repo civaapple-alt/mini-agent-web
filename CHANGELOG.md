@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Mark Sessions that need attention with a small notification icon in the
+  existing sidebar list. Selecting the row still opens the same Session view.
 - Keep Context-only checkpoint refreshes from making older Sessions appear
   recently active in the Studio sidebar.
 - Add a project-menu Session Doctor. It inspects Session logs through the App

@@ -560,6 +560,16 @@
   flex-shrink: 0;
 }
 
+.thread-attention-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--accent-amber);
+  flex-shrink: 0;
+}
+
 .btn-thread-menu-trigger {
   display: flex;
   align-items: center;

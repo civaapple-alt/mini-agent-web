@@ -2369,39 +2369,9 @@ class SessionManager:
             source_thread_id, resolved_project_id
         )
         if parent_session_path is not None:
-            receipts_path = parent_session_path / "child_report_receipts.json"
-            try:
-                if receipts_path.stat().st_size <= 1024 * 1024:
-                    receipt_data = json.loads(receipts_path.read_text(encoding="utf-8"))
-                    if (
-                        receipt_data.get("version") == 1
-                        and receipt_data.get("session_id") == parent_session_id
-                        and isinstance(receipt_data.get("receipts"), list)
-                    ):
-                        for receipt in receipt_data["receipts"][:4096]:
-                            if not isinstance(receipt, dict):
-                                continue
-                            child_id = receipt.get("child_thread_id")
-                            receipt_operation = receipt.get("operation_id")
-                            attempt_value = receipt.get("attempt")
-                            cursor_value = receipt.get("cursor")
-                            if (
-                                isinstance(child_id, str)
-                                and isinstance(receipt_operation, str)
-                                and isinstance(attempt_value, int)
-                                and isinstance(cursor_value, int)
-                            ):
-                                receipt_cursors[
-                                    (child_id, receipt_operation, attempt_value)
-                                ] = cursor_value
-            except FileNotFoundError:
-                pass
-            except (OSError, ValueError, TypeError):
-                logger.warning(
-                    "Unable to read child report receipts for %s",
-                    source_thread_id,
-                    exc_info=True,
-                )
+            receipt_cursors = session_catalog.child_report_receipt_cursors(
+                parent_session_path, parent_session_id
+            )
         sessions = self.list_project_child_sessions(
             resolved_project_id, parent_session_id
         )

@@ -57,6 +57,9 @@ uv run mini-agent-server-dev
 请求路由。`control/` 中的模块提供所需的 registry 与 broker。不要在这些层新增
 第二套生命周期、授权或 Session history 存储。
 
+`GET /api/threads` 返回的 `attention_reasons` 是侧栏提示用的临时投影，来自 SessionStore
+状态、活动审批和 App Server 子任务报告回执。Gateway 不保存提示的已读状态或任务生命周期。
+
 ## 目录分工
 
 ```text

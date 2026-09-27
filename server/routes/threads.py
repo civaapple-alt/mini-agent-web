@@ -17,6 +17,7 @@ from mini_agent.errors import (
 from pydantic import BaseModel, Field
 
 from server.control.fork_errors import SessionForkConflictError
+from server.session_catalog import session_catalog
 from server.session_doctor import (
     SessionDoctorError,
     inspect_project_sessions,
@@ -27,6 +28,7 @@ from server.session_manager import (
     session_manager,
     to_json_serializable,
 )
+from server.thread_attention import thread_attention_reasons
 from server.thread_titles import is_default_thread_title
 
 router = APIRouter(prefix="/api/threads", tags=["Threads"])
@@ -276,7 +278,8 @@ async def list_threads(
             (str(session["project_id"]), str(session["thread_id"])): session
             for session in session_manager.list_all_project_sessions()
         }
-        for session in session_manager.list_all_project_child_sessions():
+        child_sessions = session_manager.list_all_project_child_sessions()
+        for session in child_sessions:
             catalog_entries[(str(session["project_id"]), str(session["thread_id"]))] = (
                 session
             )
@@ -291,6 +294,96 @@ async def list_threads(
             )
             if not any(existing_tid == tid for _, existing_tid in all_bindings):
                 all_bindings.add((project_id, tid))
+
+        parent_by_session = {
+            (project, str(session.get("session_id"))): (project, thread_id)
+            for (project, thread_id), session in catalog_entries.items()
+            if not session.get("is_child_task") and session.get("session_id")
+        }
+        child_attention_by_parent: dict[tuple[str, str], set[str]] = {}
+        child_report_parents: dict[
+            tuple[str, str], list[tuple[dict[str, Any], dict[str, Any]]]
+        ] = {}
+        pending_approval_keys: set[tuple[str, str]] = set()
+        for approval in session_manager.approval_snapshot().get("pending_requests", []):
+            approval_thread_id = approval.get("thread_id")
+            if not approval_thread_id:
+                continue
+            approval_project_id = str(
+                approval.get("project_id") or session_manager._current_project_id
+            )
+            pending_key = (approval_project_id, str(approval_thread_id))
+            pending_approval_keys.add(pending_key)
+
+        for child in child_sessions:
+            project = str(child.get("project_id") or "")
+            child_state = child.get("child_task_state") or {}
+            child_thread_id = str(child.get("thread_id") or "")
+            parent_session_id = str(child.get("parent_session_id") or "")
+            parent_key = parent_by_session.get((project, parent_session_id))
+            if not parent_key:
+                parent_thread_id = child_state.get("parent_thread_id")
+                candidate = (project, str(parent_thread_id or ""))
+                parent_key = candidate if candidate in all_bindings else None
+            if not parent_key:
+                continue
+
+            reasons = child_attention_by_parent.setdefault(parent_key, set())
+            child_status = str(
+                child_state.get("status") or child.get("last_turn_status") or ""
+            )
+            if child_status in {"failed", "step_limit"}:
+                reasons.add("child_task_failed")
+            if child_status in {
+                "running",
+                "awaiting_approval",
+                "in_progress",
+                "pausing",
+                "cancelling",
+            } and not child.get("process_online"):
+                reasons.add("child_recovery")
+            if (project, child_thread_id) in pending_approval_keys:
+                reasons.add("child_pending_approval")
+            if child_state.get("reports"):
+                child_report_parents.setdefault(parent_key, []).append(
+                    (child, child_state)
+                )
+
+        # Child report delivery is already tracked by App Server receipts.
+        # Read those bounded receipts once per parent to avoid adding another
+        # persisted notification/read state in the Gateway.
+        for parent_key, reports in child_report_parents.items():
+            parent_project, parent_thread_id = parent_key
+            parent = catalog_entries.get(parent_key)
+            parent_session_path = session_manager.session_path_for_thread(
+                parent_thread_id, parent_project
+            )
+            parent_session_id = str(
+                (parent or {}).get("session_id")
+                or (parent_session_path.name if parent_session_path else "")
+            )
+            if parent_session_path is None or not parent_session_id:
+                continue
+            receipt_cursors = session_catalog.child_report_receipt_cursors(
+                parent_session_path, parent_session_id
+            )
+            for child, child_state in reports:
+                child_thread_id = str(child.get("thread_id") or "")
+                operation_id = str(child_state.get("operation_id") or "")
+                attempt = child_state.get("attempt") or 1
+                delivered_cursor = receipt_cursors.get(
+                    (child_thread_id, operation_id, attempt), 0
+                )
+                if any(
+                    isinstance(report.get("cursor"), int)
+                    and not isinstance(report.get("cursor"), bool)
+                    and report["cursor"] > delivered_cursor
+                    for report in child_state.get("reports", [])
+                    if isinstance(report, dict)
+                ):
+                    child_attention_by_parent.setdefault(parent_key, set()).add(
+                        "child_report"
+                    )
 
         enriched_threads: list[dict[str, Any]] = []
         for project_id, tid in sorted(all_bindings):
@@ -350,6 +443,13 @@ async def list_threads(
             ):
                 if field in meta:
                     item[field] = meta[field]
+            item["attention_reasons"] = thread_attention_reasons(
+                item,
+                pending_approval=(project_id, tid) in pending_approval_keys,
+                child_reasons=sorted(
+                    child_attention_by_parent.get((project_id, tid), set())
+                ),
+            )
             enriched_threads.append(item)
 
         enriched_threads.sort(key=_thread_activity_sort_key, reverse=True)
@@ -953,9 +1053,7 @@ async def read_thread(
                     thread_id, project_id
                 )
                 runtime_checkpoint = await runtime_client.read_thread(thread_id)
-                canonical["execution_recovery"] = (
-                    runtime_checkpoint.execution_recovery
-                )
+                canonical["execution_recovery"] = runtime_checkpoint.execution_recovery
             except (RuntimeError, ServerProcessError, AppServerError):
                 # The catalog remains a valid historical projection when the
                 # owning runtime is unavailable. It cannot expose a live
@@ -982,10 +1080,10 @@ async def read_thread(
         return {
             "thread_id": cp.thread_id if cp else thread_id,
             "status": cp.status if cp else "active",
-                "next_turn_number": cp.next_turn_number if cp else 1,
-                "messages": cp.messages if cp else [],
-                "execution_recovery": cp.execution_recovery if cp else None,
-                "metadata": meta,
+            "next_turn_number": cp.next_turn_number if cp else 1,
+            "messages": cp.messages if cp else [],
+            "execution_recovery": cp.execution_recovery if cp else None,
+            "metadata": meta,
             "raw": cp.raw if cp else {},
         }
     except ServerProcessError as err:

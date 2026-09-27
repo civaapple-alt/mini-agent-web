@@ -49,7 +49,7 @@ async def test_gateway_lists_catalog_when_runtime_is_read_only(test_app):
 
 @pytest.mark.asyncio
 async def test_gateway_thread_list_uses_catalog_activity_and_sorts_newest_first(
-    test_app, monkeypatch
+    test_app, monkeypatch, tmp_path
 ):
     now = "2026-09-20T08:00:00+00:00"
     older = "2026-09-19T08:00:00+00:00"
@@ -64,6 +64,7 @@ async def test_gateway_thread_list_uses_catalog_activity_and_sorts_newest_first(
             "goal_status": "none",
             "cleanup_pending": False,
             "resumable": True,
+            "last_turn_status": "failed",
         },
         {
             "project_id": "project-1",
@@ -90,10 +91,38 @@ async def test_gateway_thread_list_uses_catalog_activity_and_sorts_newest_first(
         "goal_status": "none",
         "cleanup_pending": False,
         "resumable": True,
+        "parent_session_id": "s-older",
+        "child_task_state": {
+            "parent_thread_id": "older",
+            "operation_id": "child:old-child",
+            "attempt": 1,
+            "status": "failed",
+            "reports": [{"cursor": 1}, {"cursor": 2}],
+        },
     }
     monkeypatch.setattr(session_manager, "_client", None)
     monkeypatch.setattr(session_manager, "_project_clients", {})
     monkeypatch.setattr(session_manager, "_current_project_id", "project-1")
+    parent_session_path = tmp_path / "s-older"
+    parent_session_path.mkdir()
+    (parent_session_path / "child_report_receipts.json").write_text(
+        '{"version":1,"session_id":"s-older","receipts":['
+        '{"child_thread_id":"old-child","operation_id":"child:old-child",'
+        '"attempt":1,"cursor":1}]}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        session_manager,
+        "session_path_for_thread",
+        lambda *_args: parent_session_path,
+    )
+    monkeypatch.setattr(
+        session_manager,
+        "approval_snapshot",
+        lambda: {
+            "pending_requests": [{"project_id": "project-1", "thread_id": "older"}]
+        },
+    )
     monkeypatch.setattr(session_manager, "live_thread_bindings", list)
     monkeypatch.setattr(
         session_manager, "list_all_project_sessions", lambda: catalog_entries
@@ -131,6 +160,13 @@ async def test_gateway_thread_list_uses_catalog_activity_and_sorts_newest_first(
         child_beyond_sidebar_page["updated_at"],
     ]
     assert [thread["is_child_task"] for thread in threads] == [True, False, True]
+    older_thread = next(thread for thread in threads if thread["thread_id"] == "older")
+    assert older_thread["attention_reasons"] == [
+        "pending_approval",
+        "turn_failed",
+        "child_report",
+        "child_task_failed",
+    ]
 
 
 @pytest.mark.asyncio

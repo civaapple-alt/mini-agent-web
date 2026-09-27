@@ -529,6 +529,48 @@ class SessionCatalog:
             return None
         return path
 
+    @staticmethod
+    def child_report_receipt_cursors(
+        parent_session_path: Path, parent_session_id: str
+    ) -> dict[tuple[str, str, int], int]:
+        """Read bounded App Server receipts used to distinguish new child reports."""
+        receipts_path = parent_session_path / "child_report_receipts.json"
+        try:
+            if receipts_path.stat().st_size > 1024 * 1024:
+                return {}
+            receipt_data = json.loads(receipts_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return {}
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return {}
+        if (
+            not isinstance(receipt_data, dict)
+            or receipt_data.get("version") != 1
+            or receipt_data.get("session_id") != parent_session_id
+            or not isinstance(receipt_data.get("receipts"), list)
+        ):
+            return {}
+
+        cursors: dict[tuple[str, str, int], int] = {}
+        for receipt in receipt_data["receipts"][:4096]:
+            if not isinstance(receipt, dict):
+                continue
+            child_id = receipt.get("child_thread_id")
+            operation_id = receipt.get("operation_id")
+            attempt = receipt.get("attempt")
+            cursor = receipt.get("cursor")
+            if (
+                isinstance(child_id, str)
+                and isinstance(operation_id, str)
+                and isinstance(attempt, int)
+                and not isinstance(attempt, bool)
+                and isinstance(cursor, int)
+                and not isinstance(cursor, bool)
+            ):
+                key = (child_id, operation_id, attempt)
+                cursors[key] = max(cursors.get(key, 0), cursor)
+        return cursors
+
     def _find_thread_session(
         self,
         base: Path,

@@ -394,6 +394,9 @@ export default function Sidebar({
         cleanup_pending: Boolean(t.cleanup_pending),
         resumable: Boolean(t.resumable),
         plan_review_pending: Boolean(t.plan_review_pending),
+        attention_reasons: Array.isArray(t.attention_reasons)
+          ? t.attention_reasons.filter((reason) => typeof reason === 'string')
+          : [],
         last_turn_status: t.last_turn_status || null,
         last_stop_reason: t.last_stop_reason || null,
         last_turn_complete: Boolean(t.last_turn_complete),

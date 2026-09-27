@@ -20,6 +20,33 @@ describe('ChatArea turn status', () => {
     expect(screen.getByText('已处理不足1秒')).toBeTruthy();
   });
 
+  it('keeps the measured duration after completion when persisted timestamps collapse to zero', () => {
+    const turnId = 'settled-turn';
+    const timestamp = 1_790_000_000_000;
+    render(
+      <ChatArea
+        messages={[
+          { id: 'settled-input', role: 'user', turnId, text: 'long request' },
+          { id: 'settled-answer', role: 'assistant', turnId, text: 'done' },
+        ]}
+        threadItems={[
+          { turnId, capturedAt: timestamp, item: { type: 'userMessage', id: 'settled-input', text: 'long request' } },
+          { turnId, capturedAt: timestamp, item: { type: 'agentMessage', id: 'settled-answer', text: 'done' } },
+        ]}
+        traceScope={{ threadId: 'thread-a', projectId: 'project-a' }}
+        turnTimings={new Map([['project-a:thread-a:settled-turn', {
+          startedAtMs: timestamp,
+          durationMs: 687_000,
+        }]])}
+        isGenerating={false}
+        pendingApproval={null}
+        lastTurnResult={null}
+      />,
+    );
+
+    expect(screen.getByText('已处理 11分钟27秒')).toBeTruthy();
+  });
+
   it('shows the settled failure reason instead of a generic incomplete label', () => {
     render(
       <ChatArea

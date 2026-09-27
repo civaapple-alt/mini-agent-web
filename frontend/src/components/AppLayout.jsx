@@ -91,6 +91,7 @@ export default function AppLayout({
   messages,
   threadItems,
   lastTurnResult,
+  turnTimings,
   onResumeExecution,
   resumeExecutionBusy = false,
   policy,
@@ -292,6 +293,7 @@ export default function AppLayout({
               isGenerating={isGenerating}
               pendingApproval={pendingApproval}
               lastTurnResult={lastTurnResult}
+              turnTimings={turnTimings}
               onResumeExecution={() => {
                 if (childTasks.sessionControl?.status === 'frozen') {
                   return childTasks.controlSession('continue');

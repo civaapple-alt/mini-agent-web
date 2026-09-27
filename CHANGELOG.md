@@ -19,7 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duration at the start of each main conversation Turn. Freeze both displays
   when their execution settles; estimate historical Turn duration from durable
   activity timestamps when runtime duration is unavailable. Show a sub-second
-  Turn as `不足1秒` instead of rounding its label down to `0秒`.
+  Turn as `不足1秒` instead of rounding its label down to `0秒`. Freeze the
+  main Turn's measured duration from its live lifecycle so coarse persisted
+  timestamps cannot reset it after completion.
 - Improve child Session detail readability: show each thinking/tool activity in
   execution order with the same active/final segment visibility and settled
   activity summaries as the main conversation. Bound long task prompts to a

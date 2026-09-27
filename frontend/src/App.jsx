@@ -134,6 +134,7 @@ export default function App() {
   const [pendingMessages, setPendingMessages] = useState([]);
   const [composerDraft, setComposerDraft] = useState(null);
   const [lastTurnResult, setLastTurnResult] = useState(null);
+  const [turnTimings, setTurnTimings] = useState(() => new Map());
   const [isLoadingHistory, setIsLoadingHistory] = useState(
     () => initialSessionRoute.hasThreadTarget,
   );
@@ -203,6 +204,8 @@ export default function App() {
   const catalogRequestControllerRef = useRef(null);
   const runtimeRecoveryRef = useRef(new Set());
   const pendingUserMessageIdRef = useRef(null);
+  const turnStartedAtMsRef = useRef(new Map());
+  const turnElapsedMsRef = useRef(new Map());
   const autoTitleAttemptsRef = useRef(new Set());
   activeTurnIdRef.current = activeTurnId;
   planActiveRef.current = planActive;
@@ -231,6 +234,45 @@ export default function App() {
 
   const forgetInterruptedTurn = (turnId) => {
     if (turnId) interruptedTurnIdsRef.current.delete(String(turnId));
+  };
+
+  const rememberTurnStart = (threadKey, turnId) => {
+    if (!turnId) return;
+    const timingKey = `${threadKey}:${String(turnId)}`;
+    const startedAtTimes = turnStartedAtMsRef.current;
+    if (startedAtTimes.has(timingKey)) return;
+    const startedAtMs = Date.now();
+    const accumulatedMs = turnElapsedMsRef.current.get(timingKey) || 0;
+    startedAtTimes.set(timingKey, startedAtMs);
+    while (startedAtTimes.size > 128) {
+      startedAtTimes.delete(startedAtTimes.keys().next().value);
+    }
+    setTurnTimings((previous) => {
+      const next = new Map(previous);
+      next.set(timingKey, { ...next.get(timingKey), startedAtMs, accumulatedMs });
+      while (next.size > 256) next.delete(next.keys().next().value);
+      return next;
+    });
+  };
+
+  const rememberTurnDuration = (threadKey, turnId) => {
+    if (!turnId) return;
+    const timingKey = `${threadKey}:${String(turnId)}`;
+    const startedAtMs = turnStartedAtMsRef.current.get(timingKey);
+    turnStartedAtMsRef.current.delete(timingKey);
+    if (!Number.isFinite(startedAtMs)) return;
+    const accumulatedMs = turnElapsedMsRef.current.get(timingKey) || 0;
+    const durationMs = Math.max(0, accumulatedMs + Date.now() - startedAtMs);
+    turnElapsedMsRef.current.set(timingKey, durationMs);
+    while (turnElapsedMsRef.current.size > 256) {
+      turnElapsedMsRef.current.delete(turnElapsedMsRef.current.keys().next().value);
+    }
+    setTurnTimings((previous) => {
+      const next = new Map(previous);
+      next.set(timingKey, { ...next.get(timingKey), startedAtMs, accumulatedMs, durationMs });
+      while (next.size > 256) next.delete(next.keys().next().value);
+      return next;
+    });
   };
 
   const enqueuePendingApproval = (approval) => {
@@ -799,6 +841,13 @@ export default function App() {
       // Runtime snapshots are authoritative after event replay gaps. A
       // settled snapshot has no active Turn, even if it retains the last
       // Turn ID for diagnostics; freeze every stale streamed block.
+      rememberTurnDuration(
+        scopedThreadKey(
+          requestContext.threadId || currentThreadRef.current,
+          requestContext.projectId ?? currentThreadProjectRef.current,
+        ),
+        runtimeTurnId || activeTurnIdRef.current,
+      );
       setMessages((messages) => settleStaleStreamingPresentation(messages));
       setIsGenerating(false);
       setIsInterrupting(false);
@@ -1260,6 +1309,9 @@ export default function App() {
     if (!acceptsEvent) {
       if (data.type === 'event') {
         const evtType = data.event?.type;
+        if (evtType === 'turn_finished') {
+          rememberTurnDuration(eventKey, data.turnId || data.turn_id);
+        }
         if (evtType === 'turn_finished' || evtType === 'run_finished' || evtType === 'run_failed') {
           loadThreads();
         }
@@ -1465,6 +1517,10 @@ export default function App() {
       }
       if (data.terminal && data.scope === 'turn') {
         if (!shouldSettleActiveTurnFromError(data, visibleActiveTurnId)) return;
+        rememberTurnDuration(
+          eventKey,
+          data.turnId || visibleActiveTurnId || null,
+        );
         setLastTurnResult({
           status: data.status || 'failed',
           stopReason: data.stopReason || data.stop_reason || 'failed',
@@ -1663,6 +1719,7 @@ export default function App() {
       }
       const evt = data.event || {};
       if (evt.type === 'turn_started') {
+        if (!fromReplay) rememberTurnStart(eventKey, eventTurnId);
         const goalObjective = extractGoalObjective(evt.prompt);
         if (goalObjective) {
           setMessages((prev) => appendGoalMessageToMessages(prev, goalObjective));
@@ -1695,6 +1752,7 @@ export default function App() {
           error: evt.error || previous?.error || null,
         }));
       } else if (evt.type === 'turn_finished') {
+        rememberTurnDuration(eventKey, eventTurnId || activeTurnIdRef.current);
         const turnStatus = evt.status || evt.stop_reason || 'unknown';
         if (turnStatus === 'steered') {
           // The accepted steer_ack is the only user-facing confirmation.
@@ -2793,6 +2851,7 @@ export default function App() {
       messages={messages}
       threadItems={threadItems}
       lastTurnResult={lastTurnResult}
+      turnTimings={turnTimings}
       onResumeExecution={handleResumeExecution}
       resumeExecutionBusy={resumeExecutionBusy}
       policy={policy}

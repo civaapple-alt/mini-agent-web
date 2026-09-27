@@ -6,6 +6,7 @@ import { collectInputMessages, getChildWakeupTurnIds } from '../utils/inputTrace
 import { normalizeAssistantBlocks, orderMessagesByTurnHistory } from '../utils/messageState';
 import { buildTurnHistoryEntries, isIncompleteTurnStatus } from '../utils/turnHistory';
 import { buildTurnChildTaskBatch, getDelegateTaskAssignments } from '../utils/childTasks';
+import { scopedThreadKey } from '../utils/sessionState.js';
 import './ChatArea.css';
 
 function formatProcessedDuration(durationMs) {
@@ -21,7 +22,10 @@ function formatProcessedDuration(durationMs) {
 
 function TurnDurationLabel({ entry, nowMs, isRunning }) {
   const durationMs = isRunning
-    ? (Number.isFinite(entry.startedAtMs) ? Math.max(0, nowMs - entry.startedAtMs) : null)
+    ? (Number.isFinite(entry.startedAtMs)
+      ? (Number.isFinite(entry.accumulatedMs) ? entry.accumulatedMs : 0)
+        + Math.max(0, nowMs - entry.startedAtMs)
+      : null)
     : entry.durationMs;
   const label = formatProcessedDuration(durationMs);
   if (!label) return null;
@@ -43,6 +47,7 @@ export default function ChatArea({
   isGenerating,
   pendingApproval,
   lastTurnResult,
+  turnTimings = null,
   onResumeExecution,
   resumeExecutionBusy = false,
   threadItems = [],
@@ -81,14 +86,37 @@ export default function ChatArea({
     tool_batch: '工具批次',
   }[lastTurnResult?.recovery?.phase] || null;
 
-  const turnEntries = useMemo(() => buildTurnHistoryEntries({
-    messages,
-    threadItems,
-    scope: traceScope,
-    statusModel,
-    activeTurnId: statusModel?.scope?.turnId,
-    lastTurnResult,
-  }), [messages, threadItems, traceScope, statusModel, lastTurnResult]);
+  const turnEntries = useMemo(() => {
+    const entries = buildTurnHistoryEntries({
+      messages,
+      threadItems,
+      scope: traceScope,
+      statusModel,
+      activeTurnId: statusModel?.scope?.turnId,
+      lastTurnResult,
+    });
+    if (!(turnTimings instanceof Map) || turnTimings.size === 0) {
+      return entries;
+    }
+    const threadKey = scopedThreadKey(traceScope?.threadId, traceScope?.projectId);
+    return entries.map((entry) => {
+      if (!entry.turnId) return entry;
+      const timing = turnTimings.get(`${threadKey}:${entry.turnId}`);
+      if (!timing) return entry;
+      return {
+        ...entry,
+        ...(Number.isFinite(timing.startedAtMs) && timing.startedAtMs >= 0
+          ? { startedAtMs: timing.startedAtMs }
+          : {}),
+        ...(Number.isFinite(timing.accumulatedMs) && timing.accumulatedMs >= 0
+          ? { accumulatedMs: timing.accumulatedMs }
+          : {}),
+        ...(Number.isFinite(timing.durationMs) && timing.durationMs >= 0
+          ? { durationMs: timing.durationMs }
+          : {}),
+      };
+    });
+  }, [messages, threadItems, traceScope, statusModel, lastTurnResult, turnTimings]);
 
   const displayMessages = useMemo(() => {
     const projectedInputs = collectInputMessages(messages, threadItems, traceScope);

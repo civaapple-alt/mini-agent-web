@@ -85,6 +85,14 @@ export default function SettingsModal({
     onClose();
   };
 
+  const discardAndClose = () => {
+    setConfirmDiscard(false);
+    setModelDraftDirty(false);
+    setSettings(savedSettings);
+    setSavedSuccess(false);
+    onClose();
+  };
+
   useEffect(() => {
     requestControllerRef.current?.abort();
     requestEpochRef.current += 1;
@@ -367,7 +375,7 @@ export default function SettingsModal({
             <p>当前页面设置或模型配置还有未保存内容。关闭后，这些修改会被丢弃。</p>
             <div>
               <button type="button" className="btn-cancel" onClick={() => setConfirmDiscard(false)}>继续编辑</button>
-              <button type="button" className="btn-save" onClick={onClose}>丢弃并关闭</button>
+              <button type="button" className="btn-save" onClick={discardAndClose}>丢弃并关闭</button>
             </div>
           </div>
         </div>

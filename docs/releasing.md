@@ -6,7 +6,7 @@
 
 ## 1. 核心发布原则
 
-1. **全栈版本一致性**：整个工程、Python SDK、网关后端、React 前端必须保持相同的语义化版本号（SemVer）；
+1. **版本一致性**：`mini-agent-web` 的 Python SDK、网关、React 前端和锁文件必须保持相同的 SemVer，并与 `mini-agent-harness` 的发布版本一致；
 2. **线缆协议稳定性**：线缆协议版本（Wire Protocol Version）严格保持为 `1`（JSON-RPC 2.0 基础），切勿随发布版本随意变更；
 3. **零 Token 门禁纪律**：发布前测试与静态检查绝不消耗外部模型 Provider 的实际 Token；
 4. **工作区干净度**：禁止将编译产物（`dist/`）、临时日志（`logs/`）或密钥（`.env`）打包提交。
@@ -15,16 +15,21 @@
 
 ## 2. 版本对齐清单 (Version Sync Checklist)
 
-在准备新版本（例如 `0.8.0`）时，必须同步更新以下 6 个关键文件：
+在准备新版本时，先设置目标版本，再同步更新所有版本来源和锁文件。`0.9.0` 是本次发布版本。
 
-| 文件路径 | 待更新字段 |
+| 文件路径 | 版本来源 |
 | :--- | :--- |
-| `pyproject.toml` | `project.version = "0.8.0"` |
-| `sdk/python/pyproject.toml` | `project.version = "0.8.0"` |
-| `sdk/python/src/mini_agent/__init__.py` | `__version__ = "0.8.0"` |
-| `server/app.py` | `__version__ = "0.8.0"` / API version |
-| `frontend/package.json` | `"version": "0.8.0"` |
-| `frontend/package-lock.json` | 根及包定义中的 `"version": "0.8.0"` |
+| `pyproject.toml` | `project.version` |
+| `sdk/python/pyproject.toml` | `project.version` |
+| `sdk/python/src/mini_agent/__init__.py` | `__version__` |
+| `sdk/python/src/mini_agent/client.py` | 默认 `client_version` |
+| `server/__init__.py` | `__version__` |
+| `server/app.py` | FastAPI 版本和 `/health` 的 `version` |
+| `frontend/package.json` | `version` |
+| `frontend/package-lock.json` | 根及 `packages[""]` 的版本 |
+| `uv.lock` | 两个本地 workspace 包的版本 |
+
+同时更新 `README.md` 中的当前发布版本和 `CHANGELOG.md`。保留 JSON-RPC wire protocol version `1`。
 
 ---
 
@@ -63,7 +68,7 @@ git status
 
 1. 打开 `CHANGELOG.md`，将 `## [Unreleased]` 下已完成的变更移入新增的带日期的版本章节：
    ```markdown
-   ## [0.8.0] - 2026-09-XX
+   ## [0.9.0] - 2026-09-27
    
    ### Added
    ...
@@ -72,7 +77,7 @@ git status
 3. 提交版本变更并创建带注释的 Git Tag：
    ```bash
    git add -u
-   git commit -m "chore: release 0.8.0"
-   git tag -a v0.8.0 -m "Release v0.8.0"
+   git commit -m "chore: release 0.9.0"
+   git tag -a v0.9.0 -m "Release v0.9.0"
    git push origin main --tags
    ```

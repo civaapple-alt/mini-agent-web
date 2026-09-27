@@ -40,11 +40,14 @@ Do not add a README section merely to link to a document outside its directory.
 
 ## Version and protocol
 
-- Keep the repository, SDK, server, frontend, and lockfile versions synchronized
-  for a release. Update `pyproject.toml`, `sdk/python/pyproject.toml`,
-  `sdk/python/src/mini_agent/__init__.py`, `server/app.py`,
-  `frontend/package.json`, and `frontend/package-lock.json` together.
-- The current release is `0.8.0`; the wire protocol remains JSON-RPC protocol
+- Keep the Web repository, SDK, server, frontend, and lockfile versions
+  synchronized with the matching `mini-agent-harness` release. Update
+  `pyproject.toml`, `sdk/python/pyproject.toml`,
+  `sdk/python/src/mini_agent/__init__.py`, the SDK client's default version,
+  `server/__init__.py`, `server/app.py`, `frontend/package.json`,
+  `frontend/package-lock.json`, and `uv.lock` together. Update the current
+  release version in `README.md` and `CHANGELOG.md` too.
+- The current release is `0.9.0`; the wire protocol remains JSON-RPC protocol
   version `1`. Do not change the wire protocol or public field names casually.
 - Preserve unknown event types as `GenericEvent` so newer App Server events do
   not break older SDK consumers. Keep event identity bounded by Thread and Turn

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.9.0] - 2026-09-27
+
 - Clarify runtime checkpoint diagnostics: distinguish the last settled Session
   checkpoint from the active Turn's execution recovery checkpoint, phase,
   recent progress, and executor heartbeat. Keep the latest workflow event tied

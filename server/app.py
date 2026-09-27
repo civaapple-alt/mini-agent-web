@@ -44,7 +44,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Mini Agent Web API Gateway",
         description="FastAPI Web Gateway and WebSocket API for Mini Agent Harness",
-        version="0.8.0",
+        version="0.9.0",
         lifespan=lifespan,
     )
 
@@ -81,7 +81,7 @@ def create_app() -> FastAPI:
         return {
             "status": "healthy",
             "server": "mini-agent-web-gateway",
-            "version": "0.8.0",
+            "version": "0.9.0",
         }
 
     @app.get("/", tags=["UI"])

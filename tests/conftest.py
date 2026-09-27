@@ -32,7 +32,7 @@ def create_mock_client(project_name: str = "test-project") -> AsyncMock:
     mock.initialize = AsyncMock(
         return_value={
             "serverName": "mock-app-server",
-            "serverVersion": "0.8.0",
+            "serverVersion": "0.9.0",
             "protocolVersion": 1,
         }
     )

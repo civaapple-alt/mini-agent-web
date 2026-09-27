@@ -61,16 +61,29 @@ export default function SettingsModal({
   initialTab = 'preferences',
 }) {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [savedSettings, setSavedSettings] = useState(DEFAULT_SETTINGS);
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [approvalInfo, setApprovalInfo] = useState(null);
   const [isRevokingApprovals, setIsRevokingApprovals] = useState(false);
+  const [modelDraftDirty, setModelDraftDirty] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [activeSection, setActiveSection] = useState('security');
   const requestEpochRef = useRef(0);
   const requestControllerRef = useRef(null);
   const activeSectionInfo = SETTINGS_GROUPS
     .flatMap((group) => group.items)
     .find((item) => item.id === activeSection) || SETTINGS_GROUPS[0].items[0];
+  const preferenceDirty = Object.keys(DEFAULT_SETTINGS)
+    .some((key) => settings[key] !== savedSettings[key]);
+
+  const requestClose = () => {
+    if (preferenceDirty || modelDraftDirty) {
+      setConfirmDiscard(true);
+      return;
+    }
+    onClose();
+  };
 
   useEffect(() => {
     requestControllerRef.current?.abort();
@@ -103,15 +116,16 @@ export default function SettingsModal({
 
   const loadSettings = async (context = null) => {
     try {
-      const data = await api.getSettings({ projectId, signal: context?.signal });
+      const data = await api.getSettings({ signal: context?.signal });
       if (isCurrentRequest(context)) {
-        const preferenceData = { ...data };
-        delete preferenceData.reasoning_effort;
-        setSettings((previous) => ({
-          ...previous,
-          ...preferenceData,
-          theme: normalizeTheme(data.theme || previous.theme),
-        }));
+        const preferences = {
+          theme: normalizeTheme(data.theme || DEFAULT_SETTINGS.theme),
+          auto_scroll: data.auto_scroll ?? DEFAULT_SETTINGS.auto_scroll,
+          word_wrap: data.word_wrap ?? DEFAULT_SETTINGS.word_wrap,
+          font_size: data.font_size ?? DEFAULT_SETTINGS.font_size,
+        };
+        setSettings(preferences);
+        setSavedSettings(preferences);
       }
     } catch (err) {
       if (err?.name === 'AbortError' || (context && !isCurrentRequest(context))) return;
@@ -157,10 +171,10 @@ export default function SettingsModal({
     };
     try {
       const response = await api.updateSettings(settings, {
-        projectId,
         signal: context.signal,
       });
       if (!isCurrentRequest(context)) return;
+      setSavedSettings(settings);
       setSavedSuccess(true);
       if (onSettingsSaved) onSettingsSaved(response.settings);
       setTimeout(() => setSavedSuccess(false), 2000);
@@ -180,7 +194,7 @@ export default function SettingsModal({
   if (!isOpen) return null;
 
   return (
-    <div className="settings-modal-overlay" onClick={onClose}>
+    <div className="settings-modal-overlay" onClick={requestClose}>
       <div
         className="settings-modal-container"
         onClick={(event) => event.stopPropagation()}
@@ -196,7 +210,7 @@ export default function SettingsModal({
               <span>偏好设置与模型配置</span>
             </div>
           </div>
-          <button type="button" className="modal-close-btn" onClick={onClose} aria-label="关闭设置">
+          <button type="button" className="modal-close-btn" onClick={requestClose} aria-label="关闭设置">
             <X size={17} />
           </button>
         </header>
@@ -231,9 +245,10 @@ export default function SettingsModal({
 
           <main className="settings-modal-detail">
             <div className="settings-detail-scroll custom-scrollbar">
-              {activeSection === 'models' ? (
-                <ModelSettingsPanel projectId={projectId} onToast={onToast} />
-              ) : (
+              <div hidden={activeSection !== 'models'}>
+                <ModelSettingsPanel onToast={onToast} onDraftChange={setModelDraftDirty} />
+              </div>
+              {activeSection !== 'models' && (
                 <>
                   <div className="settings-detail-heading">
                     <div>
@@ -334,7 +349,7 @@ export default function SettingsModal({
                   <span>恢复默认</span>
                 </button>
                 <div className="footer-right">
-                  <button type="button" className="btn-cancel" onClick={onClose}>取消</button>
+                  <button type="button" className="btn-cancel" onClick={requestClose}>取消</button>
                   <button type="button" className="btn-save" onClick={() => void handleSave()} disabled={isSaving}>
                     {savedSuccess ? <Check size={14} /> : <Save size={14} />}
                     <span>{savedSuccess ? '已保存' : isSaving ? '保存中...' : '保存配置'}</span>
@@ -345,6 +360,18 @@ export default function SettingsModal({
           </main>
         </div>
       </div>
+      {confirmDiscard && (
+        <div className="settings-discard-overlay" role="presentation" onClick={() => setConfirmDiscard(false)}>
+          <div className="settings-discard-dialog" role="alertdialog" aria-modal="true" aria-label="丢弃未保存的设置" onClick={(event) => event.stopPropagation()}>
+            <h3>丢弃未保存的修改？</h3>
+            <p>当前页面设置或模型配置还有未保存内容。关闭后，这些修改会被丢弃。</p>
+            <div>
+              <button type="button" className="btn-cancel" onClick={() => setConfirmDiscard(false)}>继续编辑</button>
+              <button type="button" className="btn-save" onClick={onClose}>丢弃并关闭</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

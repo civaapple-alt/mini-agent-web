@@ -261,6 +261,7 @@ export default function AppLayout({
           onUpdateSummary={onUpdateSummary}
           onRefreshThreads={onRefreshThreads}
           onToast={onToast}
+          onOpenSettings={onOpenSettings}
         />
         {mobileSidebarOpen && (
           <button

@@ -16,6 +16,7 @@ import {
 import { api } from '../api';
 import ThreadRow from './sidebar/ThreadRow';
 import SessionDoctorModal from './SessionDoctorModal';
+import ProjectDefaultModelSetting from './ProjectDefaultModelSetting';
 import { compareThreadActivity } from '../utils/relativeTime';
 import './Sidebar.css';
 
@@ -52,6 +53,7 @@ export default function Sidebar({
   onRefreshThreads,
   onProjectsLoaded,
   onToast,
+  onOpenSettings,
   isMobileOpen = false,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -79,6 +81,8 @@ export default function Sidebar({
   const [newFolderPathInput, setNewFolderPathInput] = useState('');
   const [showAddFolderInput, setShowAddFolderInput] = useState(false);
   const [isSavingProject, setIsSavingProject] = useState(false);
+  const [projectModelDirty, setProjectModelDirty] = useState(false);
+  const [confirmProjectModelDiscard, setConfirmProjectModelDiscard] = useState(false);
 
   // New Session Modal State
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
@@ -156,6 +160,7 @@ export default function Sidebar({
   const handleOpenNewProject = () => {
     setActiveProjectPopover(null);
     setEditingProject({ is_new: true, name: '', source_folders: [] });
+    setProjectModelDirty(false);
     setEditProjectName('');
     setEditSourceFolders([]);
     setShowAddFolderInput(false);
@@ -167,6 +172,7 @@ export default function Sidebar({
   const handleOpenEditProject = (proj) => {
     setActiveProjectPopover(null);
     setEditingProject({ ...proj, is_new: false });
+    setProjectModelDirty(false);
     setEditProjectName(proj.name || proj.id);
     const folders = proj.source_folders && proj.source_folders.length > 0
       ? proj.source_folders.map((f) => ({ ...f }))
@@ -175,6 +181,14 @@ export default function Sidebar({
     setShowAddFolderInput(false);
     setNewFolderNameInput('');
     setNewFolderPathInput('');
+  };
+
+  const closeProjectEditor = () => {
+    if (projectModelDirty) {
+      setConfirmProjectModelDiscard(true);
+      return;
+    }
+    setEditingProject(null);
   };
 
   const handleOpenSessionDoctor = (event, proj) => {
@@ -187,6 +201,7 @@ export default function Sidebar({
   const handleSaveProjectEdits = async (e) => {
     if (e) e.preventDefault();
     if (!editingProject || !editProjectName.trim()) return;
+    const keepEditorOpenForModelSave = projectModelDirty;
     setIsSavingProject(true);
     try {
       const cleanName = editProjectName.trim();
@@ -218,11 +233,22 @@ export default function Sidebar({
           source_folders: editSourceFolders,
         });
       }
-      setEditingProject(null);
+      if (!keepEditorOpenForModelSave) {
+        setEditingProject(null);
+        setProjectModelDirty(false);
+      }
       await loadProjects();
       if (onRefreshThreads) onRefreshThreads();
       if (onToast) {
-        onToast(editingProject.is_new ? `已成功创建项目 "${cleanName}"` : `已保存项目 "${cleanName}"`, 'success');
+        const savedMessage = editingProject.is_new
+          ? `已成功创建项目 "${cleanName}"`
+          : `已保存项目 "${cleanName}"`;
+        onToast(
+          keepEditorOpenForModelSave
+            ? `${savedMessage}；项目默认模型尚未保存，请单独保存`
+            : savedMessage,
+          keepEditorOpenForModelSave ? 'info' : 'success',
+        );
       }
     } catch (err) {
       if (onToast) {
@@ -855,7 +881,7 @@ export default function Sidebar({
       {editingProject && (
         <div
           className="modal-overlay-edit-project"
-          onClick={() => setEditingProject(null)}
+          onClick={closeProjectEditor}
         >
           <div
             className="modal-card-edit-project"
@@ -868,7 +894,7 @@ export default function Sidebar({
               </span>
               <button
                 className="modal-edit-close"
-                onClick={() => setEditingProject(null)}
+                onClick={closeProjectEditor}
               >
                 <X size={15} />
               </button>
@@ -1015,6 +1041,15 @@ export default function Sidebar({
                 </div>
               </div>
 
+              {!editingProject.is_new && (
+                <ProjectDefaultModelSetting
+                  projectId={editingProject.id || editingProject.name}
+                  onToast={onToast}
+                  onDirtyChange={setProjectModelDirty}
+                  onOpenSettings={onOpenSettings}
+                />
+              )}
+
               {/* Modal Footer Actions (Image 2) */}
               <div className="modal-edit-footer">
                 {!editingProject.is_new ? (
@@ -1033,7 +1068,7 @@ export default function Sidebar({
                   <button
                     type="button"
                     className="btn-cancel-edit"
-                    onClick={() => setEditingProject(null)}
+                    onClick={closeProjectEditor}
                   >
                     取消
                   </button>
@@ -1053,6 +1088,19 @@ export default function Sidebar({
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {confirmProjectModelDiscard && (
+        <div className="project-model-discard-overlay" role="presentation" onClick={() => setConfirmProjectModelDiscard(false)}>
+          <div className="project-model-discard-dialog" role="alertdialog" aria-modal="true" aria-label="丢弃项目模型修改" onClick={(event) => event.stopPropagation()}>
+            <h3>丢弃未保存的项目模型修改？</h3>
+            <p>项目默认模型尚未保存。继续关闭后，这项修改会被丢弃。</p>
+            <div>
+              <button type="button" className="btn-cancel-edit" onClick={() => setConfirmProjectModelDiscard(false)}>继续编辑</button>
+              <button type="button" className="btn-save-project-primary" onClick={() => { setConfirmProjectModelDiscard(false); setProjectModelDirty(false); setEditingProject(null); }}>丢弃修改</button>
+            </div>
           </div>
         </div>
       )}

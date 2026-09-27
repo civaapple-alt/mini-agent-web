@@ -70,6 +70,7 @@ async def test_sdk_model_catalog_request_and_thread_model_settings():
         },
         apiKey="private-key",
     )
+    await client.test_model_connection("deepseek", "deepseek-v4")
     settings = await client.update_thread_settings(
         "default",
         thread_id="thread-1",
@@ -95,7 +96,15 @@ async def test_sdk_model_catalog_request_and_thread_model_settings():
             "apiKey": "private-key",
         },
     )
-    assert calls[1][1]["modelSelection"] == {
+    assert calls[1] == (
+        "model/catalog/manage",
+        {
+            "operation": "test_connection",
+            "providerId": "deepseek",
+            "modelId": "deepseek-v4",
+        },
+    )
+    assert calls[2][1]["modelSelection"] == {
         "providerId": "deepseek",
         "modelId": "deepseek-v4",
     }
@@ -105,14 +114,14 @@ async def test_sdk_model_catalog_request_and_thread_model_settings():
     }
     assert settings.reasoning_effort == "high"
     assert typed_settings.reasoning_selection == {"kind": "level", "value": "disabled"}
-    assert calls[2] == (
+    assert calls[3] == (
         "thread/settings/update",
         {
             "threadId": "thread-1",
             "reasoningSelection": {"kind": "level", "value": "disabled"},
         },
     )
-    assert calls[3] == (
+    assert calls[4] == (
         "thread/model-settings/get",
         {"threadId": "thread-1"},
     )

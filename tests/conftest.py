@@ -180,31 +180,32 @@ def create_mock_client(project_name: str = "test-project") -> AsyncMock:
 
 @pytest_asyncio.fixture(autouse=True)
 async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Isolate the derived Web manifest and sessions into ~/.mini-agent-tmp."""
-    real_home = Path.home()
-    test_home = real_home / ".mini-agent-tmp"
-    test_home.mkdir(parents=True, exist_ok=True)
+    """Isolate Web, Session, and model state under this test's temporary HOME."""
+    test_home = tmp_path / "home"
+    test_home.mkdir()
 
-    test_state_dir = test_home / "web_test_state"
-    if test_state_dir.exists():
-        shutil.rmtree(test_state_dir, ignore_errors=True)
+    test_state_dir = tmp_path.parent / f"{tmp_path.name}-web_test_state"
     test_state_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("MINI_AGENT_WEB_STATE_DIR", str(test_state_dir))
 
     # App Server SessionStore follows the process home directory. Isolate it
     # too, otherwise fixed test thread IDs can collide with a user's local
     # ~/.mini-agent/sessions and make gateway tests read unrelated history.
-    # Uniformly isolate test temporary files under ~/.mini-agent-tmp instead of C:/ root.
     sessions_dir = test_home / ".mini-agent" / "sessions"
-    if sessions_dir.exists():
-        shutil.rmtree(sessions_dir, ignore_errors=True)
+    sessions_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("USERPROFILE", str(test_home))
     monkeypatch.setenv("HOME", str(test_home))
-    # Initialization validates provider settings even when tests never invoke
-    # a real model. Use non-secret test values so home isolation cannot hide a
-    # developer's environment-backed credentials and no paid call is possible.
-    monkeypatch.setenv("OPENAI_API_KEY", "mini-agent-test-key")
-    monkeypatch.setenv("OPENAI_MODEL", "mini-agent-test-model")
+    for name in (
+        "OPENAI_API_KEY",
+        "OPENAI_MODEL",
+        "OPENAI_BASE_URL",
+        "OPENAI_WEB_SEARCH",
+        "VERIFIER_OPENAI_API_KEY",
+        "VERIFIER_OPENAI_MODEL",
+        "VERIFIER_OPENAI_BASE_URL",
+        "MINI_AGENT_WEB_SEARCH",
+    ):
+        monkeypatch.delenv(name, raising=False)
     local_server = (
         Path(__file__).parents[1].parent
         / "mini-codex"
@@ -293,6 +294,8 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             await client.stop()
         except Exception:  # noqa: BLE001, S110
             pass
+
+    shutil.rmtree(test_state_dir, ignore_errors=True)
 
     # Restore singleton after test finishes
     session_manager._state_dir = orig_state_dir

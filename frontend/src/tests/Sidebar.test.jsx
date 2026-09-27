@@ -8,7 +8,9 @@ vi.mock('../api', () => ({
   api: {
     listProjects: vi.fn(),
     createProject: vi.fn(),
+    updateProject: vi.fn(),
     startThread: vi.fn(),
+    getModelCatalog: vi.fn(),
     inspectProjectSessions: vi.fn(),
     repairProjectSession: vi.fn(),
   },
@@ -22,6 +24,10 @@ describe('Sidebar project creation', () => {
       projects: [],
       recent_projects: [],
     });
+    api.getModelCatalog.mockResolvedValue({
+      catalog: { providers: [], projectDefaults: {} },
+    });
+    api.updateProject.mockResolvedValue({ status: 'updated' });
     api.createProject.mockResolvedValue({
       project: {
         id: 'ma-three',
@@ -137,6 +143,63 @@ describe('Sidebar project creation', () => {
     expect(screen.queryByText('memory-card')).toBeNull();
     fireEvent.click(toggle);
     expect(screen.getByText('memory-card')).toBeTruthy();
+  });
+
+  it('keeps project editor open when project model selection is still unsaved', async () => {
+    const project = {
+      id: 'project-a',
+      name: 'project-a',
+      primary_path: '/workspace/project-a',
+      source_folders: [{ name: 'project-a', path: '/workspace/project-a', is_primary: true }],
+    };
+    api.listProjects.mockResolvedValue({
+      current_project: project,
+      projects: [project],
+      recent_projects: [],
+    });
+    api.getModelCatalog.mockResolvedValue({
+      catalog: {
+        providers: [{
+          id: 'deepseek',
+          name: 'DeepSeek',
+          enabled: true,
+          baseUrl: 'https://example.test',
+          apiKeyConfigured: true,
+          models: [{ id: 'deepseek-r1', name: 'DeepSeek R1', enabled: true }],
+        }],
+        projectDefaults: {},
+      },
+    });
+    const onToast = vi.fn();
+    render(
+      <Sidebar
+        threads={[]}
+        currentThread="default"
+        currentThreadProject="project-a"
+        isGenerating={false}
+        onSelectThread={vi.fn()}
+        onNewThread={vi.fn()}
+        onForkThread={vi.fn()}
+        onCloseThread={vi.fn()}
+        onRenameThread={vi.fn()}
+        onUpdateSummary={vi.fn()}
+        onRefreshThreads={vi.fn()}
+        onToast={onToast}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText('project-a')).toBeTruthy());
+    fireEvent.click(screen.getByTitle('编辑项目'));
+    const modelSelect = await screen.findByRole('combobox', { name: '项目默认模型' });
+    fireEvent.change(modelSelect, { target: { value: 'deepseek::deepseek-r1' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存', exact: true }));
+
+    await waitFor(() => expect(api.updateProject).toHaveBeenCalled());
+    expect(screen.getByRole('heading', { name: '项目默认模型' })).toBeTruthy();
+    expect(onToast).toHaveBeenCalledWith(
+      expect.stringContaining('项目默认模型尚未保存，请单独保存'),
+      'info',
+    );
   });
 });
 

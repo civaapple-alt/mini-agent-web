@@ -78,14 +78,13 @@ describe('ModelSettingsPanel smart matching', () => {
         defaultReasoningSelection: { kind: 'level', value: 'disabled' },
         verifierDefaultModel: null,
       }),
-      { projectId: null },
     ));
   });
 
   it('adds a custom reasoning level for Thread selection and maps it to provider parameters', async () => {
     render(<ModelSettingsPanel onToast={vi.fn()} />);
     await screen.findByText('Kimi');
-    fireEvent.click(screen.getByRole('button', { name: /添加模型/ }));
+    fireEvent.click(screen.getByRole('button', { name: '手动添加' }));
     fireEvent.change(screen.getByPlaceholderText('供应商要求的模型 ID'), {
       target: { value: 'kimi-custom' },
     });
@@ -111,14 +110,13 @@ describe('ModelSettingsPanel smart matching', () => {
           reasoningParameterMap: { balanced: { reasoning: { effort: 'balanced' } } },
         }),
       }),
-      { projectId: null },
     ));
   });
 
   it('matches within the selected provider and lets manual edits take ownership', async () => {
     render(<ModelSettingsPanel projectId="project-a" onToast={vi.fn()} />);
     await screen.findByText('Kimi');
-    fireEvent.click(screen.getByRole('button', { name: /添加模型/ }));
+    fireEvent.click(screen.getByRole('button', { name: '手动添加' }));
 
     const idInput = screen.getByPlaceholderText('供应商要求的模型 ID');
     const nameInput = screen.getByLabelText('显示名称');
@@ -145,7 +143,74 @@ describe('ModelSettingsPanel smart matching', () => {
           reasoningParameterMap: expect.objectContaining({ high: { reasoning_effort: 'high' } }),
         }),
       }),
-      { projectId: 'project-a' },
     ));
+  });
+
+  it('tests a saved model only after the user clicks the connection button', async () => {
+    const model = { id: 'kimi-k3', name: 'Kimi K3', enabled: true };
+    modelApi.getModelCatalog.mockResolvedValue({
+      catalog: {
+        providers: [{ ...provider, models: [model] }],
+        defaultModel: null,
+        defaultReasoningSelection: { kind: 'api_default' },
+        verifierDefaultModel: null,
+        projectDefaults: {},
+      },
+    });
+    modelApi.manageModelCatalog.mockResolvedValue({
+      catalog: {
+        providers: [{ ...provider, models: [model] }],
+        defaultModel: null,
+        defaultReasoningSelection: { kind: 'api_default' },
+        verifierDefaultModel: null,
+        projectDefaults: {},
+      },
+      connectionTest: { status: 'succeeded', message: 'OK' },
+    });
+
+    render(<ModelSettingsPanel onToast={vi.fn()} />);
+    const defaultModel = await screen.findByLabelText('全局默认模型');
+    fireEvent.change(defaultModel, { target: { value: 'kimi::kimi-k3' } });
+    const testButton = await screen.findByRole('button', { name: '测试连接' });
+    await waitFor(() => expect(testButton.disabled).toBe(false));
+    expect(modelApi.manageModelCatalog).not.toHaveBeenCalled();
+    fireEvent.click(testButton);
+
+    await waitFor(() => expect(modelApi.manageModelCatalog).toHaveBeenCalledWith(
+      'test_connection',
+      { providerId: 'kimi', modelId: 'kimi-k3' },
+    ));
+    expect((await screen.findByRole('status')).textContent).toContain('连接成功');
+    expect(defaultModel.value).toBe('kimi::kimi-k3');
+  });
+
+  it('asks before discarding changed global defaults', async () => {
+    const model = {
+      id: 'kimi-k3',
+      name: 'Kimi K3',
+      enabled: true,
+      reasoningLevels: [],
+    };
+    modelApi.getModelCatalog.mockResolvedValue({
+      catalog: {
+        providers: [{ ...provider, models: [model] }],
+        defaultModel: null,
+        defaultReasoningSelection: { kind: 'api_default' },
+        verifierDefaultModel: null,
+        projectDefaults: {},
+      },
+    });
+
+    render(<ModelSettingsPanel onToast={vi.fn()} />);
+    const defaultModel = await screen.findByLabelText('全局默认模型');
+    fireEvent.change(defaultModel, { target: { value: 'kimi::kimi-k3' } });
+    fireEvent.click(screen.getByRole('button', { name: /Kimi.*1 个模型/ }));
+
+    const confirmation = await screen.findByRole('alertdialog');
+    expect(confirmation.textContent).toContain('还有未保存的修改');
+    fireEvent.click(screen.getByRole('button', { name: '丢弃修改' }));
+
+    await waitFor(() => expect(defaultModel.value).toBe(''));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });

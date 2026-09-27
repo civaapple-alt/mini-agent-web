@@ -1,55 +1,68 @@
 # 模型供应商与模型设置
 
-Web Studio 的模型设置管理机器级 Responses 供应商目录。Host 负责读取目录、凭据和模型；Gateway 只转发本地 App Server 请求。
+App Server/Host 持有供应商、凭据、全局默认模型和 Goal Verifier 默认模型。SDK 与
+Web Studio 使用同一份 Host 模型目录；Gateway 只转发模型目录接口。模型设置存放在
+`~/.mini-agent/model_catalog.json`，API Key 单独存放在
+`~/.mini-agent/provider-credentials/<providerId>.key`。Windows 使用
+`%USERPROFILE%/.mini-agent/`。Key 以明文保存，Unix 上凭据目录和文件分别限制为
+`0700` 和 `0600`；页面只显示是否已配置，绝不回显 Key。
 
-## 配置供应商
+## 首次配置
 
-打开 **设置 → Agent 能力 → 模型设置**，在详情区添加 DeepSeek、Kimi、GLM、字节火山或自定义供应商。填写供应商名称、Responses API Base URL 和 API Key。Base URL 不预填，Host 会在其后追加 `/responses`。设置窗口的分类和保存方式见[偏好设置](preferences.md)。
+首次启动不显示向导。没有可用默认模型时，输入框会显示“先配置模型”，点击后打开
+现有的模型设置。打开页面和保存配置都不会请求模型供应商。
 
-供应商必须提供兼容的 Responses 接口。Host 不会改用 Chat Completions。接口不兼容时，当前 Turn 会返回错误。
+在 **设置 → Agent 能力 → 模型设置** 配置供应商、模型和全局默认值。DeepSeek、Kimi、
+GLM、Volcengine 提供本地维护的供应商和模型建议；建议不联网校验。自定义 Responses
+供应商可手动填写 Base URL 和模型 ID。Host 会在 Base URL 后追加 `/responses`，供应商
+必须支持 Responses API。
 
-API Key 以明文保存在运行 Host 用户目录的 `~/.mini-agent/provider-credentials/<providerId>.key` 文件中（Windows 位于 `%USERPROFILE%/.mini-agent/provider-credentials/`）。Unix 会将目录权限限制为 `0700`、密钥文件限制为 `0600`；文件不加密。Web Studio 只显示是否已配置，不会读取或接收 Key 内容。输入新的 Key 会替换旧文件；清除操作会删除该文件。此前保存在系统钥匙串中的 Key 不会自动迁移，需要重新填写；旧钥匙串条目需手动清理。
+供应商、模型和默认值按卡片显式保存。未保存时切换或关闭页面会要求确认；删除供应商、
+模型和清除 API Key 也会先在应用内确认。清除供应商凭据后，页面只显示未配置状态。
 
-## 配置模型
+## 手动测试连接
 
-在供应商下添加模型，填写供应商要求的模型 ID 和显示名称。你可以维护上下文长度、最大输出 Token、输入模态、模型能力、该模型支持的推理等级和推理参数映射。推理等级是 Thread 可选值的枚举，不代表模型默认启用的等级。除了 `low`、`medium`、`high`、`xhigh`、`max`，也可以添加供应商支持的自定义等级。
+选中供应商和已保存的模型后，点击 **测试连接**。Host 发出一次有界、无工具请求，最多
+生成 32 个输出 token，最多读取 4 KiB 响应，并在 12 秒后超时。供应商可能对这次请求
+计费。页面不会自动测试；返回值只包含有限状态和短说明，不包含 API Key、原始请求或
+响应。成功、凭据无效、供应商拒绝、超时、无法连接、响应无效和其他失败会分别说明。
 
-`disabled` 也是模型支持的等级之一，可以像其他等级一样设为全局默认或在输入框中选择。它需要在该模型的参数映射中配置供应商对应的关闭参数；不同供应商的关闭字段和值可能不同。Host 将映射字段加入 Responses 请求，同时阻止映射覆盖模型、输入、工具和流控制字段。
+## 选择模型
 
-“智能匹配”使用随 Web Studio 提供的本地资料。它只按模型 ID 提供建议，不会请求供应商。手动修改匹配结果后，模型转为手动管理，后续资料更新不会覆盖该配置。
+全局默认模型和推理等级在模型设置中配置。Goal Verifier 是独立的可选默认值；没有配置
+Verifier 不影响普通对话，但启动需要验证的 Goal 时会明确报错。创建 Goal 时会记录当时
+的 Verifier 选择，后续修改只影响新 Goal。
 
-停用的供应商或模型不会出现在可选的运行配置中。删除当前默认模型会清除引用该模型的全局、Goal Verifier 和项目默认值。
-
-## 设置默认模型
-
-配置全局默认模型及其推理选择，再配置独立的 Goal Verifier 默认模型。推理选择为“使用 API 默认”或该模型声明的任意等级，包括 `disabled`；“使用 API 默认”会在请求中省略推理参数。两个默认模型不能指向同一个模型。Goal 创建时会保存当时的 Verifier 模型引用；修改全局 Verifier 默认值只影响之后创建的 Goal。
-
-你也可以为当前项目选择默认模型。项目默认只指定模型；Thread 没有推理覆盖时，项目默认模型使用 API 默认等级。清除项目选择后，项目会继承全局模型和它对应的推理选择。
-
-Host 按以下顺序选择主模型：
+项目默认模型在对应项目的设置中配置。Thread 模型和推理等级保留在输入框的模型控件中，
+切换从下一轮开始生效。Host 按以下顺序解析主模型：
 
 1. Thread 显式选择。
 2. 项目默认模型。
-3. 没有项目界面默认值时，兼容旧配置的项目 `OPENAI_MODEL`。
-4. 全局默认模型。
+3. 全局默认模型。
 
-如果没有配置 Goal Verifier 默认模型，也没有旧版 `VERIFIER_OPENAI_MODEL`，Goal 验证会明确失败。Host 不会改用主模型。
+不再读取旧 `OPENAI_*` 或 `VERIFIER_OPENAI_*` 环境变量，也不会从旧 `.env` 自动迁移。旧值
+不会配置模型、覆盖页面设置或作为项目级回退；请在模型设置中重新录入供应商与默认值。
 
-## 在输入框切换模型
+推理等级可以选择“使用 API 默认”或该模型声明的等级，包括 `disabled` 和自定义等级。
+“使用 API 默认”会在请求中省略推理参数。模型 ID、推理等级和参数映射由用户维护；本地
+建议只提供初始值，不会验证远端支持情况。
 
-输入框右下角按供应商分组列出模型，并提供独立的推理等级选择。Thread 可以选“使用 API 默认”或当前模型声明的任意等级，`disabled` 和自定义等级也会在此列出。选择会通过 Thread 设置接口保存；清除 Thread 推理覆盖会回到默认选择。修改从下一 Turn 开始生效，正在运行的 Turn 不会切换模型。
+## 供应商搜索能力
 
-Fork 和子会话会继承父 Thread 的模型选择和推理等级。停用、缺少 Base URL 或缺少 API Key 的模型会显示原因，并阻止发送。选择其他可用模型，或在模型设置中补齐配置后再发送。
+供应商设置中的搜索选项为 **自动**、**开启** 或 **关闭**。自动保留原先按官方端点判断
+的行为；显式选项可以覆盖端点检测。无论选择哪种模式，所选模型仍须声明
+`web_search` 能力；CLI 的 `--no-web-search` 可在单次运行中临时关闭搜索。
 
 ## 本地接口
 
-Gateway 将模型管理请求转发给 App Server：
+Gateway 将模型管理请求原样映射到 App Server：
 
 | 路径 | 用途 |
 | --- | --- |
-| `GET /api/models` | 读取供应商、模型和默认值。 |
-| `POST /api/models/manage` | 新增、修改、删除供应商或模型，并设置全局、Goal Verifier 或项目默认值。 |
-| `GET /api/threads/{thread_id}/model-settings` | 读取 Thread 的模型覆盖和推理选择。 |
-| `POST /api/threads/{thread_id}/settings` | 更新 Thread 的模型覆盖和推理选择；选择为 `{ "kind": "api_default" }` 或 `{ "kind": "level", "value": "disabled" }` 等模型声明的等级。 |
+| `GET /api/models` | 读取供应商、模型和默认值，不返回 API Key。 |
+| `POST /api/models/manage` | 管理供应商、模型、全局默认值和项目默认值；`test_connection` 手动执行一次连接测试。 |
+| `GET /api/threads/{thread_id}/model-settings` | 读取 Thread 模型覆盖和推理选择。 |
+| `POST /api/threads/{thread_id}/settings` | 更新 Thread 模型覆盖和推理选择。 |
 
-SDK 和 Gateway 的普通查询响应都不包含 API Key 值。机器级目录位于 `~/.mini-agent/model_catalog.json`；Windows 使用 `%USERPROFILE%/.mini-agent/model_catalog.json`。目录保存模型元数据，API Key 明文保存在相邻的 `provider-credentials/<providerId>.key` 文件中。
+Python SDK 提供 `manage_model_catalog()` 和 `test_model_connection()`。`/api/settings`
+只保存全局界面偏好，不保存模型选择或凭据。

@@ -375,17 +375,20 @@ async def test_gateway_threads_and_workflows(test_app):
             # 3. Settings
             resp_settings = await client.get("/api/settings")
             assert resp_settings.status_code == 200
-            assert resp_settings.json()["access"] == "project"
-            assert resp_settings.json()["policy"] == "interactive"
+            assert set(resp_settings.json()) <= {"theme", "auto_scroll", "word_wrap", "font_size"}
+            assert "access" not in resp_settings.json()
+            assert "policy" not in resp_settings.json()
 
             resp_set_update = await client.post(
                 "/api/settings",
-                json={"theme": "cyberpunk"},
+                json={"theme": "cyberpunk", "access": "full_machine", "policy": "automatic"},
             )
             assert resp_set_update.status_code == 200
             assert (
                 resp_set_update.json().get("settings", {}).get("theme") == "cyberpunk"
             )
+            assert "access" not in resp_set_update.json()["settings"]
+            assert "policy" not in resp_set_update.json()["settings"]
 
             resp_execution = await client.post(
                 "/api/world/execution",

@@ -18,7 +18,7 @@ test('api client methods construct expected fetch endpoints and payloads', async
       return {
         ok: true,
         json: async () => ({
-          settings: { access: 'project', policy: 'interactive' },
+          settings: { theme: 'dark' },
         }),
       };
     }
@@ -137,8 +137,10 @@ test('api client methods construct expected fetch endpoints and payloads', async
   );
 
   // 2. Settings APIs
-  const setRes = await api.updateSettings({ reasoning_effort: 'high' });
-  assert.equal(setRes.settings.access, 'project');
+  const setRes = await api.updateSettings({ theme: 'dark' });
+  assert.equal(setRes.settings.theme, 'dark');
+  assert.equal(calls[calls.length - 1].url, '/api/settings');
+  assert.deepEqual(JSON.parse(calls[calls.length - 1].options.body), { theme: 'dark' });
 
   await api.setWorldExecution('full_machine', 'automatic');
   const executionCall = calls[calls.length - 1];

@@ -53,6 +53,10 @@ uv run mini-agent-server
 
 浏览器访问 `http://127.0.0.1:8000`。开发 Web Studio 时另开终端：
 
+首次打开后，在 **设置 → Agent 能力 → 模型设置** 配置供应商和全局默认模型；API
+Key 由 Host 保存在当前用户的 `.mini-agent` 目录。输入框会在尚无可用默认模型时提供
+“先配置模型”入口。CLI 与 Web Studio 共用同一模型目录，供应商配置无需放进 `.env`。
+
 ```bash
 cd frontend
 npm install

@@ -435,6 +435,51 @@ async def test_model_gateway_forwards_catalog_without_exposing_api_keys(
 
 
 @pytest.mark.asyncio
+async def test_model_gateway_returns_only_bounded_connection_test_status(
+    gateway_test_app, monkeypatch
+):
+    catalog = {"providers": [], "projectDefaults": {}}
+    mock_client = AsyncMock()
+    mock_client.manage_model_catalog.return_value = {
+        "value": {
+            "catalog": catalog,
+            "connectionTest": {
+                "status": "invalid_credentials",
+                "message": "The provider rejected the API key.",
+                "request": "must be dropped",
+                "response": "must be dropped",
+            },
+        }
+    }
+    monkeypatch.setattr(
+        session_manager,
+        "get_client_for_project",
+        AsyncMock(return_value=mock_client),
+    )
+
+    transport = ASGITransport(app=gateway_test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/models/manage?project_id=goals_test_proj",
+            json={"operation": "test_connection", "providerId": "deepseek", "modelId": "flash"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "catalog": catalog,
+        "connectionTest": {
+            "status": "invalid_credentials",
+            "message": "The provider rejected the API key.",
+        },
+    }
+    assert "must be dropped" not in response.text
+    assert mock_client.manage_model_catalog.await_args.kwargs == {
+        "providerId": "deepseek",
+        "modelId": "flash",
+    }
+
+
+@pytest.mark.asyncio
 async def test_thread_attach_locked_and_resumable(gateway_test_app, monkeypatch):
     """Test POST /api/threads/{thread_id}/attach handling of locked and unlocked sessions."""
 
@@ -500,7 +545,7 @@ async def test_thread_attach_allows_same_thread_id_in_multiple_projects(
             json={"thread_id": "shared-thread", "project": "other-project"},
         )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     assert response.json()["attached"] is True
     assert start_response.status_code == 200
 
@@ -685,7 +730,7 @@ async def test_mcp_and_world_governance(gateway_test_app):
 
         # Revoke project approvals
         resp_revoke = await client.post("/api/world/approval/revoke")
-        assert resp_revoke.status_code == 200
+        assert resp_revoke.status_code == 200, resp_revoke.text
         assert resp_revoke.json()["revoked"] is True
         assert resp_revoke.json()["project_id"] == "goals_test_proj"
         assert (

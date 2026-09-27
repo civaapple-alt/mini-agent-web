@@ -1,8 +1,8 @@
-import { request, requestSignal, resolveProjectId } from './request.js';
+import { request, requestSignal } from './request.js';
 
 export const settingsApi = {
   async getSettings(options = {}) {
-    const res = await request('/api/settings', requestSignal(options), options.projectId);
+    const res = await request('/api/settings', requestSignal(options));
     if (!res.ok) throw new Error('Failed to get settings');
     return res.json();
   },
@@ -11,9 +11,9 @@ export const settingsApi = {
     const res = await request('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...settings, project_id: resolveProjectId(options.projectId) }),
+      body: JSON.stringify(settings),
       ...requestSignal(options),
-    }, options.projectId);
+    });
     if (!res.ok) throw new Error('Failed to update settings');
     return res.json();
   },

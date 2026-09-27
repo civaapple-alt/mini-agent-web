@@ -13,6 +13,7 @@ router = APIRouter(prefix="/api/models", tags=["Models"])
 
 _OPERATIONS = {
     "get",
+    "test_connection",
     "upsert_provider",
     "delete_provider",
     "upsert_model",
@@ -32,7 +33,30 @@ async def _manage(operation: str, fields: dict[str, Any], project_id: str | None
         catalog = value.get("catalog") if isinstance(value, dict) else None
         if not isinstance(catalog, dict):
             raise HTTPException(status_code=502, detail="App Server returned an invalid model catalog")
-        return {"catalog": catalog}
+        response = {"catalog": catalog}
+        if operation == "test_connection":
+            result = value.get("connectionTest") if isinstance(value, dict) else None
+            allowed_statuses = {
+                "succeeded",
+                "invalid_credentials",
+                "provider_rejected",
+                "timed_out",
+                "unreachable",
+                "invalid_response",
+                "failed",
+            }
+            if (
+                not isinstance(result, dict)
+                or result.get("status") not in allowed_statuses
+                or not isinstance(result.get("message"), str)
+                or len(result["message"]) > 256
+            ):
+                raise HTTPException(status_code=502, detail="App Server returned an invalid connection test result")
+            response["connectionTest"] = {
+                "status": result["status"],
+                "message": result["message"],
+            }
+        return response
     except HTTPException:
         raise
     except AppServerError as err:

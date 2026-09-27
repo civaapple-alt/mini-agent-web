@@ -108,4 +108,19 @@ describe('InputBar model controls', () => {
     fireEvent.click(send);
     expect(baseProps.onSendMessage).not.toHaveBeenCalled();
   });
+
+  it('shows a first-run model setup link and blocks sending without a default', async () => {
+    const onOpenSettings = vi.fn();
+    modelApi.getModelCatalog.mockResolvedValue({
+      catalog: { providers: [], defaultModel: null, projectDefaults: {} },
+    });
+    render(<InputBar {...baseProps} onOpenSettings={onOpenSettings} />);
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'hello' } });
+    fireEvent.click(await screen.findByRole('button', { name: '先配置模型' }));
+
+    expect(onOpenSettings).toHaveBeenCalledWith('models');
+    expect(screen.getByRole('button', { name: '发送' }).disabled).toBe(true);
+    expect(screen.getByRole('status').textContent).toContain('尚未配置模型');
+  });
 });

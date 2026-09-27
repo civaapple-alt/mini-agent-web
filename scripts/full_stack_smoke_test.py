@@ -331,6 +331,17 @@ def isolated_app_server_env(
     """Build a smoke-test App Server environment with session-owned artifacts."""
     runtime_env = dict(os.environ)
     runtime_env.update(env)
+    for name in (
+        "OPENAI_API_KEY",
+        "OPENAI_MODEL",
+        "OPENAI_BASE_URL",
+        "OPENAI_WEB_SEARCH",
+        "VERIFIER_OPENAI_API_KEY",
+        "VERIFIER_OPENAI_MODEL",
+        "VERIFIER_OPENAI_BASE_URL",
+        "MINI_AGENT_WEB_SEARCH",
+    ):
+        runtime_env.pop(name, None)
     runtime_env["MINI_AGENT_APP_SERVER_PATH"] = str(app_server_bin)
     # Plan/Goal artifacts are session-owned.  Without an explicit session the
     # App Server's legacy disabled-session path uses cwd, which would pollute
@@ -343,17 +354,6 @@ def isolated_app_server_env(
 async def phase_1_preflight(env: dict[str, str], app_server_bin: Path) -> None:
     """Phase 1: Environment & Capability Diagnostics."""
     log_phase(1, "Environment & Capability Diagnostics")
-
-    api_key = env.get("OPENAI_API_KEY", "")
-    assert api_key, "OPENAI_API_KEY is not set"
-    log_ok(f"OPENAI_API_KEY detected: {api_key[:6]}...{api_key[-4:]}")
-
-    model = env.get("OPENAI_MODEL", "deepseek-v4-flash")
-    base_url = env.get("OPENAI_BASE_URL", "https://api.deepseek.com")
-    log_ok(f"Primary Model: {model} at {base_url}")
-
-    verifier_model = env.get("VERIFIER_OPENAI_MODEL", "deepseek-v4-pro")
-    log_ok(f"Verifier Model: {verifier_model}")
 
     log_ok(f"Using App Server: {app_server_bin}")
 
@@ -373,6 +373,22 @@ async def phase_1_preflight(env: dict[str, str], app_server_bin: Path) -> None:
         assert caps.get("itemLifecycleNotifications") is True, (
             "itemLifecycleNotifications missing"
         )
+        catalog_result = await client.manage_model_catalog("get")
+        catalog = catalog_result.get("catalog", catalog_result)
+        default_model = catalog.get("defaultModel")
+        assert default_model, "Set a global default model in Web Studio before this smoke run"
+        provider_id = default_model.get("providerId")
+        model_id = default_model.get("modelId")
+        provider = next(
+            (item for item in catalog.get("providers", []) if item.get("id") == provider_id),
+            None,
+        )
+        assert provider and provider.get("apiKeyConfigured"), (
+            "The configured global default provider has no API Key"
+        )
+        log_ok(f"Primary model: {provider.get('name')} / {model_id}")
+        verifier = catalog.get("verifierDefaultModel")
+        log_ok("Goal Verifier: configured" if verifier else "Goal Verifier: not configured")
         assert caps.get("workflows") is True, "workflows capability missing"
         as_repo = find_git_root(app_server_bin)
         as_info = get_git_info(as_repo)
@@ -391,8 +407,10 @@ async def phase_1_preflight(env: dict[str, str], app_server_bin: Path) -> None:
         )
         report.metadata["App Server Commit Time"] = as_info["commit_date"]
         report.metadata["App Server Binary"] = str(app_server_bin)
-        report.metadata["Primary Model"] = f"{model} ({base_url})"
-        report.metadata["Verifier Model"] = verifier_model
+        report.metadata["Primary Model"] = f"{provider.get('name')} / {model_id}"
+        report.metadata["Verifier Model"] = (
+            "configured" if verifier else "not configured"
+        )
 
 
 async def phase_2_basic_turn_streaming(

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Move provider, credential, and default-model setup to the Web Studio model
+  settings page, with project defaults in Project settings and a first-run
+  “先配置模型” entry beside the composer. Add manual bounded connection tests
+  and provider-level search controls; stop reading legacy provider variables.
 - Parse Turn and Thread execution-recovery metadata into the public
   `ExecutionRecoveryInfo` type. Preserve unknown fields and statuses, and expose
   an advisory action without resuming a Turn or retrying a tool.

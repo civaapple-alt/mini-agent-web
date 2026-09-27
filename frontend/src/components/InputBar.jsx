@@ -183,8 +183,11 @@ export default function InputBar({
   const effectiveKey = selectionKey(effectiveSelection);
   const effectiveEntry = modelEntries.find((entry) => entry.key === effectiveKey) || null;
   const configuredModelCount = modelEntries.length;
-  const effectiveModelProblem = !configuredModelCount || !effectiveSelection
+  const needsInitialModelConfig = !configuredModelCount || !effectiveSelection;
+  const effectiveModelProblem = !currentThread
     ? ''
+    : needsInitialModelConfig
+    ? '尚未配置模型'
     : !effectiveEntry
       ? '当前模型已从目录中删除，请重新选择模型。'
       : !effectiveEntry.provider.enabled || !effectiveEntry.model.enabled
@@ -1270,6 +1273,15 @@ export default function InputBar({
                 >
                   <Settings size={14} />
                 </button>
+                {needsInitialModelConfig && (
+                  <button
+                    type="button"
+                    className="composer-model-setup"
+                    onClick={() => onOpenSettings?.('models')}
+                  >
+                    先配置模型
+                  </button>
+                )}
                 {(modelSettingsError || effectiveModelProblem) && (
                   <span className="composer-model-warning" role="status">
                     {modelSettingsError || effectiveModelProblem}

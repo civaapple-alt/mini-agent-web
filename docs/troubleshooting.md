@@ -167,19 +167,17 @@ Gateway 每轮最多向父代理提交 16 个子任务更新；最多缓存 64 �
 
 ---
 
-## 4. 大模型调用凭证丢失或鉴权失败 (401 Unauthorized)
+## 4. 大模型调用凭证缺失或鉴权失败 (401 Unauthorized)
 
 ### 现象
 提交 Turn 后模型立即报错退出，或 TUI 显示 `run_failed: Provider credentials missing`。
 
 ### 排查与解决
-1. **检查 `.env` 文件**：确保在工作区根目录下创建了 `.env`，并且配置了 `OPENAI_API_KEY` 与 `OPENAI_MODEL`；
-2. **自定义服务商配置**：如使用 DeepSeek、通义千问或 SiliconFlow，请同时配置 `OPENAI_BASE_URL`。App Server 会在该根 URL 后追加 `/responses`：
-   ```env
-   OPENAI_BASE_URL=https://api.deepseek.com
-   OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
-   OPENAI_MODEL=deepseek-flash
-   ```
+1. **检查模型设置**：在 **设置 → Agent 能力 → 模型设置** 确认供应商和模型已启用、Base URL 正确，且页面显示 API Key“已配置”；API Key 不会被读取或回显。
+2. **手动测试连接**：选择已保存的模型后点击“测试连接”，按结果检查 Key、模型 ID、接口地址或网络。该操作发送一次小型无工具请求，供应商可能计费。
+3. **项目默认模型**：打开项目设置确认项目选择；没有项目默认值时会使用全局默认模型。Thread 显式模型选择优先于项目和全局默认值。
+
+旧 `OPENAI_*` 和 `VERIFIER_OPENAI_*` 环境变量不再生效，也不会自动迁移旧 `.env` 值；请在模型设置中重新填写配置。
 
 ---
 

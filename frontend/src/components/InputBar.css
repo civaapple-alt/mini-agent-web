@@ -1145,6 +1145,22 @@ body.theme-dark .btn-dock-deny {
   color: var(--text-primary);
 }
 
+.composer-model-setup {
+  padding: 5px 8px;
+  border: 1px solid var(--accent-color, #10a37f);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--accent-color, #10a37f);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.composer-model-setup:hover {
+  background: var(--accent-soft, rgba(16, 163, 127, 0.08));
+}
+
 .composer-model-warning {
   flex-basis: 100%;
   max-width: min(560px, 60vw);

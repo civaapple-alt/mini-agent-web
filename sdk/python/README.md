@@ -55,7 +55,13 @@ asyncio.run(main())
 | 观察 | `get_runtime_status()`、`replay_events()`、`list_thread_items()` |
 | Session | `get_session_info()`、`fork_session()`、`read_notebook()`、`write_notebook()`、`forget_notebook()` |
 | 控制 | `update_thread_settings()`、Goal 方法、`get_world_state()`、`set_world_execution()`、MCP 方法 |
+| 模型配置 | `manage_model_catalog()`、`test_model_connection()` |
 | 本地任务 | 后台 Shell task 与 scheduled task 的 list/read/control 方法 |
+
+`manage_model_catalog()` 读写 Host 拥有的用户级模型目录；Web Studio 和 SDK
+共享这份配置。API Key 只在供应商更新请求中发送，查询结果只包含是否已配置。
+`test_model_connection(provider_id, model_id)` 会发起一次有界、无工具请求，供应商
+可能对其计费；不会在 SDK 启动或读取模型目录时自动调用。
 
 `AsyncMiniAgentClient` 是 `MiniAgentClient` 的兼容别名。`ThreadItem` 是
 App Server history 的读取投影，不是 SDK 的第二个持久化存储。

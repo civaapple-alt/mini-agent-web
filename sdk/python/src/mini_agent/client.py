@@ -1440,6 +1440,7 @@ class MiniAgentClient:
         """Read or update Host-owned machine-wide provider and model settings."""
         if operation not in {
             "get",
+            "test_connection",
             "upsert_provider",
             "delete_provider",
             "upsert_model",
@@ -1451,6 +1452,14 @@ class MiniAgentClient:
         return await self._send_request(
             "model/catalog/manage",
             {"operation": operation, **params},
+        )
+
+    async def test_model_connection(
+        self, provider_id: str, model_id: str
+    ) -> dict[str, Any]:
+        """Run one bounded, tool-free provider request. The provider may charge for it."""
+        return await self.manage_model_catalog(
+            "test_connection", providerId=provider_id, modelId=model_id
         )
 
     async def set_collaboration_mode(

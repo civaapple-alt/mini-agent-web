@@ -140,6 +140,7 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const providerMenuRef = useRef(null);
   const providerMenuButtonRef = useRef(null);
+  const modelEditorBackdropPointerDown = useRef(false);
 
   const selectedProvider = catalog.providers.find((provider) => provider.id === selectedProviderId) || null;
   const providerDraftDirty = providerIsNew
@@ -329,6 +330,23 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
       '丢弃修改',
       () => { setModelDraft(null); setModelIndex(null); },
     );
+  };
+
+  const handleModelEditorBackdropPointerDown = (event) => {
+    modelEditorBackdropPointerDown.current = event.target === event.currentTarget;
+  };
+
+  const handleModelEditorBackdropPointerUp = (event) => {
+    if (event.target !== event.currentTarget) {
+      modelEditorBackdropPointerDown.current = false;
+    }
+  };
+
+  const handleModelEditorBackdropClick = (event) => {
+    const shouldClose = modelEditorBackdropPointerDown.current
+      && event.target === event.currentTarget;
+    modelEditorBackdropPointerDown.current = false;
+    if (shouldClose) closeModelEditor();
   };
 
   const requestProviderDraft = (kind, name, id, baseUrl) => {
@@ -684,7 +702,13 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
       </section>
 
       {modelDraft && (
-        <div className="model-editor-overlay" onClick={closeModelEditor}>
+        <div
+          className="model-editor-overlay"
+          onPointerDown={handleModelEditorBackdropPointerDown}
+          onPointerUp={handleModelEditorBackdropPointerUp}
+          onPointerCancel={() => { modelEditorBackdropPointerDown.current = false; }}
+          onClick={handleModelEditorBackdropClick}
+        >
           <div className="model-editor-dialog" onClick={(event) => event.stopPropagation()}>
             <header><h3>{modelIndex === null ? '添加模型' : '编辑模型'}</h3><button type="button" className="model-icon-button" onClick={closeModelEditor} aria-label="关闭模型编辑"><X size={17} /></button></header>
             <div className="model-editor-body">

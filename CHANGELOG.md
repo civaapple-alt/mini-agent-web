@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Only close the model editor on a backdrop click that starts and ends outside
+  the dialog, so dragging to select text does not ask to discard the model.
 - Move provider, credential, and default-model setup to the Web Studio model
   settings page, with project defaults in Project settings and a first-run
   “先配置模型” entry beside the composer. Put bounded connection tests beside

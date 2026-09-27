@@ -136,6 +136,12 @@ export default function ChatArea({
     });
     return indexByTurn;
   }, [displayMessages]);
+  const lastAssistantMessageIndex = displayMessages.findLastIndex(
+    (message) => message?.role === 'assistant',
+  );
+  const activeTurnId = statusModel?.scope?.turnId
+    ? String(statusModel.scope.turnId)
+    : null;
 
   const childTaskBatchByMessage = useMemo(() => {
     const turnGroups = new Map();
@@ -388,6 +394,12 @@ export default function ChatArea({
             {displayMessages.map((msg, index) => {
               const messageId = String(msg.id || `msg_${index}`);
               const turnId = msg.turnId ? String(msg.turnId) : null;
+              // The active Turn remains stable while sampling and tools alternate; list position does not.
+              const isCurrentTurnSegment = msg.role === 'assistant'
+                && hasActiveTurn
+                && (activeTurnId && turnId
+                  ? activeTurnId === turnId && lastAssistantIndexByTurn.get(activeTurnId) === index
+                  : index === lastAssistantMessageIndex);
               const turnEntry = msg.role === 'user'
                 ? entryByMessageId.get(messageId)
                 : (turnId ? entryByTurnId.get(turnId) : null);
@@ -406,6 +418,7 @@ export default function ChatArea({
                     isLastInTurn={turnId
                       ? lastAssistantIndexByTurn.get(turnId) === index
                       : index === displayMessages.length - 1}
+                    isCurrentTurnSegment={isCurrentTurnSegment}
                     isGenerating={isGenerating}
                     pendingApproval={pendingApproval}
                     policy={policy}

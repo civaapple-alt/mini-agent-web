@@ -34,13 +34,25 @@ function getCurrentExecutionSegmentStartIndex(blocks, activeBlockIndex) {
   const segmentThinkingIndex = blocks.findLastIndex((block, index) => (
     index <= currentIndex && block.type === 'thinking'
   ));
-  return segmentThinkingIndex >= 0 ? segmentThinkingIndex : currentIndex;
+  if (segmentThinkingIndex >= 0) return segmentThinkingIndex;
+
+  const lastToolIndex = blocks.findLastIndex((block, index) => (
+    index <= currentIndex && block.type === 'tool'
+  ));
+  if (lastToolIndex < 0) return currentIndex;
+
+  let segmentStartIndex = lastToolIndex;
+  while (segmentStartIndex > 0 && blocks[segmentStartIndex - 1].type === 'tool') {
+    segmentStartIndex -= 1;
+  }
+  return segmentStartIndex;
 }
 
 export default function MessageItem({
   message,
   isLast,
   isLastInTurn = isLast,
+  isCurrentTurnSegment = null,
   isGenerating,
   pendingApproval,
   policy = 'interactive',
@@ -245,7 +257,10 @@ export default function MessageItem({
     );
   }
 
-  const isStreamingThis = isLast && isGenerating;
+  const isCurrentAssistantSegment = isCurrentTurnSegment === null
+    ? Boolean(isLast && (isGenerating || pendingApproval))
+    : Boolean(isCurrentTurnSegment);
+  const isStreamingThis = isCurrentAssistantSegment && isGenerating;
 
   // Extract all text content from blocks or fallback text
   const fullResponseText = blocks.length > 0
@@ -285,12 +300,12 @@ export default function MessageItem({
         .includes(status)
       || (block.type === 'skills' && (block.loading || []).length > 0);
   });
-  const activeBlockIndex = detectedActiveBlockIndex >= 0
+  const lastThinkingBlockIndex = normalizedBlocks.findLastIndex((block) => block.type === 'thinking');
+  const detectedBlockIsInCurrentSegment = detectedActiveBlockIndex >= lastThinkingBlockIndex;
+  const activeBlockIndex = detectedActiveBlockIndex >= 0 && detectedBlockIsInCurrentSegment
     ? detectedActiveBlockIndex
-    : isLast && isGenerating ? normalizedBlocks.length - 1 : -1;
-  const isCurrentExecutionSegmentActive = isLast && (
-    isGenerating || pendingApproval || activeBlockIndex !== -1
-  );
+    : isCurrentAssistantSegment && isGenerating ? normalizedBlocks.length - 1 : -1;
+  const isCurrentExecutionSegmentActive = isCurrentAssistantSegment;
   const segmentCursorIndex = activeBlockIndex >= 0 ? activeBlockIndex : normalizedBlocks.length - 1;
   const lastExecutionSegmentStartIndex = normalizedBlocks.length > 0
     ? getCurrentExecutionSegmentStartIndex(normalizedBlocks, segmentCursorIndex)
@@ -414,7 +429,7 @@ export default function MessageItem({
                 >
                   <ToolCard
                     tool={block}
-                    pendingApproval={isLast ? pendingApproval : null}
+                    pendingApproval={isCurrentAssistantSegment ? pendingApproval : null}
                     policy={policy}
                     presentationId={`${turnScope}:tool:${block.id || idx}`}
                   />
@@ -489,7 +504,7 @@ export default function MessageItem({
                     >
                       <ToolCard
                         tool={t}
-                        pendingApproval={isLast ? pendingApproval : null}
+                        pendingApproval={isCurrentAssistantSegment ? pendingApproval : null}
                         policy={policy}
                       />
                     </ErrorBoundary>
@@ -509,7 +524,7 @@ export default function MessageItem({
         )}
 
         {/* Footer actions & usage */}
-        {!isStreamingThis && isLastInTurn && fullResponseText && (
+        {!isCurrentAssistantSegment && isLastInTurn && fullResponseText && (
           <div className="assistant-footer">
             <button
               className="msg-action-btn font-mono"

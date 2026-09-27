@@ -447,7 +447,9 @@ def test_process_attachments_pipeline(tmp_path, monkeypatch):
     assert not (tmp_path / ".mini-agent").exists()
 
 
-def test_process_file_attachments_preserves_path_and_stages_file_content(tmp_path, monkeypatch):
+def test_process_file_attachments_preserves_path_and_stages_file_content(
+    tmp_path, monkeypatch
+):
     """Path drops stay references while ordinary files remain isolated copies."""
     attachment_dir = tmp_path / "gateway-state" / "attachments"
     monkeypatch.setattr(
@@ -498,7 +500,9 @@ def test_process_file_path_attachment_rejects_missing_or_git_paths(tmp_path):
         _process_attachments(
             "inspect",
             file_attachments=[
-                FileAttachment(name="missing", path=str(tmp_path / "missing"), source="path")
+                FileAttachment(
+                    name="missing", path=str(tmp_path / "missing"), source="path"
+                )
             ],
         )
 
@@ -714,9 +718,11 @@ async def test_ws_stream_continues_after_origin_socket_closes():
     websocket = AsyncMock()
     websocket.send_json = AsyncMock(side_effect=RuntimeError("socket closed"))
     client = AsyncMock()
+    consumed = []
 
     async def stream_turn(**_kwargs):
         yield {"type": "_turn_submission", "data": {"turn_id": "turn-closed"}}
+        consumed.append("submission")
         yield {
             "type": "event",
             "threadId": "default",
@@ -724,6 +730,7 @@ async def test_ws_stream_continues_after_origin_socket_closes():
             "sequence": 1,
             "event": {"type": "turn_finished", "status": "completed"},
         }
+        consumed.append("settlement")
 
     client.stream_turn = stream_turn
     with patch.object(
@@ -734,6 +741,7 @@ async def test_ws_stream_continues_after_origin_socket_closes():
         await _stream_turn_to_ws(websocket, "hello", "start", "default")
 
     websocket.send_json.assert_awaited_once()
+    assert consumed == ["submission", "settlement"]
     assert session_manager.get_active_turn("default") is None
 
 

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import WebSocket
-from mini_agent import MiniAgentClient, TurnTimeoutError
+from mini_agent import ExecutionRecoveryInfo, MiniAgentClient, TurnTimeoutError
 from mini_agent.errors import MiniAgentError
 
 from server.config import settings
@@ -524,6 +524,8 @@ class SessionManager:
     @staticmethod
     def _execution_recovery(checkpoint: Any) -> dict[str, Any] | None:
         recovery = getattr(checkpoint, "execution_recovery", None)
+        if isinstance(recovery, ExecutionRecoveryInfo):
+            return recovery.to_dict()
         return recovery if isinstance(recovery, dict) else None
 
     def _track_resumed_execution(

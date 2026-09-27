@@ -1053,7 +1053,10 @@ async def read_thread(
                     thread_id, project_id
                 )
                 runtime_checkpoint = await runtime_client.read_thread(thread_id)
-                canonical["execution_recovery"] = runtime_checkpoint.execution_recovery
+                recovery = runtime_checkpoint.execution_recovery
+                canonical["execution_recovery"] = (
+                    recovery.to_dict() if recovery is not None else None
+                )
             except (RuntimeError, ServerProcessError, AppServerError):
                 # The catalog remains a valid historical projection when the
                 # owning runtime is unavailable. It cannot expose a live
@@ -1082,7 +1085,11 @@ async def read_thread(
             "status": cp.status if cp else "active",
             "next_turn_number": cp.next_turn_number if cp else 1,
             "messages": cp.messages if cp else [],
-            "execution_recovery": cp.execution_recovery if cp else None,
+            "execution_recovery": (
+                cp.execution_recovery.to_dict()
+                if cp and cp.execution_recovery
+                else None
+            ),
             "metadata": meta,
             "raw": cp.raw if cp else {},
         }
@@ -1107,7 +1114,7 @@ async def read_turn_recovery(
             "turn_id": turn.turn_id,
             "status": turn.status,
             "error": turn.error,
-            "recovery": turn.recovery,
+            "recovery": turn.recovery.to_dict() if turn.recovery else None,
         }
     except KeyError as err:
         raise HTTPException(status_code=404, detail=str(err)) from err

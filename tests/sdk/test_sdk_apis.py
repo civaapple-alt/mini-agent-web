@@ -6,6 +6,9 @@ from pathlib import Path
 
 import pytest
 from mini_agent import (
+    ExecutionRecoveryPhase,
+    ExecutionRecoveryRecommendation,
+    ExecutionRecoveryStatus,
     MiniAgentClient,
     RuntimeStatus,
     ThreadCheckpoint,
@@ -253,6 +256,8 @@ def test_sdk_reads_bounded_execution_recovery_metadata():
         "status": "waiting_for_continue",
         "phase": "model_request",
         "checkpointSeq": 14,
+        "lastHeartbeatMs": 1_700_000_000_100,
+        "lastProgressMs": 1_700_000_000_000,
         "reason": "temporary_model_error",
     }
 
@@ -263,8 +268,108 @@ def test_sdk_reads_bounded_execution_recovery_metadata():
         {"turnId": "turn-recovery", "status": "failed", "recovery": recovery}
     )
 
-    assert checkpoint.execution_recovery == recovery
-    assert turn.recovery == recovery
+    assert checkpoint.execution_recovery.status is (
+        ExecutionRecoveryStatus.WAITING_FOR_CONTINUE
+    )
+    assert checkpoint.execution_recovery.phase is ExecutionRecoveryPhase.MODEL_REQUEST
+    assert checkpoint.execution_recovery.checkpoint_seq == 14
+    assert checkpoint.execution_recovery.last_heartbeat_ms == 1_700_000_000_100
+    assert checkpoint.execution_recovery.last_progress_ms == 1_700_000_000_000
+    assert checkpoint.execution_recovery.reason == "temporary_model_error"
+    assert checkpoint.execution_recovery.to_dict() == recovery
+    assert turn.recovery.recommended_action is ExecutionRecoveryRecommendation.RESUME
+    assert turn.recovery.to_dict() == recovery
+
+
+def test_sdk_preserves_unknown_recovery_values_and_recommends_inspection():
+    recovery = {
+        "turnId": "turn-future",
+        "status": "future_recovery_state",
+        "phase": "future_phase",
+        "checkpointSeq": 21,
+        "futureField": {"bounded": True},
+    }
+
+    result = TurnReadResult.from_dict(
+        {"turnId": "turn-future", "status": "in_progress", "recovery": recovery}
+    )
+
+    assert result.recovery.status is ExecutionRecoveryStatus.UNKNOWN
+    assert result.recovery.phase is ExecutionRecoveryPhase.UNKNOWN
+    assert result.recovery.recommended_action is ExecutionRecoveryRecommendation.INSPECT
+    assert result.recovery.to_dict() == recovery
+
+
+@pytest.mark.parametrize(
+    ("status", "recommendation"),
+    [
+        ("running", ExecutionRecoveryRecommendation.WAIT),
+        (
+            "needs_reconciliation",
+            ExecutionRecoveryRecommendation.VERIFY_TOOL_RESULT,
+        ),
+        ("settled", ExecutionRecoveryRecommendation.NONE),
+    ],
+)
+def test_sdk_recovery_recommendations_are_informational(status, recommendation):
+    recovery = TurnReadResult.from_dict(
+        {
+            "turnId": "turn-contract",
+            "status": "in_progress",
+            "recovery": {
+                "turnId": "turn-contract",
+                "status": status,
+                "phase": "tool_batch",
+                "checkpointSeq": 1,
+            },
+        }
+    ).recovery
+
+    assert recovery.recommended_action is recommendation
+
+
+@pytest.mark.asyncio
+async def test_sdk_exposes_event_gap_before_snapshot_reconciliation():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        if method == "turn/events":
+            return {
+                "value": {
+                    "data": [],
+                    "nextCursor": 8,
+                    "oldestSequence": 5,
+                    "hasGap": True,
+                }
+            }
+        if method == "thread/read":
+            return {
+                "value": {
+                    "threadId": "thread-gap",
+                    "status": "idle",
+                    "executionRecovery": None,
+                }
+            }
+        if method == "thread/items/list":
+            return {"value": {"data": [], "nextCursor": None}}
+        raise AssertionError(f"unexpected method: {method}")
+
+    client._send_request = fake_send
+
+    replay = await client.replay_events("thread-gap", after_sequence=2)
+    assert replay.has_gap is True
+    checkpoint = await client.read_thread("thread-gap")
+    items = await client.list_thread_items("thread-gap")
+
+    assert checkpoint.thread_id == "thread-gap"
+    assert items.data == []
+    assert [method for method, _ in calls] == [
+        "turn/events",
+        "thread/read",
+        "thread/items/list",
+    ]
 
 
 @pytest.mark.asyncio

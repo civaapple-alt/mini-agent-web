@@ -64,6 +64,12 @@ App Server history 的读取投影，不是 SDK 的第二个持久化存储。
 不会立即破坏较旧的 SDK consumer。调用方应使用 `ThreadItem.status` 呈现生命周期，
 使用 `ThreadItem.outcome` 判断结构化工具结果，不能从工具输出文本推断审批或重试。
 
+`ThreadCheckpoint.execution_recovery` 和 `TurnReadResult.recovery` 返回
+`ExecutionRecoveryInfo`，提供有类型的状态、阶段、检查点序号、进度和原因。
+`recommended_action` 只给出提示，不会恢复 Turn 或重试工具。未知恢复值保留在
+`raw` 中，并建议调用方检查状态。请读取 `recovery.status.value`，不要再用
+`recovery["status"]` 访问恢复状态。
+
 ## 审批与通知
 
 `approval_handler` 接收尚未由运行时结算的审批请求，并必须返回

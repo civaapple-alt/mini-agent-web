@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from mini_agent import ThreadCheckpoint, TurnReadResult
 
 from server.app import create_app
 from server.session_manager import session_manager
@@ -567,8 +568,8 @@ async def test_runtime_observation_routes_expose_snapshot_and_replay(
             {"threadId": "t-observe", "sequence": 5, "event": {"type": "run_started"}}
         ],
         next_cursor=5,
-        oldest_sequence=1,
-        has_gap=False,
+        oldest_sequence=5,
+        has_gap=True,
     )
     monkeypatch.setattr(
         session_manager,
@@ -590,10 +591,83 @@ async def test_runtime_observation_routes_expose_snapshot_and_replay(
     assert replay.status_code == 200
     assert replay.json()["next_cursor"] == 5
     assert replay.json()["data"][0]["sequence"] == 5
+    assert replay.json()["oldest_sequence"] == 5
+    assert replay.json()["has_gap"] is True
     client_mock.get_runtime_status.assert_awaited_once_with("t-observe")
     client_mock.replay_events.assert_awaited_once_with(
         thread_id="t-observe", after_sequence=4, limit=2
     )
+
+
+@pytest.mark.asyncio
+async def test_gateway_maps_typed_recovery_without_changing_wire_fields(
+    test_app, monkeypatch
+):
+    client_mock = AsyncMock()
+    client_mock.read_turn.return_value = TurnReadResult.from_dict(
+        {
+            "turnId": "turn-recovery",
+            "status": "in_progress",
+            "recovery": {
+                "turnId": "turn-recovery",
+                "status": "waiting_for_continue",
+                "phase": "model_request",
+                "checkpointSeq": 14,
+                "reason": "provider_temporarily_unavailable",
+            },
+        }
+    )
+    monkeypatch.setattr(
+        session_manager,
+        "get_client_for_thread",
+        AsyncMock(return_value=client_mock),
+    )
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/threads/thread-1/turns/turn-recovery")
+
+    assert response.status_code == 200
+    assert response.json()["recovery"] == {
+        "turnId": "turn-recovery",
+        "status": "waiting_for_continue",
+        "phase": "model_request",
+        "checkpointSeq": 14,
+        "reason": "provider_temporarily_unavailable",
+    }
+    assert "recommended_action" not in response.json()["recovery"]
+
+
+@pytest.mark.asyncio
+async def test_gateway_maps_typed_thread_checkpoint_recovery(test_app, monkeypatch):
+    recovery = {
+        "turnId": "turn-checkpoint",
+        "status": "needs_reconciliation",
+        "phase": "tool_batch",
+        "checkpointSeq": 8,
+        "reason": "tool_outcome_missing",
+    }
+    client_mock = AsyncMock()
+    client_mock.read_thread.return_value = ThreadCheckpoint.from_dict(
+        {
+            "threadId": "thread-checkpoint",
+            "status": "idle",
+            "executionRecovery": recovery,
+        }
+    )
+    monkeypatch.setattr(session_manager, "read_any_project_thread", lambda *_args: None)
+    monkeypatch.setattr(
+        session_manager,
+        "get_client_for_thread",
+        AsyncMock(return_value=client_mock),
+    )
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/threads/thread-checkpoint")
+
+    assert response.status_code == 200
+    assert response.json()["execution_recovery"] == recovery
 
 
 def test_gateway_websocket(test_app):

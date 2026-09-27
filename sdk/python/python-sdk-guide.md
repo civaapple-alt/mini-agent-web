@@ -45,6 +45,26 @@ search checks `cwd`, its parent, SDK paths, the Web workspace, and
 Logging is disabled by default. Pass `log_dir` or `log_file`, or set
 `MINI_AGENT_LOG_DIR` or `MINI_AGENT_LOG_FILE`, to write SDK logs.
 
+## Inspect execution recovery
+
+`read_thread()` exposes an unsettled execution checkpoint as
+`ThreadCheckpoint.execution_recovery`. `read_turn()` exposes the same App Server
+record as `TurnReadResult.recovery`. Both fields use `ExecutionRecoveryInfo`.
+The model includes the Turn ID, status, phase, checkpoint sequence, heartbeat,
+progress timestamp, and recovery reason.
+
+`recommended_action` is an informational hint. For `waiting_for_continue`, check
+the Turn ID and checkpoint sequence before calling `resume_turn()`. For
+`needs_reconciliation`, verify the tool's external effect before resuming. The
+SDK never retries a tool from this hint. Unknown status and phase values map to
+`UNKNOWN`; `raw` retains the original recovery record. Read enum values with
+`recovery.status.value` and `recovery.phase.value`.
+
+Use `replay_events()` after a short disconnect. If `TurnEventsResult.has_gap` is
+true, read the Thread checkpoint and its bounded ThreadItems before treating
+the replay page as complete. The SDK reports the gap and leaves reconciliation
+to the caller.
+
 ```python
 client = MiniAgentClient(
     executable="mini-agent-app-server",

@@ -99,6 +99,7 @@ def create_mock_client(project_name: str = "test-project") -> AsyncMock:
             messages=[],
             status="idle",
             next_turn_number=1,
+            execution_recovery=None,
             raw={},
         )
     )

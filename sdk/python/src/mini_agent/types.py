@@ -5,6 +5,7 @@ Type definitions and dataclasses for Mini Agent Protocol objects.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Literal
 
 TurnStatus = Literal[
@@ -80,6 +81,34 @@ ScheduledTaskState = Literal["scheduled", "ready", "cancelled"]
 CollaborationModeKind = Literal["default", "plan"]
 ContinuationMode = Literal["manual", "continuous"]
 ApprovalPolicy = Literal["interactive", "automatic", "trusted"]
+
+
+class ExecutionRecoveryStatus(str, Enum):
+    """Known App Server execution recovery states."""
+
+    RUNNING = "running"
+    WAITING_FOR_CONTINUE = "waiting_for_continue"
+    NEEDS_RECONCILIATION = "needs_reconciliation"
+    SETTLED = "settled"
+    UNKNOWN = "unknown"
+
+
+class ExecutionRecoveryPhase(str, Enum):
+    """Known phase recorded in an App Server execution checkpoint."""
+
+    MODEL_REQUEST = "model_request"
+    TOOL_BATCH = "tool_batch"
+    UNKNOWN = "unknown"
+
+
+class ExecutionRecoveryRecommendation(str, Enum):
+    """Informational next step derived from a recovery status."""
+
+    WAIT = "wait"
+    RESUME = "resume"
+    VERIFY_TOOL_RESULT = "verify_tool_result"
+    NONE = "none"
+    INSPECT = "inspect"
 
 
 @dataclass
@@ -276,6 +305,87 @@ class TurnSubmissionResult:
 
 
 @dataclass
+class ExecutionRecoveryInfo:
+    """Typed, bounded projection of an App Server execution checkpoint."""
+
+    turn_id: str
+    status: ExecutionRecoveryStatus
+    phase: ExecutionRecoveryPhase
+    checkpoint_seq: int | None = None
+    last_heartbeat_ms: int | None = None
+    last_progress_ms: int | None = None
+    reason: str | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def recommended_action(self) -> ExecutionRecoveryRecommendation:
+        """Return an advisory only; this property never resumes or retries work."""
+        return {
+            ExecutionRecoveryStatus.RUNNING: ExecutionRecoveryRecommendation.WAIT,
+            ExecutionRecoveryStatus.WAITING_FOR_CONTINUE: (
+                ExecutionRecoveryRecommendation.RESUME
+            ),
+            ExecutionRecoveryStatus.NEEDS_RECONCILIATION: (
+                ExecutionRecoveryRecommendation.VERIFY_TOOL_RESULT
+            ),
+            ExecutionRecoveryStatus.SETTLED: ExecutionRecoveryRecommendation.NONE,
+            ExecutionRecoveryStatus.UNKNOWN: ExecutionRecoveryRecommendation.INSPECT,
+        }.get(self.status, ExecutionRecoveryRecommendation.INSPECT)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the original wire fields for Gateway JSON projections."""
+        if self.raw:
+            return dict(self.raw)
+        payload: dict[str, Any] = {
+            "turnId": self.turn_id,
+            "status": self.status.value,
+            "phase": self.phase.value,
+        }
+        if self.checkpoint_seq is not None:
+            payload["checkpointSeq"] = self.checkpoint_seq
+        if self.last_heartbeat_ms is not None:
+            payload["lastHeartbeatMs"] = self.last_heartbeat_ms
+        if self.last_progress_ms is not None:
+            payload["lastProgressMs"] = self.last_progress_ms
+        if self.reason is not None:
+            payload["reason"] = self.reason
+        return payload
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ExecutionRecoveryInfo:
+        payload = data if isinstance(data, dict) else {}
+        status_value = payload.get("status")
+        phase_value = payload.get("phase")
+        try:
+            status = ExecutionRecoveryStatus(status_value)
+        except (TypeError, ValueError):
+            status = ExecutionRecoveryStatus.UNKNOWN
+        try:
+            phase = ExecutionRecoveryPhase(phase_value)
+        except (TypeError, ValueError):
+            phase = ExecutionRecoveryPhase.UNKNOWN
+
+        def optional_int(camel: str, snake: str) -> int | None:
+            value = payload.get(camel, payload.get(snake))
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                return value
+            return None
+
+        reason = payload.get("reason")
+        turn_id = payload.get("turnId", payload.get("turn_id", ""))
+        return cls(
+            turn_id=turn_id if isinstance(turn_id, str) else "",
+            status=status,
+            phase=phase,
+            checkpoint_seq=optional_int("checkpointSeq", "checkpoint_seq"),
+            last_heartbeat_ms=optional_int("lastHeartbeatMs", "last_heartbeat_ms"),
+            last_progress_ms=optional_int("lastProgressMs", "last_progress_ms"),
+            reason=reason if isinstance(reason, str) else None,
+            raw=dict(payload),
+        )
+
+
+@dataclass
 class TurnReadResult:
     """Settled outcome and message history for a turn."""
 
@@ -287,7 +397,7 @@ class TurnReadResult:
     messages: list[dict[str, Any]] = field(default_factory=list)
     items: list[ThreadItem] = field(default_factory=list)
     error: str | None = None
-    recovery: dict[str, Any] | None = None
+    recovery: ExecutionRecoveryInfo | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -302,9 +412,11 @@ class TurnReadResult:
             messages=val.get("messages", []),
             items=[ThreadItem.from_dict(item) for item in val.get("items", [])],
             error=val.get("error"),
-            recovery=val.get("recovery")
-            if isinstance(val.get("recovery"), dict)
-            else None,
+            recovery=(
+                ExecutionRecoveryInfo.from_dict(val["recovery"])
+                if isinstance(val.get("recovery"), dict)
+                else None
+            ),
             raw=data,
         )
 
@@ -489,7 +601,7 @@ class ThreadCheckpoint:
     context_revision: int = 0
     last_turn_id: str | None = None
     next_event_sequence: int = 1
-    execution_recovery: dict[str, Any] | None = None
+    execution_recovery: ExecutionRecoveryInfo | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -508,7 +620,9 @@ class ThreadCheckpoint:
             next_event_sequence=val.get("next_event_sequence")
             or val.get("nextEventSequence", 1),
             execution_recovery=(
-                val.get("execution_recovery") or val.get("executionRecovery")
+                ExecutionRecoveryInfo.from_dict(
+                    val.get("execution_recovery") or val.get("executionRecovery")
+                )
                 if isinstance(
                     val.get("execution_recovery") or val.get("executionRecovery"),
                     dict,

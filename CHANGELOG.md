@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Parse Turn and Thread execution-recovery metadata into the public
+  `ExecutionRecoveryInfo` type. Preserve unknown fields and statuses, and expose
+  an advisory action without resuming a Turn or retrying a tool.
+- Verify App Server restart, Gateway reattachment, WebSocket disconnect, event
+  gaps, and unknown events with deterministic tests that do not call a model
+  provider.
 - Clarify parent/child handoffs: delegate with a natural-language goal and
   expected result, report only meaningful progress or blockers, and review a
   child's current result before deciding whether to follow up in the same

@@ -108,6 +108,8 @@ def test_parse_event_matches_protocol_event_surface(payload, event_class):
 
     assert isinstance(event, event_class)
     assert event.event_type == payload["type"]
+    if isinstance(event, GenericEvent):
+        assert event.data == payload
 
     if isinstance(event, ContextCompactionFinishedEvent):
         assert event.usage == ModelUsage(
@@ -652,7 +654,7 @@ async def test_stream_turn_waits_for_settlement_after_run_failed():
     async def fake_start_turn(prompt, mode="start", thread_id=None):
         return TurnSubmissionResult(status="started", turn_id="turn-failed")
 
-    async def fake_read_turn(turn_id):
+    async def fake_read_turn(turn_id, request_timeout=None):
         return TurnReadResult(
             turn_id=turn_id,
             status="failed",
@@ -661,7 +663,7 @@ async def test_stream_turn_waits_for_settlement_after_run_failed():
         )
 
     client.start_turn = fake_start_turn
-    client.read_turn = fake_read_turn
+    client._read_turn = fake_read_turn
     stream = client.stream_turn("inspect", thread_id="thread-1")
     await anext(stream)
 

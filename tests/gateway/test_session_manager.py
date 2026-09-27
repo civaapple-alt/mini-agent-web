@@ -10,7 +10,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from mini_agent import TurnTimeoutError
+from mini_agent import (
+    ExecutionRecoveryInfo,
+    ExecutionRecoveryPhase,
+    ExecutionRecoveryStatus,
+    MiniAgentClient,
+    TurnTimeoutError,
+)
 
 from server import session_manager as session_manager_module
 from server.control import client_pool as client_pool_module
@@ -43,6 +49,42 @@ def mock_session_manager(tmp_path):
         }
     }
     return mgr
+
+
+@pytest.mark.asyncio
+async def test_gateway_restart_reattaches_canonical_session_without_new_turn(
+    mock_session_manager, monkeypatch
+):
+    recovery = ExecutionRecoveryInfo(
+        turn_id="turn-after-restart",
+        status=ExecutionRecoveryStatus.WAITING_FOR_CONTINUE,
+        phase=ExecutionRecoveryPhase.MODEL_REQUEST,
+        checkpoint_seq=12,
+    )
+    resumed_client = AsyncMock(spec=MiniAgentClient)
+    resumed_client.read_thread.return_value = SimpleNamespace(
+        execution_recovery=recovery
+    )
+    create_client = AsyncMock(return_value=resumed_client)
+    monkeypatch.setattr(mock_session_manager, "_create_client", create_client)
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_canonical_thread",
+        lambda _thread_id, _project_id=None: {
+            "session": {
+                "session_id": "session-authoritative",
+                "session_status": "active",
+            }
+        },
+    )
+
+    attached = await mock_session_manager.get_client_for_thread("thread-1", "default")
+    checkpoint = await attached.read_thread("thread-1")
+
+    assert create_client.await_args.args[0] == "thread-1"
+    assert create_client.await_args.args[2:] == ("resume", "session-authoritative")
+    assert checkpoint.execution_recovery is recovery
+    resumed_client.start_turn.assert_not_awaited()
 
 
 def test_session_manager_project_collision_avoidance(mock_session_manager, tmp_path):

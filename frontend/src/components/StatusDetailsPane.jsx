@@ -26,6 +26,34 @@ function formatDueTime(dueAt) {
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s 后`;
 }
 
+function formatElapsedSince(timestamp, now) {
+  const value = Number(timestamp);
+  if (!Number.isFinite(value) || value <= 0) return '暂无记录';
+  const seconds = Math.max(0, Math.floor((now - value) / 1000));
+  if (seconds < 2) return '刚刚';
+  if (seconds < 60) return `${seconds} 秒前`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒前`;
+  return `${Math.floor(seconds / 3600)} 小时 ${Math.floor((seconds % 3600) / 60)} 分前`;
+}
+
+function formatClock(timestamp) {
+  const value = Number(timestamp);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return new Date(value).toLocaleTimeString([], { hour12: false });
+}
+
+const executionStatusLabels = {
+  running: '运行中',
+  waiting_for_continue: '停滞待继续',
+  needs_reconciliation: '工具待核对',
+  settled: '已结算',
+};
+
+const executionPhaseLabels = {
+  model_request: '模型请求',
+  tool_batch: '工具批次',
+};
+
 const taskStateLabels = {
   starting: '启动中',
   running: '运行中',
@@ -56,8 +84,13 @@ export default function StatusDetailsPane({
   const [scheduledTasks, setScheduledTasks] = useState([]);
   const [scheduledTaskError, setScheduledTaskError] = useState(null);
   const [expandedLogs, setExpandedLogs] = useState({});
+  const [turnRead, setTurnRead] = useState(null);
+  const [turnReadError, setTurnReadError] = useState(null);
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const isChild = Boolean(sessionMeta?.parentSessionId);
   const hasSession = Boolean(sessionMeta?.sessionId);
+  const turnId = status?.scope?.turnId || null;
+  const turnActive = Boolean(status?.process?.turnActive);
   const childTaskCounts = getChildTaskCounts(childTasks);
   const hasForkMetrics = hasSession && (
     sessionMeta.parentSessionId
@@ -95,6 +128,64 @@ export default function StatusDetailsPane({
       window.clearInterval(timer);
     };
   }, [projectId, threadId]);
+
+  useEffect(() => {
+    if (!turnId || !hasSession) {
+      setTurnRead(null);
+      setTurnReadError(null);
+      return undefined;
+    }
+    let active = true;
+    let timer = null;
+    setTurnRead(null);
+    setTurnReadError(null);
+
+    const refresh = async () => {
+      try {
+        const result = await threadApi.readTurn(threadId, turnId, { projectId });
+        if (!active) return;
+        setTurnRead(result);
+        setTurnReadError(null);
+        if (turnActive && result?.status === 'in_progress') {
+          timer = window.setTimeout(refresh, 3000);
+        }
+      } catch (error) {
+        if (!active) return;
+        if (turnActive) {
+          setTurnReadError(error.message || '暂时无法读取执行检查点');
+          timer = window.setTimeout(refresh, 3000);
+        }
+      }
+    };
+
+    refresh();
+    return () => {
+      active = false;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [hasSession, projectId, threadId, turnActive, turnId]);
+
+  const executionRecovery = turnRead?.recovery || null;
+  const executionStatus = executionRecovery?.status || null;
+  const executionDisplayStatus = executionStatus || (turnReadError ? 'failed' : 'loading');
+  const lastWorkflowEvent = status?.runtime?.lastWorkflowEvent || null;
+  const workflowEventDetails = [
+    lastWorkflowEvent?.turnId ? `Turn ${lastWorkflowEvent.turnId}` : null,
+    lastWorkflowEvent?.checkpointSeq !== null && lastWorkflowEvent?.checkpointSeq !== undefined
+      ? `checkpoint ${lastWorkflowEvent.checkpointSeq}`
+      : null,
+    formatClock(lastWorkflowEvent?.timestampMs),
+  ].filter(Boolean).join(' · ');
+  const showExecutionProgress = turnActive || [
+    'waiting_for_continue',
+    'needs_reconciliation',
+  ].includes(executionStatus);
+
+  useEffect(() => {
+    if (!showExecutionProgress) return undefined;
+    const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [showExecutionProgress]);
 
   const refreshBackgroundTasks = async () => {
     const result = await threadApi.listBackgroundTasks(threadId, { projectId });
@@ -169,6 +260,62 @@ export default function StatusDetailsPane({
         <strong>{status?.summary || '空闲'}</strong>
         {status?.scope?.turnId && <small className="font-mono">Turn {status.scope.turnId}</small>}
       </div>
+
+      {showExecutionProgress && (
+        <section
+          className={`status-execution-progress ${executionDisplayStatus}`}
+          aria-label="当前 Turn 执行进度"
+        >
+          <div className="status-execution-progress-header">
+            <strong>当前 Turn 执行进度</strong>
+            <span className={`status-execution-badge ${executionDisplayStatus}`}>
+              {executionStatusLabels[executionStatus] || (turnReadError ? '读取失败' : '读取中')}
+            </span>
+          </div>
+          <p>序号标识持久化恢复位置，不是步数；模型请求或工具批次执行期间不会中途推进检查点。</p>
+          {!hasSession ? (
+            <div className="status-detail-note">当前 Session 未持久化，暂无可恢复的执行检查点。</div>
+          ) : turnReadError ? (
+            <div className="status-execution-read-error">{turnReadError}</div>
+          ) : (
+            <div className="status-execution-progress-grid">
+              <div>
+                <span>执行检查点序号</span>
+                <strong className="font-mono">
+                  {executionRecovery?.checkpointSeq ?? executionRecovery?.checkpoint_seq ?? '等待首个检查点'}
+                </strong>
+              </div>
+              <div>
+                <span>阶段</span>
+                <strong>
+                  {executionPhaseLabels[executionRecovery?.phase] || (turnActive ? '正在读取' : '—')}
+                </strong>
+              </div>
+              <div>
+                <span>最近进展</span>
+                <strong>
+                  {formatElapsedSince(
+                    executionRecovery?.lastProgressMs ?? executionRecovery?.last_progress_ms,
+                    clockNow,
+                  )}
+                </strong>
+              </div>
+              <div>
+                <span>执行器心跳</span>
+                <strong>
+                  {formatElapsedSince(
+                    executionRecovery?.lastHeartbeatMs ?? executionRecovery?.last_heartbeat_ms,
+                    clockNow,
+                  )}
+                </strong>
+              </div>
+            </div>
+          )}
+          {executionRecovery?.reason && (
+            <div className="status-execution-reason">{executionRecovery.reason}</div>
+          )}
+        </section>
+      )}
 
       {status?.approval && (
         <div className="status-detail-alert approval">
@@ -266,7 +413,7 @@ export default function StatusDetailsPane({
               <span className="card-val font-mono">{status?.scope?.turnId || '—'}</span>
             </div>
             <div className="detail-card">
-              <span className="card-label">Checkpoint</span>
+              <span className="card-label">会话检查点序号</span>
               <span className="card-val font-mono">{status?.runtime?.checkpointSeq ?? '—'}</span>
             </div>
             <div className="detail-card">
@@ -276,6 +423,9 @@ export default function StatusDetailsPane({
               </span>
             </div>
           </div>
+          <p className="status-detail-note">
+            会话检查点在 Turn 结算后更新；运行中的安全恢复位置见上方“当前 Turn 执行进度”。
+          </p>
 
           <div className="status-detail-section">
             <span className="card-label">运行设置</span>
@@ -288,10 +438,12 @@ export default function StatusDetailsPane({
           </div>
 
           <div className="status-detail-section">
-            <span className="card-label">最近事件</span>
-            <div className="status-detail-event font-mono">
-              {status?.runtime?.lastWorkflowEvent || '暂无新的工作流事件'}
+            <span className="card-label">最近收到的工作流事件</span>
+            <div className="status-detail-event status-workflow-event font-mono">
+              <span>{lastWorkflowEvent?.method || '暂无新的工作流事件'}</span>
+              {workflowEventDetails && <small>{workflowEventDetails}</small>}
             </div>
+            <p className="status-detail-note">此处记录检查点、Goal 和 Plan 等生命周期通知，不代表当前模型或工具活动。</p>
           </div>
         </div>
       </details>

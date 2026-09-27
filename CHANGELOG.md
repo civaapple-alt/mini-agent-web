@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Clarify runtime checkpoint diagnostics: distinguish the last settled Session
+  checkpoint from the active Turn's execution recovery checkpoint, phase,
+  recent progress, and executor heartbeat. Keep the latest workflow event tied
+  to its Turn and timestamp. Allow `turn/read` to inspect the active Turn while
+  execution is running.
 - Persist bounded execution checkpoints and tool-call outcomes for Main and
   Child Turns. Resume the same logical Turn only after an explicit user action;
   show unknown tool outcomes as requiring reconciliation.

@@ -179,7 +179,18 @@ export function getStatusViewModel({
       checkpointSeq: runtimeStatus?.checkpointSeq ?? runtimeStatus?.checkpoint_seq ?? null,
       operationId: runtimeStatus?.operationId || runtimeStatus?.operation_id || null,
       error: runtimeError,
-      lastWorkflowEvent: lastWorkflowEvent?.method || lastWorkflowEvent?.type || null,
+      lastWorkflowEvent: lastWorkflowEvent
+        ? {
+          method: lastWorkflowEvent.method || lastWorkflowEvent.type || null,
+          turnId: lastWorkflowEvent.turnId || lastWorkflowEvent.turn_id || null,
+          checkpointSeq: lastWorkflowEvent.checkpointSeq
+            ?? lastWorkflowEvent.checkpoint_seq
+            ?? null,
+          timestampMs: lastWorkflowEvent.timestampMs
+            ?? lastWorkflowEvent.timestamp_ms
+            ?? null,
+        }
+        : null,
     },
     approval: pendingApproval
       ? {

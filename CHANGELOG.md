@@ -18,11 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Show a live elapsed duration on running child task rows and show the processed
   duration at the start of each main conversation Turn. Freeze both displays
   when their execution settles; estimate historical Turn duration from durable
-  activity timestamps when runtime duration is unavailable.
+  activity timestamps when runtime duration is unavailable. Show a sub-second
+  Turn as `不足1秒` instead of rounding its label down to `0秒`.
 - Improve child Session detail readability: show each thinking/tool activity in
-  execution order, bound long task prompts to a scrollable bubble, and keep a
-  result-only final reply at the end of the transcript instead of duplicating it
-  in the status card.
+  execution order with the same active/final segment visibility and settled
+  activity summaries as the main conversation. Bound long task prompts to a
+  scrollable bubble, and keep a result-only final reply at the end of the
+  transcript instead of duplicating it in the status card.
 - Bound WebSocket notification delivery so a slow browser cannot stall the
   App Server stdout reader. Disconnect slow consumers and let them recover from
   the bounded event replay path. Treat an individual `turn/read` RPC timeout as

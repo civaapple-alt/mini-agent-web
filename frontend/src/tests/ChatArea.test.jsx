@@ -4,6 +4,22 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import ChatArea from '../components/ChatArea';
 
 describe('ChatArea turn status', () => {
+  it('labels a sub-second completed Turn without rounding it down to zero', () => {
+    render(
+      <ChatArea
+        messages={[
+          { id: 'short-turn-input', role: 'user', turnId: 'short-turn', text: 'quick task' },
+          { id: 'short-turn-answer', role: 'assistant', turnId: 'short-turn', text: 'done' },
+        ]}
+        isGenerating={false}
+        pendingApproval={null}
+        lastTurnResult={{ status: 'completed', turnId: 'short-turn', durationMs: 420 }}
+      />,
+    );
+
+    expect(screen.getByText('已处理不足1秒')).toBeTruthy();
+  });
+
   it('shows the settled failure reason instead of a generic incomplete label', () => {
     render(
       <ChatArea

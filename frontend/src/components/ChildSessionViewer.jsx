@@ -648,6 +648,9 @@ export default function ChildSessionViewer({
                 ? group.turnId === String(activeTurnId)
                 : groupIndex === turnGroups.length - 1);
               const lastIndex = group.messages.at(-1)?.index;
+              const lastAssistantIndex = group.messages.findLast(({ message }) => (
+                message.role === 'assistant'
+              ))?.index ?? lastIndex;
               const turnStatusLabel = isCurrentTurn
                 ? (phase || '当前执行')
                 : groupIndex === turnGroups.length - 1 && status !== 'running'
@@ -673,11 +676,15 @@ export default function ChildSessionViewer({
                         isLast={index === messages.length - 1}
                         isLastInTurn={message.turnId
                           ? lastAssistantIndexByTurn.get(String(message.turnId)) === index
-                          : index === lastIndex}
+                          : index === lastAssistantIndex}
+                        isCurrentTurnSegment={isCurrentTurn
+                          && message.role === 'assistant'
+                          && (message.turnId
+                            ? lastAssistantIndexByTurn.get(String(message.turnId)) === index
+                            : index === lastAssistantIndex)}
                         isGenerating={isCurrentTurn}
                         pendingApproval={null}
                         policy="read_only"
-                        showAllActivityBlocks
                       />
                     ))}
                   </div>
@@ -702,7 +709,6 @@ export default function ChildSessionViewer({
                   isGenerating={false}
                   pendingApproval={null}
                   policy="read_only"
-                  showAllActivityBlocks
                 />
               </section>
             )}

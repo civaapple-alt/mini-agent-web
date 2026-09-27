@@ -10,6 +10,7 @@ import './ChatArea.css';
 
 function formatProcessedDuration(durationMs) {
   if (!Number.isFinite(durationMs) || durationMs < 0) return null;
+  if (durationMs < 1000) return '已处理不足1秒';
   const totalSeconds = Math.floor(durationMs / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;

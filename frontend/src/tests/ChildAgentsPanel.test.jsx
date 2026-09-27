@@ -321,6 +321,42 @@ describe('child agents drawer tab', () => {
     expect(screen.getByText('根据评审意见继续修改')).toBeTruthy();
   });
 
+  it('keeps the active child Turn segment expanded and summarizes its earlier segment', async () => {
+    api.readThread.mockResolvedValue({
+      turn_active: true,
+      active_turn_id: 'child-turn-live',
+      messages: [],
+    });
+    api.listThreadItems.mockResolvedValue({
+      data: [
+        { threadId: 'child-a', turnId: 'child-turn-live', historyOrder: 4,
+          item: { type: 'toolCall', id: 'tool-two', segmentId: 'segment-two', name: 'read_file', status: 'completed' } },
+        { threadId: 'child-a', turnId: 'child-turn-live', historyOrder: 3,
+          item: { type: 'reasoning', id: 'reasoning-two', segmentId: 'segment-two', text: 'current reasoning' } },
+        { threadId: 'child-a', turnId: 'child-turn-live', historyOrder: 2,
+          item: { type: 'toolCall', id: 'tool-one', segmentId: 'segment-one', name: 'read_file', status: 'completed' } },
+        { threadId: 'child-a', turnId: 'child-turn-live', historyOrder: 1,
+          item: { type: 'reasoning', id: 'reasoning-one', segmentId: 'segment-one', text: 'earlier reasoning' } },
+        { threadId: 'child-a', turnId: 'child-turn-live', historyOrder: 0,
+          item: { type: 'userMessage', id: 'child-live-input', text: 'inspect files' } },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = render(
+      <ChildSessionViewer
+        child={{ ...child, status: 'running', current_turn_id: 'child-turn-live' }}
+        projectId="project-a"
+        onBack={vi.fn()}
+      />,
+    );
+
+    await screen.findByText('current reasoning');
+    expect(container.querySelectorAll('.assistant-activity-group-summary')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /已完成 2 项活动/ })).toBeTruthy();
+    expect(screen.queryByText('earlier reasoning')).toBeNull();
+  });
+
   it('restores initial input and steer as separate messages around their own activity', async () => {
     api.listThreadItems.mockResolvedValue({
       data: [

@@ -343,7 +343,6 @@
 .child-session-transcript .user-bubble { max-height: min(32vh, 260px); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .child-session-transcript .message-row { min-width: 0; }
 .child-session-transcript .assistant-container { min-width: 0; }
-.child-session-segment-label { padding: 0 3px; color: var(--text-muted); font-size: 10px; font-weight: 600; }
 .child-session-result { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border-subtle); }
 .child-session-empty { display: flex; flex-direction: column; gap: 7px; padding: 30px 16px; color: var(--text-muted); font-size: 11px; line-height: 1.5; text-align: center; }
 .child-session-empty strong { color: var(--text-secondary); font-size: 12px; }

@@ -62,7 +62,6 @@ export default function MessageItem({
   anchorRef = null,
   childTaskBatch = null,
   isChildTaskTurn = false,
-  showAllActivityBlocks = false,
 }) {
   const { role, text, thinking, tools = [], blocks = [], usage } = message;
   const [copied, setCopied] = useState(false);
@@ -319,17 +318,12 @@ export default function MessageItem({
       ? normalizedBlocks.slice(uncompressedSegmentStartIndex)
       : [],
   );
-  const renderedBlocks = showAllActivityBlocks
-    ? normalizedBlocks
-    : uncompressedSegmentStartIndex >= 0
+  const renderedBlocks = uncompressedSegmentStartIndex >= 0
     ? [
       ...groupSettledAssistantBlocks(normalizedBlocks.slice(0, uncompressedSegmentStartIndex)),
       ...normalizedBlocks.slice(uncompressedSegmentStartIndex),
     ]
     : groupSettledAssistantBlocks(normalizedBlocks);
-  const executionSegmentCount = normalizedBlocks.filter((block) => block.type === 'thinking').length;
-  const showExecutionSegmentLabels = showAllActivityBlocks && executionSegmentCount > 1;
-  let executionSegmentNumber = 0;
   const turnScope = String(turnEntry?.turnId || message.turnId || message.id || 'assistant');
   const currentBlock = activeBlockIndex >= 0 ? normalizedBlocks[activeBlockIndex] : null;
   let childTaskBatchRendered = false;
@@ -400,19 +394,14 @@ export default function MessageItem({
               );
             }
             if (block.type === 'thinking') {
-              executionSegmentNumber += 1;
               return (
-                <React.Fragment key={block.id || `thinking_${idx}`}>
-                  {showExecutionSegmentLabels && (
-                    <div className="child-session-segment-label">执行段 {executionSegmentNumber}</div>
-                  )}
-                  <ThinkingBlock
-                    content={block.content}
-                    isStreaming={Boolean(isStreamingThis && block.isStreaming && isCurrentBlock)}
-                    isCurrentBlock={showAllActivityBlocks || isCurrentSegmentBlock}
-                    presentationId={`${turnScope}:thinking:${block.id || idx}`}
-                  />
-                </React.Fragment>
+                <ThinkingBlock
+                  key={block.id || `thinking_${idx}`}
+                  content={block.content}
+                  isStreaming={Boolean(isStreamingThis && block.isStreaming && isCurrentBlock)}
+                  isCurrentBlock={isCurrentSegmentBlock}
+                  presentationId={`${turnScope}:thinking:${block.id || idx}`}
+                />
               );
             }
             if (block.type === 'tool') {

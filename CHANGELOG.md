@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Reconcile live assistant text and reasoning from completed App Server items,
+  and present repeated model calls in one Turn as a single expandable execution
+  overview while keeping the final answer visible.
 - Keep the initial missing-model status available to assistive technology without
   adding a second row to the composer controls.
 - Expose Host-detected provider web-search support in model settings. Lock the

@@ -330,6 +330,16 @@ function reasoningIdFromEvent(data) {
   return itemId ? `${itemId}:reasoning` : null;
 }
 
+function agentMessageIdFromEvent(data) {
+  const projectedMessage = (data?.items || []).find(
+    (item) => (item.type === 'agentMessage' || item.type === 'agent_message') && item.id,
+  );
+  if (projectedMessage?.id) return projectedMessage.id;
+
+  const itemId = data?.itemId || data?.item_id;
+  return itemId ? `${itemId}:agent` : null;
+}
+
 function appendReasoningDelta(content, delta) {
   if (!delta) return content || '';
   if (!content) return delta;
@@ -516,6 +526,59 @@ function mergeProjectedReasoningItems(messages, items, targetIndex = messages.le
   return copy;
 }
 
+function reconcileCompletedAssistantItem(messages, item, targetIndex, type) {
+  if (targetIndex < 0 || targetIndex >= messages.length) return messages;
+  const current = messages[targetIndex];
+  const blocks = [...(current.blocks || [])];
+  const content = String(item.text ?? item.content ?? '');
+  let blockIndex = item.id
+    ? blocks.findIndex((block) => block.type === type && block.id === item.id)
+    : -1;
+
+  if (blockIndex === -1) {
+    blockIndex = blocks.findLastIndex((block) => block.type === type && block.isStreaming);
+  }
+  if (blockIndex === -1 && content) {
+    blockIndex = blocks.findLastIndex((block) => (
+      block.type === type
+      && (block.content === content
+        || content.startsWith(block.content || '')
+        || (block.content || '').startsWith(content))
+    ));
+  }
+
+  const nextBlock = {
+    ...(blockIndex >= 0 ? blocks[blockIndex] : {}),
+    type,
+    ...(item.id ? { id: item.id } : {}),
+    content,
+    isStreaming: false,
+  };
+  if (blockIndex >= 0) {
+    blocks[blockIndex] = nextBlock;
+  } else if (content) {
+    if (type === 'thinking') insertReasoningBlock(blocks, nextBlock);
+    else blocks.push(nextBlock);
+  } else {
+    return messages;
+  }
+
+  const copy = [...messages];
+  copy[targetIndex] = {
+    ...current,
+    text: blocks
+      .filter((block) => block.type === 'text')
+      .map((block) => block.content || '')
+      .join('\n\n'),
+    thinking: blocks
+      .filter((block) => block.type === 'thinking')
+      .map((block) => block.content || '')
+      .join('\n\n'),
+    blocks: normalizeAssistantBlocks(blocks),
+  };
+  return copy;
+}
+
 function findTurnAssistantIndex(messages, turnId) {
   if (!turnId) return -1;
 
@@ -670,6 +733,14 @@ export function aggregateItemLifecycle(messages, data) {
   const turnId = payload.turnId || payload.turn_id || 'unknown';
   let next = ensureTurnAssistant(messages, turnId);
   const targetIndex = findTurnAssistantIndex(next, turnId);
+  if (data.method === 'item/completed') {
+    if (item.type === 'agentMessage' || item.type === 'agent_message') {
+      return reconcileCompletedAssistantItem(next, item, targetIndex, 'text');
+    }
+    if (item.type === 'reasoning') {
+      return reconcileCompletedAssistantItem(next, item, targetIndex, 'thinking');
+    }
+  }
   if (item.type === 'toolCall' || item.type === 'tool_call') {
     const projected = mergeProjectedToolItems(next, [item], targetIndex);
     return data.method === 'item/started'
@@ -1370,21 +1441,28 @@ export function aggregateStreamEvent(messages, data) {
     }
 
     if (type === 'assistant_text_delta') {
+      const agentMessageId = agentMessageIdFromEvent(data);
       const lastBlock = blocks[blocks.length - 1];
       if (lastBlock && lastBlock.type === 'thinking') {
         blocks[blocks.length - 1] = { ...lastBlock, isStreaming: false };
       }
 
       const activeText = blocks[blocks.length - 1];
-      if (!activeText || activeText.type !== 'text') {
+      if (
+        !activeText
+        || activeText.type !== 'text'
+        || (agentMessageId && activeText.id !== agentMessageId)
+      ) {
         blocks.push({
           type: 'text',
+          ...(agentMessageId ? { id: agentMessageId } : {}),
           content: evt.delta || '',
           isStreaming: true,
         });
       } else {
         blocks[blocks.length - 1] = {
           ...activeText,
+          ...(agentMessageId ? { id: agentMessageId } : {}),
           content: (activeText.content || '') + (evt.delta || ''),
           isStreaming: true,
         };

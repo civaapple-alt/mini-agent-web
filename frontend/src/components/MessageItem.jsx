@@ -337,6 +337,45 @@ export default function MessageItem({
     return <ChildTaskBatchCard key={key} tasks={childTaskBatch} />;
   };
 
+  const renderExecutionItem = (item, key, callId) => {
+    const itemId = item.id || `${callId}:${key}`;
+    if (item.type === 'thinking') {
+      return (
+        <ThinkingBlock
+          key={itemId}
+          content={item.content}
+          isStreaming={false}
+          presentationId={`${turnScope}:thinking:${itemId}`}
+        />
+      );
+    }
+    if (item.type === 'tool') {
+      const delegateBatch = renderDelegateBatch(item, itemId);
+      if (delegateBatch) return delegateBatch;
+      if ((item.name || item.toolName || item.tool) === 'delegate_task' && isChildTaskTurn) {
+        return null;
+      }
+      return (
+        <ErrorBoundary
+          key={itemId}
+          compact
+          title={`工具 [${item.name || 'tool'}] 渲染异常`}
+        >
+          <ToolCard
+            tool={item}
+            pendingApproval={null}
+            policy={policy}
+            presentationId={`${turnScope}:tool:${itemId}`}
+          />
+        </ErrorBoundary>
+      );
+    }
+    if (item.type === 'text') {
+      return <AssistantTextBlock key={itemId} content={item.content || ''} />;
+    }
+    return null;
+  };
+
   return (
     <div
       ref={anchorRef}
@@ -390,6 +429,40 @@ export default function MessageItem({
                     }
                     return null;
                   })}
+                </AssistantActivityGroup>
+              );
+            }
+            if (block.type === 'executionGroup') {
+              return (
+                <AssistantActivityGroup
+                  key={block.id}
+                  id={block.id}
+                  presentationId={`${turnScope}:${block.id}`}
+                  title={`已完成 ${block.calls.length} 次模型调用`}
+                  items={block.items}
+                  failureCount={block.failureCount}
+                  failureTypes={block.failureTypes}
+                >
+                  {block.calls.map((call, callIndex) => (
+                    <AssistantActivityGroup
+                      key={call.id}
+                      id={`model-call:${call.id}`}
+                      presentationId={`${turnScope}:model-call:${call.id}`}
+                      title={`模型调用 ${callIndex + 1}`}
+                      items={call.items}
+                      failureCount={call.failureCount}
+                      failureTypes={call.failureTypes}
+                    >
+                      {call.hasFinalAnswer && (
+                        <div className="assistant-final-answer-call-note">
+                          最终回复显示在下方
+                        </div>
+                      )}
+                      {call.items.map((item, itemIndex) => (
+                        renderExecutionItem(item, itemIndex, call.id)
+                      ))}
+                    </AssistantActivityGroup>
+                  ))}
                 </AssistantActivityGroup>
               );
             }

@@ -4,7 +4,11 @@ import MessageItem from './MessageItem';
 import SessionTurnRail from './SessionTurnRail';
 import { collectInputMessages, getChildWakeupTurnIds } from '../utils/inputTrace';
 import { normalizeAssistantBlocks, orderMessagesByTurnHistory } from '../utils/messageState';
-import { buildTurnHistoryEntries, isIncompleteTurnStatus } from '../utils/turnHistory';
+import {
+  buildTurnHistoryEntries,
+  groupAssistantExecutionSegments,
+  isIncompleteTurnStatus,
+} from '../utils/turnHistory';
 import { buildTurnChildTaskBatch, getDelegateTaskAssignments } from '../utils/childTasks';
 import { scopedThreadKey } from '../utils/sessionState.js';
 import './ChatArea.css';
@@ -171,6 +175,43 @@ export default function ChatArea({
   const activeTurnId = statusModel?.scope?.turnId
     ? String(statusModel.scope.turnId)
     : null;
+  const presentationRows = useMemo(() => {
+    const rows = [];
+    for (let index = 0; index < displayMessages.length;) {
+      const message = displayMessages[index];
+      const turnId = message?.turnId ? String(message.turnId) : null;
+      let endIndex = index;
+      if (message?.role === 'assistant' && turnId) {
+        while (
+          endIndex + 1 < displayMessages.length
+          && displayMessages[endIndex + 1]?.role === 'assistant'
+          && String(displayMessages[endIndex + 1]?.turnId || '') === turnId
+        ) endIndex += 1;
+      }
+
+      const overlapsActiveTurn = hasActiveTurn && message?.role === 'assistant' && (
+        activeTurnId
+          ? activeTurnId === turnId
+          : endIndex === lastAssistantMessageIndex
+      );
+      const executionMessage = endIndex > index && !overlapsActiveTurn
+        ? groupAssistantExecutionSegments(displayMessages.slice(index, endIndex + 1))
+        : null;
+      if (executionMessage) {
+        rows.push({ message: executionMessage, startIndex: index, endIndex });
+      } else {
+        for (let messageIndex = index; messageIndex <= endIndex; messageIndex += 1) {
+          rows.push({
+            message: displayMessages[messageIndex],
+            startIndex: messageIndex,
+            endIndex: messageIndex,
+          });
+        }
+      }
+      index = endIndex + 1;
+    }
+    return rows;
+  }, [displayMessages, hasActiveTurn, activeTurnId, lastAssistantMessageIndex]);
 
   const childTaskBatchByMessage = useMemo(() => {
     const turnGroups = new Map();
@@ -420,18 +461,28 @@ export default function ChatArea({
       ) : (
         <div className="message-stream-layout">
           <div className="messages-list">
-            {displayMessages.map((msg, index) => {
+            {presentationRows.map(({ message: msg, startIndex, endIndex }) => {
+              const index = startIndex;
               const messageId = String(msg.id || `msg_${index}`);
               const turnId = msg.turnId ? String(msg.turnId) : null;
               // The active Turn remains stable while sampling and tools alternate; list position does not.
               const isCurrentTurnSegment = msg.role === 'assistant'
                 && hasActiveTurn
                 && (activeTurnId && turnId
-                  ? activeTurnId === turnId && lastAssistantIndexByTurn.get(activeTurnId) === index
-                  : index === lastAssistantMessageIndex);
+                  ? activeTurnId === turnId
+                    && lastAssistantIndexByTurn.get(activeTurnId) >= startIndex
+                    && lastAssistantIndexByTurn.get(activeTurnId) <= endIndex
+                  : endIndex === lastAssistantMessageIndex);
               const turnEntry = msg.role === 'user'
                 ? entryByMessageId.get(messageId)
                 : (turnId ? entryByTurnId.get(turnId) : null);
+              const isChildTaskTurn = displayMessages
+                .slice(startIndex, endIndex + 1)
+                .some((message, messageIndex) => (
+                  childTaskBatchByMessage.delegateMessageKeys.has(
+                    String(message.id || `msg_${startIndex + messageIndex}`),
+                  )
+                ));
               return (
                 <React.Fragment key={msg.id || `msg_${index}`}>
                   {turnDurationAnchors.before.has(index) && (
@@ -443,10 +494,10 @@ export default function ChatArea({
                   )}
                   <MessageItem
                     message={msg}
-                    isLast={index === displayMessages.length - 1}
+                    isLast={endIndex === displayMessages.length - 1}
                     isLastInTurn={turnId
-                      ? lastAssistantIndexByTurn.get(turnId) === index
-                      : index === displayMessages.length - 1}
+                      ? lastAssistantIndexByTurn.get(turnId) === endIndex
+                      : endIndex === displayMessages.length - 1}
                     isCurrentTurnSegment={isCurrentTurnSegment}
                     isGenerating={isGenerating}
                     pendingApproval={pendingApproval}
@@ -456,7 +507,7 @@ export default function ChatArea({
                     isTurnFocused={Boolean(turnEntry && focusedTurnId && focusedTurnId === (turnEntry.turnId || turnEntry.id))}
                     anchorRef={(node) => setMessageRef(messageId, node)}
                     childTaskBatch={childTaskBatchByMessage.batches.get(messageId) || null}
-                    isChildTaskTurn={childTaskBatchByMessage.delegateMessageKeys.has(messageId)}
+                    isChildTaskTurn={isChildTaskTurn}
                   />
                   {turnDurationAnchors.after.has(index) && (
                     <TurnDurationLabel

@@ -400,3 +400,113 @@ export function groupSettledAssistantBlocks(blocks = []) {
   flush();
   return grouped;
 }
+
+function blocksForAssistantSegment(message) {
+  if (Array.isArray(message?.blocks) && message.blocks.length > 0) return message.blocks;
+  return [
+    ...(message?.thinking
+      ? [{ type: 'thinking', id: `${message.id || 'assistant'}:thinking`, content: message.thinking }]
+      : []),
+    ...(message?.tools || []).map((tool, index) => ({
+      type: 'tool',
+      id: tool.id || `${message.id || 'assistant'}:tool:${index}`,
+      ...tool,
+    })),
+    ...(message?.text
+      ? [{ type: 'text', id: `${message.id || 'assistant'}:text`, content: message.text }]
+      : []),
+  ];
+}
+
+function executionFailureSummary(items) {
+  const counts = new Map();
+  for (const item of items) {
+    if (!isFailedToolBlock(item)) continue;
+    const name = String(item.name || item.toolName || item.tool || 'tool');
+    counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  const failureTypes = [...counts].map(([name, count]) => ({ name, count }));
+  return {
+    failureTypes,
+    failureCount: failureTypes.reduce((total, item) => total + item.count, 0),
+  };
+}
+
+/**
+ * Present adjacent settled assistant segments from one Turn as a single
+ * execution overview. Durable segment IDs already mark each model response;
+ * this view projection keeps those call boundaries while leaving the final
+ * answer as ordinary, visible assistant text.
+ */
+export function groupAssistantExecutionSegments(messages = []) {
+  if (messages.length < 2) return null;
+  const turnId = normalizedTurnId(messages[0]?.turnId);
+  if (!turnId || messages.some((message) => (
+    message?.role !== 'assistant' || normalizedTurnId(message.turnId) !== turnId
+  ))) return null;
+
+  const segments = messages.map((message) => ({
+    message,
+    blocks: blocksForAssistantSegment(message),
+  }));
+  const supportedTypes = new Set(['thinking', 'tool', 'text']);
+  if (segments.some(({ blocks }) => blocks.some((block) => (
+    !supportedTypes.has(block.type) || block.isStreaming
+  )))) return null;
+
+  const activitySegments = segments.filter(({ blocks }) => (
+    blocks.some((block) => block.type === 'thinking' || block.type === 'tool')
+  ));
+  if (activitySegments.length < 2) return null;
+  const activityItems = segments.flatMap(({ blocks }) => (
+    blocks.filter((block) => block.type === 'thinking' || block.type === 'tool')
+  ));
+  if (blocksCanBeGrouped(activityItems).length !== activityItems.length) return null;
+
+  let finalTextSegmentIndex = -1;
+  for (let index = segments.length - 1; index >= 0; index -= 1) {
+    if (segments[index].blocks.some((block) => block.type === 'text' && block.content)) {
+      finalTextSegmentIndex = index;
+      break;
+    }
+  }
+  const finalTextBlocks = finalTextSegmentIndex === -1
+    ? []
+    : segments[finalTextSegmentIndex].blocks.filter((block) => block.type === 'text');
+
+  const calls = segments.flatMap(({ message, blocks }, index) => {
+    const items = blocks.filter((block) => !finalTextBlocks.includes(block));
+    const hasFinalAnswer = index === finalTextSegmentIndex;
+    if (items.length === 0 && !hasFinalAnswer) return [];
+    const failure = executionFailureSummary(items);
+    return [{
+      id: String(message.id || `${turnId}:call:${index + 1}`),
+      items,
+      hasFinalAnswer,
+      ...failure,
+    }];
+  });
+  if (calls.length < 2) return null;
+
+  const allItems = calls.flatMap((call) => call.items);
+  const failure = executionFailureSummary(allItems);
+  const callIds = calls.map((call) => call.id).join(':');
+  const executionGroup = {
+    type: 'executionGroup',
+    id: `execution:${turnId}:${callIds}`,
+    calls,
+    items: allItems,
+    ...failure,
+  };
+  const finalText = finalTextBlocks.map((block) => block.content || '').join('\n\n');
+  return {
+    ...messages[0],
+    text: finalText,
+    thinking: allItems
+      .filter((block) => block.type === 'thinking')
+      .map((block) => block.content || '')
+      .join('\n\n'),
+    tools: allItems.filter((block) => block.type === 'tool'),
+    blocks: [executionGroup, ...finalTextBlocks],
+  };
+}

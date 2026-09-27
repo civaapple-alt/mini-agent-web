@@ -9,6 +9,7 @@ export default function AssistantActivityGroup({
   items,
   failureCount = 0,
   failureTypes = [],
+  title = null,
   children,
 }) {
   const expansionId = `assistant-activity-group:${presentationId || id}`;
@@ -27,7 +28,7 @@ export default function AssistantActivityGroup({
   const failureSummary = failureCount > 0
     ? `失败 ${failureCount} 次${failureTypeSummary ? ` · ${failureTypeSummary}` : ''}`
     : null;
-  const summaryTitle = `已完成 ${items.length} 项活动`;
+  const summaryTitle = title || `已完成 ${items.length} 项活动`;
   const summaryLabel = [summaryTitle, counts, failureSummary].filter(Boolean).join('，');
 
   const toggle = () => {

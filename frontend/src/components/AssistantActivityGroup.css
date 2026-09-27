@@ -49,3 +49,13 @@
   padding: 5px 7px 7px;
   border-top: 1px solid var(--border-subtle);
 }
+
+.assistant-activity-group-items > .assistant-activity-group {
+  margin: 0;
+}
+
+.assistant-final-answer-call-note {
+  padding: 4px 7px;
+  color: var(--text-muted);
+  font-size: 10px;
+}

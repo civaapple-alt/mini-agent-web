@@ -6,6 +6,9 @@ client，将 App Server 操作映射为 HTTP 与 WebSocket API，只保存自身
 
 ## 启动 Gateway
 
+Gateway 不会自动构建前端。要更新 `frontend/dist/`，请先在仓库根目录运行
+`npm --prefix frontend run build`。
+
 在仓库根目录运行常规服务：
 
 ```bash
@@ -19,9 +22,9 @@ uv run mini-agent-server-dev
 ```
 
 默认监听 `0.0.0.0:8000`。在 `http://127.0.0.1:8000/docs` 查看生成的 API
-参考；`GET /health` 返回 Gateway 健康状态。构建 `frontend/dist/` 后，`GET /` 和
-`GET /threads/{thread_id}` 都会提供 Web Studio，使 pathname Thread 链接可以直接
-打开或刷新。
+参考；`GET /health` 返回 Gateway 健康状态。`GET /` 和
+`GET /threads/{thread_id}` 提供当前 `frontend/dist/` 中的文件。
+`mini-agent-server-dev` 只会自动重载 Python Gateway，不会构建或重载前端。
 
 若要把监听端口暴露给本机外的网络，请设置明确的 bind host，并在 Gateway 前配置
 身份验证与网络访问控制。CORS 不限制网络访问。

@@ -43,25 +43,34 @@ Cookbook ── direct dependency ───────────────�
 
 ## 快速启动
 
-需要 Python 3.10+、`uv`，以及可执行的 `mini-agent-app-server`。如果二进制
-不在 `PATH`，设置 `MINI_AGENT_APP_SERVER_PATH`。
+需要 Python 3.10+、`uv`、Node.js 和 npm，以及可执行的
+`mini-agent-app-server`。如果二进制不在 `PATH`，设置
+`MINI_AGENT_APP_SERVER_PATH`。
 
 ```bash
 uv sync
+npm --prefix frontend ci
+npm --prefix frontend run build
 uv run mini-agent-server
 ```
 
-浏览器访问 `http://127.0.0.1:8000`。开发 Web Studio 时另开终端：
+浏览器访问 `http://127.0.0.1:8000`。`uv run mini-agent-server` 不会构建前端，
+它只提供现有的 `frontend/dist/`。修改前端源码后，重新运行
+`npm --prefix frontend run build`。之后启动 Gateway 时不需要重复安装 npm 依赖。
 
-首次打开后，在 **设置 → Agent 能力 → 模型设置** 配置供应商和全局默认模型；API
+首次打开后，在 **设置 → Agent 能力 → 模型设置** 配置供应商和全局默认模型。API
 Key 由 Host 保存在当前用户的 `.mini-agent` 目录。输入框会在尚无可用默认模型时提供
 “先配置模型”入口。CLI 与 Web Studio 共用同一模型目录，供应商配置无需放进 `.env`。
+
+开发 Web Studio 时，保留 Gateway 在 `8000` 端口运行，再另开终端启动 Vite：
 
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
+
+开发时访问 `http://127.0.0.1:5173`。Vite 会把 API 和 WebSocket 请求转发到 Gateway。
 
 启动实验性 SDK/App Server 验证 TUI：
 

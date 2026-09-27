@@ -240,7 +240,7 @@ function entryInputMessage(entry, index, scope) {
       projectId: scope.projectId || null,
       turnId,
       source: isSteer ? 'steer' : 'user',
-      capturedAt: entry.capturedAt || entry.captured_at || null,
+      capturedAt: entry.capturedAt || entry.captured_at || item.capturedAt || item.captured_at || null,
       attachmentText: item.text,
       historical: true,
       attachmentsKnown: summarizeAttachmentText(item.text).imageCount > 0

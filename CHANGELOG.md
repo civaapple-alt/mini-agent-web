@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Show a live elapsed duration on running child task rows and show the processed
+  duration at the start of each main conversation Turn. Freeze both displays
+  when their execution settles; estimate historical Turn duration from durable
+  activity timestamps when runtime duration is unavailable.
 - Improve child Session detail readability: show each thinking/tool activity in
   execution order, bound long task prompts to a scrollable bubble, and keep a
   result-only final reply at the end of the transcript instead of duplicating it

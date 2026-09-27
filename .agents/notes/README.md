@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [主 Turn 与子任务的实时耗时显示](implemented/bug-fix/2026-09-27-live-turn-and-child-duration.zh.md)
 - [子 Session 活动详情按执行段阅读](implemented/bug-fix/2026-09-27-child-session-detail-reading.zh.md)
 - [子任务结算观察超时与 WebSocket 背压](implemented/bug-fix/2026-09-27-child-settlement-rpc-timeouts.zh.md)
 - [子 Session 详情实时活动与事件回放](implemented/bug-fix/2026-09-27-child-session-live-activity.zh.md)

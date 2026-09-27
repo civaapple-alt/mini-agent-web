@@ -8,6 +8,25 @@ import { buildTurnHistoryEntries, isIncompleteTurnStatus } from '../utils/turnHi
 import { buildTurnChildTaskBatch, getDelegateTaskAssignments } from '../utils/childTasks';
 import './ChatArea.css';
 
+function formatProcessedDuration(durationMs) {
+  if (!Number.isFinite(durationMs) || durationMs < 0) return null;
+  const totalSeconds = Math.floor(durationMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0
+    ? `已处理 ${minutes}分钟${seconds}秒`
+    : `已处理 ${seconds}秒`;
+}
+
+function TurnDurationLabel({ entry, nowMs, isRunning }) {
+  const durationMs = isRunning
+    ? (Number.isFinite(entry.startedAtMs) ? Math.max(0, nowMs - entry.startedAtMs) : null)
+    : entry.durationMs;
+  const label = formatProcessedDuration(durationMs);
+  if (!label) return null;
+  return <div className="turn-duration-label" aria-label={label}>{label}</div>;
+}
+
 export default function ChatArea({
   messages,
   isGenerating,
@@ -35,6 +54,7 @@ export default function ChatArea({
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const [hasNewActivity, setHasNewActivity] = useState(false);
   const [focusedTurnId, setFocusedTurnId] = useState(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const hasActiveTurn = isGenerating
     || Boolean(pendingApproval)
     || Boolean(statusModel?.process?.turnActive)
@@ -146,6 +166,33 @@ export default function ChatArea({
     () => new Map(turnEntries.filter((entry) => entry.turnId).map((entry) => [String(entry.turnId), entry])),
     [turnEntries],
   );
+  const activeTurnEntry = turnEntries.find((entry) => entry.isCurrent)
+    || (hasActiveTurn ? turnEntries.at(-1) : null);
+  const turnDurationAnchors = useMemo(() => {
+    const firstAssistantIndexByTurn = new Map();
+    const firstUserIndexByTurn = new Map();
+    displayMessages.forEach((message, index) => {
+      const turnId = message?.turnId ? String(message.turnId) : null;
+      if (!turnId) return;
+      if (message.role === 'assistant' && !firstAssistantIndexByTurn.has(turnId)) {
+        firstAssistantIndexByTurn.set(turnId, index);
+      } else if (message.role === 'user' && !firstUserIndexByTurn.has(turnId)) {
+        firstUserIndexByTurn.set(turnId, index);
+      }
+    });
+    const before = new Map();
+    const after = new Map();
+    turnEntries.forEach((entry) => {
+      if (!entry.turnId) return;
+      const turnId = String(entry.turnId);
+      if (firstAssistantIndexByTurn.has(turnId)) {
+        before.set(firstAssistantIndexByTurn.get(turnId), entry);
+      } else if (firstUserIndexByTurn.has(turnId)) {
+        after.set(firstUserIndexByTurn.get(turnId), entry);
+      }
+    });
+    return { before, after };
+  }, [displayMessages, turnEntries]);
 
   const setMessageRef = (messageId, node) => {
     if (!messageId) return;
@@ -234,6 +281,12 @@ export default function ChatArea({
     lastTurnResult?.turnId,
   ]);
 
+  useEffect(() => {
+    if (!hasActiveTurn) return undefined;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveTurn]);
+
   useEffect(() => () => {
     if (focusTimerRef.current) window.clearTimeout(focusTimerRef.current);
   }, []);
@@ -319,23 +372,38 @@ export default function ChatArea({
                 ? entryByMessageId.get(messageId)
                 : (turnId ? entryByTurnId.get(turnId) : null);
               return (
-                <MessageItem
-                  key={msg.id || `msg_${index}`}
-                  message={msg}
-                  isLast={index === displayMessages.length - 1}
-                  isLastInTurn={turnId
-                    ? lastAssistantIndexByTurn.get(turnId) === index
-                    : index === displayMessages.length - 1}
-                  isGenerating={isGenerating}
-                  pendingApproval={pendingApproval}
-                  policy={policy}
-                  onRetryPrompt={onRetryPrompt}
-                  turnEntry={turnEntry}
-                  isTurnFocused={Boolean(turnEntry && focusedTurnId && focusedTurnId === (turnEntry.turnId || turnEntry.id))}
-                  anchorRef={(node) => setMessageRef(messageId, node)}
-                  childTaskBatch={childTaskBatchByMessage.batches.get(messageId) || null}
-                  isChildTaskTurn={childTaskBatchByMessage.delegateMessageKeys.has(messageId)}
-                />
+                <React.Fragment key={msg.id || `msg_${index}`}>
+                  {turnDurationAnchors.before.has(index) && (
+                    <TurnDurationLabel
+                      entry={turnDurationAnchors.before.get(index)}
+                      nowMs={nowMs}
+                      isRunning={hasActiveTurn && activeTurnEntry?.id === turnDurationAnchors.before.get(index).id}
+                    />
+                  )}
+                  <MessageItem
+                    message={msg}
+                    isLast={index === displayMessages.length - 1}
+                    isLastInTurn={turnId
+                      ? lastAssistantIndexByTurn.get(turnId) === index
+                      : index === displayMessages.length - 1}
+                    isGenerating={isGenerating}
+                    pendingApproval={pendingApproval}
+                    policy={policy}
+                    onRetryPrompt={onRetryPrompt}
+                    turnEntry={turnEntry}
+                    isTurnFocused={Boolean(turnEntry && focusedTurnId && focusedTurnId === (turnEntry.turnId || turnEntry.id))}
+                    anchorRef={(node) => setMessageRef(messageId, node)}
+                    childTaskBatch={childTaskBatchByMessage.batches.get(messageId) || null}
+                    isChildTaskTurn={childTaskBatchByMessage.delegateMessageKeys.has(messageId)}
+                  />
+                  {turnDurationAnchors.after.has(index) && (
+                    <TurnDurationLabel
+                      entry={turnDurationAnchors.after.get(index)}
+                      nowMs={nowMs}
+                      isRunning={hasActiveTurn && activeTurnEntry?.id === turnDurationAnchors.after.get(index).id}
+                    />
+                  )}
+                </React.Fragment>
               );
             })}
           </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ChevronDown, ExternalLink, GitBranch, RefreshCw, X } from 'lucide-react';
 import {
   childTaskStatusLabels,
@@ -24,6 +24,7 @@ function ChildTaskRow({
   onOpenThread,
   onControl,
   sequenceCount = null,
+  nowMs,
 }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
@@ -45,12 +46,23 @@ function ChildTaskRow({
       || { attempt: currentAttempt },
   );
   const phase = getChildTaskPhaseLabel(child);
-  const duration = formatChildTaskDuration(child.duration_ms);
+  const currentAttemptGroup = attempts.find((attempt) => attempt.attempt === currentAttempt);
   const sequenceLabel = child.execution_mode === 'sequential'
     && Number.isInteger(child.group_sequence)
     ? `第 ${child.group_sequence + 1}${Number.isInteger(sequenceCount) ? `/${sequenceCount}` : ''} 步`
     : null;
-  const active = ['running', 'in_progress', 'awaiting_approval'].includes(status);
+  const active = ['running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling'].includes(status);
+  const attemptStartedAtMs = currentAttemptGroup?.stages
+    .filter((stage) => ['running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling'].includes(String(stage?.status || '').toLowerCase()))
+    .map((stage) => Number(stage.timestamp_ms))
+    .find((timestamp) => Number.isFinite(timestamp) && timestamp > 0);
+  const startedAtMs = Number.isFinite(Number(child.started_at_ms)) && Number(child.started_at_ms) > 0
+    ? Number(child.started_at_ms)
+    : attemptStartedAtMs;
+  const durationMs = active && Number.isFinite(startedAtMs) && Number.isFinite(nowMs)
+    ? Math.max(0, nowMs - startedAtMs)
+    : child.duration_ms;
+  const duration = formatChildTaskDuration(durationMs);
   const queued = status === 'queued';
   const paused = status === 'paused';
   const retryable = ['failed', 'cancelled', 'step_limit'].includes(status);
@@ -98,7 +110,7 @@ function ChildTaskRow({
           type="button"
           className="child-task-summary"
           aria-expanded={expanded}
-          aria-label={`${expanded ? '收起' : '展开'}任务详情：${title}，${childTaskStatusLabels[status] || status}${duration ? `，耗时 ${duration}` : ''}`}
+          aria-label={`${expanded ? '收起' : '展开'}任务详情：${title}，${childTaskStatusLabels[status] || status}${duration ? `，${active ? '已运行' : '耗时'} ${duration}` : ''}`}
           onClick={() => setExpanded((value) => !value)}
         >
           <span className={`child-task-status-dot ${status}`} aria-hidden="true" />
@@ -106,7 +118,11 @@ function ChildTaskRow({
           <span className={`child-task-status ${status}`}>
             {childTaskStatusLabels[status] || status}
           </span>
-          {duration && <span className="child-task-duration font-mono">{duration}</span>}
+          {duration && (
+            <span className="child-task-duration font-mono" title={active ? `已运行 ${duration}` : `耗时 ${duration}`}>
+              {duration}
+            </span>
+          )}
           <ChevronDown size={14} className="child-task-expand-icon" aria-hidden="true" />
         </button>
         {onOpenThread && child.child_thread_id && child.child_session_available === true && (
@@ -289,6 +305,7 @@ export default function ChildTasksPane({
   onFinishedVisibleCountChange,
 }) {
   const [localFinishedVisibleCount, setLocalFinishedVisibleCount] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [sessionControlBusy, setSessionControlBusy] = useState(false);
   const [sessionControlError, setSessionControlError] = useState('');
   const finishedVisibleCount = Number.isInteger(controlledFinishedVisibleCount)
@@ -302,6 +319,15 @@ export default function ChildTasksPane({
   const visibleFinishedTasks = finishedTasks.slice(0, finishedVisibleCount);
   const sessionStatus = sessionControl?.status || 'running';
   const hasSessionActivity = parentTurnActive || counts.running > 0 || counts.queued > 0 || counts.needsAttention > 0;
+  const hasRunningChildren = children.some((child) => (
+    ['running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling'].includes(getChildTaskStatus(child))
+  ));
+
+  useEffect(() => {
+    if (!hasRunningChildren) return undefined;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [hasRunningChildren]);
   const controlSession = async (action) => {
     if (!onSessionControl) return;
     setSessionControlBusy(true);
@@ -395,6 +421,7 @@ export default function ChildTasksPane({
                   onOpenThread={onOpenThread}
                   onControl={onControl}
                   sequenceCount={sequenceCountFor(child)}
+                  nowMs={nowMs}
                 />
               ))}
             </div>
@@ -421,6 +448,7 @@ export default function ChildTasksPane({
                         onOpenThread={onOpenThread}
                         onControl={onControl}
                         sequenceCount={sequenceCountFor(child)}
+                        nowMs={nowMs}
                       />
                     ))}
                   </div>

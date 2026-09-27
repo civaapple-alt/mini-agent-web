@@ -47,6 +47,58 @@ function normalizedTurnId(value) {
   return value === null || value === undefined || value === '' ? null : String(value);
 }
 
+function timestampMilliseconds(value) {
+  if (typeof value === 'number') return Number.isFinite(value) && value >= 0 ? value : null;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric >= 0) return numeric;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function timestampForThreadItem(entry) {
+  const item = entry?.item || {};
+  return timestampMilliseconds(entry?.capturedAt || entry?.captured_at)
+    ?? timestampMilliseconds(item.capturedAt || item.captured_at);
+}
+
+function timingForTurn({ message, messages, threadItems, turnId, lastTurnResult }) {
+  if (!turnId) return { startedAtMs: null, durationMs: null };
+  const matchingEntries = (threadItems || []).filter((entry) => (
+    normalizedTurnId(entry?.turnId || entry?.turn_id) === turnId
+  ));
+  const matchingMessages = (messages || []).filter((candidate) => (
+    normalizedTurnId(candidate?.turnId) === turnId
+  ));
+  const entryTimes = matchingEntries.map(timestampForThreadItem).filter(Number.isFinite);
+  const messageTimes = matchingMessages
+    .map((candidate) => timestampMilliseconds(candidate?.capturedAt || candidate?.inputTrace?.capturedAt))
+    .filter(Number.isFinite);
+  const persistedInputTimes = matchingEntries
+    .filter((entry) => ['userMessage', 'user_message'].includes(String(entry?.item?.type || '').toLowerCase()))
+    .map(timestampForThreadItem)
+    .filter(Number.isFinite);
+  const inputMessageTime = timestampMilliseconds(message?.inputTrace?.capturedAt || message?.capturedAt);
+  const startedAtMs = persistedInputTimes.length > 0
+    ? Math.min(...persistedInputTimes)
+    : inputMessageTime ?? (entryTimes.length > 0 ? Math.min(...entryTimes) : null);
+  const activityTimes = [...entryTimes, ...messageTimes].filter(Number.isFinite);
+  const latestActivityAtMs = activityTimes.length > 0 ? Math.max(...activityTimes) : null;
+  const resultTurnId = normalizedTurnId(lastTurnResult?.turnId || lastTurnResult?.turn_id);
+  const rawResultDurationMs = lastTurnResult?.durationMs;
+  const resultDurationMs = resultTurnId === turnId
+    && rawResultDurationMs !== null
+    && rawResultDurationMs !== undefined
+    ? Number(rawResultDurationMs)
+    : NaN;
+  const durationMs = Number.isFinite(resultDurationMs) && resultDurationMs >= 0
+    ? resultDurationMs
+    : Number.isFinite(startedAtMs) && Number.isFinite(latestActivityAtMs) && latestActivityAtMs >= startedAtMs
+      ? latestActivityAtMs - startedAtMs
+      : null;
+  return { startedAtMs, durationMs };
+}
+
 function statusFromValue(value) {
   if (!value) return null;
   const normalized = String(value).toLowerCase();
@@ -229,6 +281,7 @@ export function buildTurnHistoryEntries({
       message,
       threadItems,
     });
+    const timing = timingForTurn({ message, messages, threadItems, turnId, lastTurnResult });
     return {
       id: `turn:${turnId || message.id || index}`,
       messageId: message.id || `input_${index}`,
@@ -238,6 +291,8 @@ export function buildTurnHistoryEntries({
       state,
       stateLabel: TURN_STATE_LABELS[state] || TURN_STATE_LABELS.unknown,
       isCurrent,
+      startedAtMs: timing.startedAtMs,
+      durationMs: timing.durationMs,
       responseSummary: boundedResponseSummary(messages, turnId),
       metrics: metricsForTurn(messages, turnId, lastTurnResult),
       actionHint: actionHint(state, statusModel, isCurrent),

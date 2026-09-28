@@ -309,6 +309,64 @@ def test_sdk_preserves_unknown_recovery_values_and_recommends_inspection():
     assert result.recovery.to_dict() == recovery
 
 
+@pytest.mark.asyncio
+async def test_sdk_thread_checkpoint_round_trips_from_read_to_resume():
+    client = MiniAgentClient()
+    calls = []
+    checkpoint_value = {
+        "threadId": "thread-source",
+        "status": "idle",
+        "messages": [],
+        "contextRevision": 3,
+        "nextTurnNumber": 2,
+        "lastTurnId": "turn-1",
+        "nextEventSequence": 5,
+    }
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        if method == "thread/read":
+            return {
+                "value": checkpoint_value,
+                "actionId": "read-action",
+                "actionSequence": 7,
+                "stateRevision": 8,
+            }
+        if method == "thread/resume":
+            return {"value": {"threadId": "thread-restored"}}
+        raise AssertionError(f"unexpected method: {method}")
+
+    client._send_request = fake_send
+
+    checkpoint = await client.read_thread("thread-source")
+    await client.resume_thread("thread-restored", checkpoint)
+
+    assert calls == [
+        ("thread/read", {"threadId": "thread-source"}),
+        (
+            "thread/resume",
+            {"threadId": "thread-restored", "checkpoint": checkpoint_value},
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_start_thread_without_id_attaches_to_server_selected_thread():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {"threadId": "session-thread"}
+
+    client._send_request = fake_send
+
+    thread_id = await client.start_thread()
+
+    assert thread_id == "session-thread"
+    assert calls == [("thread/start", {})]
+
+
 @pytest.mark.parametrize(
     ("status", "recommendation"),
     [

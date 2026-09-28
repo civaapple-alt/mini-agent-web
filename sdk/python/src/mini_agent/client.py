@@ -694,10 +694,15 @@ class MiniAgentClient:
     # Thread Management
     # -------------------------------------------------------------------------
 
-    async def start_thread(self, thread_id: str = "default") -> str:
-        """Start or attach to a conversation thread."""
-        res = await self._send_request("thread/start", {"threadId": thread_id})
-        self._active_thread_id = res.get("threadId", thread_id)
+    async def start_thread(self, thread_id: str | None = None) -> str:
+        """Start or attach to a conversation thread.
+
+        When ``thread_id`` is omitted, attach to the Thread selected by the
+        App Server for the current Session.
+        """
+        params = {"threadId": thread_id} if thread_id is not None else {}
+        res = await self._send_request("thread/start", params)
+        self._active_thread_id = res.get("threadId", thread_id or "default")
         return self._active_thread_id
 
     async def list_threads(
@@ -911,6 +916,8 @@ class MiniAgentClient:
         cp_dict = (
             checkpoint.raw if isinstance(checkpoint, ThreadCheckpoint) else checkpoint
         )
+        if isinstance(cp_dict, dict):
+            cp_dict = cp_dict.get("value", cp_dict)
         res = await self._send_request(
             "thread/resume",
             {

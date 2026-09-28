@@ -21,7 +21,7 @@ from mini_agent import MiniAgentClient
 async def main() -> None:
     async with MiniAgentClient() as client:
         await client.initialize()
-        await client.start_thread("default")
+        await client.start_thread()
 
         async for envelope in client.stream_turn("List files in this workspace."):
             if envelope.get("type") != "event":
@@ -36,6 +36,8 @@ asyncio.run(main())
 
 The SDK requires Python 3.10 or later. It finds `mini-agent-app-server` on
 `PATH`, or you can set `MINI_AGENT_APP_SERVER_PATH` or pass `executable=`.
+When `start_thread()` is called without an ID, it attaches to the Thread
+selected by the App Server for the active Session.
 
 The constructor merges configuration in this order: explicit `env`, process
 environment, then the first value found in its bounded `.env` search. That
@@ -98,6 +100,10 @@ The SDK exposes its supported controls directly:
 `get_workflow_state()` is an SDK-only read-only convenience projection. It
 combines cached Thread settings with `thread/goal/get`; it does not send the
 removed `workflow/state` RPC.
+
+`read_thread()` returns a `ThreadCheckpoint` that can be passed directly to
+`resume_thread(new_thread_id, checkpoint)`. The SDK unwraps the `thread/read`
+action envelope before sending the checkpoint to the App Server.
 
 Protocol version 1 has no public Notebook search method. Although the current
 SDK implementation exposes `search_notebook()`, compatibility code must not

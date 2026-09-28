@@ -53,7 +53,7 @@ asyncio.run(main())
 | Thread | `start_thread()`、`list_threads()`、`read_thread()`、`close_thread()`、`fork_thread()`、`resume_thread()` |
 | Turn | `start_turn()`、`stream_turn()`、`read_turn()`、`wait_for_turn()`、`steer_turn()`、`interrupt_turn()` |
 | 观察 | `get_runtime_status()`、`replay_events()`、`list_thread_items()` |
-| Session | `get_session_info()`、`fork_session()`、`read_notebook()`、`write_notebook()`、`forget_notebook()` |
+| Session | `get_session_info()`、`fork_session()`、`read_notebook()`、`search_notebook()`、`write_notebook()`、`forget_notebook()` |
 | 控制 | `update_thread_settings()`、Goal 方法、`get_world_state()`、`set_world_execution()`、MCP 方法 |
 | 模型配置 | `manage_model_catalog()`、`test_model_connection()` |
 | 本地任务 | 后台 Shell task 与 scheduled task 的 list/read/control 方法 |
@@ -96,9 +96,8 @@ request 并抛出 `AppServerRequestTimeoutError`（它继承 `ServerProcessError
 `message` 和 `data`。`session/fork` 的身份或 context-policy 冲突使用
 `SESSION_FORK_CONFLICT_CODE`（`-32001`）。
 
-`search_notebook()` 已存在于当前 SDK 实现中，但 App Server protocol v1 尚未定义
-对应的公开 RPC。兼容 protocol v1 的调用方应使用 `read_notebook()`，不要依赖该
-helper。
+`search_notebook()` 在 SDK 中对 App Server 返回的有界 Notebook 投影执行本地过滤；
+它不会发送 protocol v1 尚未定义的搜索 RPC。
 
 ## 深入阅读
 

@@ -39,10 +39,16 @@ The SDK requires Python 3.10 or later. It finds `mini-agent-app-server` on
 When `start_thread()` is called without an ID, it attaches to the Thread
 selected by the App Server for the active Session.
 
+`restart()` reapplies the original client identity, provider selection, and
+world execution access and policy. If the App Server reports a durable Session,
+the SDK keeps its Session ID and resumes it after a process restart. With
+`MINI_AGENT_SESSION_MODE=disabled`, the App Server has no durable Thread history
+to recover; restarting creates an empty Thread with the same ID.
+
 The constructor merges configuration in this order: explicit `env`, process
-environment, then the first value found in its bounded `.env` search. That
-search checks `cwd`, its parent, SDK paths, the Web workspace, and
-`~/.mini-agent`. The SDK never changes the parent process environment.
+environment, then the first value found in `.env` under `cwd` or
+`~/.mini-agent`. This matches the App Server's configuration-file locations;
+the SDK never changes the parent process environment.
 
 Logging is disabled by default. Pass `log_dir` or `log_file`, or set
 `MINI_AGENT_LOG_DIR` or `MINI_AGENT_LOG_FILE`, to write SDK logs.
@@ -92,7 +98,7 @@ The SDK exposes its supported controls directly:
 | Create an independent persisted Session | `fork_session()` |
 | Restore a serialized checkpoint | `resume_thread()` |
 | Configure Plan or a Goal | `update_thread_settings()`, `set_goal()`, `get_goal()`, `clear_goal()` |
-| Read or modify a Notebook | `read_notebook()`, `write_notebook()`, `forget_notebook()` |
+| Read or modify a Notebook | `read_notebook()`, `search_notebook()`, `write_notebook()`, `forget_notebook()` |
 | Inspect execution environment | `get_world_state()`, `refresh_world()`, `set_world_execution()` |
 | Inspect or retry MCP | `get_mcp_status()`, `retry_mcp()` |
 | Inspect local tasks | `list_background_tasks()` and `list_scheduled_tasks()` |
@@ -110,9 +116,9 @@ precedence.
 `resume_thread(new_thread_id, checkpoint)`. The SDK unwraps the `thread/read`
 action envelope before sending the checkpoint to the App Server.
 
-Protocol version 1 has no public Notebook search method. Although the current
-SDK implementation exposes `search_notebook()`, compatibility code must not
-use it. Use `read_notebook()` and search the returned bounded projection.
+Protocol version 1 has no Notebook search RPC. The SDK's
+`search_notebook()` helper reads the bounded Notebook projection and filters
+entries locally; it does not send an unsupported method to the App Server.
 
 ## Stream events without losing identity
 

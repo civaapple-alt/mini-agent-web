@@ -13,6 +13,7 @@ from mini_agent import (
     RuntimeStatus,
     ThreadCheckpoint,
     ThreadGoal,
+    ThreadSettingsResult,
     TurnEventsResult,
     TurnReadResult,
 )
@@ -367,6 +368,166 @@ async def test_start_thread_without_id_attaches_to_server_selected_thread():
     assert calls == [("thread/start", {})]
 
 
+@pytest.mark.asyncio
+async def test_restart_reuses_provider_and_resumes_the_same_session():
+    client = MiniAgentClient(env={"MINI_AGENT_SESSION_MODE": "new"})
+    calls = []
+    provider_selection = {"model": "selected-model-provider"}
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        if method == "initialize":
+            return {"protocolVersion": 1, "capabilityManifest": {}}
+        if method == "session/info":
+            return {
+                "value": {
+                    "sessionId": "session-1",
+                    "threadId": "session-thread",
+                    "path": "/tmp/session.jsonl",
+                    "resumed": True,
+                }
+            }
+        if method == "thread/start":
+            return {"threadId": params["threadId"]}
+        if method == "world/set_execution":
+            return {"value": {"changed": False}}
+        raise AssertionError(f"unexpected method: {method}")
+
+    async def fake_stop():
+        return None
+
+    async def fake_start():
+        assert client.env["MINI_AGENT_SESSION_MODE"] == "resume"
+        assert client.env["MINI_AGENT_SESSION_ID"] == "session-1"
+
+    client._send_request = fake_send
+    client.stop = fake_stop
+    client.start = fake_start
+
+    await client.initialize(
+        client_name="custom-client",
+        client_version="1.2.3",
+        providers=provider_selection,
+    )
+    await client.set_world_execution(access="full_machine", policy="automatic")
+    client._thread_settings["session-thread"] = ThreadSettingsResult.from_dict(
+        {
+            "collaborationMode": {"mode": "plan"},
+            "builtinTools": ["read_file"],
+            "continuationMode": "manual",
+            "stateRevision": 9,
+        }
+    )
+
+    await client.restart()
+
+    initialize_calls = [params for method, params in calls if method == "initialize"]
+    assert initialize_calls == [
+        {
+            "protocolVersion": 1,
+            "clientName": "custom-client",
+            "clientVersion": "1.2.3",
+            "providers": provider_selection,
+        },
+        {
+            "protocolVersion": 1,
+            "clientName": "custom-client",
+            "clientVersion": "1.2.3",
+            "providers": provider_selection,
+        },
+    ]
+    assert client._active_thread_id == "session-thread"
+    assert client._thread_settings["session-thread"].state_revision is None
+    assert calls[-1] == ("thread/start", {"threadId": "session-thread"})
+    assert [params for method, params in calls if method == "world/set_execution"] == [
+        {"access": "full_machine", "policy": "automatic"},
+        {"access": "full_machine", "policy": "automatic"},
+    ]
+
+
+@pytest.mark.skipif(
+    not has_app_server(),
+    reason="Live SDK test requires mini-agent-app-server binary (set MINI_AGENT_APP_SERVER_PATH)",
+)
+@pytest.mark.asyncio
+async def test_restart_resumes_durable_session_with_app_server(tmp_path: Path):
+    client = MiniAgentClient(
+        cwd=str(tmp_path),
+        env={
+            "MINI_AGENT_SESSION_MODE": "new",
+            "MINI_AGENT_THREAD_ID": "restart-thread",
+        },
+    )
+    await client.start()
+    try:
+        await client.initialize()
+        before = await client.get_session_info()
+        assert before is not None
+
+        await client.restart()
+
+        after = await client.get_session_info()
+        assert after is not None
+        assert after.session_id == before.session_id
+        assert after.thread_id == before.thread_id
+        assert after.resumed is True
+    finally:
+        await client.stop()
+
+
+@pytest.mark.asyncio
+async def test_initialize_tolerates_older_server_without_session_info():
+    client = MiniAgentClient()
+
+    async def fake_send(method, params=None):
+        if method == "initialize":
+            return {"protocolVersion": 1, "capabilityManifest": {}}
+        if method == "session/info":
+            raise AppServerError(-32601, "method not found")
+        raise AssertionError(f"unexpected method: {method}")
+
+    client._send_request = fake_send
+
+    result = await client.initialize()
+
+    assert result["protocolVersion"] == 1
+    assert client._session_info is None
+
+
+@pytest.mark.asyncio
+async def test_restart_keeps_disabled_session_mode_without_durable_session():
+    client = MiniAgentClient(env={"MINI_AGENT_SESSION_MODE": "disabled"})
+    client._active_thread_id = "thread-1"
+    client._thread_settings["thread-1"] = ThreadSettingsResult.from_dict(
+        {"collaborationMode": {"mode": "plan"}, "stateRevision": 8}
+    )
+
+    async def fake_send(method, params=None):
+        if method == "initialize":
+            return {"protocolVersion": 1, "capabilityManifest": {}}
+        if method == "session/info":
+            return {"value": None}
+        if method == "thread/start":
+            return {"threadId": params["threadId"]}
+        raise AssertionError(f"unexpected method: {method}")
+
+    async def fake_stop():
+        return None
+
+    async def fake_start():
+        return None
+
+    client._send_request = fake_send
+    client.stop = fake_stop
+    client.start = fake_start
+
+    await client.restart()
+
+    assert client.env["MINI_AGENT_SESSION_MODE"] == "disabled"
+    assert "MINI_AGENT_SESSION_ID" not in client.env
+    assert client._thread_settings == {}
+
+
 @pytest.mark.parametrize(
     ("status", "recommendation"),
     [
@@ -470,6 +631,46 @@ async def test_sdk_wait_for_turn_keeps_polling_while_execution_is_recoverable():
 
     assert result.status == "completed"
     assert len(reads) == 2
+
+
+@pytest.mark.asyncio
+async def test_search_notebook_filters_the_bounded_read_projection_locally():
+    client = MiniAgentClient()
+    calls = []
+    notebook = {
+        "sessionId": "session-1",
+        "entries": [
+            {
+                "key": "architecture.runtime",
+                "content": "Thread recovery",
+                "keywords": ["checkpoint"],
+                "evidence": [{"project": "mini-agent", "subject": "Session flow"}],
+            },
+            {
+                "key": "unrelated",
+                "content": "No match",
+                "keywords": [],
+                "evidence": [],
+            },
+        ],
+    }
+
+    async def fake_read_notebook(thread_id=None, scope="self"):
+        calls.append((thread_id, scope))
+        return notebook
+
+    async def unsupported_rpc(*args, **kwargs):
+        raise AssertionError("Notebook search must not send a protocol RPC")
+
+    client.read_notebook = fake_read_notebook
+    client._send_request = unsupported_rpc
+
+    result = await client.search_notebook(
+        " SESSION ", scope="parent", limit=1, thread_id="thread-1"
+    )
+
+    assert calls == [("thread-1", "parent")]
+    assert result == {**notebook, "entries": notebook["entries"][:1]}
 
 
 @pytest.mark.asyncio

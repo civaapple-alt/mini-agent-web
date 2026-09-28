@@ -26,6 +26,12 @@ uv run mini-agent-tui --access project --policy interactive --effort high --thre
 参数包括 `--access`、`--policy`、`--effort` 和 `--thread`。它们只选择这次
 验证客户端的初始设置，不构成 Profile。运行时按 `/help` 查看当前命令表。
 
+未显式设置 `MINI_AGENT_SESSION_MODE` 时，TUI 为当前运行创建 App Server
+Session，并在 App Server 子进程重启时恢复该 Session。显式设置的 Session 模式
+仍优先；设置为 `disabled` 时，App Server 重启后不会保留 Thread 历史。
+恢复后 TUI 重新选择 Session 的 Thread；只存在于旧 App Server 进程内存中的
+分支不会恢复。
+
 ## 命令分组
 
 - Runtime：`/plan`、`/goal`；
@@ -50,4 +56,4 @@ completer.py        命令补全
 ```
 
 TUI 只保存当前界面的有界投影；ThreadItem 使用稳定 item ID 更新，不另建持久化
-Item store。
+Item store。可恢复的 Thread 历史由 App Server SessionStore 保存。

@@ -20,6 +20,18 @@ from tui.state import TUIState, console
 from tui.stream_renderer import render_turn_stream
 
 
+def _configure_session_recovery(client: MiniAgentClient, thread_id: str) -> None:
+    """Default this TUI run to a durable Session while honoring explicit env."""
+    client.env.setdefault("MINI_AGENT_SESSION_MODE", "new")
+    client.env.setdefault("MINI_AGENT_THREAD_ID", thread_id)
+
+
+async def _restart_tui_client(client: MiniAgentClient, state: TUIState) -> None:
+    """Restart the App Server and select its restored Session Thread in the TUI."""
+    await client.restart()
+    state.current_thread_id = await client.start_thread()
+
+
 async def run_tui(state: TUIState) -> None:
     """Main interactive TUI loop."""
     console.print(
@@ -97,7 +109,9 @@ async def run_tui(state: TUIState) -> None:
         }
 
     console.print("[dim]Connecting to App Server...[/dim]")
-    async with MiniAgentClient(log_dir="logs", approval_handler=_handler) as client:
+    client = MiniAgentClient(log_dir="logs", approval_handler=_handler)
+    _configure_session_recovery(client, state.current_thread_id)
+    async with client:
         init_res = await client.initialize()
         await client.set_world_execution(
             access=state.access_scope,
@@ -113,7 +127,7 @@ async def run_tui(state: TUIState) -> None:
                 console.print(
                     "[dim yellow]⚡ App Server disconnected, auto-reconnecting...[/dim yellow]"
                 )
-                await client.restart()
+                await _restart_tui_client(client, state)
                 console.print("[dim green]✓ Reconnected to App Server[/dim green]")
 
         consecutive_interrupts = 0

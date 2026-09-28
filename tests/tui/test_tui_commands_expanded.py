@@ -11,6 +11,43 @@ from prompt_toolkit.document import Document
 from tui.commands import handle_slash_command
 from tui.completer import SlashCommandCompleter
 from tui.state import TUIState
+from tui.tui_app import _configure_session_recovery, _restart_tui_client
+
+
+def test_tui_session_recovery_defaults_preserve_explicit_configuration():
+    client = SimpleNamespace(env={})
+
+    _configure_session_recovery(client, "thread-1")
+
+    assert client.env == {
+        "MINI_AGENT_SESSION_MODE": "new",
+        "MINI_AGENT_THREAD_ID": "thread-1",
+    }
+
+    configured = SimpleNamespace(
+        env={
+            "MINI_AGENT_SESSION_MODE": "disabled",
+            "MINI_AGENT_THREAD_ID": "configured-thread",
+        }
+    )
+    _configure_session_recovery(configured, "thread-1")
+
+    assert configured.env["MINI_AGENT_SESSION_MODE"] == "disabled"
+    assert configured.env["MINI_AGENT_THREAD_ID"] == "configured-thread"
+
+
+@pytest.mark.asyncio
+async def test_tui_reconnect_selects_the_restored_session_thread():
+    client = SimpleNamespace(
+        restart=AsyncMock(), start_thread=AsyncMock(return_value="session-thread")
+    )
+    state = TUIState(current_thread_id="memory-only-branch")
+
+    await _restart_tui_client(client, state)
+
+    client.restart.assert_awaited_once_with()
+    client.start_thread.assert_awaited_once_with()
+    assert state.current_thread_id == "session-thread"
 
 
 @pytest.mark.asyncio

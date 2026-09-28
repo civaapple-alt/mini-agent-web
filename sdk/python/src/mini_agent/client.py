@@ -12,6 +12,7 @@ import os
 import shutil
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import replace
 from typing import Any, Literal, Self
 
 from mini_agent.approval_logging import approval_log_fields
@@ -176,20 +177,8 @@ def _redact_secrets(value: Any) -> Any:
 
 
 def _env_search_dirs(cwd: str) -> list[str]:
-    """Return bounded project, Web workspace, and user config directories."""
-    module_dir = os.path.dirname(os.path.abspath(__file__))
-    web_workspace = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.dirname(module_dir)))
-    )
-    return [
-        cwd,
-        os.path.dirname(cwd),
-        module_dir,
-        os.path.dirname(module_dir),
-        os.path.dirname(os.path.dirname(module_dir)),
-        web_workspace,
-        os.path.expanduser("~/.mini-agent"),
-    ]
+    """Match the App Server's workspace and user configuration search paths."""
+    return [cwd, os.path.expanduser("~/.mini-agent")]
 
 
 def _find_and_load_env(cwd: str) -> dict[str, str]:
@@ -275,9 +264,18 @@ class MiniAgentClient:
         self._next_id: int = 1
         self._pending_requests: dict[int, asyncio.Future[Any]] = {}
         self._event_queues: list[asyncio.Queue[dict[str, Any]]] = []
+        self._event_queue_threads: dict[asyncio.Queue[dict[str, Any]], str] = {}
+        self._event_queue_bytes: dict[asyncio.Queue[dict[str, Any]], int] = {}
+        self._overflowed_event_queues: set[asyncio.Queue[dict[str, Any]]] = set()
+        self._queued_event_bytes = 0
         self._active_thread_id: str = "default"
         self.capability_manifest: dict[str, Any] = {}
         self._thread_settings: dict[str, ThreadSettingsResult] = {}
+        self._world_execution_configured = False
+        self._session_info: SessionInfo | None = None
+        self._client_name = "python-sdk"
+        self._client_version = "0.9.0"
+        self._provider_selection: dict[str, Any] | None = None
         if request_timeout <= 0:
             raise ValueError("request_timeout must be positive")
         self.request_timeout = request_timeout
@@ -382,10 +380,26 @@ class MiniAgentClient:
         return self._proc is not None and self._proc.returncode is None
 
     async def restart(self) -> dict[str, Any]:
-        """Restart the server process and re-initialize session."""
+        """Restart the process, resuming its durable Session when available."""
+        if self._session_info is not None:
+            if self.env.get("MINI_AGENT_SESSION_MODE") == "new":
+                self.env["MINI_AGENT_SESSION_MODE"] = "resume"
+                self.env["MINI_AGENT_SESSION_ID"] = self._session_info.session_id
+            self._thread_settings = {
+                thread_id: replace(settings, state_revision=None)
+                for thread_id, settings in self._thread_settings.items()
+            }
+        else:
+            self._thread_settings.clear()
         await self.stop()
         await self.start()
-        res: dict[str, Any] = await self.initialize()
+        res: dict[str, Any] = await self.initialize(
+            client_name=self._client_name,
+            client_version=self._client_version,
+            providers=self._provider_selection,
+        )
+        if self._world_execution_configured:
+            await self.set_world_execution(self._access_scope, self._policy)
         if self._active_thread_id:
             await self.start_thread(self._active_thread_id)
         return res
@@ -674,6 +688,9 @@ class MiniAgentClient:
         providers: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Negotiate protocol version 1 and receive capability manifest."""
+        self._client_name = client_name
+        self._client_version = client_version
+        self._provider_selection = dict(providers) if providers else None
         params: dict[str, Any] = {
             "protocolVersion": 1,
             "clientName": client_name,
@@ -688,6 +705,15 @@ class MiniAgentClient:
                 f"Unsupported protocol version {res.get('protocolVersion')}"
             )
         self.capability_manifest = res.get("capabilityManifest") or {}
+        try:
+            self._session_info = await self.get_session_info()
+        except AppServerError as err:
+            if err.code != -32601:
+                raise
+            logger.debug("App Server does not expose session/info")
+            self._session_info = None
+        if self._session_info is not None:
+            self._active_thread_id = self._session_info.thread_id
         return res
 
     # -------------------------------------------------------------------------
@@ -1592,19 +1618,36 @@ class MiniAgentClient:
         limit: int = 8,
         thread_id: str | None = None,
     ) -> dict[str, Any]:
-        """Search bounded Notebook metadata and matching entries."""
+        """Search the bounded Notebook projection returned by ``read_notebook``."""
         if scope not in ("self", "parent"):
             raise ValueError("scope must be self or parent")
-        res = await self._send_request(
-            "session/notebook/search",
-            {
-                "threadId": thread_id or self._active_thread_id,
-                "query": query,
-                "scope": scope,
-                "limit": max(1, min(limit, 8)),
-            },
-        )
-        return res.get("value", res) if isinstance(res, dict) else res
+        normalized = query.strip().lower()
+        if not normalized:
+            raise ValueError("notebook search query must not be empty")
+        if len(query) > 128:
+            raise ValueError("notebook search query must be at most 128 characters")
+        notebook = await self.read_notebook(thread_id=thread_id, scope=scope)
+        if not isinstance(notebook, dict):
+            return notebook
+        matches: list[dict[str, Any]] = []
+        for entry in notebook.get("entries", []):
+            if not isinstance(entry, dict):
+                continue
+            keywords = entry.get("keywords", [])
+            searchable = [entry.get("key", ""), entry.get("content", "")]
+            if isinstance(keywords, list):
+                searchable.extend(keywords)
+            evidence = entry.get("evidence", [])
+            if isinstance(evidence, list):
+                for item in evidence:
+                    if isinstance(item, dict):
+                        searchable.extend(
+                            item.get(field, "")
+                            for field in ("project", "commit", "path", "subject")
+                        )
+            if any(normalized in str(value).lower() for value in searchable):
+                matches.append(entry)
+        return {**notebook, "entries": matches[: max(1, min(limit, 8))]}
 
     async def forget_notebook(
         self,
@@ -1641,8 +1684,6 @@ class MiniAgentClient:
             raise ValueError("access must be project or full_machine")
         if policy not in ("interactive", "automatic", "trusted"):
             raise ValueError("policy must be interactive, automatic, or trusted")
-        self._access_scope = access
-        self._policy = policy
         res = await self._send_request(
             "world/set_execution",
             {
@@ -1650,6 +1691,9 @@ class MiniAgentClient:
                 "policy": policy,
             },
         )
+        self._access_scope = access
+        self._policy = policy
+        self._world_execution_configured = True
         return WorldSetExecutionResult.from_dict(res)
 
     async def get_mcp_status(self) -> McpStatusResult:

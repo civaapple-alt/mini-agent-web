@@ -169,6 +169,7 @@ class ItemLifecycleNotification:
     item: ThreadItem
     timestamp_ms: int
     raw: dict[str, Any] = field(default_factory=dict)
+    turn_source: str | None = None
 
     @classmethod
     def from_dict(
@@ -192,6 +193,7 @@ class ItemLifecycleNotification:
                 else data.get("completed_at_ms", 0)
             ),
             raw=data,
+            turn_source=data.get("turnSource") or data.get("turn_source"),
         )
 
 
@@ -201,12 +203,14 @@ class ThreadItemEntry:
 
     turn_id: str
     item: ThreadItem
+    turn_source: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ThreadItemEntry:
         return cls(
             turn_id=data.get("turnId") or data.get("turn_id", ""),
             item=ThreadItem.from_dict(data.get("item", {})),
+            turn_source=data.get("turnSource") or data.get("turn_source"),
         )
 
 

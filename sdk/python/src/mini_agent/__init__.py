@@ -10,6 +10,7 @@ from mini_agent.errors import (
     MiniAgentError,
     ProtocolVersionMismatchError,
     ServerProcessError,
+    StreamEventOverflowError,
     TurnTimeoutError,
 )
 from mini_agent.events import (
@@ -136,6 +137,7 @@ __all__ = [
     "SkillGroupActivatedEvent",
     "SkillsLoadFailedEvent",
     "SkillsLoadedEvent",
+    "StreamEventOverflowError",
     "ThreadCheckpoint",
     "ThreadForkResult",
     "ThreadGoal",

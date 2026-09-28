@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `start_thread()` ID attach to the App Server's active Session Thread.
 - Send per-turn reasoning effort in the App Server input, reject unsupported
   `turn/start` modes in the SDK, and propagate terminal `turn/read` errors.
+- Preserve client/provider and world execution settings across process restarts,
+  resume durable App Server Sessions, and select the restored Session Thread in TUI.
+- Match App Server `.env` search paths, keep stream queues bounded with an
+  explicit replay signal on overflow, and retain Thread origin metadata.
+- Implement `search_notebook()` as bounded local filtering over `read_notebook()`
+  instead of calling an unimplemented protocol method.
 - Reconcile live assistant text and reasoning from completed App Server items,
   and present repeated model calls in one Turn as a single expandable execution
   overview while keeping the final answer visible.

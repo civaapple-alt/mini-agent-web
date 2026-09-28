@@ -42,3 +42,15 @@ class AppServerRequestTimeoutError(ServerProcessError):
 
 class TurnTimeoutError(MiniAgentError):
     """Raised when a turn execution exceeds the configured timeout."""
+
+
+class StreamEventOverflowError(MiniAgentError):
+    """Raised when a stream consumer falls behind the bounded event buffer."""
+
+    def __init__(self, thread_id: str, limit: int):
+        super().__init__(
+            f"event stream for Thread {thread_id} exceeded its bounded buffer; "
+            "reconcile with replay_events()"
+        )
+        self.thread_id = thread_id
+        self.limit = limit

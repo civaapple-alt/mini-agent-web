@@ -20,6 +20,7 @@ from mini_agent import (
     SkillGroupActivatedEvent,
     SkillsLoadedEvent,
     SkillsLoadFailedEvent,
+    StreamEventOverflowError,
     ThreadItem,
     ToolFinishedEvent,
     TurnFinishedEvent,
@@ -27,7 +28,11 @@ from mini_agent import (
     TurnSubmissionResult,
     parse_event,
 )
-from mini_agent.client import APP_SERVER_STDIO_LINE_LIMIT
+from mini_agent.client import (
+    APP_SERVER_STDIO_LINE_LIMIT,
+    STREAM_EVENT_QUEUE_BYTE_LIMIT,
+    STREAM_EVENT_QUEUES_TOTAL_BYTE_LIMIT,
+)
 
 
 @pytest.mark.parametrize(
@@ -333,6 +338,8 @@ async def test_stream_turn_filters_events_by_thread_and_turn():
             "threadId": "thread-1",
             "turnId": "turn-1",
             "sequence": 2,
+            "itemId": "item-2",
+            "turnSource": "session_resume",
             "items": [
                 {
                     "type": "toolCall",
@@ -364,6 +371,8 @@ async def test_stream_turn_filters_events_by_thread_and_turn():
     assert approval_event["approval"]["phase"] == "requested"
     assert item_event["typed_item_notification"].item.id == "call-1"
     assert text_event["event"] == {"type": "assistant_text_delta", "delta": "right"}
+    assert text_event["itemId"] == "item-2"
+    assert text_event["turnSource"] == "session_resume"
     assert text_event["typed_items"] == [
         ThreadItem(
             type="toolCall",
@@ -403,6 +412,11 @@ async def test_read_loop_relays_turn_events_to_notification_handler_in_order():
 
     client = MiniAgentClient(notification_handler=handler)
     client._proc = type("FakeProcess", (), {"stdout": FakeStdout()})()
+    thread_queue = asyncio.Queue(maxsize=8)
+    other_thread_queue = asyncio.Queue(maxsize=8)
+    client._event_queues.extend([thread_queue, other_thread_queue])
+    client._event_queue_threads[thread_queue] = "thread-1"
+    client._event_queue_threads[other_thread_queue] = "thread-2"
 
     await client._read_loop()
 
@@ -419,6 +433,19 @@ async def test_read_loop_relays_turn_events_to_notification_handler_in_order():
             "message": "App Server connection closed before stream settlement",
         },
     ]
+    thread_event = await thread_queue.get()
+    client._release_stream_message(thread_queue, thread_event)
+    assert thread_event == {
+        "threadId": "thread-1",
+        "sequence": 7,
+        "event": {"type": "run_started"},
+    }
+    thread_error = await thread_queue.get()
+    client._release_stream_message(thread_queue, thread_error)
+    other_thread_error = await other_thread_queue.get()
+    client._release_stream_message(other_thread_queue, other_thread_error)
+    assert thread_error["type"] == "_client_error"
+    assert other_thread_error["type"] == "_client_error"
 
 
 @pytest.mark.asyncio
@@ -436,10 +463,57 @@ async def test_read_loop_settles_event_queues_when_stdout_closes():
 
     await client._read_loop()
 
-    assert await event_queue.get() == {
+    error = await event_queue.get()
+    client._release_stream_message(event_queue, error)
+    assert error == {
         "type": "_client_error",
         "message": "App Server connection closed before stream settlement",
     }
+
+
+@pytest.mark.asyncio
+async def test_read_loop_routes_item_notifications_by_thread():
+    class FakeStdout:
+        def __init__(self):
+            self._lines = iter(
+                [
+                    b'{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thread-1","turnId":"turn-1","startedAtMs":1,"turnSource":"child_wakeup","item":{"type":"agentMessage","id":"item-1","text":"one"}}}\n',
+                    b'{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thread-2","turnId":"turn-2","startedAtMs":2,"item":{"type":"agentMessage","id":"item-2","text":"two"}}}\n',
+                    b'{"jsonrpc":"2.0","method":"approval/resolved","params":{"threadId":"thread-1","requestId":"approval-1","decision":"deny"}}\n',
+                    b'{"jsonrpc":"2.0","method":"approval/resolved","params":{"threadId":"thread-2","requestId":"approval-2","decision":"approve"}}\n',
+                ]
+            )
+
+        async def readline(self):
+            return next(self._lines, b"")
+
+    client = MiniAgentClient()
+    client._proc = type("FakeProcess", (), {"stdout": FakeStdout()})()
+    first = asyncio.Queue(maxsize=8)
+    second = asyncio.Queue(maxsize=8)
+    client._event_queues.extend([first, second])
+    client._event_queue_threads[first] = "thread-1"
+    client._event_queue_threads[second] = "thread-2"
+    client._event_queue_bytes[first] = 0
+    client._event_queue_bytes[second] = 0
+
+    await client._read_loop()
+
+    first_item = first.get_nowait()
+    second_item = second.get_nowait()
+    client._release_stream_message(first, first_item)
+    client._release_stream_message(second, second_item)
+    assert first_item["data"]["threadId"] == "thread-1"
+    assert first_item["typed_item_notification"].turn_source == "child_wakeup"
+    assert second_item["data"]["threadId"] == "thread-2"
+    first_approval = first.get_nowait()
+    second_approval = second.get_nowait()
+    client._release_stream_message(first, first_approval)
+    client._release_stream_message(second, second_approval)
+    assert first_approval["approval"]["requestId"] == "approval-1"
+    assert second_approval["approval"]["requestId"] == "approval-2"
+    assert (await first.get())["type"] == "_client_error"
+    assert (await second.get())["type"] == "_client_error"
 
 
 @pytest.mark.asyncio
@@ -620,6 +694,81 @@ async def test_stream_turn_fails_when_app_server_connection_closes():
 
 
 @pytest.mark.asyncio
+async def test_stop_wakes_stream_consumers_before_cancelling_reader():
+    client = MiniAgentClient()
+
+    async def fake_start_turn(prompt, mode="start", thread_id=None):
+        return TurnSubmissionResult(status="started", turn_id="turn-stop")
+
+    client.start_turn = fake_start_turn
+    stream = client.stream_turn("inspect", thread_id="thread-1")
+    await anext(stream)
+
+    await client.stop()
+
+    with pytest.raises(ServerProcessError, match="App Server stopped"):
+        await anext(stream)
+
+
+@pytest.mark.asyncio
+async def test_stream_turn_bounds_buffer_and_reports_overflow_for_replay():
+    client = MiniAgentClient()
+
+    async def fake_start_turn(prompt, mode="start", thread_id=None):
+        return TurnSubmissionResult(status="started", turn_id="turn-overflow")
+
+    client.start_turn = fake_start_turn
+    stream = client.stream_turn("inspect", thread_id="thread-1")
+    await anext(stream)
+    queue = client._event_queues[0]
+    assert queue.maxsize == 512
+
+    for sequence in range(queue.maxsize + 1):
+        client._enqueue_stream_message(
+            queue,
+            {
+                "threadId": "thread-1",
+                "turnId": "turn-overflow",
+                "sequence": sequence,
+                "event": {"type": "assistant_text_delta", "delta": "x"},
+            },
+        )
+
+    with pytest.raises(StreamEventOverflowError) as err:
+        await anext(stream)
+
+    assert err.value.thread_id == "thread-1"
+    assert err.value.limit == 512
+
+
+def test_stream_queue_bounds_bytes_per_stream_and_client(monkeypatch):
+    monkeypatch.setattr("mini_agent.client.STREAM_EVENT_QUEUE_BYTE_LIMIT", 128)
+    monkeypatch.setattr("mini_agent.client.STREAM_EVENT_QUEUES_TOTAL_BYTE_LIMIT", 128)
+    assert STREAM_EVENT_QUEUE_BYTE_LIMIT == 2 * 1024 * 1024
+    assert STREAM_EVENT_QUEUES_TOTAL_BYTE_LIMIT == 8 * 1024 * 1024
+    client = MiniAgentClient()
+    first = asyncio.Queue(maxsize=8)
+    second = asyncio.Queue(maxsize=8)
+    large = asyncio.Queue(maxsize=8)
+    client._event_queues.extend([first, second, large])
+    for queue in client._event_queues:
+        client._event_queue_bytes[queue] = 0
+
+    client._enqueue_stream_message(first, {"payload": "x" * 80})
+    client._enqueue_stream_message(second, {"payload": "y" * 80})
+    client._enqueue_stream_message(large, {"payload": "z" * 200})
+    client._enqueue_stream_message(large, {"payload": "later"})
+
+    assert first.qsize() == 1
+    assert second.get_nowait()["type"] == "_stream_overflow"
+    assert large.qsize() == 1
+    assert large.get_nowait()["type"] == "_stream_overflow"
+    first_message = first.get_nowait()
+    client._release_stream_message(first, first_message)
+    assert client._queued_event_bytes == 0
+
+
+@pytest.mark.asyncio
 async def test_stream_turn_preserves_step_limit_as_non_completed():
     client = MiniAgentClient()
 
@@ -702,6 +851,7 @@ def test_thread_item_lifecycle_and_list_projection_parse_camel_case_wire_shape()
             "threadId": "thread-1",
             "turnId": "turn-1",
             "startedAtMs": 10,
+            "turnSource": "child_wakeup",
             "item": {
                 "type": "toolCall",
                 "id": "call-1",
@@ -713,6 +863,7 @@ def test_thread_item_lifecycle_and_list_projection_parse_camel_case_wire_shape()
     )
     assert started.thread_id == "thread-1"
     assert started.timestamp_ms == 10
+    assert started.turn_source == "child_wakeup"
     assert started.item.status == "inProgress"
 
 
@@ -755,6 +906,7 @@ def test_thread_item_preserves_typed_tool_outcome():
                 "data": [
                     {
                         "turnId": "turn-1",
+                        "turnSource": "child_wakeup",
                         "item": {
                             "type": "agentMessage",
                             "id": "message-1",
@@ -768,6 +920,7 @@ def test_thread_item_preserves_typed_tool_outcome():
         }
     )
     assert page.data[0].turn_id == "turn-1"
+    assert page.data[0].turn_source == "child_wakeup"
     assert page.data[0].item.text == "done"
     assert page.next_cursor == "1"
     assert page.backwards_cursor == "0"

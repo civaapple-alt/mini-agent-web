@@ -158,6 +158,13 @@ if page.has_gap:
 transport-error notifications. The SDK awaits the handler for `turn/event`,
 so put slow work on your own queue rather than block the reader loop.
 
+Each `stream_turn()` has a 512-message and 2 MiB buffer; streams on one client
+share an 8 MiB byte budget. If a consumer falls behind, `StreamEventOverflowError`
+ends that stream and identifies its Thread. Use the last received sequence with
+`replay_events()` and reconcile canonical history if the replay page reports a
+gap. Stream dictionaries retain `itemId` and `turnSource`, and the typed item
+lifecycle and Thread-item projections expose `turn_source`.
+
 ```python
 async def approve_once(request: dict) -> dict:
     return {"decision": "approve", "grantScope": "once"}

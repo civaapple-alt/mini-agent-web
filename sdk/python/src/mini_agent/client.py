@@ -21,6 +21,7 @@ from mini_agent.errors import (
     AppServerRequestTimeoutError,
     ProtocolVersionMismatchError,
     ServerProcessError,
+    StreamEventOverflowError,
     TurnTimeoutError,
 )
 from mini_agent.events import parse_event
@@ -61,6 +62,10 @@ from mini_agent.types import (
 logger = logging.getLogger("mini_agent")
 
 DEFAULT_REQUEST_TIMEOUT_SECS = 30.0
+STREAM_EVENT_QUEUE_LIMIT = 512
+STREAM_EVENT_QUEUE_BYTE_LIMIT = 2 * 1024 * 1024
+STREAM_EVENT_QUEUES_TOTAL_BYTE_LIMIT = 8 * 1024 * 1024
+_STREAM_QUEUE_SIZE_KEY = "__mini_agent_sdk_queued_bytes"
 # SessionStore records are bounded to 512 KiB, but JSON-RPC wraps those
 # records in a response envelope. Keep asyncio's StreamReader limit above that
 # protocol bound so a valid checkpoint cannot break the stdio transport.
@@ -323,6 +328,14 @@ class MiniAgentClient:
     async def stop(self) -> None:
         """Gracefully stop the server process."""
         process = self._proc
+        for queue in self._event_queues:
+            self._enqueue_stream_message(
+                queue,
+                {
+                    "type": "_client_error",
+                    "message": "App Server stopped before stream settlement",
+                },
+            )
         # 1. Terminate/kill the child process first so stdout/stderr receive EOF immediately
         if process and process.returncode is None:
             if process.stdin and not process.stdin.is_closing():
@@ -528,7 +541,13 @@ class MiniAgentClient:
 
                 if method == "turn/event":
                     for q in self._event_queues:
-                        await q.put(params)
+                        target_thread = self._event_queue_threads.get(q)
+                        if (
+                            target_thread is not None
+                            and params.get("threadId") != target_thread
+                        ):
+                            continue
+                        self._enqueue_stream_message(q, params)
                     if self.notification_handler is not None:
                         try:
                             await self.notification_handler({"type": "event", **params})
@@ -561,7 +580,17 @@ class MiniAgentClient:
                             ItemLifecycleNotification.from_dict(method, params)
                         )
                     for q in self._event_queues:
-                        await q.put(notification)
+                        target_thread = self._event_queue_threads.get(q)
+                        notification_thread = params.get("threadId") or params.get(
+                            "thread_id"
+                        )
+                        if (
+                            target_thread is not None
+                            and notification_thread is not None
+                            and notification_thread != target_thread
+                        ):
+                            continue
+                        self._enqueue_stream_message(q, notification)
                     if self.notification_handler is not None:
                         asyncio.create_task(self.notification_handler(notification))
                     logger.debug("Received server notification: %s", method)
@@ -597,7 +626,9 @@ class MiniAgentClient:
                 fut.set_exception(ServerProcessError(error_message))
         self._pending_requests.clear()
         for q in self._event_queues:
-            await q.put({"type": "_client_error", "message": error_message})
+            self._enqueue_stream_message(
+                q, {"type": "_client_error", "message": error_message}
+            )
         if self.notification_handler is not None:
             try:
                 await self.notification_handler(
@@ -632,8 +663,69 @@ class MiniAgentClient:
             summary_counts,
             approval.get("requestId", ""),
         )
+        approval_thread = approval.get("threadId") or approval.get("thread_id")
         for q in self._event_queues:
-            await q.put({"type": "approval", "approval": approval})
+            target_thread = self._event_queue_threads.get(q)
+            if (
+                target_thread is not None
+                and approval_thread is not None
+                and approval_thread != target_thread
+            ):
+                continue
+            self._enqueue_stream_message(q, {"type": "approval", "approval": approval})
+
+    def _enqueue_stream_message(
+        self, queue: asyncio.Queue[dict[str, Any]], message: dict[str, Any]
+    ) -> None:
+        """Bound stream count and bytes; turn dropped history into a replay signal."""
+        if queue in self._overflowed_event_queues:
+            return
+        message_bytes = len(
+            json.dumps(
+                message,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        )
+        queue_bytes = self._event_queue_bytes.get(queue, 0)
+        if (
+            queue.full()
+            or message_bytes > STREAM_EVENT_QUEUE_BYTE_LIMIT
+            or queue_bytes + message_bytes > STREAM_EVENT_QUEUE_BYTE_LIMIT
+            or self._queued_event_bytes + message_bytes
+            > STREAM_EVENT_QUEUES_TOTAL_BYTE_LIMIT
+        ):
+            self._discard_stream_queue(queue)
+            self._overflowed_event_queues.add(queue)
+            queue.put_nowait({"type": "_stream_overflow"})
+            return
+        queued_message = dict(message)
+        queued_message[_STREAM_QUEUE_SIZE_KEY] = message_bytes
+        queue.put_nowait(queued_message)
+        self._event_queue_bytes[queue] = queue_bytes + message_bytes
+        self._queued_event_bytes += message_bytes
+
+    def _release_stream_message(
+        self, queue: asyncio.Queue[dict[str, Any]], message: dict[str, Any]
+    ) -> None:
+        """Release the serialized-byte budget when a queued message is consumed."""
+        message_bytes = message.pop(_STREAM_QUEUE_SIZE_KEY, 0)
+        if message_bytes:
+            self._event_queue_bytes[queue] = max(
+                0, self._event_queue_bytes.get(queue, 0) - message_bytes
+            )
+            self._queued_event_bytes = max(0, self._queued_event_bytes - message_bytes)
+
+    def _discard_stream_queue(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
+        """Discard buffered messages while releasing their byte budget."""
+        while not queue.empty():
+            try:
+                message = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            self._release_stream_message(queue, message)
+        self._event_queue_bytes[queue] = 0
 
     async def _handle_approval_request(self, params: dict[str, Any]) -> None:
         """Handle server approval/request notification."""
@@ -1206,8 +1298,12 @@ class MiniAgentClient:
         :param effort: Optional reasoning effort ('low', 'medium', 'high').
         """
         target_thread = thread_id or self._active_thread_id
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
+            maxsize=STREAM_EVENT_QUEUE_LIMIT
+        )
         self._event_queues.append(queue)
+        self._event_queue_threads[queue] = target_thread
+        self._event_queue_bytes[queue] = 0
 
         try:
             start_kwargs: dict[str, Any] = {
@@ -1239,6 +1335,11 @@ class MiniAgentClient:
 
             while True:
                 envelope = await queue.get()
+                self._release_stream_message(queue, envelope)
+                if envelope.get("type") == "_stream_overflow":
+                    raise StreamEventOverflowError(
+                        target_thread, STREAM_EVENT_QUEUE_LIMIT
+                    )
                 if envelope.get("type") == "_client_error":
                     raise ServerProcessError(
                         envelope.get("message")
@@ -1314,6 +1415,8 @@ class MiniAgentClient:
                     "type": "event",
                     "threadId": envelope.get("threadId"),
                     "turnId": turn_id,
+                    "itemId": envelope.get("itemId"),
+                    "turnSource": envelope.get("turnSource"),
                     "sequence": sequence,
                     "event": event_dict,
                     "items": item_dicts,
@@ -1335,7 +1438,11 @@ class MiniAgentClient:
                     # The following turn_finished is the lifecycle boundary.
                     continue
         finally:
+            self._discard_stream_queue(queue)
             self._event_queues.remove(queue)
+            self._event_queue_threads.pop(queue, None)
+            self._event_queue_bytes.pop(queue, None)
+            self._overflowed_event_queues.discard(queue)
 
     # -------------------------------------------------------------------------
     # Thread Settings, Goals, and Read-Only Workflow Projection

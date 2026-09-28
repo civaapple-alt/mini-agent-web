@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Make `read_thread()` checkpoints directly resumable and let an omitted
   `start_thread()` ID attach to the App Server's active Session Thread.
+- Send per-turn reasoning effort in the App Server input, reject unsupported
+  `turn/start` modes in the SDK, and propagate terminal `turn/read` errors.
 - Reconcile live assistant text and reasoning from completed App Server items,
   and present repeated model calls in one Turn as a single expandable execution
   overview while keeping the final answer visible.

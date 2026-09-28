@@ -17,7 +17,7 @@ from mini_agent import (
     TurnReadResult,
 )
 from mini_agent.client import _redact_secrets
-from mini_agent.errors import ServerProcessError
+from mini_agent.errors import AppServerError, ServerProcessError
 
 from tests.conftest import has_app_server
 
@@ -470,6 +470,64 @@ async def test_sdk_wait_for_turn_keeps_polling_while_execution_is_recoverable():
 
     assert result.status == "completed"
     assert len(reads) == 2
+
+
+@pytest.mark.asyncio
+async def test_sdk_wait_for_turn_propagates_terminal_json_rpc_errors():
+    client = MiniAgentClient()
+
+    async def missing_turn(turn_id, request_timeout=None):
+        raise AppServerError(-32000, f"Turn not found: {turn_id}")
+
+    client._read_turn = missing_turn
+
+    with pytest.raises(AppServerError, match="Turn not found"):
+        await client.wait_for_turn("missing-turn", timeout=5, poll_interval=0)
+
+
+@pytest.mark.asyncio
+async def test_start_turn_sends_effort_inside_turn_input():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {"value": {"turnId": "turn-1", "status": "started"}}
+
+    client._send_request = fake_send
+
+    await client.start_turn("inspect", effort="high")
+
+    assert calls == [
+        (
+            "turn/start",
+            {
+                "threadId": "default",
+                "input": {
+                    "mode": "start",
+                    "text": "inspect",
+                    "reasoningEffort": "high",
+                },
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_start_turn_rejects_modes_not_supported_by_turn_start():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {}
+
+    client._send_request = fake_send
+
+    with pytest.raises(ValueError, match="start or start_if_idle"):
+        await client.start_turn("inspect", mode="continue")
+
+    assert calls == []
 
 
 @pytest.mark.asyncio

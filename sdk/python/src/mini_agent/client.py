@@ -12,7 +12,7 @@ import os
 import shutil
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from mini_agent.approval_logging import approval_log_fields
 from mini_agent.errors import (
@@ -934,9 +934,9 @@ class MiniAgentClient:
     async def start_turn(
         self,
         prompt: str,
-        mode: str = "start",
+        mode: Literal["start", "start_if_idle"] = "start",
         thread_id: str | None = None,
-        effort: str | None = None,
+        effort: Literal["low", "medium", "high"] | None = None,
         selected_skills: list[str] | None = None,
         workflow: dict[str, Any] | None = None,
         operation_id: str | None = None,
@@ -948,6 +948,8 @@ class MiniAgentClient:
         turn_source: str | None = None,
     ) -> TurnSubmissionResult:
         """Submit a turn prompt to the App Server with optional reasoning effort ('low', 'medium', 'high')."""
+        if mode not in ("start", "start_if_idle"):
+            raise ValueError("mode must be start or start_if_idle")
         payload: dict[str, Any] = {
             "threadId": thread_id or self._active_thread_id,
             "input": {
@@ -982,7 +984,9 @@ class MiniAgentClient:
                 raise ValueError("turn_source must be child_wakeup or session_resume")
             payload["turnSource"] = turn_source
         if effort is not None:
-            payload["effort"] = effort
+            if effort not in ("low", "medium", "high"):
+                raise ValueError("effort must be low, medium, or high")
+            payload["input"]["reasoningEffort"] = effort
         res = await self._send_request("turn/start", payload)
         return TurnSubmissionResult.from_dict(res)
 
@@ -1154,26 +1158,15 @@ class MiniAgentClient:
                     remaining,
                 )
                 await asyncio.sleep(min(poll_interval, remaining))
-            except AppServerError as err:
-                # Code -32000 means thread is busy / turn is active
-                if err.code == -32000 or "active turn" in str(err).lower():
-                    remaining = deadline - loop.time()
-                    if remaining <= 0:
-                        raise TurnTimeoutError(
-                            f"Turn {turn_id} did not complete within {timeout}s"
-                        ) from err
-                    await asyncio.sleep(min(poll_interval, remaining))
-                else:
-                    raise
 
     wait_turn = wait_for_turn
 
     async def stream_turn(
         self,
         prompt: str,
-        mode: str = "start",
+        mode: Literal["start", "start_if_idle"] = "start",
         thread_id: str | None = None,
-        effort: str | None = None,
+        effort: Literal["low", "medium", "high"] | None = None,
         selected_skills: list[str] | None = None,
         workflow: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
@@ -1182,7 +1175,7 @@ class MiniAgentClient:
         until the turn finishes.
 
         :param prompt: User instruction or task prompt.
-        :param mode: Turn mode ('start' or 'continue').
+        :param mode: Turn mode ('start' or 'start_if_idle').
         :param thread_id: Conversation thread identifier.
         :param effort: Optional reasoning effort ('low', 'medium', 'high').
         """

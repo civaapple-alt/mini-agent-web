@@ -101,6 +101,11 @@ The SDK exposes its supported controls directly:
 combines cached Thread settings with `thread/goal/get`; it does not send the
 removed `workflow/state` RPC.
 
+`start_turn()` and `stream_turn()` accept `mode="start"` or
+`mode="start_if_idle"`. Their optional `effort` is sent as the legacy
+`input.reasoningEffort` fallback; an explicit Thread `reasoningSelection` takes
+precedence.
+
 `read_thread()` returns a `ThreadCheckpoint` that can be passed directly to
 `resume_thread(new_thread_id, checkpoint)`. The SDK unwraps the `thread/read`
 action envelope before sending the checkpoint to the App Server.
@@ -202,6 +207,9 @@ changes that value for one client. On timeout, the SDK removes the pending
 request and raises `ServerProcessError`. `AppServerError` retains the JSON-RPC
 error `code`, `message`, and `data`. `session/fork` identity or context-policy
 conflicts use `SESSION_FORK_CONFLICT_CODE` (`-32001`).
+`wait_for_turn()` retries timed-out `turn/read` requests and successful
+`in_progress` results. Other App Server errors, including an unknown Turn ID,
+are returned immediately.
 
 When event models, public types, or wire fields change, run:
 

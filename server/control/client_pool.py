@@ -279,14 +279,14 @@ class ClientPool:
             )
         if target_project not in owner._projects_registry:
             raise KeyError(f"Project '{target_project}' not found")
+        if thread_id:
+            return await self.get_client_for_thread(thread_id, target_project)
         if (
             owner._client is not None
             and owner._client_projects.get("default") == target_project
             and self._is_usable_client(owner._client)
         ):
             return owner._client
-        if thread_id:
-            return await self.get_client_for_thread(thread_id, target_project)
         project_default = owner._project_clients.get((target_project, "default"))
         if project_default is not None and self._is_usable_client(project_default):
             if target_project == owner._current_project_id:

@@ -3998,6 +3998,24 @@ async def test_client_pool_replaces_a_client_after_stdio_process_failure(
     assert stale not in mock_session_manager._clients.values()
 
 
+@pytest.mark.asyncio
+async def test_project_client_lookup_prefers_the_requested_thread_client(
+    mock_session_manager,
+):
+    default_client = SimpleNamespace(is_running=True)
+    thread_client = SimpleNamespace(is_running=True)
+    mock_session_manager._client = default_client
+    mock_session_manager._client_projects["default"] = "default"
+    mock_session_manager._project_clients[("default", "default")] = default_client
+    mock_session_manager._project_clients[("default", "thread-42")] = thread_client
+    mock_session_manager._clients["thread-42"] = thread_client
+    mock_session_manager._client_projects["thread-42"] = "default"
+
+    client = await mock_session_manager.get_client_for_project("default", "thread-42")
+
+    assert client is thread_client
+
+
 def test_checkpoint_projection_keeps_reasoning_and_tool_call_identity():
     from server.session_catalog import _checkpoint_projection
 

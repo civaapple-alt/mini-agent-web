@@ -76,6 +76,55 @@ test('supports pstack qualified names and the plus workflow shorthand', () => {
   );
 });
 
+test('supports code-review qualified activation and its opt-in group workflow', () => {
+  const codeReviewSkills = [
+    'code-review',
+    'code-review-breaking-changes',
+    'code-review-change-size',
+    'code-review-context',
+    'code-review-testing',
+  ].map((name) => ({
+    name,
+    qualifiedName: `code-review:${name}`,
+    enabled: true,
+  }));
+
+  assert.deepEqual(
+    parseSkillPrompt(
+      '$code-review:code-review $code-review:code-review-testing',
+      codeReviewSkills,
+    ),
+    {
+      prompt: '',
+      selectedSkills: [
+        'code-review:code-review',
+        'code-review:code-review-testing',
+      ],
+      unknownSkills: [],
+    },
+  );
+  assert.deepEqual(
+    parseWorkflowPrompt('+ code-review review this change', [
+      { id: 'code-review', enabled: true },
+    ]),
+    {
+      prompt: 'review this change',
+      workflow: { kind: 'skill_group', id: 'code-review', mode: 'auto' },
+      unknownWorkflows: [],
+    },
+  );
+  assert.deepEqual(
+    parseWorkflowPrompt('+ code-review review this change', [
+      { id: 'code-review', enabled: false },
+    ]),
+    {
+      prompt: '+ code-review review this change',
+      workflow: null,
+      unknownWorkflows: ['code-review'],
+    },
+  );
+});
+
 test('rejects an ambiguous short Skill name while keeping qualified names', () => {
   const available = [
     {

@@ -86,4 +86,21 @@ describe('SkillPanel', () => {
 
     expect(screen.getByRole('button', { name: /\$knowledge-work:product-management/ }).disabled).toBe(true);
   });
+
+  it('shows the disabled code-review group and offers an enable action', () => {
+    const onToggleGroup = vi.fn();
+    render(
+      <SkillPanel
+        skills={[]}
+        groups={[{ id: 'code-review', version: '0.1.0', enabled: false }]}
+        onToggleGroup={onToggleGroup}
+      />,
+    );
+
+    expect(screen.getByText('code-review · 内置技能组')).toBeDefined();
+    expect(screen.getByText('已关闭')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '启用' }));
+
+    expect(onToggleGroup).toHaveBeenCalledWith('code-review', true);
+  });
 });

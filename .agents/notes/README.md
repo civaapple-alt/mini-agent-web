@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [Web Studio 内置 code-review 技能组](implemented/process/2026-09-30-webstudio-builtin-code-review-skill-group.zh.md)
 - [侧栏活动时间忽略 Context 同步检查点](implemented/bug-fix/2026-09-27-sidebar-activity-ignores-context-checkpoints.zh.md)
 - [运行时恢复失败时保留已显示会话流](implemented/bug-fix/2026-09-27-preserve-thread-history-on-runtime-disconnect.zh.md)
 - [主 Turn 与子任务的实时耗时显示](implemented/bug-fix/2026-09-27-live-turn-and-child-duration.zh.md)

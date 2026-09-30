@@ -1,20 +1,25 @@
 # Skills integration
 
-WebStudio ships the ChatGPT-compatible `pstack` group and the curated,
-read-only `knowledge-work` group as Mini Agent builtin skills. The App Server
-owns discovery and activation. The Gateway and Web Studio consume the
-resulting capability manifest.
+WebStudio ships the ChatGPT-compatible `pstack` group, the curated,
+read-only `knowledge-work` group, and the opt-in `code-review` group as Mini
+Agent builtin skills. The App Server owns discovery and activation. The Gateway
+and Web Studio consume the resulting capability manifest.
 
 ## Built-in skill installation
 
 At Gateway startup, WebStudio discovers each group under
 `resources/builtin-skills` and synchronizes it to
 `%USERPROFILE%/.mini-agent/skills/builtin/<group>`. The current groups are
-`pstack` and `knowledge-work`. Each group has an independent version marker,
-source hash, and optional source commit. If the marker matches, the
-synchronizer leaves that group unchanged. A changed group is copied to a
+`pstack`, `knowledge-work`, and `code-review`. Each group has an independent
+version marker, source hash, and optional source commit. If the marker matches,
+the synchronizer leaves that group unchanged. A changed group is copied to a
 staging directory and switched into place atomically; another group is not
 replaced when one group changes.
+
+The `code-review` group contains a coordinator and four focused Skills for
+compatibility, change size, model context, and test coverage. New and existing
+Projects leave this group disabled until a user enables it in the Skill panel.
+The panel still lists disabled groups so users can opt in.
 
 Builtin resources include skill bodies, metadata, and bounded references only.
 They do not install MCP servers, hooks, commands, plugin manifests, or external
@@ -26,7 +31,7 @@ Each Project stores the enabled builtin groups in `builtin_skill_groups`:
 
 ```json
 {
-  "builtin_skill_groups": ["pstack", "knowledge-work"]
+  "builtin_skill_groups": ["pstack", "code-review"]
 }
 ```
 
@@ -54,7 +59,8 @@ available on the next send without a runtime restart.
   "projectId": "project-id",
   "builtinSkillGroups": [
     {"id": "pstack", "version": "0.2.0", "enabled": true},
-    {"id": "knowledge-work", "version": "0.1.0", "enabled": true}
+    {"id": "knowledge-work", "version": "0.1.0", "enabled": false},
+    {"id": "code-review", "version": "0.1.0", "enabled": true}
   ],
   "skills": [
     {
@@ -190,7 +196,8 @@ The runtime catalog also discovers direct user Skills from
 addition to project Skills and synchronized builtin groups. The fixed priority
 is project, Agent Skills user, Mini Agent user, builtin, then plugin. Higher
 priority unqualified entries shadow lower-priority entries; grouped entries
-retain names such as `pstack:how` and `knowledge-work:data`.
+retain names such as `pstack:how`, `knowledge-work:data`, and
+`code-review:code-review-testing`.
 
 ## Plugin workflow activation
 
@@ -213,6 +220,30 @@ The event stream shows `skill_group_activated`, then emits the same started and
 loaded on-demand events for each first `SKILL.md` read with
 `activation: "on_demand"`.
 Disabling a group in the panel disables both entry points for that group.
+
+## Local code review
+
+Enable `code-review` in the Project Skill panel before using its workflow.
+The coordinator is `$code-review:code-review`; the focused Skills are
+`$code-review:code-review-breaking-changes`,
+`$code-review:code-review-change-size`,
+`$code-review:code-review-context`, and
+`$code-review:code-review-testing`. Use `+ code-review` to let the model
+select relevant checks through the normal on-demand Skill path.
+
+If you do not name a scope, the coordinator reviews staged, unstaged, and
+untracked changes. If that working tree is clean, it asks whether to review
+the whole repository or use a starting commit. A starting commit is the
+exclusive base: review changes introduced after it through current `HEAD`,
+the current tracked working tree, and relevant untracked source files. A
+whole-repository review inspects relevant files in the current checkout.
+
+The review reads local files and reports findings. It does not contact GitHub,
+create a commit, modify files, or post review comments. The coordinator
+dispatches one bounded child task per focused Skill, then reads each result
+through `task_list` and `task_read`. If delegation is unavailable, it runs
+the checks sequentially and identifies that limitation. If a child fails, the
+final report names the specialty that did not complete.
 
 ## Composer files and local paths
 

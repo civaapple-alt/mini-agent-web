@@ -283,6 +283,99 @@ async def test_gateway_skill_catalog_lists_available_groups_without_pstack_speci
 
 
 @pytest.mark.asyncio
+async def test_gateway_lists_code_review_disabled_then_projects_its_five_skills(
+    test_app, monkeypatch, tmp_path
+):
+    code_review_skills = [
+        {
+            "name": name,
+            "qualifiedName": f"code-review:{name}",
+            "description": name,
+            "source": "builtin",
+            "group": "code-review",
+            "enabled": True,
+        }
+        for name in [
+            "code-review",
+            "code-review-breaking-changes",
+            "code-review-change-size",
+            "code-review-context",
+            "code-review-testing",
+        ]
+    ]
+    client_mock = SimpleNamespace(
+        capability_manifest={
+            "builtinSkillGroups": [
+                {"id": "pstack", "version": "0.2.0", "enabled": True}
+            ]
+        },
+        list_skills=AsyncMock(return_value=[]),
+    )
+    session_manager._projects_registry["project-1"] = {
+        "id": "project-1",
+        "name": "project-1",
+        "primary_path": str(tmp_path),
+        "source_folders": [],
+        "access": "project",
+        "policy": "interactive",
+        "builtin_skill_groups": ["pstack"],
+        "subagent": {},
+        "notebook": {},
+    }
+    session_manager._current_project_id = "project-1"
+    restart = AsyncMock()
+    monkeypatch.setattr(
+        session_manager, "get_client_for_project", AsyncMock(return_value=client_mock)
+    )
+    monkeypatch.setattr(session_manager, "restart_for_current_project", restart)
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        disabled = await client.get("/api/skills", params={"project_id": "project-1"})
+        enabled_project = await client.patch(
+            "/api/projects/project-1",
+            json={"builtin_skill_groups": ["pstack", "code-review"]},
+        )
+        client_mock.capability_manifest = {
+            "builtinSkillGroups": [
+                {"id": "pstack", "version": "0.2.0", "enabled": True},
+                {"id": "code-review", "version": "0.1.0", "enabled": True},
+            ]
+        }
+        client_mock.list_skills.return_value = code_review_skills
+        enabled = await client.get("/api/skills", params={"project_id": "project-1"})
+
+    assert disabled.status_code == 200
+    disabled_groups = {
+        group["id"]: group for group in disabled.json()["builtinSkillGroups"]
+    }
+    assert disabled_groups["code-review"] == {
+        "id": "code-review",
+        "version": "0.1.0",
+        "enabled": False,
+    }
+
+    assert enabled_project.status_code == 200
+    assert session_manager._projects_registry["project-1"]["builtin_skill_groups"] == [
+        "pstack",
+        "code-review",
+    ]
+    restart.assert_awaited_once()
+    assert enabled.status_code == 200
+    enabled_groups = {
+        group["id"]: group for group in enabled.json()["builtinSkillGroups"]
+    }
+    assert enabled_groups["code-review"]["enabled"] is True
+    assert [skill["qualifiedName"] for skill in enabled.json()["skills"]] == [
+        "code-review:code-review",
+        "code-review:code-review-breaking-changes",
+        "code-review:code-review-change-size",
+        "code-review:code-review-context",
+        "code-review:code-review-testing",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_gateway_threads_and_workflows(test_app):
     # Initialize background session manager for testing
     await session_manager.start()

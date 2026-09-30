@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Package an opt-in `code-review` Skill group with a local-only coordinator
+  and four focused checks for compatibility, change size, model context, and
+  test coverage.
 - Add machine-wide Web Search settings for DeepSeek native search, Exa, Kimi
   Basic, or disabled. Keep credentials write-only and stored by Host; forward
   settings through JSON-RPC, the Python SDK, and Gateway without echoing keys.

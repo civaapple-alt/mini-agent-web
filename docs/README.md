@@ -15,6 +15,7 @@
 | [`models.md`](models.md) | Responses 供应商、模型目录、默认值和输入框切换 |
 | [`web-search.md`](web-search.md) | 搜索服务设置、Gateway/SDK 路径和会话流中的搜索及网页阅读展示 |
 | [`session-context.md`](session-context.md) | 会话上下文来源、注入时间线和 Provider 用量 |
+| [`workspaces.md`](workspaces.md) | 项目工作区及本机快捷打开入口 |
 | [`child-tasks.md`](child-tasks.md) | 子代理批次、进展、动态控制及运行面板入口 |
 | [`background-tasks.md`](background-tasks.md) | 跨 Turn 本地后台 Shell 任务及运行面板行为 |
 | [`scheduled-tasks.md`](scheduled-tasks.md) | 跨 Turn 的有界延时标记及远程状态等待边界 |

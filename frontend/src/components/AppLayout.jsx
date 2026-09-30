@@ -226,6 +226,7 @@ export default function AppLayout({
     <div className="app-container">
       <Header
         currentThread={currentThread}
+        currentThreadProject={currentThreadProject}
         threadTitle={isNewSessionLanding ? '新建会话' : threadTitle}
         threadSummary={threadSummary}
         sessionId={sessionId}

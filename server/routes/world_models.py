@@ -20,6 +20,12 @@ class SetExecutionRequest(BaseModel):
     )
 
 
+class OpenProjectRequest(BaseModel):
+    target: Literal["file_manager", "vscode", "intellij", "terminal"] = Field(
+        description="Allowlisted local application used to open the Project workspace"
+    )
+
+
 class ApiDefaultReasoning(BaseModel):
     kind: Literal["api_default"]
 

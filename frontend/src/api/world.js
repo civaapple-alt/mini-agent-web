@@ -87,6 +87,34 @@ export const worldApi = {
     return res.json();
   },
 
+  async getProjectOpenTargets(options = {}) {
+    const res = await request(
+      '/api/world/open-targets',
+      requestSignal(options),
+      options.projectId,
+    );
+    if (!res.ok) throw new Error('Failed to list local project open targets');
+    return res.json();
+  },
+
+  async openProjectInTarget(target, options = {}) {
+    const res = await request(
+      '/api/world/open-project',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target }),
+        ...requestSignal(options),
+      },
+      options.projectId,
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || 'Failed to open project workspace');
+    }
+    return res.json();
+  },
+
   async getWorkspaceFiles(query = '', options = {}) {
     const res = await request(
       `/api/world/workspace-files?query=${encodeURIComponent(query)}`,

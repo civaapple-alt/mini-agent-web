@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [项目工作区右上角快捷打开](implemented/process/2026-09-30-project-quick-open.zh.md)
 - [联网搜索密钥状态与搜索探测](implemented/process/2026-09-30-web-search-key-display-and-test.zh.md)
 - [输入栏停止只中断当前 Turn](implemented/process/2026-09-30-composer-stop-only-turn.zh.md)
 - [Web Studio 内置 code-review 技能组](implemented/process/2026-09-30-webstudio-builtin-code-review-skill-group.zh.md)

@@ -12,17 +12,20 @@ from server.routes.world_execution import (
 from server.routes.world_files import router as files_router
 from server.routes.world_models import (
     CreateProjectRequest,
+    OpenProjectRequest,
     SetExecutionRequest,
     SetGoalRequest,
     SwitchProjectRequest,
     UpdateProjectRequest,
     UpdateThreadSettingsRequest,
 )
+from server.routes.world_open import router as open_router
 from server.routes.world_projects import router as projects_router
 from server.routes.world_workflows import router as workflows_router
 
 router = APIRouter()
 router.include_router(projects_router)
+router.include_router(open_router)
 router.include_router(execution_router)
 router.include_router(workflows_router)
 router.include_router(files_router)
@@ -31,6 +34,7 @@ __all__ = [
     "ALL_BUILTIN_TOOLS",
     "DEFAULT_BUILTIN_TOOLS",
     "CreateProjectRequest",
+    "OpenProjectRequest",
     "SetExecutionRequest",
     "SetGoalRequest",
     "SwitchProjectRequest",

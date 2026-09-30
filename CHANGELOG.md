@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add a top-right quick-open menu for the current Project workspace. Route
+  launches through the local Gateway using registered Project paths and fixed
+  Finder, Windows File Explorer, VS Code, IntelliJ IDEA, and terminal targets on macOS,
+  Windows, and Linux.
 - Package an opt-in `code-review` Skill group with a local-only coordinator
   and four focused checks for compatibility, change size, model context, and
   test coverage.

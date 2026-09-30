@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Sparkles,
   GitBranch,
@@ -10,11 +10,35 @@ import {
   X,
   FileText,
   Menu,
+  FolderOpen,
+  Code2,
+  Braces,
+  SquareTerminal,
+  ChevronDown,
+  LoaderCircle,
 } from 'lucide-react';
+import { api } from '../api';
 import './Header.css';
+
+const OPEN_TARGET_PREFERENCE_KEY = 'mini-agent-web.project-open-target';
+const OPEN_TARGET_ICONS = {
+  file_manager: FolderOpen,
+  vscode: Code2,
+  intellij: Braces,
+  terminal: SquareTerminal,
+};
+
+function readPreferredOpenTarget() {
+  try {
+    return window.localStorage.getItem(OPEN_TARGET_PREFERENCE_KEY) || 'vscode';
+  } catch {
+    return 'vscode';
+  }
+}
 
 export default function Header({
   currentThread,
+  currentThreadProject,
   threadTitle,
   threadSummary,
   sessionId,
@@ -31,6 +55,14 @@ export default function Header({
   const [newTitle, setNewTitle] = useState(threadTitle || currentThread);
   const [showSummaryPopover, setShowSummaryPopover] = useState(false);
   const [summaryInput, setSummaryInput] = useState(threadSummary || '');
+  const [showOpenTargetMenu, setShowOpenTargetMenu] = useState(false);
+  const [openTargets, setOpenTargets] = useState([]);
+  const [openTargetsLoading, setOpenTargetsLoading] = useState(false);
+  const [openTargetsError, setOpenTargetsError] = useState('');
+  const [preferredOpenTarget, setPreferredOpenTarget] = useState(readPreferredOpenTarget);
+  const [openingTarget, setOpeningTarget] = useState(null);
+  const openTargetRequestRef = useRef(null);
+  const openTargetMenuRef = useRef(null);
 
   // Close summary popover when clicking outside
   useEffect(() => {
@@ -43,6 +75,104 @@ export default function Header({
     window.addEventListener('click', handleOutsideClick);
     return () => window.removeEventListener('click', handleOutsideClick);
   }, [showSummaryPopover]);
+
+  useEffect(() => {
+    if (!showOpenTargetMenu) return undefined;
+    const handleOutsideClick = (event) => {
+      if (!openTargetMenuRef.current?.contains(event.target)) {
+        setShowOpenTargetMenu(false);
+      }
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setShowOpenTargetMenu(false);
+    };
+    window.addEventListener('click', handleOutsideClick);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('click', handleOutsideClick);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showOpenTargetMenu]);
+
+  useEffect(() => () => openTargetRequestRef.current?.abort(), []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(OPEN_TARGET_PREFERENCE_KEY, preferredOpenTarget);
+    } catch {
+      // Keep the preferred target in memory when browser storage is unavailable.
+    }
+  }, [preferredOpenTarget]);
+
+  useEffect(() => {
+    setShowOpenTargetMenu(false);
+  }, [currentThread, currentThreadProject]);
+
+  const loadOpenTargets = async () => {
+    if (openTargets.length) return openTargets;
+    openTargetRequestRef.current?.abort();
+    const controller = new AbortController();
+    openTargetRequestRef.current = controller;
+    setOpenTargetsLoading(true);
+    setOpenTargetsError('');
+    try {
+      const result = await api.getProjectOpenTargets({ signal: controller.signal });
+      const targets = Array.isArray(result?.targets) ? result.targets : [];
+      setOpenTargets(targets);
+      if (!targets.some((target) => target.id === preferredOpenTarget && target.available)) {
+        const firstAvailable = targets.find((target) => target.available);
+        if (firstAvailable) setPreferredOpenTarget(firstAvailable.id);
+      }
+      return targets;
+    } catch (error) {
+      if (error.name !== 'AbortError') setOpenTargetsError(error.message || '加载打开方式失败');
+      throw error;
+    } finally {
+      if (openTargetRequestRef.current === controller) {
+        openTargetRequestRef.current = null;
+        setOpenTargetsLoading(false);
+      }
+    }
+  };
+
+  const handleToggleOpenTargetMenu = async (event) => {
+    event.stopPropagation();
+    if (showOpenTargetMenu) {
+      setShowOpenTargetMenu(false);
+      return;
+    }
+    setShowOpenTargetMenu(true);
+    try {
+      await loadOpenTargets();
+    } catch {
+      // Keep the menu open so its inline error can explain the failed detection.
+    }
+  };
+
+  const handleOpenProject = async (targetId = preferredOpenTarget) => {
+    if (openingTarget) return;
+    setOpeningTarget(targetId);
+    setOpenTargetsError('');
+    try {
+      let targets = openTargets;
+      if (!targets.length) targets = await loadOpenTargets();
+      const target = targets.find((item) => item.id === targetId);
+      if (!target?.available) {
+        throw new Error(target ? `${target.label} 未安装或未加入 PATH` : '没有可用的打开方式');
+      }
+      setPreferredOpenTarget(targetId);
+      const result = await api.openProjectInTarget(targetId, {
+        projectId: currentThreadProject,
+      });
+      setShowOpenTargetMenu(false);
+      onToast?.(`已在 ${result.label} 打开项目工作区`, 'success');
+    } catch (error) {
+      setOpenTargetsError(error.message || '打开项目工作区失败');
+      onToast?.(`打开项目工作区失败：${error.message}`, 'error');
+    } finally {
+      setOpeningTarget(null);
+    }
+  };
 
   const handleSaveTitle = () => {
     const nextTitle = newTitle.trim();
@@ -214,6 +344,73 @@ export default function Header({
 
       {/* Right: Tools, SidePanel, Settings, and Status */}
       <div className="header-right">
+        <div className="header-open-target-wrapper" ref={openTargetMenuRef}>
+          <div className="header-open-target-control">
+            {(() => {
+              const SelectedIcon = OPEN_TARGET_ICONS[preferredOpenTarget] || Code2;
+              const selectedTarget = openTargets.find((target) => target.id === preferredOpenTarget);
+              return (
+                <button
+                  type="button"
+                  className="header-open-target-launch"
+                  onClick={() => handleOpenProject()}
+                  disabled={Boolean(openingTarget)}
+                  aria-label={selectedTarget?.label
+                    ? `在 ${selectedTarget.label} 中打开项目工作区`
+                    : '打开项目工作区'}
+                  title={selectedTarget?.label
+                    ? `在 ${selectedTarget.label} 中打开项目工作区`
+                    : '打开项目工作区'}
+                >
+                  {openingTarget === preferredOpenTarget
+                    ? <LoaderCircle size={19} className="header-open-target-spinner" />
+                    : <SelectedIcon size={19} />}
+                </button>
+              );
+            })()}
+            <button
+              type="button"
+              className={`header-open-target-toggle ${showOpenTargetMenu ? 'active' : ''}`}
+              onClick={handleToggleOpenTargetMenu}
+              aria-label="选择项目工作区打开方式"
+              aria-haspopup="menu"
+              aria-expanded={showOpenTargetMenu}
+              title="选择打开方式"
+            >
+              <ChevronDown size={15} />
+            </button>
+          </div>
+          {showOpenTargetMenu && (
+            <div className="header-open-target-menu" role="menu" aria-label="项目工作区打开方式">
+              {openTargetsLoading && openTargets.length === 0 ? (
+                <div className="header-open-target-message">正在检测本机应用…</div>
+              ) : openTargetsError && openTargets.length === 0 ? (
+                <div className="header-open-target-message error">{openTargetsError}</div>
+              ) : openTargets.map((target) => {
+                const TargetIcon = OPEN_TARGET_ICONS[target.id] || FolderOpen;
+                return (
+                  <button
+                    key={target.id}
+                    type="button"
+                    className="header-open-target-item"
+                    role="menuitem"
+                    disabled={!target.available || Boolean(openingTarget)}
+                    onClick={() => handleOpenProject(target.id)}
+                    title={target.available ? `在 ${target.label} 中打开项目工作区` : `${target.label} 未安装或未加入 PATH`}
+                  >
+                    <TargetIcon size={18} className={`target-icon-${target.id}`} />
+                    <span>{target.label}</span>
+                    {target.id === preferredOpenTarget && <Check size={15} className="header-open-target-check" />}
+                  </button>
+                );
+              })}
+              {openTargetsError && openTargets.length > 0 && (
+                <div className="header-open-target-message error">{openTargetsError}</div>
+              )}
+            </div>
+          )}
+        </div>
+
         <button
           className="header-action-btn"
           onClick={() => onOpenSidePanel('status')}

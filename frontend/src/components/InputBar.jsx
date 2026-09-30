@@ -1473,10 +1473,20 @@ export default function InputBar({
                 <Send size={13} />
                 <span>继续整个会话</span>
               </button>
+            ) : sessionControl?.status === 'resuming' ? (
+              <button
+                type="button"
+                className="btn-action send"
+                onClick={() => runSessionControl(onContinueSession)}
+                title="重试恢复主线程与主线程冻结的子任务"
+              >
+                <Send size={13} />
+                <span>重试恢复</span>
+              </button>
             ) : sessionTransitioning ? (
               <button type="button" className="btn-action stop" disabled>
                 <Square size={13} />
-                <span>{sessionControl?.status === 'freezing' ? '停止中' : '恢复中'}</span>
+                <span>停止中</span>
               </button>
             ) : isInterrupting ? (
               <button

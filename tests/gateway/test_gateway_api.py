@@ -49,6 +49,32 @@ async def test_gateway_lists_catalog_when_runtime_is_read_only(test_app):
 
 
 @pytest.mark.asyncio
+async def test_child_list_recovers_a_persisted_session_resume(test_app, monkeypatch):
+    control = {"status": "resuming", "requestId": "resume-after-restart"}
+    children = AsyncMock(return_value=[])
+    read_control = AsyncMock(return_value=control)
+    recover = AsyncMock(return_value=True)
+    monkeypatch.setattr(session_manager, "list_child_tasks", children)
+    monkeypatch.setattr(session_manager, "session_control_state", read_control)
+    monkeypatch.setattr(session_manager, "recover_pending_session_resume", recover)
+    monkeypatch.setattr(
+        session_manager,
+        "resolve_thread_project",
+        lambda _thread_id, _project_id=None: "project-1",
+    )
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/api/threads/parent/children", params={"project_id": "project-1"}
+        )
+
+    assert response.status_code == 200
+    assert response.json()["session_control"] == control
+    recover.assert_awaited_once_with("parent", "project-1", state=control)
+
+
+@pytest.mark.asyncio
 async def test_gateway_thread_list_uses_catalog_activity_and_sorts_newest_first(
     test_app, monkeypatch, tmp_path
 ):

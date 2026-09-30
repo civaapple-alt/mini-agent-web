@@ -824,12 +824,16 @@ async def list_child_tasks(
     """List child Sessions derived from a parent Thread."""
     try:
         children = await session_manager.list_child_tasks(thread_id, project_id)
+        session_control = await session_manager.session_control_state(
+            thread_id, project_id
+        )
+        await session_manager.recover_pending_session_resume(
+            thread_id, project_id, state=session_control
+        )
         return {
             "parent_thread_id": thread_id,
             "project": session_manager.resolve_thread_project(thread_id, project_id),
-            "session_control": await session_manager.session_control_state(
-                thread_id, project_id
-            ),
+            "session_control": session_control,
             "children": children,
         }
     except KeyError as err:

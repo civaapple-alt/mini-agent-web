@@ -438,9 +438,18 @@ export default function ChildTasksPane({
           <button type="button" className="btn-action-small" disabled={sessionControlBusy} onClick={() => void controlSession('continue')}>
             {sessionControlBusy ? '恢复中…' : '继续整个会话'}
           </button>
-        ) : ['freezing', 'resuming'].includes(sessionStatus) ? (
+        ) : sessionStatus === 'resuming' ? (
+          <button
+            type="button"
+            className="btn-action-small"
+            disabled={sessionControlBusy}
+            onClick={() => void controlSession('continue')}
+          >
+            {sessionControlBusy ? '恢复中…' : '重试恢复'}
+          </button>
+        ) : sessionStatus === 'freezing' ? (
           <button type="button" className="btn-action-small" disabled>
-            {sessionStatus === 'freezing' ? '正在停止…' : '正在恢复…'}
+            正在停止…
           </button>
         ) : hasSessionActivity ? (
           <button type="button" className="btn-action-small danger" disabled={sessionControlBusy} onClick={() => void controlSession('freeze')}>

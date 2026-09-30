@@ -210,4 +210,20 @@ describe('InputBar composer popups', () => {
     fireEvent.click(screen.getByRole('button', { name: '继续整个会话' }));
     expect(onContinueSession).toHaveBeenCalledOnce();
   });
+
+  it('keeps the composer locked while resuming and offers a retry action', () => {
+    const onContinueSession = vi.fn();
+    render(
+      <InputBar
+        {...props}
+        currentThread="parent-thread"
+        sessionControl={{ status: 'resuming' }}
+        onContinueSession={onContinueSession}
+      />,
+    );
+
+    expect(screen.getByRole('textbox').disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '重试恢复' }));
+    expect(onContinueSession).toHaveBeenCalledOnce();
+  });
 });

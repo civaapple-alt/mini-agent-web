@@ -579,6 +579,24 @@ describe('ChildTasksPane', () => {
     expect(screen.queryByRole('button', { name: '停止整个会话' })).toBeNull();
   });
 
+  it('allows retrying a persisted Session resume', async () => {
+    const onSessionControl = vi.fn().mockResolvedValue({
+      session_control: { status: 'resuming' },
+    });
+    render(
+      <ChildTasksPane
+        children={[]}
+        loading={false}
+        error={null}
+        sessionControl={{ status: 'resuming' }}
+        onSessionControl={onSessionControl}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '重试恢复' }));
+    await waitFor(() => expect(onSessionControl).toHaveBeenCalledWith('continue'));
+  });
+
   it('distinguishes a persisted child report from one read by the main Thread', () => {
     render(
       <ChildTasksPane

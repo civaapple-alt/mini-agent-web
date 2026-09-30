@@ -98,6 +98,10 @@ attempt，不启动新任务。冻结完成后状态变为 `frozen`。Gateway �
 暂停的子任务不会被父会话 Continue 自动恢复；用户单独停止的子任务保持取消。单个子任务操作会
 持久记录 `control_source`，用于区分 `user_panel`、`main_agent` 和 `parent_freeze`。
 
+恢复工作由 Gateway 的独立任务执行，不依赖发起请求的浏览器连接。页面刷新或 Gateway 重启后，读取
+到持久化 `resuming` 状态会按原 request ID 接管一次未完成的恢复；重复读取共享同一个活动任务。若恢复
+仍返回错误，状态保持可重试，输入区和运行面板提供“重试恢复”入口。
+
 子任务报告与控制竞态时，报告正文仍写入子 Session。每条报告在状态投影中显示“待主线程读取”
 （`reported`）；父代理的 `task_read` 成功返回报告后，父 Session 会写入有界、可重放的读取回执，
 并投影为“主线程已收到”（`main_received`）。停止期间收到的报告不会唤醒冻结的 parent；用户继续后，

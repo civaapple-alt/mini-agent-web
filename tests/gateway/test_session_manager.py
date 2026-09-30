@@ -3853,6 +3853,8 @@ def test_session_context_cache_ratio_keeps_precision_when_totals_are_bounded():
     assert aggregate["cacheReportedInputTokens"] == MAX_JS_SAFE_INTEGER
     assert aggregate["cachedInputTokens"] == MAX_JS_SAFE_INTEGER
     assert aggregate["cacheHitRatio"] == 0.5
+
+
 def test_session_catalog_keeps_unreported_cached_usage_unknown():
     from server.session_catalog import _turn_presentation_projection
 
@@ -7584,6 +7586,113 @@ async def test_continue_resumes_only_parent_frozen_children_then_drains_queue(
         "resume_settled", request_id="resume-request", thread_id="parent"
     )
     assert result["session_control"]["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_continue_resume_work_survives_request_cancellation(
+    mock_session_manager, monkeypatch
+):
+    client = AsyncMock()
+    read_count = 0
+
+    async def session_control(action, **_kwargs):
+        nonlocal read_count
+        if action == "read":
+            read_count += 1
+            if read_count == 1:
+                return {"status": "frozen", "requestId": "freeze-request"}
+            return {"status": "resuming", "requestId": "resume-request"}
+        return {"status": "resuming", "requestId": "resume-request"}
+
+    client.session_control.side_effect = session_control
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_client_for_thread",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(mock_session_manager, "broadcast_ws", AsyncMock())
+    started = asyncio.Event()
+    finish_resume = asyncio.Event()
+
+    async def finish(*_args):
+        started.set()
+        await finish_resume.wait()
+        return {"session_control": {"status": "running"}}
+
+    monkeypatch.setattr(mock_session_manager, "_finish_session_resume", finish)
+    request = asyncio.create_task(
+        mock_session_manager.continue_session(
+            "parent", "default", request_id="resume-request"
+        )
+    )
+    await started.wait()
+    resume_job = mock_session_manager._session_resume_jobs[("default", "parent")]
+
+    request.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await request
+    assert not resume_job.cancelled()
+
+    finish_resume.set()
+    result = await resume_job
+    assert result["session_control"]["status"] == "running"
+    assert ("default", "parent") not in mock_session_manager._session_resume_jobs
+
+
+@pytest.mark.asyncio
+async def test_resuming_session_read_restarts_one_gateway_resume_job(
+    mock_session_manager, monkeypatch
+):
+    client = AsyncMock()
+    state = {"status": "resuming", "requestId": "resume-after-restart"}
+    client.session_control.return_value = state
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_client_for_thread",
+        AsyncMock(return_value=client),
+    )
+    finish_started = asyncio.Event()
+    finish_resume = asyncio.Event()
+
+    async def finish(*_args):
+        finish_started.set()
+        await finish_resume.wait()
+        return {"session_control": {"status": "running"}}
+
+    finish = AsyncMock(side_effect=finish)
+    monkeypatch.setattr(mock_session_manager, "_finish_session_resume", finish)
+
+    scheduled = await mock_session_manager.recover_pending_session_resume(
+        "parent", "default", state=state
+    )
+    job = mock_session_manager._session_resume_jobs[("default", "parent")]
+    assert scheduled is True
+    await finish_started.wait()
+    assert (
+        await mock_session_manager.recover_pending_session_resume(
+            "parent", "default", state=state
+        )
+        is True
+    )
+    assert mock_session_manager._session_resume_jobs[("default", "parent")] is job
+    finish_resume.set()
+    await job
+    assert (
+        await mock_session_manager.recover_pending_session_resume(
+            "parent",
+            "default",
+            state={"status": "running", "requestId": "resume-after-restart"},
+        )
+        is False
+    )
+
+    finish.assert_awaited_once_with(
+        client,
+        "parent",
+        "default",
+        "resume-after-restart",
+        state,
+    )
 
 
 @pytest.mark.asyncio

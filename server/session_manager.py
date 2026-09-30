@@ -21,7 +21,6 @@ from fastapi import WebSocket
 from mini_agent import ExecutionRecoveryInfo, MiniAgentClient, TurnTimeoutError
 from mini_agent.errors import MiniAgentError
 
-from server.config import settings
 from server.control.approval_bridge import ApprovalBridge
 from server.control.client_pool import ClientPool
 from server.control.project_registry import ProjectRegistry
@@ -168,6 +167,8 @@ class SessionManager:
         self._child_task_lock = asyncio.Lock()
         self._child_queue_retry_jobs: dict[tuple[str, str], asyncio.Task[Any]] = {}
         self._session_control_jobs: dict[tuple[str, str], asyncio.Task[Any]] = {}
+        self._session_resume_jobs: dict[tuple[str, str], asyncio.Task[Any]] = {}
+        self._session_resume_attempted: set[tuple[str, str, str]] = set()
         self._session_control_locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._thread_builtin_tools: dict[str, list[str]] = {}
         self._thread_builtin_tools_by_project: dict[tuple[str, str], list[str]] = {}
@@ -849,6 +850,113 @@ class SessionManager:
 
         self._session_control_jobs[key] = asyncio.create_task(settle())
 
+    def _schedule_session_resume_settlement(
+        self,
+        client: MiniAgentClient,
+        thread_id: str,
+        project_id: str,
+        request_id: str,
+        state: dict[str, Any],
+        *,
+        automatic_recovery: bool = False,
+    ) -> asyncio.Task[Any] | None:
+        key = (project_id, thread_id)
+        current = self._session_resume_jobs.get(key)
+        if current is not None and not current.done():
+            return current
+
+        attempt_key = (project_id, thread_id, request_id)
+        if automatic_recovery and attempt_key in self._session_resume_attempted:
+            return None
+        self._session_resume_attempted.difference_update(
+            {
+                previous
+                for previous in self._session_resume_attempted
+                if previous[:2] == key and previous != attempt_key
+            }
+        )
+        self._session_resume_attempted.add(attempt_key)
+
+        async def settle() -> dict[str, Any]:
+            try:
+                current_control = await client.session_control(
+                    "read", thread_id=thread_id
+                )
+                current_request_id = current_control.get("requestId") or (
+                    current_control.get("request_id")
+                )
+                if (
+                    current_control.get("status") != "resuming"
+                    or current_request_id != request_id
+                ):
+                    return {
+                        "session_control": current_control,
+                        "request_id": request_id,
+                        "status": "superseded",
+                    }
+                result = await self._finish_session_resume(
+                    client, thread_id, project_id, request_id, current_control
+                )
+                settled_control = result.get("session_control")
+                if (
+                    isinstance(settled_control, dict)
+                    and settled_control.get("status") != "resuming"
+                ):
+                    self._session_resume_attempted.discard(attempt_key)
+                return result
+            except asyncio.CancelledError:
+                self._session_resume_attempted.discard(attempt_key)
+                raise
+            except Exception as error:
+                logger.warning(
+                    "Unable to resume parent Session %s", thread_id, exc_info=True
+                )
+                return {
+                    "session_control": state,
+                    "request_id": request_id,
+                    "error": str(error),
+                }
+            finally:
+                if self._session_resume_jobs.get(key) is asyncio.current_task():
+                    self._session_resume_jobs.pop(key, None)
+
+        task = asyncio.create_task(settle())
+        self._session_resume_jobs[key] = task
+        return task
+
+    async def recover_pending_session_resume(
+        self,
+        thread_id: str,
+        project_id: str | None = None,
+        *,
+        state: dict[str, Any] | None = None,
+    ) -> bool:
+        """Restart one interrupted Gateway resume job from durable Session state."""
+        target = thread_id or "default"
+        resolved_project = self.resolve_thread_project(target, project_id)
+        control = state
+        if control is not None and control.get("status") != "resuming":
+            return False
+        client = await self.get_client_for_thread(target, resolved_project)
+        control = control or await client.session_control("read", thread_id=target)
+        if control.get("status") != "resuming":
+            return False
+        request_id = control.get("requestId") or control.get("request_id")
+        if not isinstance(request_id, str) or not request_id:
+            logger.warning(
+                "Cannot recover parent Session %s without a resume request ID", target
+            )
+            return False
+        task = self._schedule_session_resume_settlement(
+            client,
+            target,
+            resolved_project,
+            request_id,
+            control,
+            automatic_recovery=True,
+        )
+        return task is not None
+
     async def continue_session(
         self,
         thread_id: str,
@@ -885,9 +993,14 @@ class SessionManager:
                     "sessionControl": state,
                 }
             )
-        return await self._finish_session_resume(
+        task = self._schedule_session_resume_settlement(
             client, target, resolved_project, resume_request_id, state
         )
+        if task is None:
+            return {"session_control": state, "request_id": resume_request_id}
+        # The durable resume job must outlive an HTTP client disconnect or page
+        # refresh; keep returning its result to callers that remain connected.
+        return await asyncio.shield(task)
 
     async def _finish_session_resume(
         self,

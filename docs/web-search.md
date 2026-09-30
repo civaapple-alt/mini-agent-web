@@ -17,6 +17,9 @@ running Thread retains its current tool catalog. With no selected provider and
 key, `web_search` is absent. When search is enabled, the Agent can pass a result
 URL to `web_fetch`. The Harness owns provider adapters, URL admission, and
 result bounds; this document covers the Studio and Gateway projection.
+Host enables `web_fetch` for new Threads when it loads a configured search
+provider and key. The Workspace tools panel reflects that initial selection,
+and users can disable the tool per Thread.
 
 ## Conversation activity
 

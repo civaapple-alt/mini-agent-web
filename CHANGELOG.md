@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add machine-wide Web Search settings for DeepSeek native search, Exa, Kimi
   Basic, or disabled. Keep credentials write-only and stored by Host; forward
   settings through JSON-RPC, the Python SDK, and Gateway without echoing keys.
+- Align saved Web Search API Key status, placeholder, and helper text with model
+  provider settings while keeping the credentials independent. Add a bounded
+  test search that returns up to three results from the saved configuration.
 - Show the Host-reported initial `web_fetch` selection in Workspace tools when
   a configured search provider enables page reading for a new Thread.
 - Show search-result and fetched-page links in collapsed conversation activity.

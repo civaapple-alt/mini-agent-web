@@ -24,4 +24,22 @@ export const webSearchApi = {
     }
     return res.json();
   },
+
+  async testWebSearch(query, options = {}) {
+    const res = await request(
+      '/api/web-search/test',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+        ...requestSignal(options),
+      },
+      options.projectId,
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.detail || 'Failed to test web search');
+    }
+    return res.json();
+  },
 };

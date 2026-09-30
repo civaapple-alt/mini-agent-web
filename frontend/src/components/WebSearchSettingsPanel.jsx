@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, Loader2, Search, ShieldCheck } from 'lucide-react';
+import { Check, ExternalLink, Loader2, Search, ShieldCheck } from 'lucide-react';
 import { api } from '../api';
 import './WebSearchSettingsPanel.css';
 
@@ -24,12 +24,21 @@ export default function WebSearchSettingsPanel({ onToast, onDraftChange, project
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [searchQuery, setSearchQuery] = useState('Mini Agent Web Studio');
+  const [testResult, setTestResult] = useState(null);
+  const [testError, setTestError] = useState('');
+  const [testingSearch, setTestingSearch] = useState(false);
 
   const dirty = useMemo(() => provider !== settings.provider
     || Object.values(keys).some(Boolean)
     || Object.values(removeKeys).some(Boolean), [keys, provider, removeKeys, settings.provider]);
 
   useEffect(() => onDraftChange?.(dirty), [dirty, onDraftChange]);
+
+  useEffect(() => {
+    setTestResult(null);
+    setTestError('');
+  }, [provider, keys, removeKeys, searchQuery]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -69,6 +78,19 @@ export default function WebSearchSettingsPanel({ onToast, onDraftChange, project
     }
   };
 
+  const testSearch = async () => {
+    setTestingSearch(true);
+    setTestError('');
+    setTestResult(null);
+    try {
+      setTestResult(await api.testWebSearch(searchQuery.trim(), { projectId }));
+    } catch (testSearchError) {
+      setTestError(testSearchError.message);
+    } finally {
+      setTestingSearch(false);
+    }
+  };
+
   return (
     <section className="web-search-settings-panel">
       <div className="settings-detail-heading">
@@ -88,7 +110,7 @@ export default function WebSearchSettingsPanel({ onToast, onDraftChange, project
               <option value="none">不启用</option>
               {PROVIDERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
             </select>
-            <p>启用后，Agent 会使用统一的 <code>web_search</code> 工具。需要阅读正文时会调用 <code>web_fetch</code>；搜索调用可能产生供应商费用。</p>
+            <p>启用后，Agent 会使用统一的 <code>web_search</code> 工具。需要阅读正文时会调用 <code>web_fetch</code>；测试和搜索调用可能产生供应商费用。</p>
           </div>
 
           <div className="web-search-credentials">
@@ -109,7 +131,7 @@ export default function WebSearchSettingsPanel({ onToast, onDraftChange, project
                       type="password"
                       autoComplete="new-password"
                       value={keys[item.id] || ''}
-                      placeholder={configured ? '留空以保留已保存的密钥' : '输入 API Key'}
+                      placeholder={configured ? '已配置；输入新值可替换' : '输入 API Key'}
                       onChange={(event) => {
                         setKeys((current) => ({ ...current, [item.id]: event.target.value }));
                         setRemoveKeys((current) => ({ ...current, [item.id]: false }));
@@ -124,10 +146,17 @@ export default function WebSearchSettingsPanel({ onToast, onDraftChange, project
                           setRemoveKeys((current) => ({ ...current, [item.id]: !current[item.id] }));
                         }}
                       >
-                        {removed ? '撤销清除' : '清除密钥'}
+                        {removed ? '撤销清除' : '清除 API Key'}
                       </button>
                     )}
                   </div>
+                  <small className="web-search-key-hint">
+                    {removed
+                      ? '保存后将清除联网搜索 API Key。'
+                      : configured
+                        ? 'API Key 已配置，保存的 Key 不会显示。'
+                        : '尚未配置 API Key。'}
+                  </small>
                 </div>
               );
             })}
@@ -138,9 +167,53 @@ export default function WebSearchSettingsPanel({ onToast, onDraftChange, project
           )}
           <div className="web-search-security-note">
             <ShieldCheck size={15} />
-            <span>密钥只保存在本机 Host 中。界面只显示是否已配置，不会回读已保存的密钥。</span>
+            <span>联网搜索 API Key 与模型供应商 API Key 分别保存在本机 Host 中。界面只显示是否已配置，不会回读已保存的密钥。</span>
           </div>
           {error && <div className="web-search-error" role="alert">{error}</div>}
+          <div className="web-search-test-card">
+            <div>
+              <strong>测试搜索</strong>
+              <p>使用当前已保存的服务执行一次最多返回 3 条结果的真实搜索。</p>
+            </div>
+            <div className="web-search-test-input-row">
+              <input
+                aria-label="测试搜索关键词"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="输入测试关键词"
+                maxLength={2000}
+              />
+              <button
+                type="button"
+                onClick={() => void testSearch()}
+                disabled={testingSearch || saving || dirty || !searchQuery.trim() || provider === 'none' || !settings[PROVIDERS.find((item) => item.id === provider)?.configured]}
+              >
+                {testingSearch ? <Loader2 size={14} className="spin" /> : <Search size={14} />}
+                {testingSearch ? '搜索中…' : '测试搜索'}
+              </button>
+            </div>
+            {dirty && <p className="web-search-inline-note">请先保存当前设置，再测试搜索。</p>}
+            {testError && <div className="web-search-test-error" role="alert">测试失败：{testError}</div>}
+            {testResult && (
+              <div className="web-search-test-result" role="status">
+                <strong>搜索成功，返回 {testResult.resultCount} 条结果</strong>
+                {testResult.results.length === 0 ? (
+                  <p>服务已响应，但没有返回结果。</p>
+                ) : (
+                  <ul>
+                    {testResult.results.map((result) => (
+                      <li key={result.url}>
+                        <a href={result.url} target="_blank" rel="noopener noreferrer">
+                          {result.title || result.url}<ExternalLink size={12} />
+                        </a>
+                        {result.snippet && <p>{result.snippet}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
           <div className="web-search-save-row">
             <button type="button" onClick={() => void save()} disabled={saving || !dirty}>
               {saving ? <Loader2 size={14} className="spin" /> : <Check size={14} />}

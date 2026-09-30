@@ -87,3 +87,62 @@ async def update_web_search_settings(
         raise HTTPException(
             status_code=502, detail="Web search settings request failed"
         ) from err
+
+
+@router.post("/test", summary="Run a bounded search against the selected provider")
+async def test_web_search(
+    request: dict[str, Any], project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
+    query = request.get("query")
+    if (
+        set(request) != {"query"}
+        or not isinstance(query, str)
+        or not query.strip()
+        or len(query.strip().encode()) > 2000
+    ):
+        raise HTTPException(
+            status_code=422, detail="query must contain 1 to 2000 bytes"
+        )
+    try:
+        client = await session_manager.get_client_for_project(project_id)
+        result = await client.test_web_search(query.strip())
+        value = result.get("value", result) if isinstance(result, dict) else {}
+        results = value.get("results") if isinstance(value, dict) else None
+        result_count = value.get("resultCount") if isinstance(value, dict) else None
+        returned_query = value.get("query") if isinstance(value, dict) else None
+        if (
+            not isinstance(results, list)
+            or len(results) > 3
+            or type(result_count) is not int
+            or result_count != len(results)
+            or not isinstance(returned_query, str)
+            or returned_query != query.strip()
+            or len(returned_query) > 2000
+            or any(
+                not isinstance(item, dict)
+                or not isinstance(item.get("url"), str)
+                or len(item["url"]) > 2000
+                or not isinstance(item.get("title"), str)
+                or len(item["title"]) > 1024
+                or not isinstance(item.get("snippet"), str)
+                or len(item["snippet"]) > 2560
+                for item in results
+            )
+        ):
+            raise HTTPException(
+                status_code=502,
+                detail="App Server returned an invalid search test result",
+            )
+        return {
+            "query": returned_query,
+            "resultCount": result_count,
+            "results": results,
+        }
+    except HTTPException:
+        raise
+    except AppServerError as err:
+        raise HTTPException(status_code=502, detail=str(err)) from err
+    except (KeyError, RuntimeError) as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except Exception as err:
+        raise HTTPException(status_code=502, detail="Web search test failed") from err

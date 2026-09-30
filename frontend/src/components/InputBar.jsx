@@ -240,7 +240,6 @@ export default function InputBar({
   composerDraft,
   onComposerDraftApplied,
   onInterrupt,
-  onFreezeSession,
   onContinueSession,
   onClearChat,
   onTogglePlanMode,
@@ -1326,8 +1325,10 @@ export default function InputBar({
                     ? sessionControl?.status === 'freezing' ? '正在停止整个会话并等待结算…' : '正在恢复整个会话…'
                 : pendingApproval
                 ? '⚠️ 等待上方安全权限审批确认后继续...'
-                : isGenerating
+            : isGenerating
                 ? 'Agent 执行中... 按回车排队；本轮结束后可继续发送指令'
+                : hasSessionActivity
+                  ? '子任务仍在运行；你可以继续发送指令'
                 : '输入任务、指令或问题... (支持 $ 加载技能、@ 引用文件、/ 快捷命令)'
             }
             className="chat-textarea"
@@ -1498,15 +1499,15 @@ export default function InputBar({
                 <Square size={13} />
                 <span>停止中</span>
               </button>
-            ) : isGenerating || hasSessionActivity ? (
+            ) : isGenerating ? (
               <button
                 type="button"
                 className="btn-action stop"
-                onClick={() => runSessionControl(isGenerating ? onInterrupt : onFreezeSession)}
-                title="冻结当前会话、活动子任务和子任务队列"
+                onClick={onInterrupt}
+                title="停止当前轮次；结算后可继续发送指令"
               >
                 <Square size={13} />
-                <span>停止</span>
+                <span>停止本轮</span>
               </button>
             ) : (
               <button

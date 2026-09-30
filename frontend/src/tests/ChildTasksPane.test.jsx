@@ -563,6 +563,29 @@ describe('ChildTasksPane', () => {
     await waitFor(() => expect(onSessionControl).toHaveBeenCalledWith('continue'));
   });
 
+  it('keeps whole-Session freeze available separately while child work is active', async () => {
+    const onSessionControl = vi.fn().mockResolvedValue({
+      session_control: { status: 'freezing' },
+    });
+    render(
+      <ChildTasksPane
+        children={[{
+          operation_id: 'running-op',
+          child_thread_id: 'running-child',
+          title: 'Running task',
+          status: 'running',
+        }]}
+        loading={false}
+        error={null}
+        sessionControl={{ status: 'running' }}
+        onSessionControl={onSessionControl}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '停止整个会话' }));
+    await waitFor(() => expect(onSessionControl).toHaveBeenCalledWith('freeze'));
+  });
+
   it('shows freeze settlement as pending instead of enabling another stop', () => {
     render(
       <ChildTasksPane

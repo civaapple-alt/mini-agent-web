@@ -181,18 +181,39 @@ describe('InputBar composer popups', () => {
     }
   });
 
-  it('freezes the whole Session when child work is active without a parent Turn', () => {
-    const onFreezeSession = vi.fn();
+  it('keeps sending available while child work continues without a parent Turn', () => {
+    const onSendMessage = vi.fn();
     render(
       <InputBar
         {...props}
         hasSessionActivity
-        onFreezeSession={onFreezeSession}
+        onSendMessage={onSendMessage}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '停止' }));
-    expect(onFreezeSession).toHaveBeenCalledOnce();
+    const textbox = screen.getByRole('textbox');
+    expect(textbox.placeholder).toBe('子任务仍在运行；你可以继续发送指令');
+    fireEvent.change(textbox, { target: { value: '继续并补充一个要求' } });
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+
+    expect(onSendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: '继续并补充一个要求',
+    }));
+  });
+
+  it('stops only the active Turn from the composer', () => {
+    const onInterrupt = vi.fn();
+    render(
+      <InputBar
+        {...props}
+        isGenerating
+        hasSessionActivity
+        onInterrupt={onInterrupt}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '停止本轮' }));
+    expect(onInterrupt).toHaveBeenCalledOnce();
   });
 
   it('locks the composer while frozen and offers explicit Session continuation', () => {

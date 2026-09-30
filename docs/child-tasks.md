@@ -88,15 +88,22 @@ Gateway 通过同一 Session 的启动锁串行化用户 Turn 与自动续行，
 
 ## 主会话停止与恢复
 
-主线程的“停止”冻结整个父 Session，而不只是当前 parent Turn。Gateway 先让 App Server
-持久化 `freezing`，再协作式中断 parent Turn、暂停活动子任务。排队任务保留原 operation 和
-attempt，不启动新任务。冻结完成后状态变为 `frozen`。Gateway 重启后按持久状态继续结算冻结，
-不会因子任务完成、子报告或队列重试而自动开启 parent Turn。
+输入栏的“停止本轮”只中断当前 parent Turn。结算后会话仍可接收新指令；活动子任务继续运行，
+其完成或报告可能唤醒 parent。Gateway 用同一 Session 的启动锁串行化用户 Turn 与自动续行。
+停止后发送“继续”或补充内容会基于现有会话历史启动一个新 Turn；若要恢复原 Turn 的执行检查点，
+请使用该 Turn 提供的“继续当前 Turn”操作。
+
+若要暂停整个工作流，在子任务面板选择“停止整个会话”。Gateway 先让 App Server 持久化
+`freezing`，再协作式中断 parent Turn、暂停活动子任务。排队任务保留原 operation 和 attempt，
+不启动新任务。冻结完成后状态变为 `frozen`。Gateway 重启后按持久状态继续结算冻结，不会因子任务
+完成、子报告或队列重试而自动开启 parent Turn。
 
 只有用户明确点击“继续整个会话”才会进入 `resuming`。继续时恢复由 `parent_freeze` 暂停的
 子任务，排空原队列，并以 `session_resume` Turn 恢复 parent 进度。用户面板或 main agent 单独
 暂停的子任务不会被父会话 Continue 自动恢复；用户单独停止的子任务保持取消。单个子任务操作会
 持久记录 `control_source`，用于区分 `user_panel`、`main_agent` 和 `parent_freeze`。
+
+已处于 `frozen` 的会话仍需显式继续；普通停止的新行为只影响后续停止操作。
 
 恢复工作由 Gateway 的独立任务执行，不依赖发起请求的浏览器连接。页面刷新或 Gateway 重启后，读取
 到持久化 `resuming` 状态会按原 request ID 接管一次未完成的恢复；重复读取共享同一个活动任务。若恢复

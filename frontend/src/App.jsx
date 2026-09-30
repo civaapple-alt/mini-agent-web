@@ -2197,17 +2197,16 @@ export default function App() {
       showToast('当前会话由其他进程运行，只能查看，暂不能中断。', 'info', 3000);
       return;
     }
-    const freezeWholeSession = source === 'composer-stop';
     const approvalTurnId = pendingApproval?.data?.turnId || pendingApproval?.data?.turn_id;
     const turnId = activeTurnIdRef.current || approvalTurnId || activeTurnId;
-    if (!turnId && !freezeWholeSession) {
+    if (!turnId) {
       showToast('当前没有可停止的任务轮次。', 'info', 2500);
       return;
     }
-    interruptPendingRef.current = Boolean(turnId);
-    interruptTurnIdRef.current = turnId || null;
-    if (turnId) rememberInterruptedTurn(turnId);
-    setIsInterrupting(Boolean(turnId));
+    interruptPendingRef.current = true;
+    interruptTurnIdRef.current = turnId;
+    rememberInterruptedTurn(turnId);
+    setIsInterrupting(true);
     setIsGenerating(false);
     // Keep the approval dock visible while the interrupt settles. Its actions
     // are disabled by isInterrupting, which makes the cancellation boundary
@@ -2224,12 +2223,7 @@ export default function App() {
       showToast(`停止请求发送失败：${err.message || '服务端未确认'}。`, 'error', 4000);
     };
     let sent = false;
-    if (freezeWholeSession) {
-      sent = true;
-      void api.controlSession(currentThread, 'freeze', {
-        projectId: currentThreadProject,
-      }).catch(restoreAfterInterruptFailure);
-    } else if (!hasPendingApproval && wsRef.current) {
+    if (!hasPendingApproval && wsRef.current) {
       sent = wsRef.current.send({
         action: 'interrupt',
         turnId,
@@ -2238,7 +2232,7 @@ export default function App() {
         source,
       });
     }
-    if (!freezeWholeSession && (hasPendingApproval || !sent)) {
+    if (hasPendingApproval || !sent) {
       // A WebSocket send only means that the browser accepted the frame. When
       // an approval is pending, use the REST boundary whose response includes
       // the Gateway's approval cancellation and App Server interrupt result.
@@ -2271,11 +2265,7 @@ export default function App() {
         prev,
       ));
     }
-    showToast(
-      freezeWholeSession ? '已发送冻结整个会话请求' : '已发送停止生成请求',
-      'info',
-      1800,
-    );
+    showToast('已发送停止当前轮次请求', 'info', 1800);
     setMessages((prev) => {
       if (prev.length === 0) return prev;
       const copy = [...prev];

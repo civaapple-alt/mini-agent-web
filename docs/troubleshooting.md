@@ -405,11 +405,10 @@ Gateway 只重试仍处于 `pending` 且带有当前 `parent_session_id` 的委�
 同一 Turn 审批也会被拒绝，因此停止后再点击“允许”不能放行工具。App Server worker 会
 优先处理已排队的停止命令，避免审批拒绝让模型进入下一步。界面会暂时显示“停止中”，
 直到运行时状态确认 Turn 已结算。若事件流漏掉 `turn_finished`，Studio 会继续读取权威运行状态，
-并在状态结算后解除“停止中”。父会话的“停止”只中断父 Turn，不会批量停止 Child Sessions；
-请在对应子任务卡片上单独停止子任务。如果 App Server 没有接受中断，Studio 会恢复“停止”按钮
+并在状态结算后解除“停止中”。输入栏的“停止本轮”只中断父 Turn，不会批量停止 Child Sessions；
+要冻结父会话、活动子任务和队列，请在子任务面板选择“停止整个会话”。如果 App Server 没有接受中断，Studio 会恢复“停止本轮”按钮
 并提示重试，不会把仍在远端运行的 Turn 误报成已完成。Studio 还会丢弃已中断 Turn 的迟到
-reasoning、文本和工具事件，但保留终态事件用于清理界面。已经持久化的历史内容不会被这条
-规则删除。
+reasoning、文本和工具事件，但保留终态事件用于清理界面。已经持久化的历史内容不会被这条规则删除。
 
 Plan Mode 的“关闭 Plan Mode”是当前 Thread 的控制面操作，不会创建新的 Turn。空闲时
 App Server 会执行计划工作区清理、清除 living plan 并恢复普通系统提示；清理失败时接口

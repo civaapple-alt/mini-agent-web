@@ -338,7 +338,6 @@ export default function AppLayout({
               ['queued', 'running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling']
                 .includes(child.status)
             ))}
-            onFreezeSession={() => childTasks.controlSession('freeze')}
             onContinueSession={() => childTasks.controlSession('continue')}
             onOpenSettings={onOpenSettings}
             pendingApproval={pendingApproval}

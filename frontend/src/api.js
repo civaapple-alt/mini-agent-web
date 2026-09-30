@@ -7,6 +7,7 @@ import { settingsApi } from './api/settings.js';
 import { approvalApi } from './api/approvals.js';
 import { skillsApi } from './api/skills.js';
 import { modelApi } from './api/models.js';
+import { webSearchApi } from './api/webSearch.js';
 
 export { setActiveProjectId } from './api/request.js';
 export { createAgentWebSocket } from './api/websocket.js';
@@ -20,4 +21,5 @@ export const api = {
   ...approvalApi,
   ...skillsApi,
   ...modelApi,
+  ...webSearchApi,
 };

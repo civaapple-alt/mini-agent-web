@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { getManualExpansion, setManualExpansion } from '../utils/activityPresentationState';
+import WebActivitySummary from './WebActivitySummary';
 import './AssistantActivityGroup.css';
 
 export default function AssistantActivityGroup({
@@ -10,6 +11,7 @@ export default function AssistantActivityGroup({
   failureCount = 0,
   failureTypes = [],
   title = null,
+  showWebActivitySummary = true,
   children,
 }) {
   const expansionId = `assistant-activity-group:${presentationId || id}`;
@@ -60,6 +62,7 @@ export default function AssistantActivityGroup({
           ? <ChevronDown size={13} aria-hidden="true" />
           : <ChevronRight size={13} aria-hidden="true" />}
       </button>
+      {showWebActivitySummary && <WebActivitySummary items={items} />}
       {isExpanded && <div className="assistant-activity-group-items">{children}</div>}
     </section>
   );

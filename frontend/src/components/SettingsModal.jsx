@@ -4,6 +4,7 @@ import {
   Check,
   Palette,
   RotateCcw,
+  Search,
   Save,
   Settings,
   Shield,
@@ -12,6 +13,7 @@ import {
 import { api } from '../api';
 import { normalizeTheme } from '../utils/statusModel.js';
 import ModelSettingsPanel from './ModelSettingsPanel';
+import WebSearchSettingsPanel from './WebSearchSettingsPanel';
 import './SettingsModal.css';
 
 const SETTINGS_GROUPS = [
@@ -41,6 +43,12 @@ const SETTINGS_GROUPS = [
         description: '供应商、模型与默认值',
         icon: Boxes,
       },
+      {
+        id: 'web-search',
+        label: '联网搜索',
+        description: '搜索服务与 API 密钥',
+        icon: Search,
+      },
     ],
   },
 ];
@@ -67,6 +75,7 @@ export default function SettingsModal({
   const [approvalInfo, setApprovalInfo] = useState(null);
   const [isRevokingApprovals, setIsRevokingApprovals] = useState(false);
   const [modelDraftDirty, setModelDraftDirty] = useState(false);
+  const [webSearchDraftDirty, setWebSearchDraftDirty] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [activeSection, setActiveSection] = useState('security');
   const requestEpochRef = useRef(0);
@@ -78,7 +87,7 @@ export default function SettingsModal({
     .some((key) => settings[key] !== savedSettings[key]);
 
   const requestClose = () => {
-    if (preferenceDirty || modelDraftDirty) {
+    if (preferenceDirty || modelDraftDirty || webSearchDraftDirty) {
       setConfirmDiscard(true);
       return;
     }
@@ -88,6 +97,7 @@ export default function SettingsModal({
   const discardAndClose = () => {
     setConfirmDiscard(false);
     setModelDraftDirty(false);
+    setWebSearchDraftDirty(false);
     setSettings(savedSettings);
     setSavedSuccess(false);
     onClose();
@@ -215,7 +225,7 @@ export default function SettingsModal({
             <Settings size={17} className="text-emerald" />
             <div>
               <h3>设置</h3>
-              <span>偏好设置与模型配置</span>
+              <span>偏好设置、模型与联网搜索</span>
             </div>
           </div>
           <button type="button" className="modal-close-btn" onClick={requestClose} aria-label="关闭设置">
@@ -256,7 +266,14 @@ export default function SettingsModal({
               <div hidden={activeSection !== 'models'}>
                 <ModelSettingsPanel onToast={onToast} onDraftChange={setModelDraftDirty} />
               </div>
-              {activeSection !== 'models' && (
+              <div hidden={activeSection !== 'web-search'}>
+                <WebSearchSettingsPanel
+                  projectId={projectId}
+                  onToast={onToast}
+                  onDraftChange={setWebSearchDraftDirty}
+                />
+              </div>
+              {activeSection !== 'models' && activeSection !== 'web-search' && (
                 <>
                   <div className="settings-detail-heading">
                     <div>

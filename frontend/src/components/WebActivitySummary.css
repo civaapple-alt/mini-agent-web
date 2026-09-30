@@ -1,0 +1,11 @@
+.web-activity-summary { display: grid; gap: 7px; padding: 7px 10px 8px; border-top: 1px solid var(--border-subtle); color: var(--text-secondary); }
+.web-activity-row { display: grid; gap: 4px; min-width: 0; }
+.web-activity-title { display: flex; align-items: center; gap: 7px; min-height: 19px; color: var(--text-secondary); font-size: 11px; }
+.web-activity-title > svg { flex: 0 0 auto; color: var(--text-muted); }
+.web-activity-row.failed .web-activity-title,.web-activity-failed { color: var(--status-failed); }
+.web-activity-links { display: flex; flex-wrap: wrap; gap: 4px 12px; padding-left: 20px; }
+.web-activity-links a { display: inline-flex; align-items: center; gap: 3px; max-width: min(100%, 520px); color: var(--text-muted); font-size: 10px; text-decoration: underline; text-decoration-color: var(--border-color); text-underline-offset: 2px; }
+.web-activity-links a:hover { color: var(--text-primary); }
+.web-activity-links a span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.web-activity-links a svg { flex: 0 0 auto; }
+.web-activity-more,.web-activity-failed { color: var(--text-muted); font-size: 10px; }

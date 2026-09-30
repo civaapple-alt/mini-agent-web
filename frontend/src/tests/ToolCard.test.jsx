@@ -27,6 +27,32 @@ describe('ToolCard Component Rendering & Interaction', () => {
     expect(screen.getByText(/On branch main/)).toBeDefined();
   });
 
+  it('hides opaque web result handles and cursors from arguments and output', () => {
+    render(
+      <ToolCard
+        tool={{
+          id: 'fetch-continuation',
+          name: 'web_fetch',
+          arguments: { handle: 'opaque-result-handle', cursor: '8192' },
+          status: 'completed',
+          output: JSON.stringify({
+            kind: 'web_fetch',
+            url: 'https://example.com/long',
+            content: 'continued page text',
+            handle: 'opaque-result-handle',
+            nextCursor: '16384',
+          }),
+        }}
+      />,
+    );
+
+    expect(screen.getByText('继续读取网页正文')).toBeDefined();
+    expect(screen.queryByText(/opaque-result-handle|8192|16384/)).toBeNull();
+    fireEvent.click(screen.getByText('查看输出'));
+    expect(screen.getByText(/continued page text/)).toBeDefined();
+    expect(screen.queryByText(/opaque-result-handle|8192|16384/)).toBeNull();
+  });
+
   it('renders running tool state without throwing', () => {
     const tool = {
       id: 'tool_2',

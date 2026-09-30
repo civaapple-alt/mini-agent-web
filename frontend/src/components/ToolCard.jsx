@@ -201,7 +201,22 @@ export default function ToolCard({
   const { status, error, id, outcome } = tool;
   const name = tool.name || tool.toolName || tool.tool || tool.tool_name || '';
   const args = tool.arguments ?? tool.args;
-  const output = tool.output ?? tool.result ?? tool.content ?? null;
+  const rawOutput = tool.output ?? tool.result ?? tool.content ?? null;
+  let output = rawOutput;
+  if (['web_search', 'web_fetch'].includes(name.toLowerCase())) {
+    try {
+      const value = typeof rawOutput === 'string' ? JSON.parse(rawOutput) : rawOutput;
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const visible = { ...value };
+        delete visible.handle;
+        delete visible.cursor;
+        delete visible.nextCursor;
+        output = typeof rawOutput === 'string' ? JSON.stringify(visible, null, 2) : visible;
+      }
+    } catch {
+      // Keep non-JSON output visible for provider and validation errors.
+    }
+  }
   const normalizedStatus = status === 'inProgress' ? 'running' : status;
   const isRunning = normalizedStatus === 'running';
   const normalizedOutcome = typeof outcome === 'string' ? outcome.toLowerCase() : null;
@@ -270,7 +285,9 @@ export default function ToolCard({
   // Format arguments summary
   let argsSummary = '';
   if (typeof args === 'object' && args !== null) {
-    if (args.command) {
+    if (name.toLowerCase() === 'web_fetch' && args.handle) {
+      argsSummary = '继续读取网页正文';
+    } else if (args.command) {
       argsSummary = args.command;
     } else if (args.path || args.file_path || args.target_file || args.TargetFile || args.AbsolutePath) {
       argsSummary = args.path || args.file_path || args.target_file || args.TargetFile || args.AbsolutePath;

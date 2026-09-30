@@ -442,6 +442,7 @@ export default function MessageItem({
                   items={block.items}
                   failureCount={block.failureCount}
                   failureTypes={block.failureTypes}
+                  showWebActivitySummary={false}
                 >
                   {block.calls.map((call, callIndex) => (
                     <AssistantActivityGroup

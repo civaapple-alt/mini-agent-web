@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add machine-wide Web Search settings for DeepSeek native search, Exa, Kimi
+  Basic, or disabled. Keep credentials write-only and stored by Host; forward
+  settings through JSON-RPC, the Python SDK, and Gateway without echoing keys.
+- Show search-result and fetched-page links in collapsed conversation activity.
+  Deduplicate cached page continuations and hide opaque handles and cursors in
+  tool details.
 - Show persisted Host context injections as metadata-only transcript cards and
   a current source/byte breakdown in the workspace panel. Report the latest
   Provider input and cached-input token usage in the composer; label per-category
@@ -32,15 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overview while keeping the final answer visible.
 - Keep the initial missing-model status available to assistive technology without
   adding a second row to the composer controls.
-- Expose Host-detected provider web-search support in model settings. Lock the
-  model capability when provider search is unavailable, and prevent enabling
-  Responses built-in search on the official DeepSeek endpoint.
 - Only close the model editor on a backdrop click that starts and ends outside
   the dialog, so dragging to select text does not ask to discard the model.
 - Move provider, credential, and default-model setup to the Web Studio model
   settings page, with project defaults in Project settings and a first-run
   “先配置模型” entry beside the composer. Put bounded connection tests beside
-  each saved model and add provider-level search controls. Remove obsolete host,
+  each saved model. Remove obsolete host,
   port, and default-mode keys from persisted Web settings, and stop reading
   legacy provider variables.
 - Parse Turn and Thread execution-recovery metadata into the public

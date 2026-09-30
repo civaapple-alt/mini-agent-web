@@ -47,27 +47,18 @@ Verifier 不影响普通对话，但启动需要验证的 Goal 时会明确报�
 “使用 API 默认”会在请求中省略推理参数。模型 ID、推理等级和参数映射由用户维护；本地
 建议只提供初始值，不会验证远端支持情况。
 
-## 供应商搜索能力
-
-Host 在模型目录中返回供应商搜索支持状态和当前是否生效，Web Studio 不自行维护供应商判断。
-官方 OpenAI Responses 端点默认为支持；官方 DeepSeek Responses 端点不支持内置
-`web_search`，Host 会忽略对它的开启设置。其他端点默认为关闭且支持状态未知；用户确认兼容后
-可手动开启。供应商接口或搜索设置有未保存修改时，Studio 会先要求保存，再更新能力判断。
-
-模型级 `web_search` 只有在供应商搜索当前生效时才能编辑；否则会显示锁定状态和原因。运行时
-仍同时检查供应商状态、Thread/CLI 搜索开关和模型能力，三者缺一都不会发送内置搜索工具。
-CLI 的 `--no-web-search` 可在单次运行中临时关闭搜索。
-
 ## 本地接口
 
 Gateway 将模型管理请求原样映射到 App Server：
 
 | 路径 | 用途 |
 | --- | --- |
-| `GET /api/models` | 读取供应商、模型和默认值，不返回 API Key；供应商包含 Host 计算的 `webSearchSupport` 与有效状态 `webSearchEnabled`。 |
+| `GET /api/models` | 读取供应商、模型和默认值，不返回 API Key。 |
 | `POST /api/models/manage` | 管理供应商、模型、全局默认值和项目默认值；`test_connection` 手动执行一次连接测试。 |
 | `GET /api/threads/{thread_id}/model-settings` | 读取 Thread 模型覆盖和推理选择。 |
 | `POST /api/threads/{thread_id}/settings` | 更新 Thread 模型覆盖和推理选择。 |
 
 Python SDK 提供 `manage_model_catalog()` 和 `test_model_connection()`。`/api/settings`
 只保存全局界面偏好，不保存模型选择或凭据。
+
+搜索供应商独立于模型目录配置，详见[联网搜索](web-search.md)。

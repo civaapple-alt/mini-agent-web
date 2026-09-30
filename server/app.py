@@ -18,6 +18,7 @@ from server.config import settings
 from server.routes import agent, threads, world
 from server.routes import models as models_route
 from server.routes import settings as settings_route
+from server.routes import web_search as web_search_route
 from server.session_manager import session_manager
 
 logger = logging.getLogger("mini_agent.server")
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
     app.include_router(world.router)
     app.include_router(settings_route.router)
     app.include_router(models_route.router)
+    app.include_router(web_search_route.router)
 
     # Static UI Serving (React SPA frontend/dist)
     dist_path = settings.frontend_dist

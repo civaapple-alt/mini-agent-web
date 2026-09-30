@@ -1596,6 +1596,29 @@ class MiniAgentClient:
             {"operation": operation, **params},
         )
 
+    async def get_web_search_settings(self) -> dict[str, Any]:
+        """Read the Host-owned machine-wide web search provider settings."""
+        return await self._send_request("web/search/settings/read", {})
+
+    async def update_web_search_settings(
+        self,
+        provider: str,
+        *,
+        deepseek_api_key: str | None = None,
+        exa_api_key: str | None = None,
+        kimi_api_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Select one web search provider and optionally replace its credentials."""
+        params: dict[str, Any] = {"provider": provider}
+        for name, value in (
+            ("deepseekApiKey", deepseek_api_key),
+            ("exaApiKey", exa_api_key),
+            ("kimiApiKey", kimi_api_key),
+        ):
+            if value is not None:
+                params[name] = value
+        return await self._send_request("web/search/settings/update", params)
+
     async def test_model_connection(
         self, provider_id: str, model_id: str
     ) -> dict[str, Any]:

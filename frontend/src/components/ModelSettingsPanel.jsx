@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { KeyRound, LockKeyhole, Plus, RefreshCw, Save, Sparkles, Trash2, X } from 'lucide-react';
+import { KeyRound, Plus, RefreshCw, Save, Sparkles, Trash2, X } from 'lucide-react';
 import { api } from '../api';
 import './ModelSettingsPanel.css';
 
@@ -11,7 +11,7 @@ const PROVIDER_KINDS = [
   ['custom', '自定义 Responses', 'custom', ''],
 ];
 const MODALITIES = ['text', 'image', 'video', 'pdf'];
-const CAPABILITIES = ['structured_output', 'web_search', 'system_messages'];
+const CAPABILITIES = ['structured_output', 'system_messages'];
 const REASONING_LEVELS = ['disabled', 'low', 'medium', 'high', 'xhigh', 'max'];
 const STANDARD_REASONING_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const API_DEFAULT_REASONING = { kind: 'api_default' };
@@ -94,7 +94,7 @@ function normalizeModel(model) {
     contextWindow: model.contextWindow ?? '',
     maxOutputTokens: model.maxOutputTokens ?? '',
     inputModalities: model.inputModalities || ['text'],
-    capabilities: model.capabilities || [],
+    capabilities: (model.capabilities || []).filter((item) => item !== 'web_search'),
     reasoningLevels: model.reasoningLevels || [],
     reasoningParameterMap: model.reasoningParameterMap || {},
   };
@@ -108,7 +108,6 @@ function providerProfileKey(provider) {
     kind: provider.kind,
     baseUrl: provider.baseUrl,
     enabled: provider.enabled,
-    webSearch: provider.webSearch ?? null,
   });
 }
 
@@ -143,34 +142,6 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
   const modelEditorBackdropPointerDown = useRef(false);
 
   const selectedProvider = catalog.providers.find((provider) => provider.id === selectedProviderId) || null;
-  const providerSearchSupport = selectedProvider?.webSearchSupport || 'unknown';
-  const providerSearchSetting = providerDraft
-    ? (providerDraft.webSearch ?? null)
-    : (selectedProvider?.webSearch ?? null);
-  const providerSearchConfigDirty = Boolean(providerDraft && selectedProvider && (
-    providerDraft.baseUrl !== selectedProvider.baseUrl
-    || (providerDraft.webSearch ?? null) !== (selectedProvider.webSearch ?? null)
-  ));
-  const modelWebSearchEnabled = Boolean(selectedProvider?.webSearchEnabled)
-    && !providerSearchConfigDirty;
-  const providerSearchHelp = providerIsNew
-    ? '保存供应商后，Host 会识别接口能力；自定义接口可在确认兼容后手动开启。'
-    : providerSearchConfigDirty
-    ? '供应商接口或搜索设置有未保存修改。保存后 Host 会重新判断能力。'
-    : providerSearchSupport === 'unsupported'
-      ? 'Host 判定此接口不支持 Responses API 内置 web_search；此能力只读。'
-      : selectedProvider?.webSearchEnabled
-        ? providerSearchSupport === 'supported'
-          ? 'Host 已识别并启用此接口的内置 web_search。'
-          : '供应商搜索已手动启用；请确认此接口支持 Responses API 内置 web_search。'
-        : providerSearchSupport === 'supported'
-          ? 'Host 已识别此接口支持内置 web_search，但当前设置为关闭。'
-          : 'Host 未能自动确认此接口兼容内置 web_search；当前关闭，确认支持后可手动开启。';
-  const modelWebSearchLockReason = providerSearchConfigDirty
-    ? '保存供应商接口或搜索设置后，才能编辑此模型能力。'
-    : providerSearchSupport === 'unsupported'
-      ? 'Host 已确认此接口不支持内置 web_search，此项只读。'
-      : '先在供应商设置中启用并保存搜索能力，才能编辑此模型能力。';
   const providerDraftDirty = providerIsNew
     ? Boolean(providerDraft)
     : Boolean(providerDraft && selectedProvider
@@ -295,7 +266,7 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
     let suffix = 1;
     let id = baseId;
     while (existing.includes(id)) id = `${baseId}-${++suffix}`;
-    setProviderDraft({ id, name: suggestedName, kind, baseUrl: suggestedBaseUrl, enabled: true, webSearch: null });
+    setProviderDraft({ id, name: suggestedName, kind, baseUrl: suggestedBaseUrl, enabled: true });
     setProviderIsNew(true);
     setApiKeyDraft('');
     setModelDraft(null);
@@ -391,7 +362,6 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
         kind: profile.kind,
         baseUrl: profile.baseUrl,
         enabled: profile.enabled,
-        webSearch: profile.webSearch ?? null,
         models: selectedProvider?.models || [],
       },
     };
@@ -410,7 +380,6 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
       kind: selectedProvider.kind,
       baseUrl: selectedProvider.baseUrl,
       enabled: selectedProvider.enabled,
-      webSearch: selectedProvider.webSearch ?? null,
       models: selectedProvider.models || [],
     };
     askConfirmation(
@@ -633,25 +602,6 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
                 <label>供应商名称<input value={providerDraft?.name ?? selectedProvider?.name ?? ''} onChange={(event) => setProviderDraft({ ...(providerDraft || selectedProvider), name: event.target.value })} /></label>
                 <label>Base URL<input value={providerDraft?.baseUrl ?? selectedProvider?.baseUrl ?? ''} onChange={(event) => setProviderDraft({ ...(providerDraft || selectedProvider), baseUrl: event.target.value })} placeholder="Responses API 地址前缀" /></label>
                 <label>API Key<input type="password" value={apiKeyDraft} onChange={(event) => setApiKeyDraft(event.target.value)} placeholder={selectedProvider?.apiKeyConfigured ? '已配置；输入新值可替换' : '输入 API Key'} autoComplete="new-password" /><small>{selectedProvider?.apiKeyConfigured ? 'API Key 已配置，保存的 Key 不会显示。' : '尚未配置 API Key。'}</small></label>
-                <label>供应商搜索能力<select
-                  value={providerSearchSupport === 'unsupported'
-                    ? 'unsupported'
-                    : providerSearchSetting === null
-                      ? 'auto'
-                      : providerSearchSetting ? 'enabled' : 'disabled'}
-                  disabled={providerSearchSupport === 'unsupported' || providerSearchConfigDirty}
-                  onChange={(event) => setProviderDraft({
-                    ...(providerDraft || selectedProvider),
-                    webSearch: event.target.value === 'auto'
-                      ? null
-                      : event.target.value === 'enabled',
-                  })}
-                >
-                  <option value="auto">自动，按接口判断；未知时关闭</option>
-                  <option value="enabled">开启</option>
-                  <option value="disabled">关闭</option>
-                  {providerSearchSupport === 'unsupported' && <option value="unsupported">接口不支持（只读）</option>}
-                </select><small>{providerSearchHelp}</small></label>
               </div>
               <div className="model-provider-save-row">
                 {selectedProvider?.apiKeyConfigured && <button type="button" className="model-text-button" onClick={clearApiKey}>清除 API Key</button>}
@@ -751,26 +701,21 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
                 <legend>模型能力</legend>
                 <div className="model-chip-list">
                   {CAPABILITIES.map((item) => {
-                    const locked = item === 'web_search' && !modelWebSearchEnabled;
                     const configured = modelDraft.capabilities.includes(item);
-                    const active = configured && !locked;
+                    const active = configured;
                     return (
                       <button
                         key={item}
                         type="button"
-                        className={`${active ? 'active' : ''}${locked ? ' locked' : ''}`}
+                        className={active ? 'active' : ''}
                         onClick={() => toggleValue('capabilities', item)}
-                        disabled={locked}
                         aria-pressed={active}
-                        title={locked ? modelWebSearchLockReason : undefined}
                       >
-                        {locked && configured ? `${item}（已配置但未生效）` : item}
-                        {locked && <LockKeyhole size={11} aria-hidden="true" />}
+                        {item}
                       </button>
                     );
                   })}
                 </div>
-                {!modelWebSearchEnabled && <small className="model-capability-hint">{modelWebSearchLockReason}</small>}
               </fieldset>
               <fieldset>
                 <legend>推理等级</legend>

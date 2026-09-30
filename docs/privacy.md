@@ -51,6 +51,12 @@ encrypted. Unix restricts the directory and files to the current user. Model
 catalog responses contain only an `apiKeyConfigured` flag. The Gateway does not
 store or return the key value.
 
+Search-provider keys are stored by Host as plaintext files under
+`~/.mini-agent/web-search-credentials/`, separately from model-provider keys.
+The App Server and Gateway return only configured flags. Search queries and
+results go to the selected provider; fetched page contents may be retained in
+App Server Session history.
+
 The default CORS allowlist contains local development origins. The Gateway bind
 host defaults to `0.0.0.0`, so do not treat that CORS allowlist as a network
 access-control boundary. If you expose the port beyond a trusted local network,

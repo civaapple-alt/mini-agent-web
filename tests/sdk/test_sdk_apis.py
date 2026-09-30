@@ -1019,6 +1019,28 @@ async def test_sdk_runtime_observation_api_mapping():
 
 
 @pytest.mark.asyncio
+async def test_sdk_web_search_settings_omits_unsupplied_credentials():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {"value": {"settings": {"provider": "exa", "exaApiKeyConfigured": True}}}
+
+    client._send_request = fake_send
+
+    current = await client.get_web_search_settings()
+    updated = await client.update_web_search_settings("exa", exa_api_key="new-key")
+
+    assert current["value"]["settings"]["provider"] == "exa"
+    assert updated["value"]["settings"]["exaApiKeyConfigured"] is True
+    assert calls == [
+        ("web/search/settings/read", {}),
+        ("web/search/settings/update", {"provider": "exa", "exaApiKey": "new-key"}),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_sdk_session_fork_api_mapping():
     client = MiniAgentClient()
     calls = []

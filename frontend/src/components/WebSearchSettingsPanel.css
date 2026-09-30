@@ -1,0 +1,24 @@
+.web-search-settings-panel { display: grid; gap: 16px; }
+.web-search-provider-card,
+.web-search-credentials { display: grid; gap: 12px; }
+.web-search-provider-card { padding: 15px; border: 1px solid var(--border-color); border-radius: 9px; background: var(--bg-card); }
+.web-search-provider-card > label { color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+.web-search-provider-card select { width: 100%; min-height: 38px; padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); }
+.web-search-provider-card p { margin: 0; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+.web-search-provider-card code { color: var(--text-secondary); }
+.web-search-key-row { display: grid; gap: 7px; padding: 13px 15px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-surface); }
+.web-search-key-heading { display: flex; justify-content: space-between; gap: 8px; color: var(--text-primary); font-size: 12px; }
+.web-search-key-heading span { color: var(--text-muted); font-size: 11px; }
+.web-search-key-heading .configured { color: var(--accent-green); }
+.web-search-key-input-row { display: flex; gap: 8px; }
+.web-search-key-input-row input { flex: 1; min-width: 0; height: 36px; padding: 7px 9px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card); color: var(--text-primary); font-size: 12px; }
+.web-search-key-input-row input::placeholder { color: var(--text-muted); }
+.web-search-clear-key { padding: 0 9px; border: 1px solid var(--border-color); border-radius: 6px; background: transparent; color: var(--text-secondary); font-size: 11px; cursor: pointer; }
+.web-search-inline-note,.web-search-error { margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.web-search-error { color: var(--color-danger, #b42318); }
+.web-search-security-note,.web-search-save-row,.web-search-save-row > span,.web-search-loading { display: flex; align-items: center; gap: 7px; }
+.web-search-security-note { color: var(--text-muted); font-size: 11px; }
+.web-search-save-row { justify-content: space-between; gap: 12px; padding-top: 4px; }
+.web-search-save-row > button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 12px; border: 1px solid var(--accent-green); border-radius: 6px; background: var(--accent-green); color: white; font-size: 12px; cursor: pointer; }
+.web-search-save-row > button:disabled { opacity: .55; cursor: default; }
+.web-search-save-row > span,.web-search-loading { color: var(--text-muted); font-size: 11px; }

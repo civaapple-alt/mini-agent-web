@@ -113,14 +113,16 @@ def create_mock_client(project_name: str = "test-project") -> AsyncMock:
                 "shell",
                 "read_image",
                 "scheduled_task",
+                "ask_user",
             ],
             available_builtin_tools=[
                 "read_file",
                 "apply_patch",
                 "shell",
                 "read_image",
-                "scheduled_task",
                 "web_fetch",
+                "scheduled_task",
+                "ask_user",
             ],
             goal=None,
             continuation_mode="manual",
@@ -155,7 +157,14 @@ def create_mock_client(project_name: str = "test-project") -> AsyncMock:
         tools = (
             builtin_tools
             if builtin_tools is not None
-            else ["read_file", "apply_patch", "shell", "read_image", "scheduled_task"]
+            else [
+                "read_file",
+                "apply_patch",
+                "shell",
+                "read_image",
+                "scheduled_task",
+                "ask_user",
+            ]
         )
         return SimpleNamespace(
             collaboration_mode=SimpleNamespace(mode=mode),
@@ -165,8 +174,9 @@ def create_mock_client(project_name: str = "test-project") -> AsyncMock:
                 "apply_patch",
                 "shell",
                 "read_image",
-                "scheduled_task",
                 "web_fetch",
+                "scheduled_task",
+                "ask_user",
             ],
             continuation_mode=continuation_mode or "manual",
             state_revision=0,

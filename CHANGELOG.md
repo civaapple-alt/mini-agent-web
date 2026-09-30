@@ -14,7 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   persist answers through App Server and restore pending questions after a
   refresh or execution recovery. Keep completed question cards collapsed by
   default. Surface a background child Session's pending question in its parent
-  Session list and task panel, and open the child Session for its answer.
+  Session list and task panel, and open the child Session for its answer. Show
+  `ask_user` in Workspace's Builtin Tools list and let each Thread control its
+  model-visible availability.
 - Add a top-right quick-open menu for the current Project workspace. Route
   launches through the local Gateway using registered Project paths and fixed
   Finder, Windows File Explorer, VS Code, IntelliJ IDEA, and terminal targets on macOS,

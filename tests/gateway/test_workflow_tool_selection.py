@@ -17,6 +17,7 @@ async def test_workflow_state_projects_host_enabled_web_fetch(monkeypatch):
         "read_image",
         "web_fetch",
         "scheduled_task",
+        "ask_user",
     ]
     workflow = SimpleNamespace(
         goal=None,
@@ -53,4 +54,5 @@ async def test_workflow_state_projects_host_enabled_web_fetch(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["builtin_tools"] == selected_tools
+    assert "ask_user" in response.json()["available_builtin_tools"]
     client.get_workflow_state.assert_awaited_once_with(thread_id="thread-1")

@@ -22,11 +22,17 @@ DEFAULT_BUILTIN_TOOLS: list[str] = [
     "shell",
     "read_image",
     "scheduled_task",
+    "ask_user",
 ]
 
 ALL_BUILTIN_TOOLS: list[str] = [
-    *DEFAULT_BUILTIN_TOOLS,
+    "read_file",
+    "apply_patch",
+    "shell",
+    "read_image",
     "web_fetch",
+    "scheduled_task",
+    "ask_user",
 ]
 
 

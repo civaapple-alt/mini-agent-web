@@ -43,6 +43,7 @@ const BUILTIN_TOOL_INFO = {
   web_fetch: { name: 'web_fetch', label: '网页抓取', desc: '抓取外部 HTTP 与静态文档' },
   read_image: { name: 'read_image', label: '图像读取', desc: '读取并解析视觉/图像资源' },
   scheduled_task: { name: 'scheduled_task', label: '定时唤醒', desc: '安排有界延时，让下一轮继续查询远程状态' },
+  ask_user: { name: 'ask_user', label: '用户提问', desc: '遇到必须由用户决定的问题时暂停询问；回答直接返回当前会话' },
 };
 
 function PlanModeCard({ planActive, onTogglePlan }) {
@@ -86,7 +87,7 @@ function BuiltinToolsCard({ availableBuiltinTools, selectedBuiltinTools, onToggl
           <div>
             <span className="workflow-title">内置工具权限控制 (Builtin Tools)</span>
             <p className="workflow-sub">
-              当前 Thread 可受控暴露的 5 种工具；默认仅启用 4 个核心工具，反选即可剥离调用能力
+              控制当前 Thread 暴露给模型的工具；关闭后模型不会收到对应能力
             </p>
           </div>
         </div>
@@ -480,14 +481,16 @@ export default function SidePanel({
     'shell',
     'read_image',
     'scheduled_task',
+    'ask_user',
   ]);
   const [availableBuiltinTools, setAvailableBuiltinTools] = useState([
     'read_file',
     'apply_patch',
     'shell',
-    'web_fetch',
     'read_image',
+    'web_fetch',
     'scheduled_task',
+    'ask_user',
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRetryingMcp, setIsRetryingMcp] = useState(false);

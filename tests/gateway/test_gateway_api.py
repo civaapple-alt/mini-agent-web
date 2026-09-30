@@ -459,14 +459,16 @@ async def test_gateway_threads_and_workflows(test_app):
                 "shell",
                 "read_image",
                 "scheduled_task",
+                "ask_user",
             ]
             assert resp_wf.json()["available_builtin_tools"] == [
                 "read_file",
                 "apply_patch",
                 "shell",
                 "read_image",
-                "scheduled_task",
                 "web_fetch",
+                "scheduled_task",
+                "ask_user",
             ]
 
             # Toggle Plan Mode and filter Builtin tools
@@ -474,13 +476,14 @@ async def test_gateway_threads_and_workflows(test_app):
                 "/api/threads/default/settings",
                 json={
                     "mode": "plan",
-                    "builtin_tools": ["read_file", "shell"],
+                    "builtin_tools": ["read_file", "shell", "ask_user"],
                 },
             )
             assert resp_settings.status_code == 200
             assert resp_settings.json()["collaboration_mode"]["mode"] == "plan"
             assert "available_builtin_tools" in resp_settings.json()
             assert "builtin_tools" in resp_settings.json()
+            assert "ask_user" in resp_settings.json()["builtin_tools"]
 
             empty_settings = await client.post(
                 "/api/threads/default/settings",

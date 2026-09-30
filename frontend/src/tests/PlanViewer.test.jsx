@@ -9,6 +9,7 @@ vi.mock('../api', () => ({
     getWorkflowFiles: vi.fn(),
     getWorkflowFileContent: vi.fn(),
     getWorkflowState: vi.fn(),
+    updateThreadSettings: vi.fn(),
   },
 }));
 
@@ -26,10 +27,11 @@ describe('SidePanel plan viewer', () => {
       content: '# Implementation plan\n\n- [ ] Keep the plan readable',
     });
     api.getWorkflowState.mockResolvedValue({
-      builtin_tools: ['read_file', 'apply_patch', 'shell', 'read_image', 'scheduled_task'],
-      available_builtin_tools: ['read_file', 'apply_patch', 'shell', 'read_image', 'scheduled_task'],
+      builtin_tools: ['read_file', 'apply_patch', 'shell', 'read_image', 'scheduled_task', 'ask_user'],
+      available_builtin_tools: ['read_file', 'apply_patch', 'shell', 'read_image', 'web_fetch', 'scheduled_task', 'ask_user'],
       goal: null,
     });
+    api.updateThreadSettings.mockResolvedValue({});
   });
 
   it('opens a dedicated top-level plan tab with a full-height markdown reader', async () => {
@@ -73,6 +75,8 @@ describe('SidePanel plan viewer', () => {
 
     expect(screen.getByRole('button', { name: '工具' })).toBeDefined();
     expect(screen.getByText('内置工具权限控制 (Builtin Tools)')).toBeDefined();
+    expect(screen.getByText('用户提问')).toBeDefined();
+    expect(screen.getByText('ask_user')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '目标' }));
     await waitFor(() => expect(screen.getByText('线程目标 (Thread Goal)')).toBeDefined());
@@ -85,5 +89,27 @@ describe('SidePanel plan viewer', () => {
       expect.objectContaining({ projectId: null }),
     ));
     expect(document.querySelector('.goal-file-content')).toBeTruthy();
+  });
+
+  it('lets the current thread hide ask_user from the model', async () => {
+    render(
+      <SidePanel
+        isOpen
+        initialTab="tools"
+        threadId="thread-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText('用户提问')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: /ask_user/ }));
+
+    await waitFor(() => expect(api.updateThreadSettings).toHaveBeenCalledWith(
+      'default',
+      ['read_file', 'apply_patch', 'shell', 'read_image', 'scheduled_task'],
+      'thread-1',
+      null,
+      expect.objectContaining({ projectId: null }),
+    ));
   });
 });

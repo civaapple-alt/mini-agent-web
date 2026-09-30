@@ -36,6 +36,7 @@ def thread_attention_reasons(
     for reason in child_reasons or []:
         if reason in {
             "child_pending_approval",
+            "child_user_input",
             "child_task_failed",
             "child_report",
             "child_recovery",

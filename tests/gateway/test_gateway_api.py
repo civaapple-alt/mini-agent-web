@@ -118,6 +118,7 @@ async def test_gateway_thread_list_uses_catalog_activity_and_sorts_newest_first(
         "goal_status": "none",
         "cleanup_pending": False,
         "resumable": True,
+        "awaiting_user_input": True,
         "parent_session_id": "s-older",
         "child_task_state": {
             "parent_thread_id": "older",
@@ -193,6 +194,7 @@ async def test_gateway_thread_list_uses_catalog_activity_and_sorts_newest_first(
         "turn_failed",
         "child_report",
         "child_task_failed",
+        "child_user_input",
     ]
 
 

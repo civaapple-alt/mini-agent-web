@@ -30,7 +30,7 @@ export default function useChildTasks(threadId, projectId, enabled = true) {
   const sessionControlStatus = useRef(sessionControl.status);
   sessionControlStatus.current = sessionControl.status;
   hasActiveChildren.current = children.some((child) => (
-    ['queued', 'running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling']
+    ['queued', 'running', 'in_progress', 'awaiting_approval', 'awaiting_user_input', 'pausing', 'cancelling']
       .includes(child.status)
   ));
 

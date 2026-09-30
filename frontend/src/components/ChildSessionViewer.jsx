@@ -29,6 +29,7 @@ const ACTIVE_CHILD_STATUSES = new Set([
   'running',
   'in_progress',
   'awaiting_approval',
+  'awaiting_user_input',
   'cancelling',
 ]);
 const QUEUED_CHILD_STATUSES = new Set(['pending', 'queued', 'starting', 'not_started']);

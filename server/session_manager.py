@@ -53,6 +53,7 @@ ACTIVE_CHILD_RUNTIME_PHASES = frozenset(
         "model",
         "tool",
         "waiting_approval",
+        "waiting_for_user_input",
         "stopping",
         "compaction",
         "persisting",
@@ -65,6 +66,7 @@ ACTIVE_CHILD_TASK_STATUSES = frozenset(
     {
         "running",
         "awaiting_approval",
+        "awaiting_user_input",
         "in_progress",
         "pausing",
         "cancelling",
@@ -686,6 +688,10 @@ class SessionManager:
             turn_id = str(child.get("turn_id") or "")
             child_id = str(child.get("child_thread_id") or "")
             if not child_id or not turn_id or status not in ACTIVE_CHILD_TASK_STATUSES:
+                continue
+            # A child blocked on a user response has no work to interrupt. Keep
+            # its durable question open so the user can answer in that Thread.
+            if status == "awaiting_user_input":
                 continue
             try:
                 if status in {"running", "awaiting_approval", "in_progress"}:
@@ -1408,6 +1414,7 @@ class SessionManager:
                     in {
                         "running",
                         "awaiting_approval",
+                        "awaiting_user_input",
                         "in_progress",
                         "pausing",
                         "cancelling",
@@ -1511,6 +1518,7 @@ class SessionManager:
                 in {
                     "running",
                     "awaiting_approval",
+                    "awaiting_user_input",
                     "in_progress",
                     "pausing",
                     "cancelling",
@@ -1819,6 +1827,7 @@ class SessionManager:
                 in {
                     "running",
                     "awaiting_approval",
+                    "awaiting_user_input",
                     "in_progress",
                     "pausing",
                     "cancelling",
@@ -1880,6 +1889,7 @@ class SessionManager:
                             in {
                                 "running",
                                 "awaiting_approval",
+                                "awaiting_user_input",
                                 "in_progress",
                                 "pausing",
                                 "cancelling",
@@ -2039,6 +2049,7 @@ class SessionManager:
                 in {
                     "running",
                     "awaiting_approval",
+                    "awaiting_user_input",
                     "in_progress",
                     "pausing",
                     "cancelling",
@@ -2173,6 +2184,7 @@ class SessionManager:
         if not turn_id or status not in {
             "running",
             "awaiting_approval",
+            "awaiting_user_input",
             "in_progress",
             "pausing",
             "cancelling",
@@ -2503,6 +2515,9 @@ class SessionManager:
                 if session.get("turn_active")
                 else (session.get("last_turn_status") or "idle")
             )
+            awaiting_user_input = bool(session.get("awaiting_user_input"))
+            if awaiting_user_input and status in ACTIVE_CHILD_TASK_STATUSES:
+                status = "awaiting_user_input"
             if status == "queued":
                 active_turn_id = None
             operation_id = child_task_state.get("operation_id")
@@ -2525,6 +2540,7 @@ class SessionManager:
             runtime_recovery_required = False
             runtime_recovery_reason = None
             execution_recovery = None
+            pending_question_turn_id = None
             client = self._project_clients.get((resolved_project_id, child_thread_id))
             recovery_status = ""
             # A queued operation owns no live runtime Turn. Read its execution
@@ -2539,6 +2555,22 @@ class SessionManager:
                         "queued",
                     }:
                         checkpoint = await client.read_thread(child_thread_id)
+                        pending_question = getattr(
+                            checkpoint, "pending_user_question", None
+                        )
+                        if isinstance(pending_question, dict):
+                            pending_question_turn_id = pending_question.get(
+                                "turn_id", pending_question.get("turnId")
+                            )
+                        else:
+                            pending_question_turn_id = getattr(
+                                pending_question, "turn_id", None
+                            ) or getattr(pending_question, "turnId", None)
+                        awaiting_user_input = bool(
+                            pending_question_turn_id
+                            and str(pending_question_turn_id)
+                            == str(active_turn_id or "")
+                        )
                         execution_recovery = self._execution_recovery(checkpoint)
                         recovery_status = str(
                             (execution_recovery or {}).get("status") or ""
@@ -2572,14 +2604,20 @@ class SessionManager:
                             matching_active_turn = (
                                 bool(expected_turn_id)
                                 and runtime_turn_id == expected_turn_id
-                                and runtime.phase in ACTIVE_CHILD_RUNTIME_PHASES
+                                and (
+                                    runtime.phase in ACTIVE_CHILD_RUNTIME_PHASES
+                                    or awaiting_user_input
+                                )
                             )
                             if matching_active_turn:
                                 operation_id = operation_id or runtime.operation_id
                                 active_turn_id = runtime_turn_id
                                 if status not in {"pausing", "cancelling"}:
                                     status = (
-                                        "awaiting_approval"
+                                        "awaiting_user_input"
+                                        if awaiting_user_input
+                                        or runtime.phase == "waiting_for_user_input"
+                                        else "awaiting_approval"
                                         if runtime.phase == "waiting_approval"
                                         else "running"
                                     )
@@ -2617,6 +2655,7 @@ class SessionManager:
                         child_thread_id, resolved_project_id
                     ).get("title"),
                     "status": status,
+                    "awaiting_user_input": awaiting_user_input,
                     "phase": phase,
                     "turn_id": active_turn_id,
                     "execution_recovery": execution_recovery,
@@ -4362,6 +4401,7 @@ class SessionManager:
                         not in {
                             "running",
                             "awaiting_approval",
+                            "awaiting_user_input",
                             "in_progress",
                             "paused",
                             "completed",
@@ -4599,6 +4639,7 @@ class SessionManager:
                         "paused",
                         "running",
                         "awaiting_approval",
+                        "awaiting_user_input",
                         "in_progress",
                         "pausing",
                         "cancelling",
@@ -4637,6 +4678,7 @@ class SessionManager:
                         "paused",
                         "running",
                         "awaiting_approval",
+                        "awaiting_user_input",
                         "in_progress",
                         "pausing",
                         "cancelling",

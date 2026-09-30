@@ -43,7 +43,10 @@ function ChildTaskRow({
   const waitingForExecutionResume = executionRecoveryStatus === 'waiting_for_continue';
   const needsReconciliation = executionRecoveryStatus === 'needs_reconciliation';
   const executionRecoveryPending = waitingForExecutionResume || needsReconciliation;
-  const statusLabel = waitingForExecutionResume
+  const awaitingUserInput = status === 'awaiting_user_input' || child.awaiting_user_input === true;
+  const statusLabel = awaitingUserInput
+    ? '需要用户回答'
+    : waitingForExecutionResume
     ? '停滞待继续'
     : needsReconciliation
       ? '工具结果待核对'
@@ -67,6 +70,7 @@ function ChildTaskRow({
     ? `第 ${child.group_sequence + 1}${Number.isInteger(sequenceCount) ? `/${sequenceCount}` : ''} 步`
     : null;
   const active = !waitingForExecutionResume
+    && !awaitingUserInput
     && ['running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling'].includes(status);
   const attemptStartedAtMs = currentAttemptGroup?.stages
     .filter((stage) => ['running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling'].includes(String(stage?.status || '').toLowerCase()))
@@ -87,8 +91,10 @@ function ChildTaskRow({
   const canViewChildSession = Boolean(
     onOpenThread && child.child_thread_id && child.child_session_available === true,
   );
-  const activity = child.recovery_required && !waitingForExecutionResume
-    ? child.recovery_reason || '等待子 Session 恢复'
+  const activity = awaitingUserInput
+    ? '打开子会话回答问题，答案会直接返回给子智能体'
+    : child.recovery_required && !waitingForExecutionResume
+      ? child.recovery_reason || '等待子 Session 恢复'
     : waitingForExecutionResume
       ? executionRecovery?.reason || '最近执行进度已保存，等待继续'
       : needsReconciliation
@@ -153,10 +159,10 @@ function ChildTaskRow({
             type="button"
             className="btn-action-small child-task-open"
             onClick={() => onOpenThread(child.child_thread_id, child.project_id || projectId)}
-            title={resultPreview ? '在子智能体标签中查看完整结果和会话活动' : '在子智能体标签中查看子会话活动'}
+            title={awaitingUserInput ? '打开子会话并回答 Agent 当前问题' : resultPreview ? '在子智能体标签中查看完整结果和会话活动' : '在子智能体标签中查看子会话活动'}
           >
             <ExternalLink size={12} />
-            <span>{resultPreview ? '查看结果' : '查看'}</span>
+            <span>{awaitingUserInput ? '回答问题' : resultPreview ? '查看结果' : '查看'}</span>
           </button>
         )}
         {waitingForExecutionResume && onControl && (
@@ -171,7 +177,7 @@ function ChildTaskRow({
             {busy ? '继续中…' : '继续'}
           </button>
         )}
-        {onControl && !child.recovery_required && !executionRecoveryPending && ['running', 'in_progress', 'awaiting_approval', 'queued', 'paused'].includes(status) && (
+        {onControl && !child.recovery_required && !executionRecoveryPending && ['running', 'in_progress', 'awaiting_approval', 'awaiting_user_input', 'queued', 'paused'].includes(status) && (
           <button
             type="button"
             className="child-task-stop-quick"
@@ -375,7 +381,7 @@ export default function ChildTasksPane({
   const sessionStatus = sessionControl?.status || 'running';
   const hasSessionActivity = parentTurnActive || counts.running > 0 || counts.queued > 0 || counts.needsAttention > 0;
   const hasRunningChildren = children.some((child) => (
-    ['running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling'].includes(getChildTaskStatus(child))
+    ['running', 'in_progress', 'awaiting_approval', 'awaiting_user_input', 'pausing', 'cancelling'].includes(getChildTaskStatus(child))
   ));
 
   useEffect(() => {

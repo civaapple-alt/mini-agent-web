@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [后台子会话 ask_user 直达用户与会话列表提示](implemented/process/2026-10-01-background-child-user-questions.zh.md)
 - [项目工作区右上角快捷打开](implemented/process/2026-09-30-project-quick-open.zh.md)
 - [联网搜索密钥状态与搜索探测](implemented/process/2026-09-30-web-search-key-display-and-test.zh.md)
 - [输入栏停止只中断当前 Turn](implemented/process/2026-09-30-composer-stop-only-turn.zh.md)

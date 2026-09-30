@@ -337,11 +337,14 @@ async def list_threads(
             if child_status in {
                 "running",
                 "awaiting_approval",
+                "awaiting_user_input",
                 "in_progress",
                 "pausing",
                 "cancelling",
             } and not child.get("process_online"):
                 reasons.add("child_recovery")
+            if child.get("awaiting_user_input"):
+                reasons.add("child_user_input")
             if (project, child_thread_id) in pending_approval_keys:
                 reasons.add("child_pending_approval")
             if child_state.get("reports"):

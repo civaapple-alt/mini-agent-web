@@ -4,6 +4,33 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ChildTasksPane from '../components/ChildTasksPane';
 
 describe('ChildTasksPane', () => {
+  it('routes a pending child question to its child Session for an answer', () => {
+    const onOpenThread = vi.fn();
+    const { container } = render(
+      <ChildTasksPane
+        projectId="memory-card"
+        onOpenThread={onOpenThread}
+        children={[{
+          operation_id: 'operation-question',
+          child_thread_id: 'child-question',
+          title: 'Inspect configuration',
+          status: 'awaiting_user_input',
+          awaiting_user_input: true,
+          child_session_available: true,
+        }]}
+        loading={false}
+        error={null}
+      />,
+    );
+
+    expect(screen.getByText('需要用户回答')).toBeTruthy();
+    expect(screen.getByText('打开子会话回答问题，答案会直接返回给子智能体')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '回答问题' }));
+    expect(onOpenThread).toHaveBeenCalledWith('child-question', 'memory-card');
+    expect(container.querySelector('.child-task-count').getAttribute('aria-label'))
+      .toBe('运行 0，排队 0，待处理 1，已结束 0，共 1');
+  });
+
   it('counts a saved execution checkpoint as attention and exposes one continue action', async () => {
     const onControl = vi.fn().mockResolvedValue({ outcome: { outcome: 'applied' } });
     const { container } = render(

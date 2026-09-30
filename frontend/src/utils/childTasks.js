@@ -5,6 +5,7 @@ export const childTaskStatusLabels = {
   running: '运行中',
   in_progress: '运行中',
   awaiting_approval: '等待审批',
+  awaiting_user_input: '需要用户回答',
   cancelling: '正在取消',
   pausing: '暂停处理中',
   paused: '已暂停',
@@ -24,6 +25,7 @@ export const childTaskLifecycleLabels = {
   running: '已开始',
   in_progress: '已开始',
   awaiting_approval: '等待审批',
+  awaiting_user_input: '需要用户回答',
   cancelling: '正在取消',
   pausing: '暂停处理中',
   paused: '已暂停',
@@ -35,7 +37,7 @@ export const childTaskLifecycleLabels = {
 
 const collapsedChildTaskStatuses = new Set(['completed', 'cancelled']);
 const runningChildTaskStatuses = new Set(['running', 'in_progress', 'pausing', 'cancelling']);
-const attentionChildTaskStatuses = new Set(['awaiting_approval', 'paused', 'failed', 'step_limit', 'not_started']);
+const attentionChildTaskStatuses = new Set(['awaiting_approval', 'awaiting_user_input', 'paused', 'failed', 'step_limit', 'not_started']);
 
 export function getChildExecutionRecovery(task) {
   const recovery = task?.execution_recovery || task?.executionRecovery;

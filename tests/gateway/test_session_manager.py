@@ -26,6 +26,7 @@ from server.session_manager import (
     MAX_CHILD_WAKE_PENDING_CHILDREN,
     SessionManager,
 )
+from server.thread_attention import thread_attention_reasons
 from server.thread_titles import build_auto_thread_title
 
 
@@ -97,12 +98,19 @@ def test_session_manager_project_collision_avoidance(mock_session_manager, tmp_p
 
     p3 = mock_session_manager.create_project("Alpha Project", path=str(tmp_path / "f3"))
     assert p3["id"] == "alpha-project-2"
-
     projects_list = mock_session_manager.get_projects()
     ids = [p["id"] for p in projects_list["projects"]]
     assert "alpha-project" in ids
     assert "alpha-project-1" in ids
     assert "alpha-project-2" in ids
+
+
+def test_thread_attention_includes_direct_child_user_question():
+    reasons = thread_attention_reasons(
+        {"thread_id": "parent"}, child_reasons=["child_user_input"]
+    )
+
+    assert reasons == ["child_user_input"]
 
 
 def test_thread_attachment_root_is_gateway_state_and_project_scoped(
@@ -1340,6 +1348,69 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
         "untrackedTurns": 0,
         "cacheHitRatio": 0.75,
     }
+
+
+def test_session_catalog_projects_pending_question_from_execution_journal(
+    tmp_path, monkeypatch
+):
+    session_dir = tmp_path / "sessions" / "s-question"
+    session_dir.mkdir(parents=True)
+    session_path = session_dir / "session.jsonl"
+    interaction = {
+        "interactionId": "interaction-1",
+        "threadId": "t-question",
+        "turnId": "turn-1",
+        "callId": "call-1",
+        "questions": [{"id": "question-1"}],
+        "answers": [None],
+        "currentIndex": 0,
+    }
+    records = [
+        {"seq": 1, "kind": "session_created", "session_id": "s-question"},
+        {"seq": 2, "kind": "thread_started", "thread_id": "t-question"},
+        {
+            "seq": 3,
+            "kind": "turn_started",
+            "thread_id": "t-question",
+            "turn_id": "turn-1",
+        },
+        {
+            "seq": 4,
+            "kind": "execution_user_question",
+            "thread_id": "t-question",
+            "turn_id": "turn-1",
+            "interaction": interaction,
+        },
+    ]
+    session_path.write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_dir / "summary.json").write_text(
+        json.dumps({"id": "s-question", "created_at_ms": 1}), encoding="utf-8"
+    )
+    monkeypatch.setattr("server.session_catalog._process_alive", lambda _pid: False)
+
+    catalog = SessionCatalog()
+    entry = catalog._read_session(session_dir, "project-1", include_history=False)
+
+    assert entry["awaiting_user_input"] is True
+
+    records.append(
+        {
+            "seq": 5,
+            "kind": "execution_tool_call_finished",
+            "thread_id": "t-question",
+            "turn_id": "turn-1",
+            "call_id": "call-1",
+        }
+    )
+    session_path.write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    completed_entry = catalog._read_session(
+        session_dir, "project-1", include_history=False
+    )
+    assert completed_entry["awaiting_user_input"] is False
 
 
 def test_session_catalog_uses_active_turn_start_over_context_checkpoint(
@@ -2876,6 +2947,63 @@ async def test_list_child_tasks_uses_canonical_child_state_and_failed_receipts(
         "queued",
         "failed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_list_child_tasks_marks_pending_user_question_as_attention(
+    mock_session_manager, monkeypatch
+):
+    monkeypatch.setattr(
+        mock_session_manager,
+        "resolve_thread_project",
+        lambda _thread_id, _project_id=None: "default",
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "_canonical_thread",
+        lambda thread_id, _project_id=None: (
+            {"session": {"session_id": "s-parent"}} if thread_id == "parent" else None
+        ),
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "list_project_child_sessions",
+        lambda _project_id, _parent_session_id=None: [
+            {
+                "thread_id": "child",
+                "session_id": "s-child",
+                "parent_session_id": "s-parent",
+                "is_child_task": True,
+                "turn_active": True,
+                "process_online": True,
+                "child_task_state": {
+                    "operation_id": "operation-child",
+                    "turn_id": "turn-child",
+                    "status": "running",
+                },
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_thread_meta",
+        lambda _thread_id, _project_id=None: {"title": "Child question"},
+    )
+    runtime_client = AsyncMock()
+    runtime_client.read_thread.return_value = SimpleNamespace(
+        pending_user_question={"turnId": "turn-child"}, execution_recovery=None
+    )
+    runtime_client.get_runtime_status.return_value = SimpleNamespace(
+        phase="tool", turn_id="turn-child", operation_id="operation-child"
+    )
+    mock_session_manager._project_clients[("default", "child")] = runtime_client
+
+    children = await mock_session_manager.list_child_tasks("parent", "default")
+
+    assert len(children) == 1
+    assert children[0]["status"] == "awaiting_user_input"
+    assert children[0]["awaiting_user_input"] is True
+    assert children[0]["child_session_available"] is True
 
 
 @pytest.mark.asyncio
@@ -7479,7 +7607,7 @@ def test_stale_stream_task_cannot_clear_same_turn_replacement(mock_session_manag
 
 
 @pytest.mark.asyncio
-async def test_parent_freeze_pauses_active_children_and_preserves_queued_work(
+async def test_parent_freeze_pauses_active_children_and_preserves_waiting_work(
     mock_session_manager, monkeypatch
 ):
     children = [
@@ -7503,6 +7631,13 @@ async def test_parent_freeze_pauses_active_children_and_preserves_queued_work(
             "operation_attempt": 1,
             "status": "pausing",
             "turn_id": "turn-pausing",
+        },
+        {
+            "child_thread_id": "child-awaiting-user",
+            "operation_id": "child:child-awaiting-user",
+            "operation_attempt": 1,
+            "status": "awaiting_user_input",
+            "turn_id": "turn-awaiting-user",
         },
     ]
     monkeypatch.setattr(
@@ -7540,6 +7675,71 @@ async def test_parent_freeze_pauses_active_children_and_preserves_queued_work(
     assert "child-queued" not in [
         call.args[0] for call in client.interrupt_turn.await_args_list
     ]
+    assert "child-awaiting-user" not in [
+        call.args[0] for call in client.interrupt_turn.await_args_list
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cancel_child_waiting_for_user_input_expires_question(
+    mock_session_manager, monkeypatch
+):
+    child = {
+        "child_thread_id": "child-awaiting-user",
+        "operation_id": "child:child-awaiting-user",
+        "operation_attempt": 1,
+        "status": "awaiting_user_input",
+        "turn_id": "turn-awaiting-user",
+    }
+    monkeypatch.setattr(
+        mock_session_manager,
+        "list_child_tasks",
+        AsyncMock(return_value=[child]),
+    )
+    client = AsyncMock()
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_client_for_thread",
+        AsyncMock(return_value=client),
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "session_control_state",
+        AsyncMock(return_value={"status": "running"}),
+    )
+    monkeypatch.setattr(mock_session_manager, "_broadcast_child_operation", AsyncMock())
+    monkeypatch.setattr(mock_session_manager, "_queue_child_control_outcome", Mock())
+    monkeypatch.setattr(mock_session_manager, "mark_turn_interrupted", Mock())
+    monkeypatch.setattr(mock_session_manager, "cancel_pending_approvals", AsyncMock())
+
+    stopped = await mock_session_manager._apply_child_control(
+        "parent",
+        {
+            "action": "cancel",
+            "child_thread_id": "child-awaiting-user",
+            "operation_id": "child:child-awaiting-user",
+            "attempt": 1,
+        },
+        "default",
+        control_event_id="stop-question",
+        control_source="user_panel",
+    )
+
+    assert stopped["outcome"] == "applied"
+    assert stopped["applied_child_ids"] == ["child-awaiting-user"]
+    client.child_task_action.assert_awaited_once_with(
+        "child-awaiting-user",
+        "parent",
+        "child:child-awaiting-user",
+        1,
+        "cancel_active",
+        request_id="stop-question",
+        turn_id="turn-awaiting-user",
+        control_source="user_panel",
+    )
+    client.interrupt_turn.assert_awaited_once_with(
+        "turn-awaiting-user", "child-awaiting-user"
+    )
 
 
 @pytest.mark.asyncio

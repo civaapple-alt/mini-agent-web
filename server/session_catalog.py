@@ -589,7 +589,9 @@ def _turn_presentation_projection(record: dict[str, Any]) -> dict[str, Any] | No
     return projected
 
 
-def _session_context_cache_usage(records: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _session_context_cache_usage(
+    records: list[dict[str, Any]],
+) -> dict[str, Any] | None:
     """Aggregate Provider usage from every readable Turn without projecting history."""
     keys = (
         ("requestCount", "request_count"),
@@ -1217,6 +1219,8 @@ class SessionCatalog:
         forked_from: dict[str, Any] | None = None
         latest_operation: dict[str, Any] | None = None
         child_task_operation: dict[str, Any] | None = None
+        pending_user_question_turn_id: str | None = None
+        pending_user_question_call_id: str | None = None
         child_task_lifecycle: list[dict[str, int | str | None]] = []
         child_task_reports: list[dict[str, int | str]] = []
         child_task_follow_up: dict[str, Any] | None = None
@@ -1232,6 +1236,10 @@ class SessionCatalog:
                 thread_id = str(record.get("thread_id") or thread_id)
             elif kind == "turn_started":
                 turn_count += 1
+                turn_id = str(record.get("turn_id") or "")
+                if pending_user_question_turn_id != turn_id:
+                    pending_user_question_turn_id = None
+                    pending_user_question_call_id = None
                 latest_turn_id = record.get("turn_id")
                 latest_turn_started_at = _bounded_int(record.get("timestamp_ms"))
                 latest_turn_prompt = _bounded_text(record.get("prompt"), 32 * 1024)
@@ -1242,6 +1250,9 @@ class SessionCatalog:
                 latest_turn_settled = False
             elif kind == "turn_settled":
                 if record.get("turn_id") == latest_turn_id:
+                    if pending_user_question_turn_id == str(latest_turn_id or ""):
+                        pending_user_question_turn_id = None
+                        pending_user_question_call_id = None
                     latest_turn_status = str(record.get("status") or "failed")
                     latest_stop_reason = str(
                         record.get("stop_reason") or latest_turn_status
@@ -1333,6 +1344,49 @@ class SessionCatalog:
                                 child_task_lifecycle = child_task_lifecycle[
                                     -MAX_OPERATION_LIFECYCLE_ENTRIES:
                                 ]
+            elif kind == "execution_user_question":
+                interaction = record.get("interaction")
+                if isinstance(interaction, dict):
+                    interaction_thread_id = interaction.get(
+                        "threadId"
+                    ) or interaction.get("thread_id")
+                    interaction_turn_id = interaction.get("turnId") or interaction.get(
+                        "turn_id"
+                    )
+                    interaction_call_id = interaction.get("callId") or interaction.get(
+                        "call_id"
+                    )
+                    questions = interaction.get("questions")
+                    answers = interaction.get("answers")
+                    has_unanswered_question = (
+                        isinstance(questions, list)
+                        and bool(questions)
+                        and isinstance(answers, list)
+                        and (
+                            len(answers) < len(questions)
+                            or any(answer is None for answer in answers)
+                        )
+                    )
+                    if (
+                        interaction_thread_id == record.get("thread_id")
+                        and isinstance(interaction_turn_id, str)
+                        and isinstance(interaction_call_id, str)
+                    ):
+                        if has_unanswered_question:
+                            pending_user_question_turn_id = interaction_turn_id
+                            pending_user_question_call_id = interaction_call_id
+                        elif (
+                            pending_user_question_turn_id == interaction_turn_id
+                            and pending_user_question_call_id == interaction_call_id
+                        ):
+                            pending_user_question_turn_id = None
+                            pending_user_question_call_id = None
+            elif kind == "execution_tool_call_finished":
+                if pending_user_question_turn_id == str(
+                    record.get("turn_id") or ""
+                ) and pending_user_question_call_id == record.get("call_id"):
+                    pending_user_question_turn_id = None
+                    pending_user_question_call_id = None
             elif kind == "checkpoint":
                 latest_checkpoint = record
             elif kind == "operation":
@@ -1804,6 +1858,7 @@ class SessionCatalog:
             "goal_status": goal_status,
             "goal": _goal_projection(goal, thread_id, goal_status),
             "is_child_task": child_task_operation is not None,
+            "awaiting_user_input": pending_user_question_turn_id is not None,
             "plan_active": bool(plan.get("active", False)),
             "plan_review_pending": bool(
                 plan.get("active", False) and plan.get("review_pending", False)

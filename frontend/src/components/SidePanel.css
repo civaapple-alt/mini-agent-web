@@ -244,12 +244,12 @@
 .child-task-status-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--text-muted); }
 .child-task-status-dot.running, .child-task-status-dot.in_progress, .child-task-status-dot.pausing, .child-task-status-dot.cancelling { background: var(--text-sky, #0284c7); }
 .child-task-status-dot.queued, .child-task-status-dot.pending, .child-task-status-dot.starting { background: #8994a4; }
-.child-task-status-dot.awaiting_approval, .child-task-status-dot.not_started, .child-task-status-dot.paused { background: var(--text-amber, #b45309); }
+.child-task-status-dot.awaiting_approval, .child-task-status-dot.awaiting_user_input, .child-task-status-dot.not_started, .child-task-status-dot.paused { background: var(--text-amber, #b45309); }
 .child-task-status-dot.failed, .child-task-status-dot.step_limit { background: var(--text-danger, #dc2626); }
 .child-task-status-dot.completed { background: var(--text-success, #059669); }
 .child-task-status { flex: 0 0 auto; color: var(--text-secondary); font-size: 10px; }
 .child-task-status.running, .child-task-status.in_progress, .child-task-status.pausing, .child-task-status.cancelling { color: var(--text-sky, #0284c7); }
-.child-task-status.awaiting_approval, .child-task-status.not_started, .child-task-status.paused { color: var(--text-amber, #b45309); }
+.child-task-status.awaiting_approval, .child-task-status.awaiting_user_input, .child-task-status.not_started, .child-task-status.paused { color: var(--text-amber, #b45309); }
 .child-task-status.attention { color: var(--text-amber, #b45309); }
 .child-task-status.failed, .child-task-status.step_limit { color: var(--text-danger, #dc2626); }
 .child-task-status.completed { color: var(--text-success, #059669); }

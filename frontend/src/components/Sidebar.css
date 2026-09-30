@@ -553,6 +553,11 @@
   color: var(--status-running);
 }
 
+.thread-status-badge.needs-user-input {
+  border-color: var(--text-amber, #b45309);
+  color: var(--text-amber, #b45309);
+}
+
 .thread-tail-indicators {
   display: flex;
   align-items: center;

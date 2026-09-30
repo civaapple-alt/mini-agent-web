@@ -340,7 +340,7 @@ export default function AppLayout({
             contextUsage={contextUsage}
             contextCacheUsage={contextCacheUsage}
             hasSessionActivity={isGenerating || childTasks.children.some((child) => (
-              ['queued', 'running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling']
+              ['queued', 'running', 'in_progress', 'awaiting_approval', 'awaiting_user_input', 'pausing', 'cancelling']
                 .includes(child.status)
             ))}
             onContinueSession={() => childTasks.controlSession('continue')}

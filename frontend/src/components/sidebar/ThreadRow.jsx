@@ -18,6 +18,7 @@ const attentionReasonLabels = {
   plan_review_pending: '计划待确认',
   cleanup_pending: '有待清理项',
   child_pending_approval: '子任务有待处理的审批',
+  child_user_input: '子任务需要用户回答',
   child_task_failed: '子任务失败或达到步数上限',
   child_report: '子任务有新报告',
   child_recovery: '子任务恢复待确认',
@@ -51,6 +52,8 @@ export default function ThreadRow({
   const relativeTime = formatRelativeTime(thread.updated_at, now);
   const activityTimestamp = parseActivityTime(thread.updated_at);
   const attentionLabel = getAttentionLabel(thread.attention_reasons);
+  const hasChildUserQuestion = Array.isArray(thread.attention_reasons)
+    && thread.attention_reasons.includes('child_user_input');
   const rowTitle = [
     thread.title,
     thread.session_id ? `Session ID: ${thread.session_id}` : null,
@@ -84,6 +87,11 @@ export default function ThreadRow({
           title="当前 Turn 正在运行"
         >
           运行中
+        </span>
+      )}
+      {hasChildUserQuestion && (
+        <span className="thread-status-badge needs-user-input" title="子任务正在等待用户回答">
+          需回答
         </span>
       )}
 

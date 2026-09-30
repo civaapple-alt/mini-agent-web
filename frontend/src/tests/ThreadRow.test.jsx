@@ -57,6 +57,30 @@ describe('ThreadRow session identity', () => {
     expect(onSelectThread).toHaveBeenCalledWith('default', 'blender-intro');
   });
 
+  it('shows a visible answer badge when a background child Session asks the user', () => {
+    render(
+      <ThreadRow
+        thread={{
+          thread_id: 'parent',
+          title: 'Parent Session',
+          project: 'blender-intro',
+          attention_reasons: ['child_user_input'],
+        }}
+        currentThread="other"
+        currentThreadProject="blender-intro"
+        isGenerating={false}
+        activeMenuThread={null}
+        onSelectThread={vi.fn()}
+        onToggleMenu={vi.fn()}
+        onAction={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('需回答')).toBeTruthy();
+    expect(screen.getByTitle('子任务正在等待用户回答')).toBeTruthy();
+    expect(screen.getByRole('img', { name: '需要留意：子任务需要用户回答' })).toBeTruthy();
+  });
+
   it('offers a copy action for the actual Session ID', () => {
     const onAction = vi.fn();
     render(

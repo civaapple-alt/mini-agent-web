@@ -837,6 +837,15 @@ class MiniAgentClient:
         res = await self._send_request("thread/list", params)
         return ThreadListResult.from_dict(res)
 
+    async def list_skills(self, thread_id: str | None = None) -> list[dict[str, Any]]:
+        """Refresh and return the bounded effective Skill catalog for a Thread."""
+        res = await self._send_request(
+            "skills/list", {"threadId": thread_id or self._active_thread_id}
+        )
+        value = res.get("value", res) if isinstance(res, dict) else res
+        skills = value.get("skills", []) if isinstance(value, dict) else []
+        return [skill for skill in skills if isinstance(skill, dict)]
+
     async def read_thread(self, thread_id: str | None = None) -> ThreadCheckpoint:
         """Read settled checkpoint for thread."""
         res = await self._send_request(

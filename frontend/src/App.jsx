@@ -506,22 +506,27 @@ export default function App() {
     const controller = new AbortController();
     setSkillsLoading(true);
     setSkillsError(null);
-    api.listSkills({ projectId: currentThreadProject, signal: controller.signal })
-      .then((data) => {
-        setSkillCatalog(Array.isArray(data?.skills) ? data.skills : []);
-        setSkillGroups(Array.isArray(data?.builtinSkillGroups) ? data.builtinSkillGroups : []);
-      })
+    loadSkillCatalog(currentThread, currentThreadProject, controller.signal)
       .catch((err) => {
         if (err?.name === 'AbortError') return;
-        setSkillCatalog([]);
-        setSkillGroups([]);
         setSkillsError(err.message || '技能目录加载失败');
       })
       .finally(() => {
         if (!controller.signal.aborted) setSkillsLoading(false);
       });
     return () => controller.abort();
-  }, [currentThreadProject]);
+  }, [currentThread, currentThreadProject]);
+
+  async function loadSkillCatalog(threadId, projectId, signal) {
+    const data = await api.listSkills({ threadId, projectId, signal });
+    if (
+      (threadId || 'default') !== (currentThreadRef.current || 'default')
+      || (projectId || null) !== (currentThreadProjectRef.current || null)
+    ) return;
+    setSkillCatalog(Array.isArray(data?.skills) ? data.skills : []);
+    setSkillGroups(Array.isArray(data?.builtinSkillGroups) ? data.builtinSkillGroups : []);
+    setSkillsError(null);
+  }
 
   const handleInsertSkill = (name) => {
     setSkillInsertion({ name, nonce: Date.now() });
@@ -541,9 +546,7 @@ export default function App() {
         { projectId },
       );
       showToast(enabled ? `已启用技能组: ${groupId}` : `已关闭技能组: ${groupId}`, 'success');
-      const data = await api.listSkills({ projectId });
-      setSkillCatalog(Array.isArray(data?.skills) ? data.skills : []);
-      setSkillGroups(Array.isArray(data?.builtinSkillGroups) ? data.builtinSkillGroups : []);
+      await loadSkillCatalog(currentThreadRef.current, projectId);
     } catch (err) {
       showToast(`更新技能组失败: ${err.message}`, 'error');
     }
@@ -1780,6 +1783,12 @@ export default function App() {
           clearPendingApprovals();
           loadThreads();
           loadWorkflows(currentThreadRef.current);
+          void loadSkillCatalog(
+            currentThreadRef.current,
+            currentThreadProjectRef.current,
+          ).catch((error) => {
+            console.warn('[Studio] failed to refresh the Skill catalog', error);
+          });
           if (turnStatus === 'failed') {
             loadTurnFailureDetails(currentThreadRef.current, data.turnId);
           }

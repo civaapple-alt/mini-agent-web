@@ -18,12 +18,14 @@ router = APIRouter(prefix="/api", tags=["World & Workflows"])
 
 
 @router.get("/skills", summary="List effective project Skills")
-async def list_skills(project_id: str | None = None) -> dict[str, Any]:
-    """Return the bounded Skill catalog advertised by the project runtime."""
-    client = await session_manager.get_client_for_project(project_id)
+async def list_skills(
+    project_id: str | None = None, thread_id: str | None = None
+) -> dict[str, Any]:
+    """Refresh and return the bounded Skill catalog from the project runtime."""
+    client = await session_manager.get_client_for_project(project_id, thread_id)
     manifest = getattr(client, "capability_manifest", {}) or {}
     raw_groups = manifest.get("builtinSkillGroups", []) or []
-    raw_skills = manifest.get("availableSkills", []) or []
+    raw_skills = await client.list_skills(thread_id)
     groups = (
         [
             group
@@ -46,16 +48,13 @@ async def list_skills(project_id: str | None = None) -> dict[str, Any]:
                 }
             )
             group_ids.add(spec["id"])
-    skills = (
-        [skill for skill in raw_skills if isinstance(skill, dict)][:64]
-        if isinstance(raw_skills, list)
-        else []
-    )
+    skills = [skill for skill in raw_skills if isinstance(skill, dict)][:64]
     return {
         "projectId": project_id or session_manager._current_project_id,
         "builtinSkillGroups": groups,
         "skills": skills,
     }
+
 
 # -----------------------------------------------------------------------------
 # Projects & Workspace Management
@@ -96,15 +95,12 @@ async def update_project_endpoint(
     try:
         updates = {k: v for k, v in req.model_dump().items() if v is not None}
         if (
-            (
-                req.builtin_skill_groups is not None
-                or req.subagent is not None
-                or req.notebook is not None
-            )
-            and (
-                session_manager.project_has_active_turn(project_id)
-                or session_manager.project_has_pending_approval(project_id)
-            )
+            req.builtin_skill_groups is not None
+            or req.subagent is not None
+            or req.notebook is not None
+        ) and (
+            session_manager.project_has_active_turn(project_id)
+            or session_manager.project_has_pending_approval(project_id)
         ):
             raise RuntimeError(
                 f"Project '{project_id}' has an active Turn or pending approval; wait for it to settle before changing runtime settings"

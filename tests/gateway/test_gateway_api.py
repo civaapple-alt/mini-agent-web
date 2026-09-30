@@ -188,7 +188,18 @@ async def test_gateway_skill_catalog_is_bounded_and_skill_toggle_rejects_active_
                     "enabled": True,
                 }
             ],
-        }
+        },
+        list_skills=AsyncMock(
+            return_value=[
+                {
+                    "name": "architect",
+                    "description": "Design types.",
+                    "source": "builtin",
+                    "group": "pstack",
+                    "enabled": True,
+                }
+            ]
+        ),
     )
     monkeypatch.setattr(
         session_manager, "get_client_for_project", AsyncMock(return_value=client_mock)
@@ -197,7 +208,10 @@ async def test_gateway_skill_catalog_is_bounded_and_skill_toggle_rejects_active_
 
     transport = ASGITransport(app=test_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        catalog = await client.get("/api/skills", params={"project_id": "project-1"})
+        catalog = await client.get(
+            "/api/skills",
+            params={"project_id": "project-1", "thread_id": "thread-42"},
+        )
         conflict = await client.patch(
             "/api/projects/project-1",
             json={"builtin_skill_groups": []},
@@ -207,6 +221,7 @@ async def test_gateway_skill_catalog_is_bounded_and_skill_toggle_rejects_active_
     assert (
         catalog.json()["skills"] == client_mock.capability_manifest["availableSkills"]
     )
+    client_mock.list_skills.assert_awaited_once_with("thread-42")
     assert conflict.status_code == 409
 
 
@@ -220,7 +235,8 @@ async def test_gateway_skill_catalog_lists_available_groups_without_pstack_speci
                 {"id": "knowledge-work", "version": "0.1.0", "enabled": True}
             ],
             "availableSkills": [],
-        }
+        },
+        list_skills=AsyncMock(return_value=[]),
     )
     monkeypatch.setattr(
         session_manager, "get_client_for_project", AsyncMock(return_value=client_mock)
@@ -375,13 +391,22 @@ async def test_gateway_threads_and_workflows(test_app):
             # 3. Settings
             resp_settings = await client.get("/api/settings")
             assert resp_settings.status_code == 200
-            assert set(resp_settings.json()) <= {"theme", "auto_scroll", "word_wrap", "font_size"}
+            assert set(resp_settings.json()) <= {
+                "theme",
+                "auto_scroll",
+                "word_wrap",
+                "font_size",
+            }
             assert "access" not in resp_settings.json()
             assert "policy" not in resp_settings.json()
 
             resp_set_update = await client.post(
                 "/api/settings",
-                json={"theme": "cyberpunk", "access": "full_machine", "policy": "automatic"},
+                json={
+                    "theme": "cyberpunk",
+                    "access": "full_machine",
+                    "policy": "automatic",
+                },
             )
             assert resp_set_update.status_code == 200
             assert (

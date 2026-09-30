@@ -137,6 +137,31 @@ async def test_sdk_model_catalog_request_and_thread_model_settings():
 
 
 @pytest.mark.asyncio
+async def test_sdk_list_skills_unwraps_action_result_and_uses_thread_id():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {
+            "value": {
+                "skills": [
+                    {"name": "installed", "qualifiedName": "installed", "enabled": True}
+                ]
+            },
+            "actionId": "action-1",
+        }
+
+    client._send_request = fake_send
+    skills = await client.list_skills("thread-42")
+
+    assert skills == [
+        {"name": "installed", "qualifiedName": "installed", "enabled": True}
+    ]
+    assert calls == [("skills/list", {"threadId": "thread-42"})]
+
+
+@pytest.mark.asyncio
 async def test_sdk_child_task_action_unwraps_action_result():
     client = MiniAgentClient()
     calls = []

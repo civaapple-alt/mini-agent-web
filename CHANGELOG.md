@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Refresh the effective Skill catalog from the App Server after each settled
+  Turn and when loading the Skill panel, so newly installed Skills can be
+  selected without restarting the Project runtime. Keep selected Skill bodies
+  in a bounded context slot and leave the stable system prompt unchanged.
 - Make `read_thread()` checkpoints directly resumable and let an omitted
   `start_thread()` ID attach to the App Server's active Session Thread.
 - Send per-turn reasoning effort in the App Server input, reject unsupported

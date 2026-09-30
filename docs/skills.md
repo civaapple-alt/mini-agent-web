@@ -37,13 +37,17 @@ and reads a new capability manifest.
 
 ## Skill catalog
 
-Use the following endpoint to read the current Project catalog:
+Use the following endpoint to refresh and read the current Project catalog:
 
 ```text
-GET /api/skills?project_id=<project-id>
+GET /api/skills?project_id=<project-id>&thread_id=<thread-id>
 ```
 
-The response is derived from the selected runtime's latest `initialize` result:
+The Gateway asks the selected App Server runtime to refresh its effective
+catalog through `skills/list`. Built-in group status still comes from the
+runtime's initialized capability manifest. The App Server also refreshes this
+catalog at the start of every Turn, so a Skill installed during a chat becomes
+available on the next send without a runtime restart.
 
 ```json
 {
@@ -67,7 +71,7 @@ The response is derived from the selected runtime's latest `initialize` result:
 ```
 
 The endpoint returns at most 64 skills and does not expose physical paths or
-skill bodies. The Gateway does not scan skill directories for the frontend.
+skill bodies. The Gateway and browser do not scan skill directories.
 
 ## Skill panel
 
@@ -89,9 +93,10 @@ group. The panel's `$` insertion always uses the canonical qualified name;
 compatibility aliases remain visible when provided by the manifest.
 
 If a group is enabled but the catalog contains no Skill entry for it, the panel
-shows a runtime-catalog warning and asks the user to refresh or restart the
-Project runtime. It does not scan the builtin directory or invent metadata in
-the browser.
+shows a runtime-catalog warning. Reloading the panel refreshes discovery; if a
+Skill still does not appear, check that its `SKILL.md` is in a supported
+directory and that the current Project runtime can read it. The browser does
+not scan the builtin directory or invent metadata.
 
 ## Explicit activation
 

@@ -316,7 +316,9 @@ export function settleStaleStreamingPresentation(messages, activeTurnId = null) 
 
 function hasAssistantBlockBoundary(blocks) {
   return blocks.some(
-    (block) => block.type === 'tool' || block.type === 'compaction'
+    (block) => block.type === 'tool'
+      || block.type === 'compaction'
+      || block.type === 'context_injected'
   );
 }
 
@@ -838,6 +840,27 @@ function presentationActivityNames(activity) {
 
 function appendPresentationActivity(blocks, activity, turnId) {
   if (!activity?.kind) return;
+  if (activity.kind === 'context_injected') {
+    const id = `context_${turnId}`;
+    const index = blocks.findIndex(
+      (block) => block.type === 'context_injected' && block.id === id,
+    );
+    const existing = index === -1 ? [] : blocks[index].records || [];
+    const records = new Map(existing.map((record) => [record.id, record]));
+    const incoming = activity.contextInjections
+      || activity.context_injections
+      || activity.records
+      || [];
+    for (const record of incoming) {
+      if (!record?.id) continue;
+      const previous = records.get(record.id);
+      if (previous?.fingerprint !== record.fingerprint) records.set(record.id, record);
+    }
+    const next = { type: 'context_injected', id, records: [...records.values()] };
+    if (index === -1) blocks.push(next);
+    else blocks[index] = next;
+    return;
+  }
   if (activity.kind === 'skill_group_activated') {
     const id = `workflow_${turnId}`;
     const index = blocks.findIndex((block) => block.type === 'skills' && block.id === id);
@@ -1172,7 +1195,10 @@ export function filterEmptyMessages(messages) {
       if (block.type === 'text' || block.type === 'thinking') {
         return Boolean(block.content?.trim?.());
       }
-      return block.type === 'tool' || block.type === 'compaction' || block.type === 'skills';
+      return block.type === 'tool'
+        || block.type === 'compaction'
+        || block.type === 'skills'
+        || block.type === 'context_injected';
     });
     return Boolean(
       message.text?.trim?.() ||
@@ -1234,12 +1260,26 @@ export function aggregateStreamEvent(messages, data) {
 
     if (
       type === 'tool_started' ||
+      type === 'context_injected' ||
       type === 'skill_group_activated' ||
       type === 'skills_loaded' ||
       type === 'skills_load_failed'
     ) {
       messages = settleThinkingBlocks(messages, targetIndex);
       messages = settleAssistantTextBlocks(messages, targetIndex);
+    }
+
+    if (type === 'context_injected') {
+      const copy = [...messages];
+      const last = { ...copy[targetIndex] };
+      const blocks = [...(last.blocks || [])];
+      appendPresentationActivity(blocks, {
+        kind: 'context_injected',
+        contextInjections: evt.records || evt.context_injections || [],
+      }, data.turnId || 'event');
+      last.blocks = blocks;
+      copy[targetIndex] = last;
+      return copy;
     }
 
     if (type === 'skill_group_activated') {

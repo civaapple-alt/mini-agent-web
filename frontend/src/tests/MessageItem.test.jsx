@@ -39,4 +39,48 @@ describe('MessageItem resend action', () => {
       workflow: message.workflow,
     });
   });
+
+  it('renders Host injection metadata separately from an ordinary file read tool', () => {
+    render(
+      <MessageItem
+        message={{
+          id: 'assistant-context',
+          role: 'assistant',
+          text: '',
+          blocks: [
+            {
+              type: 'context_injected',
+              id: 'context-turn-1',
+              records: [{
+                id: 'agents-main',
+                kind: 'project_instructions',
+                source: 'AGENTS.md',
+                workspace: 'main',
+                path: 'AGENTS.md',
+                scope: 'workspace',
+                bytes: 64,
+                fingerprint: 'abc123',
+                body: 'must not appear in the metadata card',
+              }],
+            },
+            {
+              type: 'tool',
+              id: 'read-1',
+              name: 'read_file',
+              status: 'completed',
+              output: 'ordinary read_file result',
+            },
+          ],
+        }}
+        isLast
+        isGenerating={false}
+      />,
+    );
+
+    expect(screen.getByText('Host 注入')).toBeDefined();
+    expect(screen.getByText('AGENTS.md')).toBeDefined();
+    expect(document.querySelector('.context-injection-card')).toBeTruthy();
+    expect(document.querySelector('.tool-card')).toBeTruthy();
+    expect(screen.queryByText('must not appear in the metadata card')).toBeNull();
+  });
 });

@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -88,6 +89,15 @@ def _bounded_int(value: Any) -> int:
     return 0
 
 
+def _optional_bounded_int(value: Any) -> int | None:
+    """Preserve missing measurements as unknown while bounding reported counts."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return max(0, int(value))
+    return None
+
+
 def _bounded_text(value: Any, limit: int = MAX_ERROR_CHARS) -> str | None:
     if not isinstance(value, str) or not value:
         return None
@@ -106,6 +116,71 @@ def _bounded_utf8_text(value: Any, max_bytes: int) -> str | None:
     suffix = "…"
     prefix = encoded[: max(0, max_bytes - len(suffix.encode("utf-8")))]
     return prefix.decode("utf-8", errors="ignore") + suffix
+
+
+def _visible_checkpoint_messages(messages: Any) -> list[dict[str, Any]]:
+    """Exclude internal Context and system prompt bodies from browser history."""
+    if not isinstance(messages, list):
+        return []
+    return [
+        message
+        for message in messages
+        if isinstance(message, dict)
+        and message.get("role") in {"user", "assistant", "tool"}
+    ]
+
+
+def _context_injection_projection(source: Any) -> dict[str, Any] | None:
+    if not isinstance(source, dict):
+        return None
+    projected = {
+        "id": _bounded_text(source.get("id"), 128) or "",
+        "kind": _bounded_text(source.get("kind"), 64) or "other",
+        "source": _bounded_text(source.get("source"), 256) or "",
+        "workspace": _bounded_text(source.get("workspace"), 256),
+        "path": _bounded_text(source.get("path"), 256),
+        "scope": _bounded_text(source.get("scope"), 256) or "",
+        "bytes": _bounded_int(source.get("bytes")),
+        "fingerprint": _bounded_text(source.get("fingerprint"), 128) or "",
+        "supersedes": _bounded_text(source.get("supersedes"), 128),
+        "reused": bool(source.get("reused", False)),
+    }
+    if not projected["id"] or not projected["fingerprint"]:
+        return None
+    return projected
+
+
+def _checkpoint_context_injections(checkpoint: Any) -> list[dict[str, Any]]:
+    if not isinstance(checkpoint, dict):
+        return []
+    restored = checkpoint.get("context_injections")
+    records = restored if isinstance(restored, list) else []
+    if not records:
+        messages = checkpoint.get("messages")
+        for message in messages if isinstance(messages, list) else []:
+            if not isinstance(message, dict) or message.get("role") != "context":
+                continue
+            text = message.get("text")
+            if not isinstance(text, str):
+                continue
+            match = re.search(
+                r"<context_injection_metadata>(.{1,8192}?)</context_injection_metadata>",
+                text[: 16 * 1024],
+                re.DOTALL,
+            )
+            if not match:
+                continue
+            try:
+                records.append(json.loads(match.group(1)))
+            except json.JSONDecodeError:
+                continue
+
+    current: dict[str, dict[str, Any]] = {}
+    for record in records[:256]:
+        projected = _context_injection_projection(record)
+        if projected:
+            current[projected["id"]] = projected
+    return list(current.values())[-64:]
 
 
 def _field(value: dict[str, Any], snake: str, camel: str) -> Any:
@@ -392,6 +467,38 @@ def _turn_presentation_projection(record: dict[str, Any]) -> dict[str, Any] | No
         return None
 
     projected: dict[str, Any] = {"turnId": turn_id, "activities": []}
+    context_usage = presentation.get("contextUsage")
+    if isinstance(context_usage, dict):
+        projected_usage: dict[str, Any] = {}
+        usage = context_usage.get("usage")
+        if isinstance(usage, dict):
+            projected_usage["usage"] = {
+                "inputTokens": _optional_bounded_int(
+                    usage.get("input_tokens", usage.get("inputTokens"))
+                ),
+                "cachedInputTokens": _optional_bounded_int(
+                    usage.get("cached_input_tokens", usage.get("cachedInputTokens"))
+                ),
+                "outputTokens": _optional_bounded_int(
+                    usage.get("output_tokens", usage.get("outputTokens"))
+                ),
+            }
+        byte_breakdown = context_usage.get("contextBytes")
+        if isinstance(byte_breakdown, dict):
+            projected_usage["contextBytes"] = {
+                key: _optional_bounded_int(byte_breakdown.get(key))
+                for key in (
+                    "systemPrompt",
+                    "projectInstructions",
+                    "skills",
+                    "workspaceState",
+                    "conversation",
+                    "tools",
+                    "other",
+                )
+                if key in byte_breakdown
+            }
+        projected["contextUsage"] = projected_usage
     workflow = presentation.get("workflow")
     if isinstance(workflow, dict):
         workflow_id = _bounded_text(workflow.get("id"), 256)
@@ -416,6 +523,7 @@ def _turn_presentation_projection(record: dict[str, Any]) -> dict[str, Any] | No
             "skill_group_activated",
             "skills_loaded",
             "skills_load_failed",
+            "context_injected",
         }:
             continue
         item: dict[str, Any] = {
@@ -442,6 +550,14 @@ def _turn_presentation_projection(record: dict[str, Any]) -> dict[str, Any] | No
                 )
                 if value
             ]
+        if kind == "context_injected":
+            records = activity.get("contextInjections")
+            if isinstance(records, list):
+                item["contextInjections"] = [
+                    source_projection
+                    for source in records[:32]
+                    if (source_projection := _context_injection_projection(source))
+                ]
         projected["activities"].append(item)
     return projected
 
@@ -455,7 +571,7 @@ def _checkpoint_projection(record: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(message, dict):
                 continue
             role = message.get("role")
-            if role not in ("user", "assistant", "system", "tool", "context"):
+            if role not in ("user", "assistant", "tool"):
                 continue
             projected = {
                 "role": role,
@@ -486,6 +602,7 @@ def _checkpoint_projection(record: dict[str, Any]) -> dict[str, Any]:
         "seq": _bounded_int(record.get("seq")),
         "timestamp_ms": _bounded_int(record.get("timestamp_ms")),
         "messages": bounded_messages,
+        "context_injections": _checkpoint_context_injections(record),
     }
 
 
@@ -737,6 +854,7 @@ class SessionCatalog:
             "messages": entry.get("messages", []),
             "items": entry.get("items", []),
             "presentations": entry.get("presentations", []),
+            "contextInjections": entry.get("context_injections", []),
             "session": entry,
         }
 
@@ -1653,9 +1771,11 @@ class SessionCatalog:
                 if value is not None:
                     entry[target_key] = value
         if include_history:
-            entry["messages"] = (
-                latest_checkpoint.get("messages", []) if latest_checkpoint else []
+            checkpoint = latest_checkpoint or {}
+            entry["messages"] = _visible_checkpoint_messages(
+                checkpoint.get("messages", [])
             )
+            entry["context_injections"] = _checkpoint_context_injections(checkpoint)
             entry["items"] = [
                 {"turnId": record.get("turn_id"), "item": projected}
                 for record in records

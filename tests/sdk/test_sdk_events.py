@@ -9,9 +9,11 @@ from mini_agent import (
     AssistantTextDeltaEvent,
     ContextCompactionFinishedEvent,
     ContextCompactionStartedEvent,
+    ContextInjectedEvent,
     GenericEvent,
     ItemLifecycleNotification,
     MiniAgentClient,
+    ModelRespondedEvent,
     ModelUsage,
     RunFailedEvent,
     RunFailure,
@@ -54,6 +56,45 @@ from mini_agent.client import (
                 "usage": {"input_tokens": 10, "output_tokens": 4},
             },
             ContextCompactionFinishedEvent,
+        ),
+        (
+            {
+                "type": "context_injected",
+                "records": [
+                    {
+                        "id": "workspace_agents_main",
+                        "kind": "project_instructions",
+                        "source": "AGENTS.md",
+                        "workspace": "main",
+                        "path": "AGENTS.md",
+                        "scope": "workspace",
+                        "bytes": 64,
+                        "fingerprint": "abc123",
+                        "reused": False,
+                    }
+                ],
+            },
+            ContextInjectedEvent,
+        ),
+        (
+            {
+                "type": "model_responded",
+                "usage": {
+                    "input_tokens": 1200,
+                    "cached_input_tokens": 850,
+                    "output_tokens": 12,
+                },
+                "context_bytes": {
+                    "systemPrompt": 100,
+                    "projectInstructions": 200,
+                    "skills": 50,
+                    "workspaceState": 0,
+                    "conversation": 300,
+                    "tools": 75,
+                    "other": 0,
+                },
+            },
+            ModelRespondedEvent,
         ),
         (
             {"type": "run_finished", "stop_reason": "completed", "steps": 2},
@@ -124,6 +165,16 @@ def test_parse_event_matches_protocol_event_surface(payload, event_class):
         assert event.reason == RunFailure(type="limit_exceeded", detail={"actual": 9})
     if isinstance(event, SkillsLoadedEvent):
         assert event.phase == "started"
+    if isinstance(event, ContextInjectedEvent):
+        assert event.records[0].source == "AGENTS.md"
+        assert event.records[0].bytes == 64
+        assert not hasattr(event.records[0], "body")
+    if isinstance(event, ModelRespondedEvent):
+        assert event.usage is not None
+        assert event.usage.input_tokens == 1200
+        assert event.usage.cached_input_tokens == 850
+        assert event.context_bytes is not None
+        assert event.context_bytes.project_instructions == 200
 
 
 def test_legacy_skills_loaded_event_defaults_to_loaded_phase():
@@ -131,6 +182,20 @@ def test_legacy_skills_loaded_event_defaults_to_loaded_phase():
 
     assert isinstance(event, SkillsLoadedEvent)
     assert event.phase == "loaded"
+
+
+def test_model_responded_event_keeps_unreported_cache_usage_unknown():
+    event = parse_event(
+        {
+            "type": "model_responded",
+            "usage": {"input_tokens": 12, "output_tokens": 3},
+        }
+    )
+
+    assert isinstance(event, ModelRespondedEvent)
+    assert event.usage == ModelUsage(
+        input_tokens=12, cached_input_tokens=None, output_tokens=3, total_tokens=15
+    )
 
 
 @pytest.mark.asyncio

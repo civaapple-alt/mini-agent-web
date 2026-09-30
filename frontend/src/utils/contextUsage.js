@@ -1,0 +1,91 @@
+export const CONTEXT_CATEGORIES = [
+  ['systemPrompt', '系统提示词'],
+  ['projectInstructions', '项目指令'],
+  ['skills', '技能'],
+  ['workspaceState', '工作区状态'],
+  ['conversation', '会话内容'],
+  ['tools', '工具定义'],
+  ['other', '其他'],
+];
+
+function finiteNonNegative(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.floor(number) : null;
+}
+
+function field(value, camel, snake = camel) {
+  return value?.[camel] ?? value?.[snake];
+}
+
+export function normalizeContextUsage(value) {
+  if (!value || typeof value !== 'object') return null;
+  const source = value.contextUsage || value.context_usage || value;
+  const usage = source.usage && typeof source.usage === 'object'
+    ? source.usage
+    : source;
+  const rawBytes = source.contextBytes || source.context_bytes;
+  const contextBytes = rawBytes && typeof rawBytes === 'object'
+    ? Object.fromEntries(CONTEXT_CATEGORIES.map(([key]) => [
+      key,
+      finiteNonNegative(field(rawBytes, key)),
+    ]))
+    : null;
+
+  return {
+    inputTokens: usage && typeof usage === 'object'
+      ? finiteNonNegative(field(usage, 'inputTokens', 'input_tokens'))
+      : null,
+    cachedInputTokens: usage && typeof usage === 'object'
+      ? finiteNonNegative(field(usage, 'cachedInputTokens', 'cached_input_tokens'))
+      : null,
+    outputTokens: usage && typeof usage === 'object'
+      ? finiteNonNegative(field(usage, 'outputTokens', 'output_tokens'))
+      : null,
+    contextBytes,
+  };
+}
+
+export function mergeContextInjectionRecords(current = [], incoming = []) {
+  const records = new Map(
+    (current || [])
+      .filter((record) => record?.id)
+      .map((record) => [record.id, record]),
+  );
+  for (const record of incoming || []) {
+    if (!record?.id) continue;
+    const existing = records.get(record.id);
+    if (existing?.fingerprint === record.fingerprint) continue;
+    records.set(record.id, record);
+  }
+  return [...records.values()];
+}
+
+export function estimateContextCategoryTokens(contextUsage) {
+  const normalized = normalizeContextUsage(contextUsage);
+  if (!normalized || normalized.inputTokens === null || !normalized.contextBytes) return null;
+  const byteTotal = CONTEXT_CATEGORIES.reduce(
+    (total, [key]) => total + (normalized.contextBytes[key] || 0),
+    0,
+  );
+  if (byteTotal <= 0) return null;
+
+  const entries = CONTEXT_CATEGORIES.map(([key, label]) => ({
+    key,
+    label,
+    bytes: normalized.contextBytes[key] || 0,
+    tokens: Math.floor(
+      normalized.inputTokens * (normalized.contextBytes[key] || 0) / byteTotal,
+    ),
+  }));
+  const assigned = entries.reduce((total, item) => total + item.tokens, 0);
+  const remainder = normalized.inputTokens - assigned;
+  if (remainder > 0) {
+    const largest = entries.reduce(
+      (best, item, index) => item.bytes > entries[best].bytes ? index : best,
+      0,
+    );
+    entries[largest].tokens += remainder;
+  }
+  return entries;
+}

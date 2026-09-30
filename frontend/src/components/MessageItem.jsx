@@ -538,6 +538,50 @@ export default function MessageItem({
                 />
               );
             }
+            if (block.type === 'context_injected') {
+              const records = block.records || [];
+              return (
+                <section
+                  key={block.id || `context_injected_${idx}`}
+                  className="context-injection-card"
+                  aria-label="Host 注入的上下文来源"
+                >
+                  <div className="context-injection-heading">
+                    <FileText size={13} />
+                    <strong>Host 注入</strong>
+                    <span>上下文来源元数据</span>
+                  </div>
+                  {records.length === 0 ? (
+                    <div className="context-injection-empty">来源未知</div>
+                  ) : (
+                    <ul className="context-injection-list">
+                      {records.map((record) => (
+                        <li key={`${record.id}:${record.fingerprint}`}>
+                          <div className="context-injection-source">
+                            <strong>{record.source || '来源未知'}</strong>
+                            <span>{record.kind || '上下文'}</span>
+                          </div>
+                          <div className="context-injection-details">
+                            <span>
+                              {[record.workspace, record.path].filter(Boolean).join(' · ')
+                                || '来源未知'}
+                            </span>
+                            <span>{Number(record.bytes || 0).toLocaleString()} B</span>
+                            <span>作用范围：{record.scope || '未知'}</span>
+                            {record.supersedes && (
+                              <span title={record.supersedes}>
+                                更新自 {record.supersedes.slice(0, 12)}
+                              </span>
+                            )}
+                            {record.reused && <span>缓存来源复用</span>}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              );
+            }
             return null;
           })
         ) : (

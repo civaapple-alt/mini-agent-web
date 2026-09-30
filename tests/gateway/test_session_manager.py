@@ -3662,6 +3662,156 @@ def test_session_catalog_projects_bounded_turn_presentation():
     }
 
 
+def test_session_catalog_projects_context_metadata_and_actual_cached_usage():
+    from server.session_catalog import _turn_presentation_projection
+
+    projected = _turn_presentation_projection(
+        {
+            "turn_id": "turn-context",
+            "presentation": {
+                "contextUsage": {
+                    "usage": {
+                        "input_tokens": 1200,
+                        "cached_input_tokens": 850,
+                        "output_tokens": 12,
+                    },
+                    "contextBytes": {
+                        "systemPrompt": 100,
+                        "projectInstructions": 200,
+                        "skills": 50,
+                        "workspaceState": 0,
+                        "conversation": 300,
+                        "tools": 75,
+                        "other": 0,
+                    },
+                },
+                "activities": [
+                    {
+                        "kind": "context_injected",
+                        "afterAssistantSegments": 0,
+                        "contextInjections": [
+                            {
+                                "id": "project_instruction_main",
+                                "kind": "project_instructions",
+                                "source": "AGENTS.md",
+                                "workspace": "main",
+                                "path": "AGENTS.md",
+                                "scope": "workspace",
+                                "bytes": 64,
+                                "fingerprint": "abc123",
+                                "supersedes": None,
+                                "reused": False,
+                                "body": "source text must never be projected",
+                            }
+                        ],
+                    }
+                ],
+            },
+        }
+    )
+
+    assert projected["contextUsage"] == {
+        "usage": {
+            "inputTokens": 1200,
+            "cachedInputTokens": 850,
+            "outputTokens": 12,
+        },
+        "contextBytes": {
+            "systemPrompt": 100,
+            "projectInstructions": 200,
+            "skills": 50,
+            "workspaceState": 0,
+            "conversation": 300,
+            "tools": 75,
+            "other": 0,
+        },
+    }
+    source = projected["activities"][0]["contextInjections"][0]
+    assert source["source"] == "AGENTS.md"
+    assert source["bytes"] == 64
+    assert "body" not in source
+
+
+def test_session_catalog_keeps_unreported_cached_usage_unknown():
+    from server.session_catalog import _turn_presentation_projection
+
+    projected = _turn_presentation_projection(
+        {
+            "turn_id": "turn-context-unknown-cache",
+            "presentation": {
+                "contextUsage": {
+                    "usage": {"input_tokens": 1200},
+                    "contextBytes": {"projectInstructions": 128},
+                }
+            },
+        }
+    )
+
+    assert projected["contextUsage"] == {
+        "usage": {
+            "inputTokens": 1200,
+            "cachedInputTokens": None,
+            "outputTokens": None,
+        },
+        "contextBytes": {"projectInstructions": 128},
+    }
+
+
+def test_browser_history_omits_internal_context_and_system_prompt_bodies():
+    from server.session_catalog import _visible_checkpoint_messages
+
+    messages = _visible_checkpoint_messages(
+        [
+            {"role": "user", "text": "question"},
+            {"role": "context", "text": "private AGENTS.md contents"},
+            {"role": "system", "text": "stable system prompt"},
+            {"role": "assistant", "text": "answer"},
+        ]
+    )
+
+    assert messages == [
+        {"role": "user", "text": "question"},
+        {"role": "assistant", "text": "answer"},
+    ]
+
+
+def test_checkpoint_recovers_only_context_source_metadata_from_session_messages():
+    from server.session_catalog import (
+        _checkpoint_context_injections,
+        _checkpoint_projection,
+    )
+
+    metadata = {
+        "id": "agents-main",
+        "kind": "project_instructions",
+        "source": "AGENTS.md",
+        "workspace": "main",
+        "path": "AGENTS.md",
+        "scope": "workspace",
+        "bytes": 64,
+        "fingerprint": "abc123",
+    }
+    context_text = (
+        '<agents fingerprint="abc123">'
+        "<context_injection_metadata>"
+        + json.dumps(metadata)
+        + "</context_injection_metadata>\nprivate source body</agents>"
+    )
+    checkpoint = {
+        "messages": [
+            {"role": "context", "text": context_text},
+            {"role": "user", "text": "question"},
+        ]
+    }
+
+    sources = _checkpoint_context_injections(checkpoint)
+    oversized_projection = _checkpoint_projection(checkpoint)
+
+    assert sources == [metadata | {"supersedes": None, "reused": False}]
+    assert oversized_projection["context_injections"] == sources
+    assert "private source body" not in json.dumps(oversized_projection)
+
+
 def test_session_catalog_skips_oversized_checkpoint_but_keeps_goal_state(
     tmp_path, monkeypatch
 ):

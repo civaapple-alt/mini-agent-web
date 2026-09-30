@@ -1095,6 +1095,56 @@ test('history restores assistant segments and presentation activity in item orde
   ]);
 });
 
+test('context injection events become metadata-only transcript blocks and replay after restart', () => {
+  const record = {
+    id: 'agents-main',
+    kind: 'project_instructions',
+    source: 'AGENTS.md',
+    workspace: 'main',
+    path: 'AGENTS.md',
+    scope: 'workspace',
+    bytes: 64,
+    fingerprint: 'abc123',
+  };
+  let live = aggregateStreamEvent([], {
+    type: 'event',
+    turnId: 'turn-context',
+    event: { type: 'turn_started' },
+  });
+  live = aggregateStreamEvent(live, {
+    type: 'event',
+    turnId: 'turn-context',
+    event: { type: 'context_injected', records: [record] },
+  });
+
+  assert.deepEqual(live[0].blocks, [{
+    type: 'context_injected',
+    id: 'context_turn-context',
+    records: [record],
+  }]);
+  assert.equal(filterEmptyMessages(live).length, 1);
+
+  const restored = restorePersistedTurnPresentation(
+    [{ id: 'turn_turn-context', role: 'assistant', turnId: 'turn-context', blocks: [] }],
+    [{ turnId: 'turn-context', item: { type: 'userMessage', id: 'input-1', text: 'Inspect' } }],
+    [{
+      turnId: 'turn-context',
+      activities: [{
+        kind: 'context_injected',
+        afterAssistantSegments: 0,
+        contextInjections: [record],
+      }],
+    }],
+  );
+
+  assert.equal(restored.length, 1);
+  assert.deepEqual(restored[0].blocks[0], {
+    type: 'context_injected',
+    id: 'context_turn-context',
+    records: [record],
+  });
+});
+
 test('history restores assistant turns omitted from a compacted checkpoint', () => {
   const restored = restorePersistedTurnPresentation([
     {

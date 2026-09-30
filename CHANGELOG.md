@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Show persisted Host context injections as metadata-only transcript cards and
+  a current source/byte breakdown in the workspace panel. Report the latest
+  Provider input and cached-input token usage in the composer; label per-category
+  token allocation as a byte-share estimate and keep unavailable values unknown.
 - Refresh the effective Skill catalog from the App Server after each settled
   Turn and when loading the Skill panel, so newly installed Skills can be
   selected without restarting the Project runtime. Keep selected Skill bodies

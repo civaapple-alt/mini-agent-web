@@ -19,13 +19,11 @@ import {
   Sparkles,
   BookOpen,
   Bot,
-  ChevronDown,
-  Check,
-  Copy,
   PanelRightOpen,
   PanelRightClose,
 } from 'lucide-react';
 import { api } from '../api';
+import { CONTEXT_CATEGORIES, normalizeContextUsage } from '../utils/contextUsage';
 import { readStateRevision, shouldApplyStateRevision } from '../utils/revisionState';
 import StatusDetailsPane from './StatusDetailsPane';
 import SkillPanel from './SkillPanel';
@@ -249,85 +247,12 @@ function WorkflowFileContent({ path, content, emptyMessage }) {
   );
 }
 
-function formatXmlContext(context) {
-  if (!context) return [];
-  const separated = context
-    .replace(/>\s*</g, '><')
-    .replace(/></g, '>\n<')
-    .replace(/>([^<\r\n]+)</g, '>\n$1\n<');
-  let depth = 0;
-  return separated
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const closing = /^<\//.test(line);
-      const opening = /^<[A-Za-z_][\w:.-]*/.test(line)
-        && !/^<\?/.test(line)
-        && !/^<!/.test(line)
-        && !/\/>$/.test(line);
-      if (closing) depth = Math.max(0, depth - 1);
-      const result = `${'  '.repeat(depth)}${line}`;
-      if (opening) depth += 1;
-      return result;
-    });
-}
-
-function renderXmlLine(line, lineIndex) {
-  const tagStart = line.indexOf('<');
-  if (tagStart < 0) {
-    return (
-      <>
-        <span className="xml-line-number" aria-hidden="true">{lineIndex + 1}</span>
-        <span className="xml-line-text">{line}</span>
-      </>
-    );
-  }
-
-  const prefix = line.slice(0, tagStart);
-  const tag = line.slice(tagStart);
-  const parts = [];
-  let cursor = 0;
-  const tokenPattern = /(<\/?[A-Za-z_][\w:.-]*|\/?>|[A-Za-z_][\w:.-]*(?=\s*=)|"[^"\r\n]*"|'[^'\r\n]*')/g;
-  tag.replace(tokenPattern, (match, _unused, offset) => {
-    if (offset > cursor) parts.push(<span key={`text-${offset}`}>{tag.slice(cursor, offset)}</span>);
-    const className = match.startsWith('<') || match.includes('>')
-      ? 'xml-tag-token'
-      : match.startsWith('"') || match.startsWith("'")
-        ? 'xml-attribute-value'
-        : 'xml-attribute-name';
-    parts.push(<span className={className} key={`token-${offset}`}>{match}</span>);
-    cursor = offset + match.length;
-    return match;
-  });
-  if (cursor < tag.length) parts.push(<span key="tail">{tag.slice(cursor)}</span>);
-
-  return (
-    <>
-      <span className="xml-line-number" aria-hidden="true">{lineIndex + 1}</span>
-      <span className="xml-line-text">{prefix}{parts}</span>
-    </>
-  );
-}
-
-function XmlContextPreview({ context }) {
-  const lines = formatXmlContext(context);
-  return (
-    <div className="xml-preview prompt-context-raw" role="region" aria-label="格式化 XML 上下文" tabIndex="0">
-      {lines.length > 0 ? lines.map((line, index) => (
-        <div className="xml-line" key={`${index}-${line}`}>
-          {renderXmlLine(line, index)}
-        </div>
-      )) : (
-        <div className="xml-empty">暂无注入内容</div>
-      )}
-    </div>
-  );
-}
-
-export function PromptContextCard({ context, status = {}, workspace = '' }) {
-  const [expanded, setExpanded] = useState(false);
-  const [copied, setCopied] = useState(false);
+export function PromptContextCard({
+  injections = [],
+  contextUsage = null,
+  status = {},
+  workspace = '',
+}) {
   const roots = Array.isArray(status.workspace_roots) ? status.workspace_roots : [];
   const sessionRoots = Array.isArray(status.session_read_roots)
     ? status.session_read_roots
@@ -341,26 +266,29 @@ export function PromptContextCard({ context, status = {}, workspace = '' }) {
     ['策略', status.policy || 'interactive'],
     ['文件范围', status.direct_file_scope || 'workspace'],
   ];
-
-  const handleCopy = async () => {
-    if (!context || !navigator.clipboard?.writeText) return;
-    try {
-      await navigator.clipboard.writeText(context);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      setCopied(false);
-    }
-  };
+  const normalizedUsage = normalizeContextUsage(contextUsage);
+  const contextBytes = normalizedUsage?.contextBytes;
+  const categories = contextBytes
+    ? CONTEXT_CATEGORIES.map(([key, label]) => ({
+      key,
+      label,
+      bytes: contextBytes[key],
+    })).filter((category) => category.bytes > 0)
+    : [];
+  const injectedBytes = (injections || []).reduce(
+    (total, record) => total + Math.max(0, Number(record?.bytes) || 0),
+    0,
+  );
+  const maxCategoryBytes = Math.max(1, ...categories.map((category) => category.bytes));
 
   return (
     <div className="detail-card full-width prompt-context-card">
       <div className="prompt-context-header">
         <div>
-          <span className="card-label">系统注入上下文</span>
-          <span className="prompt-context-caption">模型可见的环境与运行约束</span>
+          <span className="card-label">会话上下文</span>
+          <span className="prompt-context-caption">来源元数据与最近请求的字节构成</span>
         </div>
-        <span className="prompt-context-badge">已注入</span>
+        <span className="prompt-context-badge">{injections.length} 个来源</span>
       </div>
 
       <div className="prompt-context-summary" aria-label="系统注入上下文摘要">
@@ -380,36 +308,62 @@ export function PromptContextCard({ context, status = {}, workspace = '' }) {
           </span>
         )}
         <span>{availableCommands.length} 个可用命令</span>
-        <span>{context ? `${context.length.toLocaleString()} 字符` : '无原文'}</span>
+        <span>来源共 {injectedBytes.toLocaleString()} B</span>
+        <span>
+          最近请求：{normalizedUsage?.inputTokens === null || normalizedUsage?.inputTokens === undefined
+            ? '用量未知'
+            : `${normalizedUsage.inputTokens.toLocaleString()} tokens`}
+        </span>
       </div>
 
-      <div className="prompt-context-actions">
-        <button
-          type="button"
-          className="prompt-context-toggle"
-          onClick={() => setExpanded((value) => !value)}
-          aria-expanded={expanded}
-        >
-          <ChevronDown size={13} className={expanded ? 'prompt-context-chevron expanded' : 'prompt-context-chevron'} />
-          <span>{expanded ? '收起完整注入内容' : '查看完整注入内容'}</span>
-        </button>
-        {expanded && (
-          <button
-            type="button"
-            className="prompt-context-copy"
-            onClick={handleCopy}
-            disabled={!context}
-            title="复制完整注入内容"
-          >
-            {copied ? <Check size={12} /> : <Copy size={12} />}
-            <span>{copied ? '已复制' : '复制原文'}</span>
-          </button>
+      <div className="prompt-context-section">
+        <strong>注入来源</strong>
+        {injections.length === 0 ? (
+          <p className="prompt-context-unknown">来源未知（旧会话未保存来源元数据）</p>
+        ) : (
+          <ul className="prompt-context-sources">
+            {injections.map((record) => (
+              <li key={`${record.id}:${record.fingerprint}`}>
+                <div className="prompt-context-source-title">
+                  <strong>{record.source || '来源未知'}</strong>
+                  <span>{Number(record.bytes || 0).toLocaleString()} B</span>
+                </div>
+                <div className="prompt-context-source-meta">
+                  {[record.workspace, record.path].filter(Boolean).join(' · ') || '来源未知'}
+                  {' · '}{record.scope || '作用范围未知'}
+                  {record.supersedes && (
+                    <span title={record.supersedes}>
+                      {' · '}更新自 {record.supersedes.slice(0, 12)}
+                    </span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 
-      {expanded && (
-        <XmlContextPreview context={context} />
-      )}
+      <div className="prompt-context-section">
+        <strong>最近一次模型输入</strong>
+        {categories.length === 0 ? (
+          <p className="prompt-context-unknown">字节构成未知</p>
+        ) : (
+          <div className="prompt-context-breakdown">
+            {categories.map((category) => (
+              <div className="prompt-context-breakdown-row" key={category.key}>
+                <span>{category.label}</span>
+                <div className="prompt-context-bar" aria-hidden="true">
+                  <span style={{ width: `${Math.max(2, category.bytes / maxCategoryBytes * 100)}%` }} />
+                </div>
+                <strong>{category.bytes.toLocaleString()} B</strong>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="prompt-context-estimate-note">
+          字节数来自最近一次模型请求；按字节估算的 token 数显示在输入区。
+        </p>
+      </div>
     </div>
   );
 }
@@ -427,6 +381,8 @@ export default function SidePanel({
   goalState,
   lastTurnResult = null,
   status = null,
+  contextInjections = [],
+  contextUsage = null,
   sessionMeta = null,
   threadId = 'default',
   projectId = null,
@@ -1246,13 +1202,12 @@ export default function SidePanel({
                     </div>
                   </div>
 
-                  {worldData.context && (
-                    <PromptContextCard
-                      context={worldData.context}
-                      status={worldData.status}
-                      workspace={worldData.workspace}
-                    />
-                  )}
+                  <PromptContextCard
+                    injections={contextInjections}
+                    contextUsage={contextUsage}
+                    status={worldData.status}
+                    workspace={worldData.workspace}
+                  />
                 </div>
               ) : (
                 <div className="loading-placeholder font-mono">加载环境探测数据中...</div>

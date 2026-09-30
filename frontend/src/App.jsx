@@ -55,6 +55,10 @@ import {
 } from './utils/inputTrace.js';
 import { startImplementationTurn } from './utils/planWorkflow.js';
 import { publishChildRuntimeEvent } from './utils/childRuntimeEvents.js';
+import {
+  mergeContextInjectionRecords,
+  normalizeContextUsage,
+} from './utils/contextUsage.js';
 import './App.css';
 
 function readThreadMeta(thread, fallbackTitle = null) {
@@ -125,6 +129,8 @@ export default function App() {
   ));
   const [messages, setMessages] = useState([]);
   const [threadItems, setThreadItems] = useState([]);
+  const [contextUsage, setContextUsage] = useState(null);
+  const [contextInjections, setContextInjections] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isInterrupting, setIsInterrupting] = useState(false);
   const [resumeExecutionBusy, setResumeExecutionBusy] = useState(false);
@@ -416,6 +422,8 @@ export default function App() {
     setLastWorkflowEvent(null);
     setMessages([]);
     setThreadItems([]);
+    setContextUsage(null);
+    setContextInjections([]);
     setIsLoadingHistory(loadingHistory);
   };
 
@@ -1091,6 +1099,23 @@ export default function App() {
         itemEntries,
       );
       const presentations = cp.presentations || cp.session?.presentations || [];
+      const latestContextPresentation = [...presentations]
+        .reverse()
+        .find((presentation) => presentation?.contextUsage);
+      setContextUsage(
+        latestContextPresentation
+          ? normalizeContextUsage(latestContextPresentation.contextUsage)
+          : null,
+      );
+      const presentationInjections = presentations.flatMap((presentation) => (
+        (presentation?.activities || [])
+          .filter((activity) => activity?.kind === 'context_injected')
+          .flatMap((activity) => activity.contextInjections || [])
+      ));
+      setContextInjections(mergeContextInjectionRecords(
+        presentationInjections,
+        cp.contextInjections || cp.context_injections || [],
+      ));
       const workflowByTurn = new Map(
         presentations
           .filter((presentation) => presentation?.turnId && presentation.workflow?.id)
@@ -1720,6 +1745,17 @@ export default function App() {
         setActiveTurnId(eventTurnId);
       }
       const evt = data.event || {};
+      if (evt.type === 'model_responded') {
+        setContextUsage(normalizeContextUsage({
+          usage: evt.usage,
+          contextBytes: evt.contextBytes || evt.context_bytes,
+        }));
+      } else if (evt.type === 'context_injected') {
+        setContextInjections((previous) => mergeContextInjectionRecords(
+          previous,
+          evt.records || evt.contextInjections || evt.context_injections || [],
+        ));
+      }
       if (evt.type === 'turn_started') {
         if (!fromReplay) rememberTurnStart(eventKey, eventTurnId);
         const goalObjective = extractGoalObjective(evt.prompt);
@@ -2849,6 +2885,8 @@ export default function App() {
       onToast={showToast}
       planActive={planActive}
       statusModel={statusModel}
+      contextUsage={contextUsage}
+      contextInjections={contextInjections}
       isInterrupting={isInterrupting}
       pendingApproval={pendingApproval}
       pendingApprovalCount={pendingApprovals.length}

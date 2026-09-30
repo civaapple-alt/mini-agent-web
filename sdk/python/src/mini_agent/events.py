@@ -7,7 +7,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from mini_agent.types import ModelUsage, ToolCall, ToolOutcome
+from mini_agent.types import (
+    ContextByteBreakdown,
+    ContextInjectionRecord,
+    ModelUsage,
+    ToolCall,
+    ToolOutcome,
+)
 
 
 @dataclass
@@ -95,6 +101,24 @@ class SkillGroupActivatedEvent(EventModel):
 
 
 @dataclass
+class ContextInjectedEvent(EventModel):
+    """Metadata describing Host-owned context sources added to a Session."""
+
+    records: list[ContextInjectionRecord] = field(default_factory=list)
+    type: str = "context_injected"
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ContextInjectedEvent:
+        return cls(
+            records=[
+                ContextInjectionRecord.from_dict(record)
+                for record in data.get("records", [])
+                if isinstance(record, dict)
+            ]
+        )
+
+
+@dataclass
 class RunStartedEvent(EventModel):
     """Emitted when an agent harness run loop starts."""
 
@@ -150,6 +174,7 @@ class ModelRespondedEvent(EventModel):
     text: str
     tool_calls: list[ToolCall] = field(default_factory=list)
     usage: ModelUsage | None = None
+    context_bytes: ContextByteBreakdown | None = None
     type: str = "model_responded"
 
     @classmethod
@@ -159,7 +184,14 @@ class ModelRespondedEvent(EventModel):
             reasoning=data.get("reasoning", ""),
             text=data.get("text", ""),
             tool_calls=tool_calls,
-            usage=ModelUsage.from_dict(data.get("usage")),
+            usage=(
+                ModelUsage.from_dict(data["usage"])
+                if isinstance(data.get("usage"), dict)
+                else None
+            ),
+            context_bytes=ContextByteBreakdown.from_dict(
+                data.get("context_bytes") or data.get("contextBytes")
+            ),
         )
 
 
@@ -226,7 +258,11 @@ class ContextCompactionFinishedEvent(EventModel):
         return cls(
             before_bytes=data.get("before_bytes") or data.get("beforeBytes", 0),
             after_bytes=data.get("after_bytes") or data.get("afterBytes", 0),
-            usage=ModelUsage.from_dict(data.get("usage")),
+            usage=(
+                ModelUsage.from_dict(data["usage"])
+                if isinstance(data.get("usage"), dict)
+                else None
+            ),
         )
 
 
@@ -290,6 +326,7 @@ AgentEvent = (
     | SkillsLoadedEvent
     | SkillsLoadFailedEvent
     | SkillGroupActivatedEvent
+    | ContextInjectedEvent
     | RunStartedEvent
     | ModelStartedEvent
     | AssistantReasoningDeltaEvent
@@ -310,6 +347,7 @@ _EVENT_TYPE_MAP = {
     "skills_loaded": SkillsLoadedEvent,
     "skills_load_failed": SkillsLoadFailedEvent,
     "skill_group_activated": SkillGroupActivatedEvent,
+    "context_injected": ContextInjectedEvent,
     "run_started": RunStartedEvent,
     "model_started": ModelStartedEvent,
     "assistant_reasoning_delta": AssistantReasoningDeltaEvent,

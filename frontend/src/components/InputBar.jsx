@@ -11,8 +11,14 @@ import {
   FileCode,
   FileText,
   Settings,
+  Activity,
 } from 'lucide-react';
 import { api } from '../api';
+import {
+  CONTEXT_CATEGORIES,
+  estimateContextCategoryTokens,
+  normalizeContextUsage,
+} from '../utils/contextUsage.js';
 import { getSlashCommandDraft, parseAndExecuteSlashCommand } from '../utils/slashCommands';
 import {
   filterSkills,
@@ -53,6 +59,74 @@ const SLASH_COMMANDS = [
 
 const reasoningLevelLabel = (level) => (level === 'disabled' ? 'disabled（关闭）' : level);
 
+export function ContextUsageControl({ contextUsage, contextWindow }) {
+  const [open, setOpen] = useState(false);
+  const usage = normalizeContextUsage(contextUsage);
+  const estimates = estimateContextCategoryTokens(usage);
+  const inputTokens = usage?.inputTokens ?? null;
+  const cachedInputTokens = usage?.cachedInputTokens ?? null;
+  const windowSize = Number(contextWindow);
+  const hasWindow = Number.isFinite(windowSize) && windowSize > 0;
+  const windowPercent = hasWindow && inputTokens !== null
+    ? (inputTokens / windowSize * 100).toFixed(1)
+    : null;
+  const summary = inputTokens === null
+    ? '用量未知'
+    : `输入 ${inputTokens.toLocaleString()} · 缓存 ${cachedInputTokens === null ? '未知' : cachedInputTokens.toLocaleString()}`;
+  const estimatedByCategory = new Map(
+    (estimates || []).map((entry) => [entry.key, entry]),
+  );
+
+  return (
+    <div className="composer-context-usage">
+      <button
+        type="button"
+        className="composer-context-usage-trigger"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-label="查看最近一次模型请求的上下文用量"
+        title="最近一次模型请求的实际用量和估算构成"
+      >
+        <Activity size={12} />
+        <span>{summary}</span>
+      </button>
+      {open && (
+        <section className="composer-context-usage-popover" role="dialog" aria-label="会话上下文用量">
+          <div className="composer-context-usage-title">最近一次模型请求</div>
+          <div className="composer-context-usage-total">
+            <span>实际输入</span>
+            <strong>{inputTokens === null ? '用量未知' : `${inputTokens.toLocaleString()} tokens`}</strong>
+          </div>
+          <div className="composer-context-usage-total">
+            <span>缓存输入</span>
+            <strong>{cachedInputTokens === null ? '未知' : `${cachedInputTokens.toLocaleString()} tokens`}</strong>
+          </div>
+          <div className="composer-context-usage-window">
+            模型窗口：{hasWindow
+              ? `${windowSize.toLocaleString()} tokens${windowPercent === null ? '' : ` · 本次输入约 ${windowPercent}%`}`
+              : '大小未知'}
+          </div>
+          <div className="composer-context-usage-title">来源构成估算</div>
+          <div className="composer-context-estimates">
+            {CONTEXT_CATEGORIES.map(([key, label]) => {
+              const category = estimatedByCategory.get(key);
+              const bytes = usage?.contextBytes?.[key];
+              if (!category && !bytes) return null;
+              return (
+                <div className="composer-context-estimate" key={key}>
+                  <span>{label}</span>
+                  <span>{category ? `≈ ${category.tokens.toLocaleString()} tokens` : '估算未知'}</span>
+                </div>
+              );
+            })}
+          </div>
+          <p>各类别按输入字节占比估算；缓存 token 仅显示 Provider 报告的总量。</p>
+        </section>
+      )}
+    </div>
+  );
+}
+
 export default function InputBar({
   isGenerating,
   isInterrupting = false,
@@ -90,6 +164,7 @@ export default function InputBar({
   skillsError = null,
   skillInsertion = null,
   onSkillInsertionApplied,
+  contextUsage = null,
 }) {
   const [prompt, setPrompt] = useState('');
   const [showSlashPopup, setShowSlashPopup] = useState(false);
@@ -1196,6 +1271,10 @@ export default function InputBar({
           <div className="input-actions">
             {currentThread && (
               <div className="composer-model-controls">
+                <ContextUsageControl
+                  contextUsage={contextUsage}
+                  contextWindow={effectiveEntry?.model?.contextWindow}
+                />
                 <label className="composer-model-select-wrap" title={effectiveModelProblem || '切换当前 Thread 的模型'}>
                   <span>模型</span>
                   <select

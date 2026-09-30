@@ -274,7 +274,7 @@ describe('ChatArea restored assistant replies', () => {
     expect(screen.queryByText('previous reasoning')).toBeNull();
   });
 
-  it('restores the final settled segment expanded while earlier work stays summarized', () => {
+  it('keeps the final settled segment available while earlier work stays summarized', () => {
     const { container } = render(
       <ChatArea
         messages={[{
@@ -303,7 +303,7 @@ describe('ChatArea restored assistant replies', () => {
     expect(screen.getByText('final response')).toBeTruthy();
   });
 
-  it('compresses earlier restored assistant segments in a Turn and preserves its last segment', () => {
+  it('compresses earlier restored assistant segments and keeps the last segment expandable', () => {
     const { container } = render(
       <ChatArea
         messages={[
@@ -335,12 +335,14 @@ describe('ChatArea restored assistant replies', () => {
     );
 
     expect(container.querySelectorAll('.assistant-activity-group-summary')).toHaveLength(1);
-    expect(screen.getByRole('button', { name: /已完成 2 项活动/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /已完成 2 次模型调用/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /已完成 2 次模型调用/ }));
+    fireEvent.click(screen.getByRole('button', { name: /模型调用 2/ }));
+    fireEvent.click(container.querySelector('.thinking-header'));
     expect(container.querySelectorAll('.thinking-body')).toHaveLength(1);
     expect(container.querySelector('.thinking-body')?.textContent).toContain('last segment');
     expect(screen.queryByText('earlier segment')).toBeNull();
-    expect(container.querySelector('[data-message-id="segment-two"]')?.textContent)
-      .toContain('final answer');
+    expect(screen.getByText('final answer')).toBeTruthy();
   });
 });
 

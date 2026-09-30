@@ -257,7 +257,7 @@ class ModelUsage:
     """Token consumption statistics for a turn or step."""
 
     input_tokens: int = 0
-    cached_input_tokens: int = 0
+    cached_input_tokens: int | None = None
     output_tokens: int = 0
     total_tokens: int = 0
 
@@ -266,7 +266,9 @@ class ModelUsage:
         if not data:
             return cls()
         inp = data.get("input_tokens") or data.get("prompt_tokens", 0)
-        cached = data.get("cached_input_tokens") or data.get("cache_read_tokens", 0)
+        cached = data.get("cached_input_tokens")
+        if cached is None:
+            cached = data.get("cache_read_tokens")
         out = data.get("output_tokens") or data.get("completion_tokens", 0)
         tot = data.get("total_tokens") or (inp + out)
         return cls(
@@ -274,6 +276,74 @@ class ModelUsage:
             cached_input_tokens=cached,
             output_tokens=out,
             total_tokens=tot,
+        )
+
+
+@dataclass
+class ContextByteBreakdown:
+    """Serialized model-input bytes by stable prompt/context category."""
+
+    system_prompt: int = 0
+    project_instructions: int = 0
+    skills: int = 0
+    workspace_state: int = 0
+    conversation: int = 0
+    tools: int = 0
+    other: int = 0
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> ContextByteBreakdown | None:
+        if not isinstance(data, dict):
+            return None
+        aliases = {
+            "system_prompt": "systemPrompt",
+            "project_instructions": "projectInstructions",
+            "workspace_state": "workspaceState",
+        }
+        return cls(
+            **{
+                field_name: max(
+                    0,
+                    int(
+                        data.get(
+                            aliases.get(field_name, field_name), data.get(field_name, 0)
+                        )
+                        or 0
+                    ),
+                )
+                for field_name in cls.__dataclass_fields__
+            }
+        )
+
+
+@dataclass
+class ContextInjectionRecord:
+    """Metadata for a Host-injected context source; never contains source text."""
+
+    id: str = ""
+    kind: str = "other"
+    source: str = ""
+    scope: str = ""
+    bytes: int = 0
+    fingerprint: str = ""
+    workspace: str | None = None
+    path: str | None = None
+    supersedes: str | None = None
+    reused: bool = False
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ContextInjectionRecord:
+        return cls(
+            id=str(data.get("id", "")),
+            kind=str(data.get("kind", "other")),
+            source=str(data.get("source", "")),
+            scope=str(data.get("scope", "")),
+            bytes=max(0, int(data.get("bytes", 0) or 0)),
+            fingerprint=str(data.get("fingerprint", "")),
+            workspace=data.get("workspace"),
+            path=data.get("path"),
+            supersedes=data.get("supersedes"),
+            reused=bool(data.get("reused", False)),
         )
 
 

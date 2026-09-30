@@ -1,13 +1,26 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { PromptContextCard } from '../components/SidePanel';
 
 describe('PromptContextCard', () => {
-  it('keeps the raw injected context collapsed behind a readable summary', () => {
+  it('shows source metadata and byte composition without exposing source bodies', () => {
     render(
       <PromptContextCard
-        context='<world_state><environment os="windows" /></world_state>'
+        injections={[{
+          id: 'workspace_agents_main',
+          kind: 'project_instructions',
+          source: 'AGENTS.md',
+          workspace: 'main',
+          path: 'AGENTS.md',
+          scope: 'workspace',
+          bytes: 128,
+          fingerprint: 'abc123',
+        }]}
+        contextUsage={{
+          usage: { inputTokens: 1000, cachedInputTokens: 0 },
+          contextBytes: { projectInstructions: 128, tools: 64 },
+        }}
         workspace='D:\\workspace'
         status={{
           mode: 'chat',
@@ -21,18 +34,20 @@ describe('PromptContextCard', () => {
       />,
     );
 
-    expect(screen.getByText('模型可见的环境与运行约束')).toBeDefined();
+    expect(screen.getByText('来源元数据与最近请求的字节构成')).toBeDefined();
     expect(screen.getByText('chat')).toBeDefined();
     expect(screen.getByText('1 个会话附件根')).toBeDefined();
-    expect(screen.queryByText('<world_state><environment os="windows" /></world_state>')).toBeNull();
+    expect(screen.getByText('AGENTS.md')).toBeDefined();
+    expect(screen.getAllByText('128 B')).toHaveLength(2);
+    expect(screen.getByText('项目指令')).toBeDefined();
+    expect(screen.queryByText(/environment os/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /完整注入内容|复制原文/ })).toBeNull();
+  });
 
-    fireEvent.click(screen.getByRole('button', { name: '查看完整注入内容' }));
+  it('labels old history without injection metadata as unknown', () => {
+    render(<PromptContextCard />);
 
-    const renderedLines = [...document.querySelectorAll('.xml-line-text')].map(
-      (line) => line.textContent,
-    );
-    expect(renderedLines).toContain('<world_state>');
-    expect(renderedLines).toContain('  <environment os="windows" />');
-    expect(screen.getByRole('button', { name: '收起完整注入内容' })).toBeDefined();
+    expect(screen.getByText(/来源未知/)).toBeDefined();
+    expect(screen.getByText('字节构成未知')).toBeDefined();
   });
 });

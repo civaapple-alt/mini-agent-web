@@ -80,6 +80,8 @@ export default function AppLayout({
   onRefreshThreads,
   onToast,
   statusModel,
+  contextUsage = null,
+  contextInjections = [],
   planActive,
   isInterrupting,
   pendingApproval,
@@ -329,6 +331,7 @@ export default function AppLayout({
             isNewSessionLanding={isNewSessionLanding}
             sessionActive={sessionActive}
             sessionControl={childTasks.sessionControl}
+            contextUsage={contextUsage}
             hasSessionActivity={isGenerating || childTasks.children.some((child) => (
               ['queued', 'running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling']
                 .includes(child.status)
@@ -395,6 +398,8 @@ export default function AppLayout({
             planActive={planActive}
             goalState={goalState}
             status={statusModel}
+            contextUsage={contextUsage}
+            contextInjections={contextInjections}
             lastTurnResult={lastTurnResult}
             sessionMeta={sessionMeta}
             threadId={currentThread}

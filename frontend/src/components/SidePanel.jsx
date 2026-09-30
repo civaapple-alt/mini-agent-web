@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import {
   X,
   RefreshCw,
@@ -22,6 +20,7 @@ import {
   PanelRightOpen,
   PanelRightClose,
 } from 'lucide-react';
+import MarkdownRenderer from './MarkdownRenderer';
 import { api } from '../api';
 import {
   contextCacheHitRatio,
@@ -245,7 +244,7 @@ function WorkflowFileContent({ path, content, emptyMessage }) {
   const isMarkdown = /\.(md|markdown)$/i.test(path || '');
   return isMarkdown ? (
     <div className="markdown-content">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      <MarkdownRenderer>{content}</MarkdownRenderer>
     </div>
   ) : (
     <pre className="file-raw-content">{content}</pre>

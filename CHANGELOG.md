@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Show search-result and fetched-page links in collapsed conversation activity.
   Deduplicate cached page continuations and hide opaque handles and cursors in
   tool details.
+- Open links in session Markdown replies and workspace Markdown previews in a
+  separate browser tab while preserving the current Web Studio session.
 - Show persisted Host context injections as metadata-only transcript cards and
   a visual source-share breakdown in the workspace panel. Show model-window
   occupancy and the session-wide, Provider-reported weighted cache-hit ratio on

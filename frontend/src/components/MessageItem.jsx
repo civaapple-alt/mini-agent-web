@@ -1,6 +1,4 @@
 import React, { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import {
   Check,
   Copy,
@@ -13,6 +11,7 @@ import {
 import ThinkingBlock from './ThinkingBlock';
 import ToolCard from './ToolCard';
 import AssistantTextBlock from './AssistantTextBlock';
+import MarkdownRenderer from './MarkdownRenderer';
 import ContextCompactionGroup from './ContextCompactionGroup';
 import ErrorBoundary from './ErrorBoundary';
 import ChildTaskBatchCard from './ChildTaskBatchCard';
@@ -622,9 +621,7 @@ export default function MessageItem({
 
             {(text || (isStreamingThis && tools.length === 0)) && (
               <div className={`markdown-content assistant-answer ${isStreamingThis && tools.length === 0 ? 'cursor-blink' : ''}`}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {text || ''}
-                </ReactMarkdown>
+                <MarkdownRenderer>{text || ''}</MarkdownRenderer>
               </div>
             )}
           </>

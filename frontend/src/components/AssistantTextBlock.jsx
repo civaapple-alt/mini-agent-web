@@ -1,6 +1,5 @@
 import React from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import MarkdownRenderer from './MarkdownRenderer';
 import './AssistantTextBlock.css';
 
 export default function AssistantTextBlock({
@@ -13,9 +12,7 @@ export default function AssistantTextBlock({
   return (
     <div className="assistant-text-block">
       <div className="markdown-content assistant-answer">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {content || ''}
-        </ReactMarkdown>
+        <MarkdownRenderer>{content || ''}</MarkdownRenderer>
         {isRunActive && isCurrentBlock && <span className="cursor-blink" />}
       </div>
     </div>

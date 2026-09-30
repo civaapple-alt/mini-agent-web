@@ -32,6 +32,9 @@ ratio is unknown when no cache-bearing report has input tokens. Old Turns
 without per-request totals are counted as untracked rather than treating their
 latest report as a historical average.
 
+The detail popover closes on an outside click or Escape. Its expanded state is
+reset when the selected project or Thread changes.
+
 The most recent request's zero cached-input count is shown as zero; missing
 usage or a zero input count leaves its own ratio unknown. The model context
 window comes from the configured model catalog and is shown as unknown when

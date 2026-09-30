@@ -86,7 +86,6 @@ describe('ContextUsageControl', () => {
     );
 
     expect(screen.getByRole('button', { name: /会话命中 75\.0%/ })).toBeDefined();
-    expect(screen.getByRole('button', { name: /会话命中 75\.0%/ })).toBeDefined();
     expect(screen.getByText(/窗口 12\.0% · 会话命中 75\.0%/)).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: /打开会话上下文详情/ }));
     expect(screen.getByText('本会话累计缓存命中率')).toBeDefined();
@@ -109,5 +108,40 @@ describe('ContextUsageControl', () => {
     );
 
     expect(screen.getByRole('button', { name: /窗口未知 · 会话命中 60\.0%/ })).toBeDefined();
+  });
+
+  it('closes on outside pointer or Escape while keeping inside clicks open', () => {
+    render(<ContextUsageControl contextUsage={null} contextWindow={null} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /打开会话上下文详情/ }));
+    const dialog = screen.getByRole('dialog', { name: '会话上下文用量' });
+    fireEvent.pointerDown(dialog);
+    expect(screen.getByRole('dialog', { name: '会话上下文用量' })).toBeDefined();
+
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole('dialog', { name: '会话上下文用量' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /打开会话上下文详情/ }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: '会话上下文用量' })).toBeNull();
+  });
+
+  it('resets the open state when the session key changes', () => {
+    const renderSession = (threadId) => (
+      <ContextUsageControl
+        key={threadId}
+        contextUsage={null}
+        contextWindow={null}
+      />
+    );
+    const { rerender } = render(renderSession('thread-a'));
+
+    fireEvent.click(screen.getByRole('button', { name: /打开会话上下文详情/ }));
+    expect(screen.getByRole('dialog', { name: '会话上下文用量' })).toBeDefined();
+
+    rerender(renderSession('thread-b'));
+    expect(screen.queryByRole('dialog', { name: '会话上下文用量' })).toBeNull();
+    expect(screen.getByRole('button', { name: /打开会话上下文详情/ }).getAttribute('aria-expanded'))
+      .toBe('false');
   });
 });

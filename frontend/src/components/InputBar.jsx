@@ -62,6 +62,7 @@ const reasoningLevelLabel = (level) => (level === 'disabled' ? 'disabled（关�
 
 export function ContextUsageControl({ contextUsage, contextCacheUsage = null, contextWindow }) {
   const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
   const usage = normalizeContextUsage(contextUsage);
   const categories = contextCategoryBreakdown(usage) || [];
   const inputTokens = usage?.inputTokens ?? null;
@@ -89,8 +90,25 @@ export function ContextUsageControl({ contextUsage, contextCacheUsage = null, co
     ratio === null ? '0%' : `${Math.min(100, Math.max(0, ratio * 100))}%`
   );
 
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const closeOnOutsidePointer = (event) => {
+      if (!containerRef.current?.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
   return (
-    <div className="composer-context-usage">
+    <div className="composer-context-usage" ref={containerRef}>
       <button
         type="button"
         className="composer-context-usage-trigger"
@@ -1342,6 +1360,7 @@ export default function InputBar({
             {currentThread && (
               <div className="composer-model-controls">
                 <ContextUsageControl
+                  key={JSON.stringify([projectId || null, currentThread])}
                   contextUsage={contextUsage}
                   contextCacheUsage={contextCacheUsage}
                   contextWindow={effectiveEntry?.model?.contextWindow}

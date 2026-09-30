@@ -23,7 +23,12 @@ import {
   PanelRightClose,
 } from 'lucide-react';
 import { api } from '../api';
-import { CONTEXT_CATEGORIES, normalizeContextUsage } from '../utils/contextUsage';
+import {
+  contextCacheHitRatio,
+  contextCategoryBreakdown,
+  formatContextPercentage,
+  normalizeContextUsage,
+} from '../utils/contextUsage';
 import { readStateRevision, shouldApplyStateRevision } from '../utils/revisionState';
 import StatusDetailsPane from './StatusDetailsPane';
 import SkillPanel from './SkillPanel';
@@ -267,26 +272,19 @@ export function PromptContextCard({
     ['文件范围', status.direct_file_scope || 'workspace'],
   ];
   const normalizedUsage = normalizeContextUsage(contextUsage);
-  const contextBytes = normalizedUsage?.contextBytes;
-  const categories = contextBytes
-    ? CONTEXT_CATEGORIES.map(([key, label]) => ({
-      key,
-      label,
-      bytes: contextBytes[key],
-    })).filter((category) => category.bytes > 0)
-    : [];
+  const categories = contextCategoryBreakdown(normalizedUsage) || [];
+  const cacheHitRatio = contextCacheHitRatio(normalizedUsage);
+  const cacheHitPercent = formatContextPercentage(cacheHitRatio);
   const injectedBytes = (injections || []).reduce(
     (total, record) => total + Math.max(0, Number(record?.bytes) || 0),
     0,
   );
-  const maxCategoryBytes = Math.max(1, ...categories.map((category) => category.bytes));
-
   return (
     <div className="detail-card full-width prompt-context-card">
       <div className="prompt-context-header">
         <div>
           <span className="card-label">会话上下文</span>
-          <span className="prompt-context-caption">来源元数据与最近请求的字节构成</span>
+          <span className="prompt-context-caption">注入来源与最近请求的上下文占比</span>
         </div>
         <span className="prompt-context-badge">{injections.length} 个来源</span>
       </div>
@@ -309,11 +307,36 @@ export function PromptContextCard({
         )}
         <span>{availableCommands.length} 个可用命令</span>
         <span>来源共 {injectedBytes.toLocaleString()} B</span>
-        <span>
-          最近请求：{normalizedUsage?.inputTokens === null || normalizedUsage?.inputTokens === undefined
-            ? '用量未知'
-            : `${normalizedUsage.inputTokens.toLocaleString()} tokens`}
-        </span>
+      </div>
+
+      <div className="prompt-context-request-summary">
+        <div>
+          <span>最近请求输入</span>
+          <strong>
+            {normalizedUsage?.inputTokens === null || normalizedUsage?.inputTokens === undefined
+              ? '用量未知'
+              : `${normalizedUsage.inputTokens.toLocaleString()} tokens`}
+          </strong>
+        </div>
+        <div>
+          <span>缓存输入</span>
+          <strong>
+            {normalizedUsage?.cachedInputTokens === null || normalizedUsage?.cachedInputTokens === undefined
+              ? '未知'
+              : `${normalizedUsage.cachedInputTokens.toLocaleString()} tokens`}
+          </strong>
+        </div>
+        <div className="prompt-context-cache-summary">
+          <div>
+            <span>整体缓存命中率</span>
+            <strong>{cacheHitPercent}</strong>
+          </div>
+          <div className="prompt-context-cache-progress" aria-hidden="true">
+            <span style={{ width: cacheHitRatio === null
+              ? '0%'
+              : `${Math.min(100, Math.max(0, cacheHitRatio * 100))}%` }} />
+          </div>
+        </div>
       </div>
 
       <div className="prompt-context-section">
@@ -348,20 +371,43 @@ export function PromptContextCard({
         {categories.length === 0 ? (
           <p className="prompt-context-unknown">字节构成未知</p>
         ) : (
-          <div className="prompt-context-breakdown">
-            {categories.map((category) => (
-              <div className="prompt-context-breakdown-row" key={category.key}>
-                <span>{category.label}</span>
-                <div className="prompt-context-bar" aria-hidden="true">
-                  <span style={{ width: `${Math.max(2, category.bytes / maxCategoryBytes * 100)}%` }} />
+          <>
+            <div className="prompt-context-breakdown-stack" role="img" aria-label="各上下文来源占比">
+              {categories.map((category) => (
+                <span
+                  key={category.key}
+                  style={{
+                    width: `${category.share * 100}%`,
+                    backgroundColor: `var(--context-color-${category.key})`,
+                  }}
+                  title={`${category.label} ${formatContextPercentage(category.share)}`}
+                />
+              ))}
+            </div>
+            <div className="prompt-context-breakdown">
+              {categories.map((category) => (
+                <div className="prompt-context-breakdown-row" key={category.key}>
+                  <span className="prompt-context-category-label">
+                    <span
+                      className="prompt-context-category-dot"
+                      style={{ backgroundColor: `var(--context-color-${category.key})` }}
+                      aria-hidden="true"
+                    />
+                    <span>{category.label}</span>
+                    <small title={`${category.bytes.toLocaleString()} B`}>
+                      {category.estimatedTokens === null
+                        ? 'Token 估算未知'
+                        : `≈ ${category.estimatedTokens.toLocaleString()} tokens`}
+                    </small>
+                  </span>
+                  <strong>{formatContextPercentage(category.share)}</strong>
                 </div>
-                <strong>{category.bytes.toLocaleString()} B</strong>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </>
         )}
         <p className="prompt-context-estimate-note">
-          字节数来自最近一次模型请求；按字节估算的 token 数显示在输入区。
+          各来源占比由最近请求的输入字节估算；缓存 token 只显示 Provider 报告的整体数值。
         </p>
       </div>
     </div>

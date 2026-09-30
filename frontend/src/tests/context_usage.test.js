@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  contextCacheHitRatio,
+  contextCategoryBreakdown,
   estimateContextCategoryTokens,
+  formatContextPercentage,
   mergeContextInjectionRecords,
   normalizeContextUsage,
 } from '../utils/contextUsage.js';
@@ -48,6 +51,35 @@ test('provider cache count is shown as the reported total', () => {
       ['tools', 240],
       ['other', 0],
     ],
+  );
+});
+
+test('context visualization uses byte shares and the Provider reported cache ratio', () => {
+  const usage = normalizeContextUsage({
+    usage: { inputTokens: 1200, cachedInputTokens: 850 },
+    contextBytes: { projectInstructions: 100, tools: 300 },
+  });
+
+  assert.deepEqual(
+    contextCategoryBreakdown(usage).map(({ key, share }) => [key, share]),
+    [['projectInstructions', 0.25], ['tools', 0.75]],
+  );
+  assert.equal(contextCacheHitRatio(usage), 850 / 1200);
+  assert.equal(formatContextPercentage(contextCacheHitRatio(usage)), '70.8%');
+});
+
+test('zero, missing, and impossible cache usage stay distinguishable', () => {
+  assert.equal(
+    contextCacheHitRatio({ usage: { inputTokens: 100, cachedInputTokens: 0 } }),
+    0,
+  );
+  assert.equal(
+    contextCacheHitRatio({ usage: { inputTokens: 100, cachedInputTokens: null } }),
+    null,
+  );
+  assert.equal(
+    contextCacheHitRatio({ usage: { inputTokens: 100, cachedInputTokens: 101 } }),
+    null,
   );
 });
 

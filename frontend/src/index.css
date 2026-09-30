@@ -53,6 +53,14 @@ body.theme-light {
   --tooltip-border: rgba(255, 255, 255, 0.14);
 
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  --context-color-systemPrompt: #7c3aed;
+  --context-color-projectInstructions: #2563eb;
+  --context-color-skills: #059669;
+  --context-color-workspaceState: #0891b2;
+  --context-color-conversation: #0284c7;
+  --context-color-tools: #d97706;
+  --context-color-other: #64748b;
 }
 
 /* Compact neutral dark theme */
@@ -103,6 +111,14 @@ body.theme-dark {
   --tooltip-bg: #27272a;
   --tooltip-text: #ffffff;
   --tooltip-border: rgba(255, 255, 255, 0.18);
+
+  --context-color-systemPrompt: #c4b5fd;
+  --context-color-projectInstructions: #93c5fd;
+  --context-color-skills: #6ee7b7;
+  --context-color-workspaceState: #67e8f9;
+  --context-color-conversation: #7dd3fc;
+  --context-color-tools: #fcd34d;
+  --context-color-other: #94a3b8;
 }
 
 * {

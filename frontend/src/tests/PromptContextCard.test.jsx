@@ -34,12 +34,16 @@ describe('PromptContextCard', () => {
       />,
     );
 
-    expect(screen.getByText('来源元数据与最近请求的字节构成')).toBeDefined();
+    expect(screen.getByText('注入来源与最近请求的上下文占比')).toBeDefined();
     expect(screen.getByText('chat')).toBeDefined();
     expect(screen.getByText('1 个会话附件根')).toBeDefined();
     expect(screen.getByText('AGENTS.md')).toBeDefined();
-    expect(screen.getAllByText('128 B')).toHaveLength(2);
+    expect(screen.getByText('128 B')).toBeDefined();
     expect(screen.getByText('项目指令')).toBeDefined();
+    expect(screen.getByText('整体缓存命中率')).toBeDefined();
+    expect(screen.getByText('0.0%')).toBeDefined();
+    expect(screen.getByText('66.7%')).toBeDefined();
+    expect(screen.getByText('33.3%')).toBeDefined();
     expect(screen.queryByText(/environment os/)).toBeNull();
     expect(screen.queryByRole('button', { name: /完整注入内容|复制原文/ })).toBeNull();
   });

@@ -89,3 +89,55 @@ export function estimateContextCategoryTokens(contextUsage) {
   }
   return entries;
 }
+
+export function contextCategoryBreakdown(contextUsage) {
+  const normalized = normalizeContextUsage(contextUsage);
+  if (!normalized?.contextBytes) return null;
+
+  const totalBytes = CONTEXT_CATEGORIES.reduce(
+    (total, [key]) => total + (normalized.contextBytes[key] || 0),
+    0,
+  );
+  if (totalBytes <= 0) return null;
+
+  const estimatedTokens = new Map(
+    (estimateContextCategoryTokens(normalized) || [])
+      .map((entry) => [entry.key, entry.tokens]),
+  );
+  return CONTEXT_CATEGORIES.flatMap(([key, label]) => {
+    const bytes = normalized.contextBytes[key] || 0;
+    if (bytes <= 0) return [];
+    return [{
+      key,
+      label,
+      bytes,
+      share: bytes / totalBytes,
+      estimatedTokens: estimatedTokens.get(key) ?? null,
+    }];
+  });
+}
+
+export function contextCacheHitRatio(contextUsage) {
+  const normalized = normalizeContextUsage(contextUsage);
+  const inputTokens = normalized?.inputTokens;
+  const cachedInputTokens = normalized?.cachedInputTokens;
+  if (
+    inputTokens === null
+    || inputTokens === undefined
+    || inputTokens <= 0
+    || cachedInputTokens === null
+    || cachedInputTokens === undefined
+    || cachedInputTokens > inputTokens
+  ) {
+    return null;
+  }
+  return cachedInputTokens / inputTokens;
+}
+
+export function formatContextPercentage(ratio) {
+  if (!Number.isFinite(ratio) || ratio < 0) return '未知';
+  const percentage = ratio * 100;
+  return percentage > 0 && percentage < 0.05
+    ? '<0.1%'
+    : `${percentage.toFixed(1)}%`;
+}

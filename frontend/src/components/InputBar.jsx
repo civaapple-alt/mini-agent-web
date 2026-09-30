@@ -15,8 +15,9 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 import {
-  CONTEXT_CATEGORIES,
-  estimateContextCategoryTokens,
+  contextCacheHitRatio,
+  contextCategoryBreakdown,
+  formatContextPercentage,
   normalizeContextUsage,
 } from '../utils/contextUsage.js';
 import { getSlashCommandDraft, parseAndExecuteSlashCommand } from '../utils/slashCommands';
@@ -62,19 +63,22 @@ const reasoningLevelLabel = (level) => (level === 'disabled' ? 'disabled（关�
 export function ContextUsageControl({ contextUsage, contextWindow }) {
   const [open, setOpen] = useState(false);
   const usage = normalizeContextUsage(contextUsage);
-  const estimates = estimateContextCategoryTokens(usage);
+  const categories = contextCategoryBreakdown(usage) || [];
   const inputTokens = usage?.inputTokens ?? null;
   const cachedInputTokens = usage?.cachedInputTokens ?? null;
   const windowSize = Number(contextWindow);
   const hasWindow = Number.isFinite(windowSize) && windowSize > 0;
-  const windowPercent = hasWindow && inputTokens !== null
-    ? (inputTokens / windowSize * 100).toFixed(1)
+  const windowRatio = hasWindow && inputTokens !== null
+    ? inputTokens / windowSize
     : null;
+  const windowPercent = formatContextPercentage(windowRatio);
+  const cacheHitRatio = contextCacheHitRatio(usage);
+  const cacheHitPercent = formatContextPercentage(cacheHitRatio);
   const summary = inputTokens === null
-    ? '用量未知'
-    : `输入 ${inputTokens.toLocaleString()} · 缓存 ${cachedInputTokens === null ? '未知' : cachedInputTokens.toLocaleString()}`;
-  const estimatedByCategory = new Map(
-    (estimates || []).map((entry) => [entry.key, entry]),
+    ? '上下文用量未知'
+    : `窗口 ${windowPercent} · 缓存命中 ${cacheHitPercent}`;
+  const progressWidth = (ratio) => (
+    ratio === null ? '0%' : `${Math.min(100, Math.max(0, ratio * 100))}%`
   );
 
   return (
@@ -84,8 +88,8 @@ export function ContextUsageControl({ contextUsage, contextWindow }) {
         className="composer-context-usage-trigger"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        aria-label="查看最近一次模型请求的上下文用量"
-        title="最近一次模型请求的实际用量和估算构成"
+        aria-label="查看最近一次模型请求的上下文用量和缓存命中率"
+        title="查看上下文窗口占用、整体缓存命中率和来源占比"
       >
         <Activity size={12} />
         <span>{summary}</span>
@@ -93,6 +97,22 @@ export function ContextUsageControl({ contextUsage, contextWindow }) {
       {open && (
         <section className="composer-context-usage-popover" role="dialog" aria-label="会话上下文用量">
           <div className="composer-context-usage-title">最近一次模型请求</div>
+          <div className="composer-context-usage-highlights">
+            <div className="composer-context-usage-highlight">
+              <span>窗口占用</span>
+              <strong>{windowPercent}</strong>
+              <div className="composer-context-progress" aria-hidden="true">
+                <span style={{ width: progressWidth(windowRatio) }} />
+              </div>
+            </div>
+            <div className="composer-context-usage-highlight cache">
+              <span>整体缓存命中率</span>
+              <strong>{cacheHitPercent}</strong>
+              <div className="composer-context-progress" aria-hidden="true">
+                <span style={{ width: progressWidth(cacheHitRatio) }} />
+              </div>
+            </div>
+          </div>
           <div className="composer-context-usage-total">
             <span>实际输入</span>
             <strong>{inputTokens === null ? '用量未知' : `${inputTokens.toLocaleString()} tokens`}</strong>
@@ -103,24 +123,49 @@ export function ContextUsageControl({ contextUsage, contextWindow }) {
           </div>
           <div className="composer-context-usage-window">
             模型窗口：{hasWindow
-              ? `${windowSize.toLocaleString()} tokens${windowPercent === null ? '' : ` · 本次输入约 ${windowPercent}%`}`
+              ? `${windowSize.toLocaleString()} tokens${windowRatio === null ? '' : ` · 本次输入约 ${windowPercent}`}`
               : '大小未知'}
           </div>
           <div className="composer-context-usage-title">来源构成估算</div>
-          <div className="composer-context-estimates">
-            {CONTEXT_CATEGORIES.map(([key, label]) => {
-              const category = estimatedByCategory.get(key);
-              const bytes = usage?.contextBytes?.[key];
-              if (!category && !bytes) return null;
-              return (
-                <div className="composer-context-estimate" key={key}>
-                  <span>{label}</span>
-                  <span>{category ? `≈ ${category.tokens.toLocaleString()} tokens` : '估算未知'}</span>
-                </div>
-              );
-            })}
-          </div>
-          <p>各类别按输入字节占比估算；缓存 token 仅显示 Provider 报告的总量。</p>
+          {categories.length === 0 ? (
+            <p className="composer-context-unknown">来源构成未知</p>
+          ) : (
+            <>
+              <div className="composer-context-breakdown-stack" role="img" aria-label="各上下文来源占比">
+                {categories.map((category) => (
+                  <span
+                    key={category.key}
+                    style={{
+                      width: `${category.share * 100}%`,
+                      backgroundColor: `var(--context-color-${category.key})`,
+                    }}
+                    title={`${category.label} ${formatContextPercentage(category.share)}`}
+                  />
+                ))}
+              </div>
+              <div className="composer-context-estimates">
+                {categories.map((category) => (
+                  <div className="composer-context-estimate" key={category.key}>
+                    <span className="composer-context-estimate-label">
+                      <span
+                        className="composer-context-estimate-dot"
+                        style={{ backgroundColor: `var(--context-color-${category.key})` }}
+                        aria-hidden="true"
+                      />
+                      <span className="composer-context-estimate-name">{category.label}</span>
+                      <small title={`${category.bytes.toLocaleString()} B`}>
+                        {category.estimatedTokens === null
+                          ? 'Token 估算未知'
+                          : `≈ ${category.estimatedTokens.toLocaleString()} tokens`}
+                      </small>
+                    </span>
+                    <strong>{formatContextPercentage(category.share)}</strong>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          <p>来源占比按输入字节估算；缓存命中率按 Provider 报告的缓存输入 ÷ 实际输入计算，不分摊到来源。</p>
         </section>
       )}
     </div>

@@ -19,20 +19,22 @@ remains available after older turn presentations leave the bounded history.
 
 ## Request usage
 
-The composer shows input and cached-input token counts from the most recent
-`model_responded` event. These values are the Provider's usage report. A zero
-cached-input count is shown as zero; missing usage is shown as unknown. The
-model context window comes from the configured model catalog and is shown as
-unknown when unset.
+The collapsed composer control shows model-window occupancy and the overall
+cache-hit ratio for the most recent `model_responded` event. Expanding it shows
+the Provider-reported input and cached-input token counts. A zero cached-input
+count is shown as zero; missing usage or a zero input count leaves the ratio
+unknown. The model context window comes from the configured model catalog and
+is shown as unknown when unset.
 
-The expanded usage view shows an estimated token split by context category.
-Studio apportions the Provider-reported input-token total by each category's
-serialized byte share and labels the result as an estimate. It does not assign
-cached tokens to individual sources. The source byte sizes and request
-byte-category breakdown are presented separately.
+The expanded usage view shows a segmented context-source bar and a percentage
+for each category. Studio apportions the Provider-reported input-token total
+by each category's serialized byte share and labels the token count as an
+estimate. It does not assign cached tokens to individual sources. The overall
+cache-hit ratio is `cached_input_tokens / input_tokens` from the Provider's
+most recent report; it is not a conversation-wide historical average.
 
 Provider cache behavior depends on its cache boundary and tokenization. The
 append-only Session context sequence preserves earlier request prefixes when a
 new source is added, but Web Studio does not promise a cache hit. The displayed
-cached-token total is the Provider's actual report for the most recent model
-request.
+cached-token total and hit ratio use the Provider's actual report for the most
+recent model request.

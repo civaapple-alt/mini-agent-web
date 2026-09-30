@@ -16,9 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Deduplicate cached page continuations and hide opaque handles and cursors in
   tool details.
 - Show persisted Host context injections as metadata-only transcript cards and
-  a current source/byte breakdown in the workspace panel. Report the latest
-  Provider input and cached-input token usage in the composer; label per-category
-  token allocation as a byte-share estimate and keep unavailable values unknown.
+  a visual source-share breakdown in the workspace panel. Show model-window
+  occupancy and the latest Provider cache-hit ratio on the collapsed composer
+  control; keep token counts available in its details and label source splits as
+  estimates.
 - Refresh the effective Skill catalog from the App Server after each settled
   Turn and when loading the Skill panel, so newly installed Skills can be
   selected without restarting the Project runtime. Keep selected Skill bodies

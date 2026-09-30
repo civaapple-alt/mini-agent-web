@@ -24,6 +24,7 @@ from server.routes.agent_models import (
     StartTurnRequest,
     SteerTurnRequest,
     TextAttachment,
+    UserQuestionResponseRequest,
 )
 from server.session_manager import session_manager, to_json_serializable
 
@@ -359,6 +360,30 @@ async def respond_approval(req: ApprovalResponseRequest) -> dict[str, Any]:
         "decision": req.decision,
         "call_id": req.call_id,
     }
+
+
+@router.post(
+    "/threads/{thread_id}/user-questions/respond", summary="Answer one Agent question"
+)
+async def respond_user_question(
+    thread_id: str, req: UserQuestionResponseRequest
+) -> dict[str, Any]:
+    """Route a typed answer to the App Server that owns this Thread."""
+    try:
+        project_id = session_manager.resolve_thread_project(thread_id, req.project_id)
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
+        return await client.respond_user_question(
+            interaction_id=req.interaction_id,
+            thread_id=thread_id,
+            turn_id=req.turn_id,
+            call_id=req.call_id,
+            question_id=req.question_id,
+            answer=req.answer,
+        )
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
 
 
 @router.get("/approval/pending", summary="List pending approval requests")

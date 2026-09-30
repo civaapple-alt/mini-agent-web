@@ -865,6 +865,33 @@ async def test_runtime_notifications_are_broadcast_to_all_websocket_clients(
     mock_session_manager.broadcast_ws.assert_awaited_once_with(notification)
 
 
+@pytest.mark.asyncio
+async def test_user_question_notifications_are_broadcast_with_thread_identity(
+    mock_session_manager,
+):
+    mock_session_manager.broadcast_ws = AsyncMock()
+    notification = {
+        "type": "notification",
+        "method": "user-question/request",
+        "data": {
+            "phase": "requested",
+            "interaction": {"interactionId": "uq-1", "threadId": "thread-1"},
+        },
+    }
+
+    await mock_session_manager._handle_runtime_notification(
+        notification, project_id="project-1"
+    )
+
+    mock_session_manager.broadcast_ws.assert_awaited_once_with(
+        {
+            **notification,
+            "projectId": "project-1",
+            "data": {**notification["data"], "projectId": "project-1"},
+        }
+    )
+
+
 def test_approval_snapshot_exposes_policy_without_web_grants(mock_session_manager):
     mock_session_manager.set_project_execution("full_machine", "automatic")
 

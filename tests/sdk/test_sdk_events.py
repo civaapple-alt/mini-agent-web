@@ -514,6 +514,66 @@ async def test_read_loop_relays_turn_events_to_notification_handler_in_order():
 
 
 @pytest.mark.asyncio
+async def test_read_loop_forwards_user_question_notifications_to_thread_stream():
+    received = []
+    question_delivered = asyncio.Event()
+
+    async def handler(notification):
+        received.append(notification)
+        if notification.get("method") == "user-question/request":
+            question_delivered.set()
+
+    class FakeStdout:
+        def __init__(self):
+            self._lines = iter(
+                [
+                    (
+                        b'{"jsonrpc":"2.0","method":"user-question/request",'
+                        b'"params":{"phase":"requested","interaction":'
+                        b'{"interactionId":"uq-1","threadId":"thread-1",'
+                        b'"turnId":"turn-1","callId":"call-1"}}}\n'
+                    )
+                ]
+            )
+
+        async def readline(self):
+            return next(self._lines, b"")
+
+    client = MiniAgentClient(user_questions=True, notification_handler=handler)
+    client._proc = type("FakeProcess", (), {"stdout": FakeStdout()})()
+    queue = asyncio.Queue(maxsize=8)
+    other_thread_queue = asyncio.Queue(maxsize=8)
+    client._event_queues.append(queue)
+    client._event_queues.append(other_thread_queue)
+    client._event_queue_threads[queue] = "thread-1"
+    client._event_queue_threads[other_thread_queue] = "thread-2"
+
+    await client._read_loop()
+    await asyncio.wait_for(question_delivered.wait(), timeout=1)
+
+    expected = {
+        "type": "notification",
+        "method": "user-question/request",
+        "data": {
+            "phase": "requested",
+            "interaction": {
+                "interactionId": "uq-1",
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "callId": "call-1",
+            },
+        },
+    }
+    assert expected in received
+    streamed = await queue.get()
+    client._release_stream_message(queue, streamed)
+    assert streamed == expected
+    other_thread_message = await other_thread_queue.get()
+    client._release_stream_message(other_thread_queue, other_thread_message)
+    assert other_thread_message["type"] == "_client_error"
+
+
+@pytest.mark.asyncio
 async def test_read_loop_settles_event_queues_when_stdout_closes():
     """EOF wakes stream consumers so a dead App Server cannot leave a Turn hung."""
 

@@ -69,6 +69,91 @@ describe('ToolCard Component Rendering & Interaction', () => {
     expect(screen.queryByText('查看输出')).toBeNull();
   });
 
+  it('shows a recommended ask_user option and submits only after the user selects it', async () => {
+    const respond = vi.fn().mockResolvedValue({ accepted: true });
+    render(
+      <ToolCard
+        tool={{ id: 'call-1', name: 'ask_user', status: 'running' }}
+        pendingUserQuestion={{
+          interactionId: 'uq-1',
+          threadId: 'thread-1',
+          turnId: 'turn-1',
+          callId: 'call-1',
+          currentIndex: 0,
+          answers: [null],
+          questions: [{
+            id: 'q1',
+            prompt: 'How should we proceed?',
+            allowFreeText: true,
+            allowSkip: true,
+            options: [{
+              id: 'q1-o1',
+              label: 'Use the scoped approach',
+              recommended: true,
+              recommendationReason: 'It matches the requested behavior.',
+            }],
+          }],
+        }}
+        onRespondUserQuestion={respond}
+      />,
+    );
+
+    expect(screen.getByText('推荐')).toBeDefined();
+    expect(screen.getByText(/推荐理由：It matches/)).toBeDefined();
+    expect(respond).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /Use the scoped approach/ }));
+    expect(respond).toHaveBeenCalledWith({
+      interaction: expect.objectContaining({ interactionId: 'uq-1' }),
+      questionId: 'q1',
+      answer: { type: 'option', optionId: 'q1-o1' },
+    });
+  });
+
+  it('keeps completed ask_user history collapsed until expanded', () => {
+    render(
+      <ToolCard
+        tool={{
+          id: 'call-2',
+          name: 'ask_user',
+          status: 'completed',
+          arguments: { questions: [{ question: 'Choose a mode' }] },
+          output: JSON.stringify({ answers: [{ questionId: 'q1', question: 'Choose a mode', answer: { type: 'text', text: 'fast' }, answerLabel: 'fast' }] }),
+        }}
+      />,
+    );
+
+    expect(screen.getByText('已询问 1 个问题')).toBeDefined();
+    expect(screen.queryByText('fast')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /已询问 1 个问题/ }));
+    expect(screen.getByText('fast')).toBeDefined();
+  });
+
+  it('submits a free-text answer on Enter', () => {
+    const respond = vi.fn().mockResolvedValue({ accepted: true });
+    render(
+      <ToolCard
+        tool={{ id: 'call-3', name: 'ask_user', status: 'running' }}
+        pendingUserQuestion={{
+          interactionId: 'uq-3',
+          threadId: 'thread-1',
+          turnId: 'turn-1',
+          callId: 'call-3',
+          currentIndex: 0,
+          answers: [null],
+          questions: [{ id: 'q1', prompt: 'Anything else?', options: [], allowFreeText: true, allowSkip: true }],
+        }}
+        onRespondUserQuestion={respond}
+      />
+    );
+    const input = screen.getByLabelText('输入自己的回答');
+    fireEvent.change(input, { target: { value: 'Keep it short' } });
+    fireEvent.submit(input.closest('form'));
+    expect(respond).toHaveBeenCalledWith(expect.objectContaining({
+      questionId: 'q1',
+      answer: { type: 'text', text: 'Keep it short' },
+    }));
+  });
+
   it('shows a completed partial read_file result and its line range', () => {
     render(
       <ToolCard

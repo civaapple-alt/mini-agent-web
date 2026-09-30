@@ -223,6 +223,7 @@ class MiniAgentClient:
         log_level: str | int | None = None,
         log_mode: str | None = None,
         request_timeout: float = DEFAULT_REQUEST_TIMEOUT_SECS,
+        user_questions: bool = False,
     ):
         """
         Initialize the MiniAgentClient.
@@ -247,6 +248,7 @@ class MiniAgentClient:
         self.env = {**file_env, **os.environ, **(env or {})}
         self.approval_handler = approval_handler
         self.notification_handler = notification_handler
+        self.user_questions = user_questions
         self._access_scope = "project"
         self._policy = "interactive"
 
@@ -584,6 +586,13 @@ class MiniAgentClient:
                         notification_thread = params.get("threadId") or params.get(
                             "thread_id"
                         )
+                        interaction = params.get("interaction")
+                        if notification_thread is None and isinstance(
+                            interaction, dict
+                        ):
+                            notification_thread = interaction.get(
+                                "threadId"
+                            ) or interaction.get("thread_id")
                         if (
                             target_thread is not None
                             and notification_thread is not None
@@ -787,6 +796,7 @@ class MiniAgentClient:
             "protocolVersion": 1,
             "clientName": client_name,
             "clientVersion": client_version,
+            "capabilities": {"userQuestions": self.user_questions},
         }
         if providers:
             params["providers"] = providers
@@ -853,6 +863,29 @@ class MiniAgentClient:
             {"threadId": thread_id or self._active_thread_id},
         )
         return ThreadCheckpoint.from_dict(res)
+
+    async def respond_user_question(
+        self,
+        *,
+        interaction_id: str,
+        thread_id: str,
+        turn_id: str,
+        call_id: str,
+        question_id: str,
+        answer: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Submit one answer to the active App Server user-question request."""
+        return await self._send_request(
+            "user-question/respond",
+            {
+                "interactionId": interaction_id,
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "callId": call_id,
+                "questionId": question_id,
+                "answer": answer,
+            },
+        )
 
     async def get_runtime_status(self, thread_id: str | None = None) -> RuntimeStatus:
         """Read the live App Server runtime status without waiting on the worker."""

@@ -54,6 +54,8 @@ export default function MessageItem({
   isCurrentTurnSegment = null,
   isGenerating,
   pendingApproval,
+  pendingUserQuestion = null,
+  onRespondUserQuestion = null,
   policy = 'interactive',
   onRetryPrompt,
   turnEntry = null,
@@ -363,6 +365,8 @@ export default function MessageItem({
           <ToolCard
             tool={item}
             pendingApproval={null}
+            pendingUserQuestion={pendingUserQuestion}
+            onRespondUserQuestion={onRespondUserQuestion}
             policy={policy}
             presentationId={`${turnScope}:tool:${itemId}`}
           />
@@ -421,6 +425,8 @@ export default function MessageItem({
                           <ToolCard
                             tool={item}
                             pendingApproval={null}
+                            pendingUserQuestion={pendingUserQuestion}
+                            onRespondUserQuestion={onRespondUserQuestion}
                             presentationId={`${turnScope}:tool:${blockId}`}
                           />
                         </ErrorBoundary>
@@ -492,6 +498,8 @@ export default function MessageItem({
                   <ToolCard
                     tool={block}
                     pendingApproval={isCurrentAssistantSegment ? pendingApproval : null}
+                    pendingUserQuestion={isCurrentAssistantSegment ? pendingUserQuestion : null}
+                    onRespondUserQuestion={onRespondUserQuestion}
                     policy={policy}
                     presentationId={`${turnScope}:tool:${block.id || idx}`}
                   />
@@ -611,6 +619,8 @@ export default function MessageItem({
                       <ToolCard
                         tool={t}
                         pendingApproval={isCurrentAssistantSegment ? pendingApproval : null}
+                        pendingUserQuestion={isCurrentAssistantSegment ? pendingUserQuestion : null}
+                        onRespondUserQuestion={onRespondUserQuestion}
                         policy={policy}
                       />
                     </ErrorBoundary>

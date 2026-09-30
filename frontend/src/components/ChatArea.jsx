@@ -50,6 +50,8 @@ export default function ChatArea({
   messages,
   isGenerating,
   pendingApproval,
+  pendingUserQuestion = null,
+  onRespondUserQuestion = null,
   lastTurnResult,
   turnTimings = null,
   onResumeExecution,
@@ -501,6 +503,8 @@ export default function ChatArea({
                     isCurrentTurnSegment={isCurrentTurnSegment}
                     isGenerating={isGenerating}
                     pendingApproval={pendingApproval}
+                    pendingUserQuestion={pendingUserQuestion}
+                    onRespondUserQuestion={onRespondUserQuestion}
                     policy={policy}
                     onRetryPrompt={onRetryPrompt}
                     turnEntry={turnEntry}

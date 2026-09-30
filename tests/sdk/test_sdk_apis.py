@@ -297,7 +297,16 @@ def test_sdk_reads_bounded_execution_recovery_metadata():
     }
 
     checkpoint = ThreadCheckpoint.from_dict(
-        {"threadId": "child-1", "status": "idle", "executionRecovery": recovery}
+        {
+            "threadId": "child-1",
+            "status": "idle",
+            "executionRecovery": recovery,
+            "pendingUserQuestion": {
+                "interactionId": "uq-1",
+                "currentIndex": 0,
+                "questions": [{"id": "q1", "prompt": "Choose", "options": []}],
+            },
+        }
     )
     turn = TurnReadResult.from_dict(
         {"turnId": "turn-recovery", "status": "failed", "recovery": recovery}
@@ -311,6 +320,7 @@ def test_sdk_reads_bounded_execution_recovery_metadata():
     assert checkpoint.execution_recovery.last_heartbeat_ms == 1_700_000_000_100
     assert checkpoint.execution_recovery.last_progress_ms == 1_700_000_000_000
     assert checkpoint.execution_recovery.reason == "temporary_model_error"
+    assert checkpoint.pending_user_question["interactionId"] == "uq-1"
     assert checkpoint.execution_recovery.to_dict() == recovery
     assert turn.recovery.recommended_action is ExecutionRecoveryRecommendation.RESUME
     assert turn.recovery.to_dict() == recovery
@@ -452,12 +462,14 @@ async def test_restart_reuses_provider_and_resumes_the_same_session():
             "protocolVersion": 1,
             "clientName": "custom-client",
             "clientVersion": "1.2.3",
+            "capabilities": {"userQuestions": False},
             "providers": provider_selection,
         },
         {
             "protocolVersion": 1,
             "clientName": "custom-client",
             "clientVersion": "1.2.3",
+            "capabilities": {"userQuestions": False},
             "providers": provider_selection,
         },
     ]
@@ -517,6 +529,45 @@ async def test_initialize_tolerates_older_server_without_session_info():
 
     assert result["protocolVersion"] == 1
     assert client._session_info is None
+
+
+@pytest.mark.asyncio
+async def test_web_client_can_negotiate_user_question_capability():
+    client = MiniAgentClient(user_questions=True)
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        if method == "initialize":
+            return {"protocolVersion": 1, "capabilityManifest": {}}
+        if method == "session/info":
+            raise AppServerError(-32601, "method not found")
+        return {"accepted": True}
+
+    client._send_request = fake_send
+    await client.initialize()
+    result = await client.respond_user_question(
+        interaction_id="uq-1",
+        thread_id="thread-1",
+        turn_id="turn-1",
+        call_id="call-1",
+        question_id="q1",
+        answer={"type": "option", "optionId": "q1-o1"},
+    )
+
+    assert calls[0][1]["capabilities"] == {"userQuestions": True}
+    assert calls[-1] == (
+        "user-question/respond",
+        {
+            "interactionId": "uq-1",
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "callId": "call-1",
+            "questionId": "q1",
+            "answer": {"type": "option", "optionId": "q1-o1"},
+        },
+    )
+    assert result["accepted"] is True
 
 
 @pytest.mark.asyncio

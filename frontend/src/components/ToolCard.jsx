@@ -24,6 +24,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import './ToolCard.css';
+import UserQuestionCard from './UserQuestionCard';
 
 const KNOWN_OUTCOME_PRESENTATIONS = {
   completed: { label: '已完成', className: 'badge completed', Icon: CheckCircle },
@@ -190,6 +191,8 @@ function CommandPreview({ value }) {
 export default function ToolCard({
   tool,
   pendingApproval,
+  pendingUserQuestion = null,
+  onRespondUserQuestion = null,
   presentationId = null,
 }) {
   const expansionId = presentationId ? `tool-output:${presentationId}` : null;
@@ -330,6 +333,16 @@ export default function ToolCard({
     setShowOutput(nextShowOutput);
     setManualExpansion(expansionId, nextShowOutput);
   };
+
+  if (name === 'ask_user') {
+    return (
+      <UserQuestionCard
+        tool={tool}
+        pendingInteraction={pendingUserQuestion}
+        onRespond={onRespondUserQuestion}
+      />
+    );
+  }
 
   return (
     <div

@@ -1058,6 +1058,9 @@ async def read_thread(
                 )
                 runtime_checkpoint = await runtime_client.read_thread(thread_id)
                 recovery = runtime_checkpoint.execution_recovery
+                canonical["pending_user_question"] = (
+                    runtime_checkpoint.pending_user_question
+                )
                 canonical["execution_recovery"] = (
                     recovery.to_dict() if recovery is not None else None
                 )
@@ -1094,6 +1097,7 @@ async def read_thread(
                 if cp and cp.execution_recovery
                 else None
             ),
+            "pending_user_question": cp.pending_user_question if cp else None,
             "metadata": meta,
             "raw": cp.raw if cp else {},
         }

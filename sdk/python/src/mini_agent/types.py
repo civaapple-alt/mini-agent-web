@@ -59,6 +59,7 @@ RuntimePhase = Literal[
     "model",
     "tool",
     "waiting_approval",
+    "waiting_for_user_input",
     "stopping",
     "compaction",
     "persisting",
@@ -676,6 +677,7 @@ class ThreadCheckpoint:
     last_turn_id: str | None = None
     next_event_sequence: int = 1
     execution_recovery: ExecutionRecoveryInfo | None = None
+    pending_user_question: dict[str, Any] | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -699,6 +701,14 @@ class ThreadCheckpoint:
                 )
                 if isinstance(
                     val.get("execution_recovery") or val.get("executionRecovery"),
+                    dict,
+                )
+                else None
+            ),
+            pending_user_question=(
+                val.get("pending_user_question") or val.get("pendingUserQuestion")
+                if isinstance(
+                    val.get("pending_user_question") or val.get("pendingUserQuestion"),
                     dict,
                 )
                 else None

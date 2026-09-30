@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -120,3 +120,16 @@ class ApprovalResponseRequest(BaseModel):
         default=None,
         description="Stable tool call ID for duplicate request-id disambiguation",
     )
+
+
+class UserQuestionResponseRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    interaction_id: str = Field(
+        ..., min_length=1, max_length=128, alias="interactionId"
+    )
+    turn_id: str = Field(..., min_length=1, max_length=128, alias="turnId")
+    call_id: str = Field(..., min_length=1, max_length=256, alias="callId")
+    question_id: str = Field(..., min_length=1, max_length=32, alias="questionId")
+    answer: dict[str, Any]
+    project_id: str | None = Field(default=None, alias="projectId")

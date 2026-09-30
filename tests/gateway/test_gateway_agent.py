@@ -572,6 +572,51 @@ async def test_approval_respond_http_endpoint(agent_test_app):
         assert "not found" in resp_404.json()["detail"]
 
 
+@pytest.mark.asyncio
+async def test_user_question_response_routes_to_thread_app_server(
+    agent_test_app, monkeypatch
+):
+    app_server_client = AsyncMock()
+    app_server_client.respond_user_question.return_value = {
+        "accepted": True,
+        "interaction": {"interactionId": "uq-1", "currentIndex": 1},
+    }
+    monkeypatch.setattr(
+        session_manager,
+        "resolve_thread_project",
+        lambda thread_id, project_id: "agent_test_proj",
+    )
+    monkeypatch.setattr(
+        session_manager,
+        "get_client_for_thread",
+        AsyncMock(return_value=app_server_client),
+    )
+    transport = ASGITransport(app=agent_test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/threads/question-thread/user-questions/respond",
+            json={
+                "interactionId": "uq-1",
+                "turnId": "turn-1",
+                "callId": "call-1",
+                "questionId": "q1",
+                "answer": {"type": "option", "optionId": "q1-o1"},
+                "projectId": "agent_test_proj",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["accepted"] is True
+    app_server_client.respond_user_question.assert_awaited_once_with(
+        interaction_id="uq-1",
+        thread_id="question-thread",
+        turn_id="turn-1",
+        call_id="call-1",
+        question_id="q1",
+        answer={"type": "option", "optionId": "q1-o1"},
+    )
+
+
 def test_gateway_websocket_steer_interrupt_actions(agent_test_app):
     """Test WebSocket steer, interrupt, and approval actions over /ws/agent."""
     from starlette.testclient import TestClient

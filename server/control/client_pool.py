@@ -180,6 +180,7 @@ class ClientPool:
             log_level=settings.log_level,
             approval_handler=handle_approval,
             notification_handler=handle_notification,
+            user_questions=True,
         )
         await client.__aenter__()
         try:

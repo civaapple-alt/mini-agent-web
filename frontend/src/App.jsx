@@ -139,6 +139,7 @@ export default function App() {
   const [activeTurnId, setActiveTurnId] = useState(null);
   const [pendingApproval, setPendingApproval] = useState(null);
   const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [pendingUserQuestion, setPendingUserQuestion] = useState(null);
   const [pendingMessages, setPendingMessages] = useState([]);
   const [composerDraft, setComposerDraft] = useState(null);
   const [lastTurnResult, setLastTurnResult] = useState(null);
@@ -227,6 +228,7 @@ export default function App() {
   const clearPendingApprovals = () => {
     setPendingApprovals([]);
     setPendingApproval(null);
+    setPendingUserQuestion(null);
   };
 
   const rememberInterruptedTurn = (turnId) => {
@@ -1042,6 +1044,9 @@ export default function App() {
         listThreadItemsForHistory(threadId, projectId, requestContext),
       ]);
       if (!isCurrentSessionRequest(requestContext)) return;
+      setPendingUserQuestion(
+        cp.pending_user_question || cp.pendingUserQuestion || null,
+      );
       setThreadItems(itemEntries);
       const sessionSnapshot = cp.session || {};
       setCurrentThreadMeta((previous) => ({
@@ -1699,6 +1704,19 @@ export default function App() {
               currentSessionRequest(),
             );
           }
+        }
+      } else if (data.method === 'user-question/request' || data.method === 'user-question/updated') {
+        const interaction = notification.interaction || notification;
+        const interactionThreadId = interaction.threadId || interaction.thread_id;
+        const notificationProjectId = notification.projectId || notification.project_id;
+        if (
+          interactionThreadId === currentThreadRef.current
+          && (!notificationProjectId || notificationProjectId === currentThreadProjectRef.current)
+        ) {
+          const phase = notification.phase;
+          setPendingUserQuestion(
+            phase === 'resolved' || phase === 'cancelled' ? null : interaction,
+          );
         }
       } else if (data.method?.startsWith('checkpoint/') || data.method?.startsWith('goal/') || data.method?.startsWith('plan/')) {
         setLastWorkflowEvent({ method: data.method, ...notification });
@@ -2420,6 +2438,30 @@ export default function App() {
     showToast(`已提交安全审批决定: ${decision === 'approve' ? '允许执行' : '拒绝'}，正在同步其他浏览器`, 'info', 2500);
   };
 
+  const handleRespondUserQuestion = async ({ interaction, questionId, answer }) => {
+    const threadId = interaction?.threadId || interaction?.thread_id || currentThreadRef.current;
+    const projectId = currentThreadProjectRef.current;
+    try {
+      const result = await api.respondUserQuestion(threadId, {
+        interactionId: interaction.interactionId || interaction.interaction_id,
+        turnId: interaction.turnId || interaction.turn_id,
+        callId: interaction.callId || interaction.call_id,
+        questionId,
+        answer,
+      }, { projectId });
+      const updated = result.interaction;
+      if (updated) {
+        const isComplete = (updated.currentIndex ?? updated.current_index ?? 0)
+          >= (updated.questions || []).length;
+        setPendingUserQuestion(isComplete ? null : updated);
+      }
+      return result;
+    } catch (error) {
+      showToast(error.message || '提交回答失败，该问题可能已过期。', 'warning', 5000);
+      return null;
+    }
+  };
+
   const handleSelectThread = async (threadId, projectId = null) => {
     const selected = threads.find(
       (thread) =>
@@ -2894,6 +2936,8 @@ export default function App() {
       contextInjections={contextInjections}
       isInterrupting={isInterrupting}
       pendingApproval={pendingApproval}
+      pendingUserQuestion={pendingUserQuestion}
+      onRespondUserQuestion={handleRespondUserQuestion}
       pendingApprovalCount={pendingApprovals.length}
       onContinuePlanning={handleContinuePlanning}
       onStartImplementation={handleStartImplementation}

@@ -103,6 +103,8 @@ export default function AppLayout({
   isLoadingHistory,
   sessionReadOnly,
   onRespondApproval,
+  pendingUserQuestion,
+  onRespondUserQuestion,
   onChangeExecution,
   onChangeContinuation,
   onEnableAutoCopilot,
@@ -297,6 +299,8 @@ export default function AppLayout({
               statusModel={statusModel}
               isGenerating={isGenerating}
               pendingApproval={pendingApproval}
+              pendingUserQuestion={pendingUserQuestion}
+              onRespondUserQuestion={onRespondUserQuestion}
               lastTurnResult={lastTurnResult}
               turnTimings={turnTimings}
               onResumeExecution={() => {

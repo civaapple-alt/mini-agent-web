@@ -51,6 +51,21 @@ test('authoritative stopping phase locks the Turn even without local stop state'
   assert.equal(status.scope.turnId, 'turn-remote');
 });
 
+test('waiting for user input remains an active Turn with a clear status label', () => {
+  const status = getStatusViewModel({
+    isConnected: true,
+    runtimeStatus: {
+      active: true,
+      phase: 'waiting_for_user_input',
+      turnId: 'turn-question',
+    },
+  });
+
+  assert.equal(status.lifecycle, 'running');
+  assert.equal(status.summary, '等待用户回答');
+  assert.equal(status.scope.turnId, 'turn-question');
+});
+
 test('a locked idle process remains standby and does not become running', () => {
   const status = getStatusViewModel({
     isConnected: true,

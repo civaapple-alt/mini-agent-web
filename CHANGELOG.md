@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add capability-negotiated `ask_user` interactions to Web Studio. Present one
+  question at a time with recommended options, free-text answers, and skip;
+  persist answers through App Server and restore pending questions after a
+  refresh or execution recovery. Keep completed question cards collapsed by
+  default.
 - Add a top-right quick-open menu for the current Project workspace. Route
   launches through the local Gateway using registered Project paths and fixed
   Finder, Windows File Explorer, VS Code, IntelliJ IDEA, and terminal targets on macOS,

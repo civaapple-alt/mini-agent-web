@@ -258,6 +258,31 @@ export const threadApi = {
     return res.json();
   },
 
+  async respondUserQuestion(threadId, response, options = {}) {
+    const res = await request(
+      `/api/threads/${encodeURIComponent(threadId)}/user-questions/respond`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interactionId: response.interactionId,
+          turnId: response.turnId,
+          callId: response.callId,
+          questionId: response.questionId,
+          answer: response.answer,
+          projectId: resolveProjectId(options.projectId),
+        }),
+        ...requestSignal(options),
+      },
+      options.projectId,
+    );
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}));
+      throw new Error(detail.detail || '提交回答失败，该问题可能已过期');
+    }
+    return res.json();
+  },
+
   async readTurn(threadId, turnId, options = {}) {
     const res = await request(
       `/api/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(turnId)}`,

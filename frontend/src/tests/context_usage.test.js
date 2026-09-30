@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   contextCacheHitRatio,
   contextCategoryBreakdown,
+  aggregateContextCacheUsage,
   estimateContextCategoryTokens,
   formatContextPercentage,
   mergeContextInjectionRecords,
@@ -81,6 +82,53 @@ test('zero, missing, and impossible cache usage stay distinguishable', () => {
     contextCacheHitRatio({ usage: { inputTokens: 100, cachedInputTokens: 101 } }),
     null,
   );
+});
+
+test('session cache ratio is token-weighted across provider reports', () => {
+  const usage = aggregateContextCacheUsage([
+    { contextUsage: { usageTotals: {
+      requestCount: 2,
+      inputTokens: 400,
+      cacheReportCount: 1,
+      cacheReportedInputTokens: 100,
+      cachedInputTokens: 80,
+    } } },
+    { contextUsage: { usageTotals: {
+      requestCount: 1,
+      inputTokens: 200,
+      cacheReportCount: 1,
+      cacheReportedInputTokens: 200,
+      cachedInputTokens: 100,
+    } } },
+  ]);
+
+  assert.deepEqual(usage, {
+    requestCount: 3,
+    inputTokens: 600,
+    cacheReportCount: 2,
+    cacheReportedInputTokens: 300,
+    cachedInputTokens: 180,
+    trackedTurns: 2,
+    untrackedTurns: 0,
+    cacheHitRatio: 0.6,
+  });
+});
+
+test('session cache ratio marks legacy turns untracked and stays unknown without cache reports', () => {
+  const usage = aggregateContextCacheUsage([
+    { contextUsage: { usage: { inputTokens: 100, cachedInputTokens: 20 } } },
+    { contextUsage: { usageTotals: {
+      requestCount: 1,
+      inputTokens: 100,
+      cacheReportCount: 0,
+      cacheReportedInputTokens: 0,
+      cachedInputTokens: 0,
+    } } },
+  ]);
+
+  assert.equal(usage.cacheHitRatio, null);
+  assert.equal(usage.untrackedTurns, 1);
+  assert.equal(usage.trackedTurns, 1);
 });
 
 test('source records update by identity without duplicating the visible source', () => {

@@ -25,6 +25,7 @@ MAX_SESSIONS = 128
 # checkpoint records are projected below, so a large history remains readable
 # without copying its full model context into the Gateway response.
 MAX_SESSION_BYTES = 32 * 1024 * 1024
+MAX_JS_SAFE_INTEGER = (1 << 53) - 1
 MAX_RECORD_BYTES = 64 * 1024
 MAX_ERROR_CHARS = 2048
 MAX_CHECKPOINT_MESSAGES = 64
@@ -483,6 +484,32 @@ def _turn_presentation_projection(record: dict[str, Any]) -> dict[str, Any] | No
                     usage.get("output_tokens", usage.get("outputTokens"))
                 ),
             }
+        usage_totals = context_usage.get("usageTotals")
+        if isinstance(usage_totals, dict):
+            projected_usage["usageTotals"] = {
+                "requestCount": _optional_bounded_int(
+                    usage_totals.get("requestCount", usage_totals.get("request_count"))
+                ),
+                "inputTokens": _optional_bounded_int(
+                    usage_totals.get("inputTokens", usage_totals.get("input_tokens"))
+                ),
+                "cacheReportCount": _optional_bounded_int(
+                    usage_totals.get(
+                        "cacheReportCount", usage_totals.get("cache_report_count")
+                    )
+                ),
+                "cacheReportedInputTokens": _optional_bounded_int(
+                    usage_totals.get(
+                        "cacheReportedInputTokens",
+                        usage_totals.get("cache_reported_input_tokens"),
+                    )
+                ),
+                "cachedInputTokens": _optional_bounded_int(
+                    usage_totals.get(
+                        "cachedInputTokens", usage_totals.get("cached_input_tokens")
+                    )
+                ),
+            }
         byte_breakdown = context_usage.get("contextBytes")
         if isinstance(byte_breakdown, dict):
             projected_usage["contextBytes"] = {
@@ -560,6 +587,58 @@ def _turn_presentation_projection(record: dict[str, Any]) -> dict[str, Any] | No
                 ]
         projected["activities"].append(item)
     return projected
+
+
+def _session_context_cache_usage(records: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Aggregate Provider usage from every readable Turn without projecting history."""
+    keys = (
+        ("requestCount", "request_count"),
+        ("inputTokens", "input_tokens"),
+        ("cacheReportCount", "cache_report_count"),
+        ("cacheReportedInputTokens", "cache_reported_input_tokens"),
+        ("cachedInputTokens", "cached_input_tokens"),
+    )
+    totals = {camel: 0 for camel, _snake in keys}
+    exact_totals = {camel: 0 for camel, _snake in keys}
+    totals.update(trackedTurns=0, untrackedTurns=0)
+    for record in records:
+        if record.get("kind") != "turn_started":
+            continue
+        presentation = record.get("presentation")
+        context_usage = (
+            presentation.get("contextUsage", presentation.get("context_usage"))
+            if isinstance(presentation, dict)
+            else None
+        )
+        if not isinstance(context_usage, dict):
+            continue
+        raw_totals = context_usage.get("usageTotals", context_usage.get("usage_totals"))
+        values = {
+            camel: _optional_bounded_int(
+                raw_totals.get(camel, raw_totals.get(snake))
+                if isinstance(raw_totals, dict)
+                else None
+            )
+            for camel, snake in keys
+        }
+        if any(value is None for value in values.values()):
+            totals["untrackedTurns"] += 1
+            continue
+        totals["trackedTurns"] += 1
+        for key, value in values.items():
+            exact_totals[key] += value
+            totals[key] = min(MAX_JS_SAFE_INTEGER, totals[key] + value)
+
+    if totals["trackedTurns"] == 0 and totals["untrackedTurns"] == 0:
+        return None
+    denominator = exact_totals["cacheReportedInputTokens"]
+    cached_tokens = exact_totals["cachedInputTokens"]
+    totals["cacheHitRatio"] = (
+        cached_tokens / denominator
+        if denominator > 0 and cached_tokens <= denominator
+        else None
+    )
+    return totals
 
 
 def _checkpoint_projection(record: dict[str, Any]) -> dict[str, Any]:
@@ -854,6 +933,7 @@ class SessionCatalog:
             "messages": entry.get("messages", []),
             "items": entry.get("items", []),
             "presentations": entry.get("presentations", []),
+            "contextCacheUsage": entry.get("context_cache_usage"),
             "contextInjections": entry.get("context_injections", []),
             "session": entry,
         }
@@ -1776,6 +1856,7 @@ class SessionCatalog:
                 checkpoint.get("messages", [])
             )
             entry["context_injections"] = _checkpoint_context_injections(checkpoint)
+            entry["context_cache_usage"] = _session_context_cache_usage(records)
             entry["items"] = [
                 {"turnId": record.get("turn_id"), "item": projected}
                 for record in records

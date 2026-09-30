@@ -255,6 +255,7 @@ function WorkflowFileContent({ path, content, emptyMessage }) {
 export function PromptContextCard({
   injections = [],
   contextUsage = null,
+  contextCacheUsage = null,
   status = {},
   workspace = '',
 }) {
@@ -273,7 +274,12 @@ export function PromptContextCard({
   ];
   const normalizedUsage = normalizeContextUsage(contextUsage);
   const categories = contextCategoryBreakdown(normalizedUsage) || [];
-  const cacheHitRatio = contextCacheHitRatio(normalizedUsage);
+  const latestCacheHitRatio = contextCacheHitRatio(normalizedUsage);
+  const hasSessionCacheRate = contextCacheUsage?.cacheHitRatio !== null
+    && contextCacheUsage?.cacheHitRatio !== undefined;
+  const cacheHitRatio = hasSessionCacheRate
+    ? contextCacheUsage.cacheHitRatio
+    : latestCacheHitRatio;
   const cacheHitPercent = formatContextPercentage(cacheHitRatio);
   const injectedBytes = (injections || []).reduce(
     (total, record) => total + Math.max(0, Number(record?.bytes) || 0),
@@ -328,7 +334,7 @@ export function PromptContextCard({
         </div>
         <div className="prompt-context-cache-summary">
           <div>
-            <span>整体缓存命中率</span>
+            <span>{hasSessionCacheRate ? '本会话累计缓存命中率' : '最近请求缓存命中率'}</span>
             <strong>{cacheHitPercent}</strong>
           </div>
           <div className="prompt-context-cache-progress" aria-hidden="true">
@@ -336,6 +342,14 @@ export function PromptContextCard({
               ? '0%'
               : `${Math.min(100, Math.max(0, cacheHitRatio * 100))}%` }} />
           </div>
+          {contextCacheUsage && (
+            <small>
+              {contextCacheUsage.cacheReportCount.toLocaleString()} / {contextCacheUsage.requestCount.toLocaleString()} 次用量报告含缓存数值
+              {contextCacheUsage.untrackedTurns > 0
+                ? `；${contextCacheUsage.untrackedTurns} 个历史回合未累计`
+                : ''}
+            </small>
+          )}
         </div>
       </div>
 
@@ -407,7 +421,7 @@ export function PromptContextCard({
           </>
         )}
         <p className="prompt-context-estimate-note">
-          各来源占比由最近请求的输入字节估算；缓存 token 只显示 Provider 报告的整体数值。
+          各来源占比由最近请求的输入字节估算；会话缓存命中率按含缓存数值的 Provider 报告加权汇总，不分摊到来源。
         </p>
       </div>
     </div>
@@ -429,6 +443,7 @@ export default function SidePanel({
   status = null,
   contextInjections = [],
   contextUsage = null,
+  contextCacheUsage = null,
   sessionMeta = null,
   threadId = 'default',
   projectId = null,
@@ -1251,6 +1266,7 @@ export default function SidePanel({
                   <PromptContextCard
                     injections={contextInjections}
                     contextUsage={contextUsage}
+                    contextCacheUsage={contextCacheUsage}
                     status={worldData.status}
                     workspace={worldData.workspace}
                   />

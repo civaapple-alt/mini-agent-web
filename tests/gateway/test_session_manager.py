@@ -1179,6 +1179,17 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
             "thread_id": "t-1",
             "turn_id": "turn-1",
             "prompt": "inspect project",
+            "presentation": {
+                "contextUsage": {
+                    "usageTotals": {
+                        "requestCount": 2,
+                        "inputTokens": 300,
+                        "cacheReportCount": 1,
+                        "cacheReportedInputTokens": 200,
+                        "cachedInputTokens": 150,
+                    }
+                }
+            },
             "timestamp_ms": 1100,
         },
         {
@@ -1292,6 +1303,16 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     assert history["last_turn_status"] == "step_limit"
     assert history["last_turn_error"] == "model request failed: transport error"
     assert history["last_turn_id"] == "turn-1"
+    assert history["contextCacheUsage"] == {
+        "requestCount": 2,
+        "inputTokens": 300,
+        "cacheReportCount": 1,
+        "cacheReportedInputTokens": 200,
+        "cachedInputTokens": 150,
+        "trackedTurns": 1,
+        "untrackedTurns": 0,
+        "cacheHitRatio": 0.75,
+    }
 
 
 def test_session_catalog_uses_active_turn_start_over_context_checkpoint(
@@ -3675,6 +3696,13 @@ def test_session_catalog_projects_context_metadata_and_actual_cached_usage():
                         "cached_input_tokens": 850,
                         "output_tokens": 12,
                     },
+                    "usageTotals": {
+                        "requestCount": 3,
+                        "inputTokens": 2500,
+                        "cacheReportCount": 2,
+                        "cacheReportedInputTokens": 2000,
+                        "cachedInputTokens": 1500,
+                    },
                     "contextBytes": {
                         "systemPrompt": 100,
                         "projectInstructions": 200,
@@ -3716,6 +3744,13 @@ def test_session_catalog_projects_context_metadata_and_actual_cached_usage():
             "cachedInputTokens": 850,
             "outputTokens": 12,
         },
+        "usageTotals": {
+            "requestCount": 3,
+            "inputTokens": 2500,
+            "cacheReportCount": 2,
+            "cacheReportedInputTokens": 2000,
+            "cachedInputTokens": 1500,
+        },
         "contextBytes": {
             "systemPrompt": 100,
             "projectInstructions": 200,
@@ -3732,6 +3767,92 @@ def test_session_catalog_projects_context_metadata_and_actual_cached_usage():
     assert "body" not in source
 
 
+def test_session_context_cache_usage_includes_turns_beyond_history_projection_limit():
+    from server.session_catalog import (
+        MAX_TURN_PRESENTATIONS,
+        _session_context_cache_usage,
+    )
+
+    records = [
+        {
+            "kind": "turn_started",
+            "presentation": {
+                "contextUsage": {
+                    "usageTotals": {
+                        "requestCount": 1,
+                        "inputTokens": 100,
+                        "cacheReportCount": 1,
+                        "cacheReportedInputTokens": 100,
+                        "cachedInputTokens": 90,
+                    }
+                }
+            },
+        },
+        {
+            "kind": "turn_started",
+            "presentation": {
+                "contextUsage": {"usage": {"inputTokens": 100, "cachedInputTokens": 80}}
+            },
+        },
+    ]
+    records.extend(
+        {
+            "kind": "turn_started",
+            "presentation": {
+                "contextUsage": {
+                    "usageTotals": {
+                        "requestCount": 1,
+                        "inputTokens": 10,
+                        "cacheReportCount": 1,
+                        "cacheReportedInputTokens": 10,
+                        "cachedInputTokens": 5,
+                    }
+                }
+            },
+        }
+        for _ in range(MAX_TURN_PRESENTATIONS + 1)
+    )
+
+    aggregate = _session_context_cache_usage(records)
+
+    assert aggregate == {
+        "requestCount": MAX_TURN_PRESENTATIONS + 2,
+        "inputTokens": 100 + (MAX_TURN_PRESENTATIONS + 1) * 10,
+        "cacheReportCount": MAX_TURN_PRESENTATIONS + 2,
+        "cacheReportedInputTokens": 100 + (MAX_TURN_PRESENTATIONS + 1) * 10,
+        "cachedInputTokens": 90 + (MAX_TURN_PRESENTATIONS + 1) * 5,
+        "trackedTurns": MAX_TURN_PRESENTATIONS + 2,
+        "untrackedTurns": 1,
+        "cacheHitRatio": (90 + (MAX_TURN_PRESENTATIONS + 1) * 5)
+        / (100 + (MAX_TURN_PRESENTATIONS + 1) * 10),
+    }
+
+
+def test_session_context_cache_ratio_keeps_precision_when_totals_are_bounded():
+    from server.session_catalog import MAX_JS_SAFE_INTEGER, _session_context_cache_usage
+
+    aggregate = _session_context_cache_usage(
+        [
+            {
+                "kind": "turn_started",
+                "presentation": {
+                    "contextUsage": {
+                        "usageTotals": {
+                            "requestCount": 1,
+                            "inputTokens": MAX_JS_SAFE_INTEGER * 2,
+                            "cacheReportCount": 1,
+                            "cacheReportedInputTokens": MAX_JS_SAFE_INTEGER * 2,
+                            "cachedInputTokens": MAX_JS_SAFE_INTEGER,
+                        }
+                    }
+                },
+            }
+        ]
+    )
+
+    assert aggregate["cacheReportedInputTokens"] == MAX_JS_SAFE_INTEGER
+    assert aggregate["cachedInputTokens"] == MAX_JS_SAFE_INTEGER
+    assert aggregate["cacheHitRatio"] == 0.5
 def test_session_catalog_keeps_unreported_cached_usage_unknown():
     from server.session_catalog import _turn_presentation_projection
 

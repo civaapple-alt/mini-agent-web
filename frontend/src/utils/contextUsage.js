@@ -31,6 +31,24 @@ export function normalizeContextUsage(value) {
       finiteNonNegative(field(rawBytes, key)),
     ]))
     : null;
+  const rawUsageTotals = source.usageTotals || source.usage_totals;
+  const usageTotals = rawUsageTotals && typeof rawUsageTotals === 'object'
+    ? {
+      requestCount: finiteNonNegative(field(rawUsageTotals, 'requestCount', 'request_count')),
+      inputTokens: finiteNonNegative(field(rawUsageTotals, 'inputTokens', 'input_tokens')),
+      cacheReportCount: finiteNonNegative(field(rawUsageTotals, 'cacheReportCount', 'cache_report_count')),
+      cacheReportedInputTokens: finiteNonNegative(field(
+        rawUsageTotals,
+        'cacheReportedInputTokens',
+        'cache_reported_input_tokens',
+      )),
+      cachedInputTokens: finiteNonNegative(field(
+        rawUsageTotals,
+        'cachedInputTokens',
+        'cached_input_tokens',
+      )),
+    }
+    : null;
 
   return {
     inputTokens: usage && typeof usage === 'object'
@@ -43,6 +61,7 @@ export function normalizeContextUsage(value) {
       ? finiteNonNegative(field(usage, 'outputTokens', 'output_tokens'))
       : null,
     contextBytes,
+    usageTotals,
   };
 }
 
@@ -132,6 +151,47 @@ export function contextCacheHitRatio(contextUsage) {
     return null;
   }
   return cachedInputTokens / inputTokens;
+}
+
+export function aggregateContextCacheUsage(presentations) {
+  const totals = {
+    requestCount: 0,
+    inputTokens: 0,
+    cacheReportCount: 0,
+    cacheReportedInputTokens: 0,
+    cachedInputTokens: 0,
+    trackedTurns: 0,
+    untrackedTurns: 0,
+  };
+
+  for (const presentation of presentations || []) {
+    const usage = normalizeContextUsage(presentation?.contextUsage);
+    if (!usage) continue;
+    const turnTotals = usage.usageTotals;
+    if (!turnTotals) {
+      if (usage.inputTokens !== null) totals.untrackedTurns += 1;
+      continue;
+    }
+
+    const counters = Object.values(turnTotals);
+    if (counters.some((value) => value === null)) {
+      totals.untrackedTurns += 1;
+      continue;
+    }
+    totals.trackedTurns += 1;
+    totals.requestCount += turnTotals.requestCount;
+    totals.inputTokens += turnTotals.inputTokens;
+    totals.cacheReportCount += turnTotals.cacheReportCount;
+    totals.cacheReportedInputTokens += turnTotals.cacheReportedInputTokens;
+    totals.cachedInputTokens += turnTotals.cachedInputTokens;
+  }
+
+  if (totals.trackedTurns === 0 && totals.untrackedTurns === 0) return null;
+  const cacheHitRatio = totals.cacheReportedInputTokens > 0
+    && totals.cachedInputTokens <= totals.cacheReportedInputTokens
+    ? totals.cachedInputTokens / totals.cacheReportedInputTokens
+    : null;
+  return { ...totals, cacheHitRatio };
 }
 
 export function formatContextPercentage(ratio) {

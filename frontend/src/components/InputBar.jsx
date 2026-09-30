@@ -60,7 +60,7 @@ const SLASH_COMMANDS = [
 
 const reasoningLevelLabel = (level) => (level === 'disabled' ? 'disabled（关闭）' : level);
 
-export function ContextUsageControl({ contextUsage, contextWindow }) {
+export function ContextUsageControl({ contextUsage, contextCacheUsage = null, contextWindow }) {
   const [open, setOpen] = useState(false);
   const usage = normalizeContextUsage(contextUsage);
   const categories = contextCategoryBreakdown(usage) || [];
@@ -72,11 +72,19 @@ export function ContextUsageControl({ contextUsage, contextWindow }) {
     ? inputTokens / windowSize
     : null;
   const windowPercent = formatContextPercentage(windowRatio);
-  const cacheHitRatio = contextCacheHitRatio(usage);
+  const latestCacheHitRatio = contextCacheHitRatio(usage);
+  const hasSessionCacheRate = contextCacheUsage?.cacheHitRatio !== null
+    && contextCacheUsage?.cacheHitRatio !== undefined;
+  const cacheHitRatio = hasSessionCacheRate
+    ? contextCacheUsage.cacheHitRatio
+    : latestCacheHitRatio;
+  const cacheHitScope = hasSessionCacheRate ? '会话' : '最近';
   const cacheHitPercent = formatContextPercentage(cacheHitRatio);
   const summary = inputTokens === null
-    ? '上下文用量未知'
-    : `窗口 ${windowPercent} · 缓存命中 ${cacheHitPercent}`;
+    ? (hasSessionCacheRate
+      ? `窗口未知 · 会话命中 ${cacheHitPercent}`
+      : '上下文用量未知')
+    : `窗口 ${windowPercent} · ${cacheHitScope}命中 ${cacheHitPercent}`;
   const progressWidth = (ratio) => (
     ratio === null ? '0%' : `${Math.min(100, Math.max(0, ratio * 100))}%`
   );
@@ -88,8 +96,8 @@ export function ContextUsageControl({ contextUsage, contextWindow }) {
         className="composer-context-usage-trigger"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        aria-label="查看最近一次模型请求的上下文用量和缓存命中率"
-        title="查看上下文窗口占用、整体缓存命中率和来源占比"
+        aria-label={`上下文使用状态：${summary}。打开会话上下文详情`}
+        title="查看模型窗口占用、会话缓存命中率和来源占比"
       >
         <Activity size={12} />
         <span>{summary}</span>
@@ -106,7 +114,7 @@ export function ContextUsageControl({ contextUsage, contextWindow }) {
               </div>
             </div>
             <div className="composer-context-usage-highlight cache">
-              <span>整体缓存命中率</span>
+              <span>{hasSessionCacheRate ? '本会话累计命中率' : '最近请求命中率'}</span>
               <strong>{cacheHitPercent}</strong>
               <div className="composer-context-progress" aria-hidden="true">
                 <span style={{ width: progressWidth(cacheHitRatio) }} />
@@ -120,6 +128,22 @@ export function ContextUsageControl({ contextUsage, contextWindow }) {
           <div className="composer-context-usage-total">
             <span>缓存输入</span>
             <strong>{cachedInputTokens === null ? '未知' : `${cachedInputTokens.toLocaleString()} tokens`}</strong>
+          </div>
+          <div className="composer-context-session-cache">
+            <div>
+              <span>本会话累计缓存命中率</span>
+              <strong>{formatContextPercentage(contextCacheUsage?.cacheHitRatio ?? null)}</strong>
+            </div>
+            {contextCacheUsage ? (
+              <p>
+                {contextCacheUsage.cacheReportCount.toLocaleString()} / {contextCacheUsage.requestCount.toLocaleString()} 次用量报告含缓存数值
+                {contextCacheUsage.untrackedTurns > 0
+                  ? `；${contextCacheUsage.untrackedTurns} 个历史回合没有逐请求累计`
+                  : ''}
+              </p>
+            ) : (
+              <p>历史累计用量未知；本会话后续请求完成后开始累计。</p>
+            )}
           </div>
           <div className="composer-context-usage-window">
             模型窗口：{hasWindow
@@ -165,7 +189,7 @@ export function ContextUsageControl({ contextUsage, contextWindow }) {
               </div>
             </>
           )}
-          <p>来源占比按输入字节估算；缓存命中率按 Provider 报告的缓存输入 ÷ 实际输入计算，不分摊到来源。</p>
+          <p>来源占比按输入字节估算；会话缓存命中率按含缓存数值的 Provider 报告加权汇总，不分摊到来源。</p>
         </section>
       )}
     </div>
@@ -210,6 +234,7 @@ export default function InputBar({
   skillInsertion = null,
   onSkillInsertionApplied,
   contextUsage = null,
+  contextCacheUsage = null,
 }) {
   const [prompt, setPrompt] = useState('');
   const [showSlashPopup, setShowSlashPopup] = useState(false);
@@ -1318,6 +1343,7 @@ export default function InputBar({
               <div className="composer-model-controls">
                 <ContextUsageControl
                   contextUsage={contextUsage}
+                  contextCacheUsage={contextCacheUsage}
                   contextWindow={effectiveEntry?.model?.contextWindow}
                 />
                 <label className="composer-model-select-wrap" title={effectiveModelProblem || '切换当前 Thread 的模型'}>

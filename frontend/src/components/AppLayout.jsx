@@ -81,6 +81,7 @@ export default function AppLayout({
   onToast,
   statusModel,
   contextUsage = null,
+  contextCacheUsage = null,
   contextInjections = [],
   planActive,
   isInterrupting,
@@ -332,6 +333,7 @@ export default function AppLayout({
             sessionActive={sessionActive}
             sessionControl={childTasks.sessionControl}
             contextUsage={contextUsage}
+            contextCacheUsage={contextCacheUsage}
             hasSessionActivity={isGenerating || childTasks.children.some((child) => (
               ['queued', 'running', 'in_progress', 'awaiting_approval', 'pausing', 'cancelling']
                 .includes(child.status)
@@ -399,6 +401,7 @@ export default function AppLayout({
             goalState={goalState}
             status={statusModel}
             contextUsage={contextUsage}
+            contextCacheUsage={contextCacheUsage}
             contextInjections={contextInjections}
             lastTurnResult={lastTurnResult}
             sessionMeta={sessionMeta}

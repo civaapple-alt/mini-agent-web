@@ -56,6 +56,7 @@ import {
 import { startImplementationTurn } from './utils/planWorkflow.js';
 import { publishChildRuntimeEvent } from './utils/childRuntimeEvents.js';
 import {
+  aggregateContextCacheUsage,
   mergeContextInjectionRecords,
   normalizeContextUsage,
 } from './utils/contextUsage.js';
@@ -130,6 +131,7 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [threadItems, setThreadItems] = useState([]);
   const [contextUsage, setContextUsage] = useState(null);
+  const [contextCacheUsage, setContextCacheUsage] = useState(null);
   const [contextInjections, setContextInjections] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isInterrupting, setIsInterrupting] = useState(false);
@@ -423,6 +425,7 @@ export default function App() {
     setMessages([]);
     setThreadItems([]);
     setContextUsage(null);
+    setContextCacheUsage(null);
     setContextInjections([]);
     setIsLoadingHistory(loadingHistory);
   };
@@ -1099,6 +1102,11 @@ export default function App() {
         itemEntries,
       );
       const presentations = cp.presentations || cp.session?.presentations || [];
+      setContextCacheUsage(
+        cp.contextCacheUsage
+          || cp.session?.context_cache_usage
+          || aggregateContextCacheUsage(presentations),
+      );
       const latestContextPresentation = [...presentations]
         .reverse()
         .find((presentation) => presentation?.contextUsage);
@@ -1791,6 +1799,12 @@ export default function App() {
         }));
       } else if (evt.type === 'turn_finished') {
         rememberTurnDuration(eventKey, eventTurnId || activeTurnIdRef.current);
+        void loadThreadHistory(
+          currentThreadRef.current,
+          currentThreadProjectRef.current,
+          null,
+          { preserveVisible: true },
+        );
         const turnStatus = evt.status || evt.stop_reason || 'unknown';
         if (turnStatus === 'steered') {
           // The accepted steer_ack is the only user-facing confirmation.
@@ -2886,6 +2900,7 @@ export default function App() {
       planActive={planActive}
       statusModel={statusModel}
       contextUsage={contextUsage}
+      contextCacheUsage={contextCacheUsage}
       contextInjections={contextInjections}
       isInterrupting={isInterrupting}
       pendingApproval={pendingApproval}

@@ -19,22 +19,32 @@ remains available after older turn presentations leave the bounded history.
 
 ## Request usage
 
-The collapsed composer control shows model-window occupancy and the overall
-cache-hit ratio for the most recent `model_responded` event. Expanding it shows
-the Provider-reported input and cached-input token counts. A zero cached-input
-count is shown as zero; missing usage or a zero input count leaves the ratio
-unknown. The model context window comes from the configured model catalog and
-is shown as unknown when unset.
+The collapsed composer control shows model-window occupancy and the session's
+cumulative cache-hit ratio when Provider cache reports are available. Expanding
+it also shows the most recent `model_responded` input and cached-input token
+counts. The session ratio is token-weighted across Provider usage reports in
+persisted Turn presentations that include a cached-input count:
+`sum(cached_input_tokens) / sum(input_tokens for reports with cached counts)`.
+The report count and usage-report count show how much of the available Provider
+usage included a cache count. Reports that omit cache usage are excluded from
+the ratio denominator; a reported cache count of zero contributes zero. The
+ratio is unknown when no cache-bearing report has input tokens. Old Turns
+without per-request totals are counted as untracked rather than treating their
+latest report as a historical average.
+
+The most recent request's zero cached-input count is shown as zero; missing
+usage or a zero input count leaves its own ratio unknown. The model context
+window comes from the configured model catalog and is shown as unknown when
+unset.
 
 The expanded usage view shows a segmented context-source bar and a percentage
 for each category. Studio apportions the Provider-reported input-token total
 by each category's serialized byte share and labels the token count as an
-estimate. It does not assign cached tokens to individual sources. The overall
-cache-hit ratio is `cached_input_tokens / input_tokens` from the Provider's
-most recent report; it is not a conversation-wide historical average.
+estimate. It does not assign cached tokens to individual sources. The session
+cache-hit ratio is based on Provider reports, not an estimate derived from
+source byte shares.
 
 Provider cache behavior depends on its cache boundary and tokenization. The
 append-only Session context sequence preserves earlier request prefixes when a
 new source is added, but Web Studio does not promise a cache hit. The displayed
-cached-token total and hit ratio use the Provider's actual report for the most
-recent model request.
+cached-token counts and session ratio use the Provider's actual reports.

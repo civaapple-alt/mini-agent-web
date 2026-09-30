@@ -1209,6 +1209,39 @@ body.theme-dark .btn-dock-deny {
   background: var(--accent-green);
 }
 
+.composer-context-session-cache {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-app);
+}
+
+.composer-context-session-cache > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.composer-context-session-cache span {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.composer-context-session-cache strong {
+  color: var(--accent-green);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.composer-context-session-cache p {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
 .composer-context-usage-total,
 .composer-context-estimate {
   display: flex;

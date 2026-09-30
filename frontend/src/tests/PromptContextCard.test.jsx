@@ -40,12 +40,30 @@ describe('PromptContextCard', () => {
     expect(screen.getByText('AGENTS.md')).toBeDefined();
     expect(screen.getByText('128 B')).toBeDefined();
     expect(screen.getByText('项目指令')).toBeDefined();
-    expect(screen.getByText('整体缓存命中率')).toBeDefined();
+    expect(screen.getByText('最近请求缓存命中率')).toBeDefined();
     expect(screen.getByText('0.0%')).toBeDefined();
     expect(screen.getByText('66.7%')).toBeDefined();
     expect(screen.getByText('33.3%')).toBeDefined();
     expect(screen.queryByText(/environment os/)).toBeNull();
     expect(screen.queryByRole('button', { name: /完整注入内容|复制原文/ })).toBeNull();
+  });
+
+  it('shows a session-wide weighted cache ratio and provider report coverage', () => {
+    render(
+      <PromptContextCard
+        contextUsage={{ usage: { inputTokens: 100, cachedInputTokens: 20 } }}
+        contextCacheUsage={{
+          requestCount: 8,
+          cacheReportCount: 6,
+          untrackedTurns: 2,
+          cacheHitRatio: 0.8,
+        }}
+      />,
+    );
+
+    expect(screen.getByText('本会话累计缓存命中率')).toBeDefined();
+    expect(screen.getByText('80.0%')).toBeDefined();
+    expect(screen.getByText(/6 \/ 8 次用量报告含缓存数值；2 个历史回合未累计/)).toBeDefined();
   });
 
   it('labels old history without injection metadata as unknown', () => {

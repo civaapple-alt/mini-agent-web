@@ -14,6 +14,7 @@ from mini_agent import (
     ItemLifecycleNotification,
     MiniAgentClient,
     ModelRespondedEvent,
+    ModelTiming,
     ModelUsage,
     RunFailedEvent,
     RunFailure,
@@ -196,6 +197,22 @@ def test_model_responded_event_keeps_unreported_cache_usage_unknown():
     assert event.usage == ModelUsage(
         input_tokens=12, cached_input_tokens=None, output_tokens=3, total_tokens=15
     )
+    assert event.model_timing is None
+
+
+def test_model_responded_event_parses_model_timing_in_wire_and_persisted_shapes():
+    event = parse_event(
+        {
+            "type": "model_responded",
+            "model_timing": {"ttft_ms": 24, "response_ms": 130},
+        }
+    )
+
+    assert isinstance(event, ModelRespondedEvent)
+    assert event.model_timing == ModelTiming(ttft_ms=24, response_ms=130)
+
+    persisted_shape = ModelTiming.from_dict({"ttftMs": None, "responseMs": 130})
+    assert persisted_shape == ModelTiming(ttft_ms=None, response_ms=130)
 
 
 @pytest.mark.asyncio

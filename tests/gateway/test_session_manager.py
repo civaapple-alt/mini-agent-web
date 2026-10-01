@@ -4035,6 +4035,25 @@ def test_session_catalog_keeps_unreported_cached_usage_unknown():
     }
 
 
+def test_session_catalog_projects_bounded_model_timing_and_keeps_old_turns_compatible():
+    from server.session_catalog import _turn_presentation_projection
+
+    projected = _turn_presentation_projection(
+        {
+            "turn_id": "turn-timing",
+            "presentation": {
+                "model_timing": {"ttft_ms": 23, "response_ms": 170},
+            },
+        }
+    )
+    old = _turn_presentation_projection(
+        {"turn_id": "turn-old", "presentation": {"activities": []}}
+    )
+
+    assert projected["modelTiming"] == {"ttftMs": 23, "responseMs": 170}
+    assert "modelTiming" not in old
+
+
 def test_browser_history_omits_internal_context_and_system_prompt_bodies():
     from server.session_catalog import _visible_checkpoint_messages
 

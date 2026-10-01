@@ -40,6 +40,11 @@ usage or a zero input count leaves its own ratio unknown. The model context
 window comes from the configured model catalog and is shown as unknown when
 unset.
 
+Settled assistant replies also show the most recent model request's time to
+first non-empty output (TTFT) and total response time when the App Server
+reports them. Older Turns and requests without timing data show `—`; the SDK
+keeps the timing fields optional for compatibility.
+
 The expanded usage view shows a segmented context-source bar and a percentage
 for each category. Studio apportions the Provider-reported input-token total
 by each category's serialized byte share and labels the token count as an

@@ -13,6 +13,8 @@ from mini_agent import (
     ContextCompactionStartedEvent,
     GenericEvent,
     ItemLifecycleNotification,
+    ModelRespondedEvent,
+    ModelTiming,
     RunFailedEvent,
     RunFinishedEvent,
     RuntimeStatus,
@@ -35,6 +37,7 @@ EVENT_FIXTURES = [
         "text": "answer",
         "tool_calls": [],
         "usage": None,
+        "model_timing": {"ttft_ms": 24, "response_ms": 130},
     },
     {
         "type": "tool_started",
@@ -140,6 +143,9 @@ def main() -> None:
     assert isinstance(parse_event(EVENT_FIXTURES[10]), RunFinishedEvent)
     assert isinstance(parse_event(EVENT_FIXTURES[12]), RunFailedEvent)
     assert isinstance(parse_event(EVENT_FIXTURES[13]), GenericEvent)
+    response = parse_event(EVENT_FIXTURES[5])
+    assert isinstance(response, ModelRespondedEvent)
+    assert response.model_timing == ModelTiming(ttft_ms=24, response_ms=130)
 
     for outcome in KNOWN_TOOL_OUTCOMES:
         tool_event = parse_event(

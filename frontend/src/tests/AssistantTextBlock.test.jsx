@@ -5,6 +5,31 @@ import AssistantTextBlock from '../components/AssistantTextBlock';
 import MessageItem from '../components/MessageItem';
 
 describe('AssistantTextBlock', () => {
+  it('shows model timing and unknown markers in settled response metadata', () => {
+    const { rerender } = render(
+      <MessageItem
+        message={{
+          id: 'assistant-timing',
+          role: 'assistant',
+          text: 'Measured response',
+          modelTiming: { ttftMs: 120, responseMs: 430 },
+        }}
+        isLast
+        isGenerating={false}
+      />,
+    );
+    expect(screen.getByLabelText('模型响应耗时').textContent).toContain('TTFT 120ms · 响应 430ms');
+
+    rerender(
+      <MessageItem
+        message={{ id: 'assistant-old', role: 'assistant', text: 'Historical response' }}
+        isLast
+        isGenerating={false}
+      />,
+    );
+    expect(screen.getByLabelText('模型响应耗时').textContent).toContain('TTFT — · 响应 —');
+  });
+
   it('shows arriving text while active and keeps the final response expanded when settled', () => {
     const { container, rerender } = render(
       <AssistantTextBlock

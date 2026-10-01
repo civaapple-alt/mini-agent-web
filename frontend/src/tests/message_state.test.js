@@ -1095,6 +1095,38 @@ test('history restores assistant segments and presentation activity in item orde
   ]);
 });
 
+test('model response timing is attached live and restored from Turn presentation', () => {
+  let live = aggregateStreamEvent([], {
+    type: 'event',
+    turnId: 'turn-timing',
+    event: { type: 'turn_started' },
+  });
+  live = aggregateStreamEvent(live, {
+    type: 'event',
+    turnId: 'turn-timing',
+    event: {
+      type: 'model_responded',
+      model_timing: { ttft_ms: 18, response_ms: 142 },
+    },
+  });
+
+  assert.deepEqual(live[0].modelTiming, { ttftMs: 18, responseMs: 142 });
+
+  const restored = restorePersistedTurnPresentation(
+    [{ id: 'assistant-timing', role: 'assistant', turnId: 'turn-timing', text: 'Done' }],
+    [],
+    [{ turnId: 'turn-timing', modelTiming: { ttftMs: 18, responseMs: 142 } }],
+  );
+  assert.deepEqual(restored[0].modelTiming, { ttftMs: 18, responseMs: 142 });
+
+  const old = restorePersistedTurnPresentation(
+    [{ id: 'assistant-old', role: 'assistant', turnId: 'turn-old', text: 'Earlier' }],
+    [],
+    [{ turnId: 'turn-old', activities: [] }],
+  );
+  assert.equal(old[0].modelTiming, null);
+});
+
 test('context injection events become metadata-only transcript blocks and replay after restart', () => {
   const record = {
     id: 'agents-main',

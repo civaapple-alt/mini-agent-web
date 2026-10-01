@@ -10,6 +10,7 @@ from typing import Any
 from mini_agent.types import (
     ContextByteBreakdown,
     ContextInjectionRecord,
+    ModelTiming,
     ModelUsage,
     ToolCall,
     ToolOutcome,
@@ -174,6 +175,7 @@ class ModelRespondedEvent(EventModel):
     text: str
     tool_calls: list[ToolCall] = field(default_factory=list)
     usage: ModelUsage | None = None
+    model_timing: ModelTiming | None = None
     context_bytes: ContextByteBreakdown | None = None
     type: str = "model_responded"
 
@@ -188,6 +190,9 @@ class ModelRespondedEvent(EventModel):
                 ModelUsage.from_dict(data["usage"])
                 if isinstance(data.get("usage"), dict)
                 else None
+            ),
+            model_timing=ModelTiming.from_dict(
+                data.get("model_timing") or data.get("modelTiming")
             ),
             context_bytes=ContextByteBreakdown.from_dict(
                 data.get("context_bytes") or data.get("contextBytes")

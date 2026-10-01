@@ -64,7 +64,7 @@ export default function MessageItem({
   childTaskBatch = null,
   isChildTaskTurn = false,
 }) {
-  const { role, text, thinking, tools = [], blocks = [], usage } = message;
+  const { role, text, thinking, tools = [], blocks = [], usage, modelTiming } = message;
   const [copied, setCopied] = useState(false);
 
   const handleCopyText = (content) => {
@@ -654,6 +654,13 @@ export default function MessageItem({
                 <span>Tokens: In {usage.input_tokens || 0} · Out {usage.output_tokens || 0}</span>
               </div>
             )}
+            <div className="token-usage-meta font-mono" aria-label="模型响应耗时">
+              <span>
+                TTFT {Number.isSafeInteger(modelTiming?.ttftMs) ? `${modelTiming.ttftMs}ms` : '—'}
+                {' · 响应 '}
+                {Number.isSafeInteger(modelTiming?.responseMs) ? `${modelTiming.responseMs}ms` : '—'}
+              </span>
+            </div>
           </div>
         )}
       </div>

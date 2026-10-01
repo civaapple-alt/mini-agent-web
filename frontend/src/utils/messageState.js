@@ -1064,7 +1064,16 @@ export function restorePersistedTurnPresentation(messages = [], entries = [], pr
     });
   }
 
-  const messagesWithAssistantAnchors = [...(messages || [])];
+  const messagesWithAssistantAnchors = (messages || []).map((message) => {
+    if (message?.role !== 'assistant' || !message.turnId) return message;
+    const presentation = presentationByTurn.get(String(message.turnId));
+    return {
+      ...message,
+      modelTiming: normalizeModelTiming(
+        presentation?.modelTiming || presentation?.model_timing || message.modelTiming,
+      ),
+    };
+  });
   const assistantTurns = new Set(
     messagesWithAssistantAnchors
       .filter((message) => message?.role === 'assistant' && message?.turnId)
@@ -1101,6 +1110,11 @@ export function restorePersistedTurnPresentation(messages = [], entries = [], pr
     );
     if (segments.length === 0) return [message];
     restoredTurns.add(key);
+    const modelTiming = normalizeModelTiming(
+      presentationByTurn.get(key)?.modelTiming
+        || presentationByTurn.get(key)?.model_timing
+        || message.modelTiming,
+    );
     return segments.map((segment, index) => {
       const blocks = segment.blocks;
       return {
@@ -1111,11 +1125,23 @@ export function restorePersistedTurnPresentation(messages = [], entries = [], pr
         thinking: blocks.filter((block) => block.type === 'thinking').map((block) => block.content).join('\n\n'),
         tools: blocks.filter((block) => block.type === 'tool'),
         toolCallIds: blocks.filter((block) => block.type === 'tool').map((block) => block.call_id),
+        modelTiming,
         blocks,
       };
     });
   });
   return orderMessagesByTurnHistory(restoredMessages, entries);
+}
+
+function normalizeModelTiming(value) {
+  if (!value || typeof value !== 'object') return null;
+  const bounded = (candidate) => (
+    Number.isSafeInteger(candidate) && candidate >= 0 ? candidate : null
+  );
+  return {
+    ttftMs: bounded(value.ttftMs ?? value.ttft_ms),
+    responseMs: bounded(value.responseMs ?? value.response_ms),
+  };
 }
 
 /**
@@ -1405,6 +1431,12 @@ export function aggregateStreamEvent(messages, data) {
     const copy = [...messages];
     const last = { ...copy[targetIndex] };
     const blocks = [...(last.blocks || [])];
+
+    if (type === 'model_responded') {
+      last.modelTiming = normalizeModelTiming(evt.model_timing || evt.modelTiming);
+      copy[targetIndex] = last;
+      return copy;
+    }
 
     if (type === 'context_compaction_finished' && projectedCompactions.length === 0) {
       const fallbackId = `compaction_${evt.checkpoint_seq || Date.now()}`;

@@ -468,6 +468,16 @@ def _turn_presentation_projection(record: dict[str, Any]) -> dict[str, Any] | No
         return None
 
     projected: dict[str, Any] = {"turnId": turn_id, "activities": []}
+    model_timing = presentation.get("modelTiming", presentation.get("model_timing"))
+    if isinstance(model_timing, dict):
+        projected["modelTiming"] = {
+            "ttftMs": _optional_bounded_int(
+                model_timing.get("ttftMs", model_timing.get("ttft_ms"))
+            ),
+            "responseMs": _optional_bounded_int(
+                model_timing.get("responseMs", model_timing.get("response_ms"))
+            ),
+        }
     context_usage = presentation.get("contextUsage")
     if isinstance(context_usage, dict):
         projected_usage: dict[str, Any] = {}

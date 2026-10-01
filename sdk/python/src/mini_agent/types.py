@@ -281,6 +281,23 @@ class ModelUsage:
 
 
 @dataclass
+class ModelTiming:
+    """Request-to-first-output and complete response latency in milliseconds."""
+
+    ttft_ms: int | None = None
+    response_ms: int | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> ModelTiming | None:
+        if not isinstance(data, dict):
+            return None
+        return cls(
+            ttft_ms=data.get("ttft_ms", data.get("ttftMs")),
+            response_ms=data.get("response_ms", data.get("responseMs")),
+        )
+
+
+@dataclass
 class ContextByteBreakdown:
     """Serialized model-input bytes by stable prompt/context category."""
 

@@ -1215,6 +1215,7 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
             "turn_id": "turn-1",
             "prompt": "inspect project",
             "presentation": {
+                "modelTiming": {"ttftMs": 42, "responseMs": 310},
                 "contextUsage": {
                     "usageTotals": {
                         "requestCount": 2,
@@ -1223,7 +1224,7 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
                         "cacheReportedInputTokens": 200,
                         "cachedInputTokens": 150,
                     }
-                }
+                },
             },
             "timestamp_ms": 1100,
         },
@@ -1338,6 +1339,14 @@ def test_session_catalog_reads_bounded_history_without_web_state(tmp_path, monke
     assert history["last_turn_status"] == "step_limit"
     assert history["last_turn_error"] == "model request failed: transport error"
     assert history["last_turn_id"] == "turn-1"
+    assert history["presentations"][0]["modelTiming"] == {
+        "ttftMs": 42,
+        "responseMs": 310,
+    }
+    assert (
+        history["presentations"][0]["contextUsage"]["usageTotals"]["cachedInputTokens"]
+        == 150
+    )
     assert history["contextCacheUsage"] == {
         "requestCount": 2,
         "inputTokens": 300,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import ChatArea from '../components/ChatArea';
 import { collectInputMessages } from '../utils/inputTrace';
@@ -8,6 +8,29 @@ import {
   buildTurnHistoryEntries,
   groupSettledAssistantBlocks,
 } from '../utils/turnHistory';
+
+beforeEach(() => {
+  const mockedHeight = (element) => {
+    if (element.classList?.contains('chat-area')) return 600;
+    if (element.classList?.contains('session-turn-rail')) return 240;
+    if (element.closest?.('.session-turn-rail') && element.hasAttribute('data-index')) return 24;
+    if (element.classList?.contains('virtual-message-row')) return 180;
+    return 0;
+  };
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function measureHeight() {
+    return mockedHeight(this);
+  });
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(() => 860);
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function measure() {
+    const height = mockedHeight(this);
+    return {
+      x: 0, y: 0, top: 0, left: 0, right: 860, bottom: height,
+      width: 860, height, toJSON: () => ({}),
+    };
+  });
+});
+
+afterEach(() => vi.restoreAllMocks());
 
 const messages = [
   { id: 'user-1', role: 'user', text: '检查仓库结构', turnId: 'turn-1' },

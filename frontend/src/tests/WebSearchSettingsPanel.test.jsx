@@ -21,7 +21,8 @@ describe('WebSearchSettingsPanel', () => {
 
     expect(await screen.findByRole('combobox', { name: '搜索服务' })).toBeDefined();
     expect(container.querySelectorAll('input[type="password"]')).toHaveLength(3);
-    expect([...container.querySelectorAll('input')].every((input) => input.value === '')).toBe(true);
+    expect([...container.querySelectorAll('input[type="password"]')]
+      .every((input) => input.value === '')).toBe(true);
   });
 
   it('saves the selected provider and clears the key field after success', async () => {

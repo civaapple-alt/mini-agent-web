@@ -5,10 +5,12 @@ import {
   shouldAcceptEventForThread,
   aggregateItemLifecycle,
   aggregateStreamEvent,
+  aggregateThreadItems,
   assignHistoryTurnIds,
   filterUnmatchedCheckpointInputs,
   filterEmptyMessages,
   restorePersistedTurnPresentation,
+  orderMessagesByTurnHistory,
   approvalIdentity,
   mergeApprovalEvent,
   shouldIgnoreApprovalWhileInterrupting,
@@ -56,6 +58,16 @@ import {
 import { startImplementationTurn } from './utils/planWorkflow.js';
 import { publishChildRuntimeEvent } from './utils/childRuntimeEvents.js';
 import {
+  countNewItemsOnRefresh,
+  historyItemKey,
+  listOlderThreadItems,
+  listNewestThreadItems,
+  mergeHistoryPages,
+  normalizeDescendingHistoryPage,
+  shiftHistoryCursor,
+  shiftHistoryPage,
+} from './utils/threadHistoryPages.js';
+import {
   aggregateContextCacheUsage,
   mergeContextInjectionRecords,
   normalizeContextUsage,
@@ -78,33 +90,9 @@ function readThreadMeta(thread, fallbackTitle = null) {
   };
 }
 
-const HISTORY_PAGE_SIZE = 128;
-
 function createTurnResumeRequestId() {
   if (globalThis.crypto?.randomUUID) return `web-execution-${globalThis.crypto.randomUUID()}`;
   return `web-execution-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
-}
-
-async function listThreadItemsForHistory(threadId, projectId, options = {}) {
-  const entries = [];
-  let cursor = null;
-  const seenCursors = new Set();
-
-  while (true) {
-    const page = await api.listThreadItems(threadId, {
-      limit: HISTORY_PAGE_SIZE,
-      cursor,
-      projectId,
-      signal: options.signal,
-    });
-    const data = Array.isArray(page.data) ? page.data : [];
-    entries.push(...data);
-    const nextCursor = page.next_cursor || page.nextCursor || null;
-    if (!nextCursor || data.length === 0 || seenCursors.has(nextCursor)) break;
-    seenCursors.add(nextCursor);
-    cursor = nextCursor;
-  }
-  return entries.map((entry, historyOrder) => ({ ...entry, historyOrder }));
 }
 
 export default function App() {
@@ -130,6 +118,9 @@ export default function App() {
   ));
   const [messages, setMessages] = useState([]);
   const [threadItems, setThreadItems] = useState([]);
+  const [olderHistoryCursor, setOlderHistoryCursor] = useState(null);
+  const [isLoadingOlderHistory, setIsLoadingOlderHistory] = useState(false);
+  const [historyPageVersion, setHistoryPageVersion] = useState(0);
   const [contextUsage, setContextUsage] = useState(null);
   const [contextCacheUsage, setContextCacheUsage] = useState(null);
   const [contextInjections, setContextInjections] = useState([]);
@@ -213,6 +204,10 @@ export default function App() {
   const runtimeRecoveryRef = useRef(new Set());
   const pendingUserMessageIdRef = useRef(null);
   const turnStartedAtMsRef = useRef(new Map());
+  const historyEntriesRef = useRef([]);
+  const historyCursorRef = useRef(null);
+  const latestHistoryItemKeysRef = useRef(null);
+  const olderHistoryRequestRef = useRef(false);
   const turnElapsedMsRef = useRef(new Map());
   const autoTitleAttemptsRef = useRef(new Set());
   activeTurnIdRef.current = activeTurnId;
@@ -426,6 +421,13 @@ export default function App() {
     setLastWorkflowEvent(null);
     setMessages([]);
     setThreadItems([]);
+    historyEntriesRef.current = [];
+    historyCursorRef.current = null;
+    latestHistoryItemKeysRef.current = null;
+    olderHistoryRequestRef.current = false;
+    setOlderHistoryCursor(null);
+    setIsLoadingOlderHistory(false);
+    setHistoryPageVersion(0);
     setContextUsage(null);
     setContextCacheUsage(null);
     setContextInjections([]);
@@ -1039,11 +1041,33 @@ export default function App() {
     const requestContext = context || currentSessionRequest();
     if (!preserveVisible) setIsLoadingHistory(true);
     try {
-      const [cp, itemEntries] = await Promise.all([
+      const [cp, itemsPage] = await Promise.all([
         api.readThread(threadId, { projectId, signal: requestContext.signal }),
-        listThreadItemsForHistory(threadId, projectId, requestContext),
+        listNewestThreadItems(threadId, projectId, requestContext),
       ]);
       if (!isCurrentSessionRequest(requestContext)) return;
+      const newestPage = normalizeDescendingHistoryPage(itemsPage);
+      const newestKeys = new Set(newestPage.entries.map(historyItemKey));
+      const newItemCount = countNewItemsOnRefresh(
+        newestPage.entries,
+        latestHistoryItemKeysRef.current,
+      );
+      const retainLoadedHistory = preserveVisible
+        && historyEntriesRef.current.length > 0
+        && newItemCount !== null;
+      const itemEntries = retainLoadedHistory
+        ? mergeHistoryPages(
+          shiftHistoryPage(historyEntriesRef.current, newItemCount),
+          newestPage.entries,
+        )
+        : newestPage.entries;
+      const nextHistoryCursor = retainLoadedHistory
+        ? shiftHistoryCursor(historyCursorRef.current, newItemCount)
+        : newestPage.nextCursor;
+      historyEntriesRef.current = itemEntries;
+      historyCursorRef.current = nextHistoryCursor;
+      latestHistoryItemKeysRef.current = newestKeys;
+      setOlderHistoryCursor(nextHistoryCursor);
       setPendingUserQuestion(
         cp.pending_user_question || cp.pendingUserQuestion || null,
       );
@@ -1105,8 +1129,13 @@ export default function App() {
       const rawMessages = filterUnmatchedCheckpointInputs(
         assignHistoryTurnIds(cp.messages || [], itemEntries),
         itemEntries,
-      );
+      ).filter((message) => itemEntries.some((entry) => (
+        String(entry.turnId || entry.turn_id || '') === String(message.turnId || '')
+      )));
       const presentations = cp.presentations || cp.session?.presentations || [];
+      const loadedTurnIds = new Set(itemEntries.map((entry) => (
+        String(entry.turnId || entry.turn_id || '')
+      )));
       setContextCacheUsage(
         cp.contextCacheUsage
           || cp.session?.context_cache_usage
@@ -1230,7 +1259,11 @@ export default function App() {
       }
       setMessages(
         filterEmptyMessages(
-          restorePersistedTurnPresentation(formatted, itemEntries, presentations),
+          restorePersistedTurnPresentation(
+            formatted,
+            itemEntries,
+            presentations.filter((presentation) => loadedTurnIds.has(String(presentation?.turnId || ''))),
+          ),
         ),
       );
     } catch (err) {
@@ -1241,6 +1274,51 @@ export default function App() {
       // Session navigation clears the previous thread before starting this read.
     } finally {
       if (isCurrentSessionRequest(requestContext)) setIsLoadingHistory(false);
+    }
+  };
+
+  const loadOlderThreadHistory = async () => {
+    const cursor = historyCursorRef.current;
+    if (!cursor || olderHistoryRequestRef.current || !currentThreadRef.current) return;
+    const requestContext = currentSessionRequest();
+    olderHistoryRequestRef.current = true;
+    setIsLoadingOlderHistory(true);
+    try {
+      const page = await listOlderThreadItems(
+        currentThreadRef.current,
+        currentThreadProjectRef.current,
+        cursor,
+        requestContext,
+      );
+      if (!isCurrentSessionRequest(requestContext)) return;
+      const olderPage = normalizeDescendingHistoryPage(page, cursor);
+      if (olderPage.entries.length === 0) {
+        historyCursorRef.current = null;
+        setOlderHistoryCursor(null);
+        setHistoryPageVersion((version) => version + 1);
+        return;
+      }
+      const mergedItems = mergeHistoryPages(historyEntriesRef.current, olderPage.entries);
+      historyEntriesRef.current = mergedItems;
+      historyCursorRef.current = olderPage.nextCursor;
+      setOlderHistoryCursor(olderPage.nextCursor);
+      setThreadItems(mergedItems);
+      setMessages((previous) => filterEmptyMessages(
+        orderMessagesByTurnHistory(
+          aggregateThreadItems(previous, olderPage.entries),
+          mergedItems,
+        ),
+      ));
+      setHistoryPageVersion((version) => version + 1);
+    } catch (err) {
+      if (!isAbortError(err) && isCurrentSessionRequest(requestContext)) {
+        console.error('Failed to load older thread history:', err);
+        showToast(`加载更早的会话历史失败: ${err.message}`, 'error');
+      }
+      setHistoryPageVersion((version) => version + 1);
+    } finally {
+      olderHistoryRequestRef.current = false;
+      if (isCurrentSessionRequest(requestContext)) setIsLoadingOlderHistory(false);
     }
   };
 
@@ -2945,6 +3023,10 @@ export default function App() {
       goalState={goalState}
       messages={messages}
       threadItems={threadItems}
+      olderHistoryAvailable={Boolean(olderHistoryCursor)}
+      isLoadingOlderHistory={isLoadingOlderHistory}
+      historyPageVersion={historyPageVersion}
+      onLoadOlderHistory={loadOlderThreadHistory}
       lastTurnResult={lastTurnResult}
       turnTimings={turnTimings}
       onResumeExecution={handleResumeExecution}

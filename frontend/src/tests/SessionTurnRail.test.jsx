@@ -1,7 +1,22 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SessionTurnRail from '../components/SessionTurnRail';
+
+beforeEach(() => {
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function measureHeight() {
+    return this.classList?.contains('session-turn-rail') ? 240 : 24;
+  });
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function measure() {
+    const height = this.classList?.contains('session-turn-rail') ? 240 : 24;
+    return {
+      x: 0, y: 0, top: 0, left: 0, right: 24, bottom: height,
+      width: 24, height, toJSON: () => ({}),
+    };
+  });
+});
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('SessionTurnRail', () => {
   it('renders turn details in a hover tooltip outside the scrollable rail', () => {

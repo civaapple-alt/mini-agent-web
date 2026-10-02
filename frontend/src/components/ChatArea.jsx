@@ -1,4 +1,5 @@
-import React, { useRef, useEffect, useMemo, useState } from 'react';
+import { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
 import { Sparkles, Terminal, Compass, TestTube2, ArrowDown, Folder } from 'lucide-react';
 import MessageItem from './MessageItem';
 import SessionTurnRail from './SessionTurnRail';
@@ -66,6 +67,10 @@ export default function ChatArea({
   wordWrap = true,
   fontSize = 13,
   isLoadingHistory = false,
+  olderHistoryAvailable = false,
+  isLoadingOlderHistory = false,
+  historyPageVersion = 0,
+  onLoadOlderHistory,
   childTasks = [],
   isNewSessionLanding = false,
   availableProjects = [],
@@ -75,9 +80,13 @@ export default function ChatArea({
   const messageRefs = useRef(new Map());
   const focusTimerRef = useRef(null);
   const hasMountedRef = useRef(false);
+  const lastScrollTopRef = useRef(0);
+  const olderPageAnchorRef = useRef(null);
+  const preserveHistoryAnchorRef = useRef(false);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const [hasNewActivity, setHasNewActivity] = useState(false);
   const [focusedTurnId, setFocusedTurnId] = useState(null);
+  const [forcedRowIndex, setForcedRowIndex] = useState(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const hasActiveTurn = isGenerating
     || Boolean(pendingApproval)
@@ -215,6 +224,22 @@ export default function ChatArea({
     return rows;
   }, [displayMessages, hasActiveTurn, activeTurnId, lastAssistantMessageIndex]);
 
+  const virtualizer = useVirtualizer({
+    count: presentationRows.length,
+    getScrollElement: () => scrollRef.current,
+    initialRect: { width: 860, height: 600 },
+    initialOffset: 0,
+    estimateSize: () => 180,
+    getItemKey: (index) => String(presentationRows[index]?.message?.id || index),
+    overscan: 6,
+    rangeExtractor: (range) => {
+      const visible = defaultRangeExtractor(range);
+      if (forcedRowIndex === null || visible.includes(forcedRowIndex)) return visible;
+      return [...visible, forcedRowIndex].sort((left, right) => left - right);
+    },
+  });
+  const virtualRows = virtualizer.getVirtualItems();
+
   const childTaskBatchByMessage = useMemo(() => {
     const turnGroups = new Map();
     displayMessages.forEach((message, index) => {
@@ -299,12 +324,41 @@ export default function ChatArea({
   };
 
   const scrollToMessage = (messageId, turnId, block) => {
-    const node = messageRefs.current.get(String(messageId || ''));
-    if (!node || typeof node.scrollIntoView !== 'function') return false;
+    let node = messageRefs.current.get(String(messageId || ''));
     const reducedMotion = window.matchMedia
       ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
       : false;
-    node.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block });
+    if (!node) {
+      const messageIndex = displayMessages.findIndex((message) => (
+        String(message.id || '') === String(messageId || '')
+        || (turnId && String(message.turnId || '') === String(turnId))
+      ));
+      const rowIndex = presentationRows.findIndex((row) => (
+        messageIndex >= row.startIndex && messageIndex <= row.endIndex
+      ));
+      if (rowIndex < 0) return false;
+      setForcedRowIndex(rowIndex);
+      virtualizer.scrollToIndex(rowIndex, {
+        align: block === 'center' ? 'center' : 'auto',
+        behavior: reducedMotion ? 'auto' : 'smooth',
+      });
+      window.requestAnimationFrame(() => {
+        node = messageRefs.current.get(String(messageId || ''));
+        if (!node && turnId) {
+          const fallback = presentationRows[rowIndex]?.message?.id;
+          node = messageRefs.current.get(String(fallback || ''));
+        }
+        if (node?.scrollIntoView) node.scrollIntoView({
+          behavior: reducedMotion ? 'auto' : 'smooth',
+          block,
+        });
+        setForcedRowIndex(null);
+      });
+    } else if (typeof node.scrollIntoView === 'function') {
+      node.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block });
+    } else {
+      return false;
+    }
     setIsScrolledUp(false);
     setHasNewActivity(false);
     setFocusedTurnId(turnId || null);
@@ -340,11 +394,61 @@ export default function ChatArea({
   const handleScroll = () => {
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    const scrollingUp = scrollTop < lastScrollTopRef.current;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
     const awayFromBottom = distanceFromBottom > 80;
     setIsScrolledUp(awayFromBottom);
     if (!awayFromBottom) setHasNewActivity(false);
+    if (
+      scrollingUp
+      && scrollTop < 120
+      && olderHistoryAvailable
+      && !isLoadingOlderHistory
+      && !olderPageAnchorRef.current
+      && typeof onLoadOlderHistory === 'function'
+    ) {
+      const firstVisibleRow = virtualizer.getVirtualItemForOffset(scrollTop) || virtualRows[0];
+      const rowElement = firstVisibleRow
+        ? [...scrollRef.current.querySelectorAll('[data-virtual-message-row]')]
+          .find((element) => Number(element.dataset.historyRowIndex) === firstVisibleRow.index)
+        : null;
+      const messageId = presentationRows[firstVisibleRow?.index]?.message?.id;
+      const anchor = messageId && rowElement
+        ? {
+          messageId: String(messageId),
+          offset: rowElement.getBoundingClientRect().top - scrollRef.current.getBoundingClientRect().top,
+          pageVersion: historyPageVersion,
+        }
+        : null;
+      olderPageAnchorRef.current = anchor;
+      preserveHistoryAnchorRef.current = Boolean(anchor);
+      onLoadOlderHistory();
+    }
+    lastScrollTopRef.current = scrollTop;
   };
+
+  useLayoutEffect(() => {
+    const anchor = olderPageAnchorRef.current;
+    if (!anchor || !scrollRef.current || historyPageVersion === anchor.pageVersion) return;
+    const anchorIndex = presentationRows.findIndex((row) => (
+      String(row.message?.id || '') === anchor.messageId
+    ));
+    if (anchorIndex < 0) {
+      olderPageAnchorRef.current = null;
+      preserveHistoryAnchorRef.current = false;
+      return;
+    }
+    const anchorStart = virtualizer.getOffsetForIndex(anchorIndex, 'start')?.[0];
+    if (Number.isFinite(anchorStart)) {
+      const nextOffset = anchorStart - anchor.offset;
+      if (Math.abs(nextOffset - scrollRef.current.scrollTop) > 0.5) {
+        virtualizer.scrollToOffset(nextOffset, { behavior: 'auto' });
+        lastScrollTopRef.current = nextOffset;
+      }
+    }
+    olderPageAnchorRef.current = null;
+    preserveHistoryAnchorRef.current = false;
+  }, [historyPageVersion, presentationRows, virtualizer]);
 
   const scrollToBottom = () => {
     if (scrollRef.current) {
@@ -362,6 +466,9 @@ export default function ChatArea({
       hasMountedRef.current = true;
       if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       return undefined;
+    }
+    if (preserveHistoryAnchorRef.current) {
+      return;
     }
     if (isScrolledUp) {
       setHasNewActivity(true);
@@ -462,8 +569,17 @@ export default function ChatArea({
         </div>
       ) : (
         <div className="message-stream-layout">
-          <div className="messages-list">
-            {presentationRows.map(({ message: msg, startIndex, endIndex }) => {
+          {olderHistoryAvailable && (
+            <div className="history-older-status" role="status" aria-live="polite">
+              {isLoadingOlderHistory ? '正在加载更早的消息…' : '向上滚动以加载更早的消息'}
+            </div>
+          )}
+          <div
+            className="messages-list"
+            style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}
+          >
+            {virtualRows.map((virtualRow) => {
+              const { message: msg, startIndex, endIndex } = presentationRows[virtualRow.index];
               const index = startIndex;
               const messageId = String(msg.id || `msg_${index}`);
               const turnId = msg.turnId ? String(msg.turnId) : null;
@@ -486,7 +602,22 @@ export default function ChatArea({
                   )
                 ));
               return (
-                <React.Fragment key={msg.id || `msg_${index}`}>
+                <div
+                  key={virtualRow.key}
+                  ref={virtualizer.measureElement}
+                  data-index={virtualRow.index}
+                  data-virtual-message-row="true"
+                  data-history-row-index={virtualRow.index}
+                  data-history-message-id={messageId}
+                  className="virtual-message-row"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
                   {turnDurationAnchors.before.has(index) && (
                     <TurnDurationLabel
                       entry={turnDurationAnchors.before.get(index)}
@@ -520,7 +651,7 @@ export default function ChatArea({
                       isRunning={hasActiveTurn && activeTurnEntry?.id === turnDurationAnchors.after.get(index).id}
                     />
                   )}
-                </React.Fragment>
+                </div>
               );
             })}
           </div>

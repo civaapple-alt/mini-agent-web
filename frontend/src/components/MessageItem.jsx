@@ -65,6 +65,10 @@ export default function MessageItem({
   isChildTaskTurn = false,
 }) {
   const { role, text, thinking, tools = [], blocks = [], usage, modelTiming } = message;
+  const modelTimingLabels = [
+    Number.isSafeInteger(modelTiming?.ttftMs) ? `TTFT ${modelTiming.ttftMs}ms` : null,
+    Number.isSafeInteger(modelTiming?.responseMs) ? `响应 ${modelTiming.responseMs}ms` : null,
+  ].filter(Boolean);
   const [copied, setCopied] = useState(false);
 
   const handleCopyText = (content) => {
@@ -654,13 +658,11 @@ export default function MessageItem({
                 <span>Tokens: In {usage.input_tokens || 0} · Out {usage.output_tokens || 0}</span>
               </div>
             )}
-            <div className="token-usage-meta font-mono" aria-label="模型响应耗时">
-              <span>
-                TTFT {Number.isSafeInteger(modelTiming?.ttftMs) ? `${modelTiming.ttftMs}ms` : '—'}
-                {' · 响应 '}
-                {Number.isSafeInteger(modelTiming?.responseMs) ? `${modelTiming.responseMs}ms` : '—'}
-              </span>
-            </div>
+            {modelTimingLabels.length > 0 && (
+              <div className="token-usage-meta font-mono" aria-label="模型响应耗时">
+                <span>{modelTimingLabels.join(' · ')}</span>
+              </div>
+            )}
           </div>
         )}
       </div>

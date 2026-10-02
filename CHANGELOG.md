@@ -12,7 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Project optional `model_timing` values from `model_responded` through the
   Python SDK and Gateway, persist the latest timing in Turn presentations, and
   show TTFT and response latency on settled assistant replies. Older Sessions
-  remain readable and show `—` when timing data is absent.
+  remain readable; Studio omits timing metadata when it is absent.
+- Load Web Studio conversation history from the newest cursor page, fetch older
+  items on upward scroll, and virtualize variable-height conversation and Turn
+  navigation rows while preserving scroll anchors and targeted Turn navigation.
 - Add capability-negotiated `ask_user` interactions to Web Studio. Present one
   question at a time with recommended options, free-text answers, and skip;
   persist answers through App Server and restore pending questions after a

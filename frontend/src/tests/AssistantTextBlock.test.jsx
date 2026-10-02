@@ -5,7 +5,7 @@ import AssistantTextBlock from '../components/AssistantTextBlock';
 import MessageItem from '../components/MessageItem';
 
 describe('AssistantTextBlock', () => {
-  it('shows model timing and unknown markers in settled response metadata', () => {
+  it('shows model timing only when a Provider reported it', () => {
     const { rerender } = render(
       <MessageItem
         message={{
@@ -27,7 +27,7 @@ describe('AssistantTextBlock', () => {
         isGenerating={false}
       />,
     );
-    expect(screen.getByLabelText('模型响应耗时').textContent).toContain('TTFT — · 响应 —');
+    expect(screen.queryByLabelText('模型响应耗时')).toBeNull();
   });
 
   it('shows arriving text while active and keeps the final response expanded when settled', () => {

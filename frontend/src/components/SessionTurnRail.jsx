@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { createPortal } from 'react-dom';
 import { getInputTraceSourceLabel } from '../utils/inputTrace';
 
@@ -28,8 +29,18 @@ export default function SessionTurnRail({
   focusedTurnId = null,
 }) {
   const [activeTooltip, setActiveTooltip] = useState(null);
+  const railRef = useRef(null);
   const activeAnchor = useRef(null);
   const hideTimer = useRef(null);
+  const virtualizer = useVirtualizer({
+    count: entries.length,
+    getScrollElement: () => railRef.current,
+    initialRect: { width: 24, height: 240 },
+    initialOffset: 0,
+    estimateSize: () => 24,
+    getItemKey: (index) => String(entries[index]?.turnId || entries[index]?.id || index),
+    overscan: 6,
+  });
 
   const clearHideTimer = useCallback(() => {
     if (hideTimer.current !== null) {
@@ -110,33 +121,50 @@ export default function SessionTurnRail({
   return (
     <>
       <nav
+        ref={railRef}
         className="session-turn-rail"
         aria-label="Session Turn 导航"
         onScroll={refreshTooltipPosition}
       >
-        {entries.map((entry) => {
+        <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+          const entry = entries[virtualRow.index];
           const { response } = tooltipDetails(entry);
           const entryKey = entry?.turnId || entry?.id;
           const isFocused = focusedTurnId && focusedTurnId === entryKey;
           const tooltipId = `session-turn-tooltip-${entry?.turnId || entry?.id || 'current'}`;
           return (
-            <button
-              key={entryKey}
-              type="button"
-              className={`session-turn-node state-${entry?.state || 'unknown'} ${entry?.isCurrent ? 'is-current' : ''} ${isFocused ? 'is-focused' : ''}`}
-              onClick={() => onSelectTurn?.(entry)}
-              onMouseEnter={(event) => showTooltip(entry, event.currentTarget)}
-              onMouseLeave={scheduleHideTooltip}
-              onFocus={(event) => showTooltip(entry, event.currentTarget)}
-              onBlur={scheduleHideTooltip}
-              aria-label={`${entry?.summary || '当前输入'}，${response}`}
-              aria-describedby={activeTooltip?.entry === entry ? tooltipId : undefined}
-              aria-current={entry?.isCurrent ? 'step' : undefined}
+            <div
+              key={virtualRow.key}
+              ref={virtualizer.measureElement}
+              data-index={virtualRow.index}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: `${virtualRow.size}px`,
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
             >
-              <span className="session-turn-node-mark" aria-hidden="true" />
-            </button>
+              <button
+                type="button"
+                className={`session-turn-node state-${entry?.state || 'unknown'} ${entry?.isCurrent ? 'is-current' : ''} ${isFocused ? 'is-focused' : ''}`}
+                onClick={() => onSelectTurn?.(entry)}
+                onMouseEnter={(event) => showTooltip(entry, event.currentTarget)}
+                onMouseLeave={scheduleHideTooltip}
+                onFocus={(event) => showTooltip(entry, event.currentTarget)}
+                onBlur={scheduleHideTooltip}
+                aria-label={`${entry?.summary || '当前输入'}，${response}`}
+                aria-describedby={activeTooltip?.entry === entry ? tooltipId : undefined}
+                aria-current={entry?.isCurrent ? 'step' : undefined}
+              >
+                <span className="session-turn-node-mark" aria-hidden="true" />
+              </button>
+            </div>
           );
-        })}
+          })}
+        </div>
       </nav>
       {tooltip && createPortal(tooltip, document.body)}
     </>

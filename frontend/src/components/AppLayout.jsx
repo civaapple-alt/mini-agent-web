@@ -93,6 +93,10 @@ export default function AppLayout({
   goalState,
   messages,
   threadItems,
+  olderHistoryAvailable = false,
+  isLoadingOlderHistory = false,
+  historyPageVersion = 0,
+  onLoadOlderHistory,
   lastTurnResult,
   turnTimings,
   onResumeExecution,
@@ -296,6 +300,10 @@ export default function AppLayout({
             <ChatArea
               messages={messages}
               threadItems={threadItems}
+              olderHistoryAvailable={olderHistoryAvailable}
+              isLoadingOlderHistory={isLoadingOlderHistory}
+              historyPageVersion={historyPageVersion}
+              onLoadOlderHistory={onLoadOlderHistory}
               statusModel={statusModel}
               isGenerating={isGenerating}
               pendingApproval={pendingApproval}

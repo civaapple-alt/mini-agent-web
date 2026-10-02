@@ -1,7 +1,50 @@
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ChatArea from '../components/ChatArea';
+
+beforeEach(() => {
+  const mockedHeight = (element) => {
+    if (element.classList?.contains('chat-area')) return 600;
+    if (element.classList?.contains('session-turn-rail')) return 240;
+    if (element.closest?.('.session-turn-rail') && element.hasAttribute('data-index')) return 24;
+    if (element.classList?.contains('virtual-message-row')) return 180;
+    return 0;
+  };
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function measureHeight() {
+    return mockedHeight(this);
+  });
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(() => 860);
+  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function measureScrollHeight() {
+    if (this.classList?.contains('chat-area')) {
+      return Math.max(600, Number.parseFloat(this.querySelector('.messages-list')?.style.height || '0'));
+    }
+    if (this.classList?.contains('session-turn-rail')) {
+      return Math.max(240, Number.parseFloat(this.firstElementChild?.style.height || '0'));
+    }
+    return 0;
+  });
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function measureClientHeight() {
+    if (this.classList?.contains('chat-area')) return 600;
+    if (this.classList?.contains('session-turn-rail')) return 240;
+    return mockedHeight(this);
+  });
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function measure() {
+    const height = mockedHeight(this);
+    const virtualOffset = this.classList?.contains('virtual-message-row')
+      ? Number(this.style.transform.match(/translateY\(([-\d.]+)px\)/)?.[1] || 0)
+      : 0;
+    const top = this.classList?.contains('virtual-message-row')
+      ? virtualOffset - (this.closest?.('.chat-area')?.scrollTop || 0)
+      : 0;
+    return {
+      x: 0, y: top, top, left: 0, right: 860, bottom: top + height,
+      width: 860, height, toJSON: () => ({}),
+    };
+  });
+});
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('ChatArea turn status', () => {
   it('labels a sub-second completed Turn without rounding it down to zero', () => {
@@ -181,6 +224,123 @@ describe('ChatArea turn status', () => {
       />,
     );
     expect(screen.queryByText('本轮未完整结束')).toBeNull();
+  });
+});
+
+describe('ChatArea history virtualization', () => {
+  const makeHistory = (count) => Array.from({ length: count }, (_, index) => ({
+    id: `history-input-${index}`,
+    role: 'user',
+    turnId: `history-turn-${index}`,
+    text: `history prompt ${index}`,
+  }));
+
+  it('keeps mounted timeline and Turn navigation nodes bounded by the viewport range', () => {
+    const { container } = render(
+      <ChatArea
+        messages={makeHistory(300)}
+        isGenerating={false}
+        pendingApproval={null}
+      />,
+    );
+
+    const timelineRows = container.querySelectorAll('[data-virtual-message-row]');
+    const turnNodes = container.querySelectorAll('.session-turn-node');
+    expect(timelineRows.length).toBeGreaterThan(0);
+    expect(timelineRows.length).toBeLessThan(300);
+    expect(turnNodes.length).toBeGreaterThan(0);
+    expect(turnNodes.length).toBeLessThan(300);
+  });
+
+  it('virtualizes an unmounted Turn when selected from the rail', async () => {
+    const { container } = render(
+      <ChatArea
+        messages={makeHistory(80)}
+        isGenerating={false}
+        pendingApproval={null}
+      />,
+    );
+    const rail = container.querySelector('.session-turn-rail');
+    rail.scrollTop = 40 * 24;
+    fireEvent.scroll(rail);
+    const target = await screen.findByRole('button', { name: /history prompt 40/ });
+    const scroller = container.querySelector('.chat-area');
+    scroller.scrollTo = ({ top = 0 }) => {
+      scroller.scrollTop = top;
+      fireEvent.scroll(scroller);
+    };
+
+    fireEvent.click(target);
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-history-message-id="history-input-40"]')).toBeTruthy();
+      expect(target.classList.contains('is-focused')).toBe(true);
+    });
+  });
+
+  it('keeps the first visible message at the same screen offset when older history is prepended', async () => {
+    const messages = makeHistory(60);
+    const onLoadOlderHistory = vi.fn();
+    const props = {
+      messages,
+      isGenerating: false,
+      pendingApproval: null,
+      olderHistoryAvailable: true,
+      historyPageVersion: 0,
+      onLoadOlderHistory,
+    };
+    const { container, rerender } = render(<ChatArea {...props} />);
+    const scroller = container.querySelector('.chat-area');
+    let scrollTop = scroller.scrollTop;
+    Object.defineProperty(scroller, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value) => { scrollTop = value; },
+    });
+    scroller.scrollTo = ({ top = 0 }) => {
+      scroller.scrollTop = top;
+      window.requestAnimationFrame(() => fireEvent.scroll(scroller));
+    };
+    for (const top of [5000, 3000, 1000, 200]) {
+      await act(async () => {
+        scroller.scrollTop = top;
+        fireEvent.scroll(scroller);
+        await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      });
+    }
+    const viewport = scroller.getBoundingClientRect();
+    await act(async () => {
+      scroller.scrollTop = 80;
+      fireEvent.scroll(scroller);
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    });
+    expect(onLoadOlderHistory).toHaveBeenCalledTimes(1);
+    const anchor = [...container.querySelectorAll('[data-virtual-message-row]')].find((row) => {
+      const bounds = row.getBoundingClientRect();
+      return bounds.top < viewport.bottom && bounds.bottom > viewport.top;
+    });
+    const anchorId = anchor.dataset.historyMessageId;
+    const originalOffset = anchor.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    rerender(
+      <ChatArea
+        {...props}
+        messages={[...makeHistory(20).map((message) => ({
+          ...message,
+          id: message.id.replace('history-input-', 'older-input-'),
+          turnId: message.turnId.replace('history-turn-', 'older-turn-'),
+        })), ...messages]}
+        historyPageVersion={1}
+      />,
+    );
+    await act(async () => {
+      await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+    });
+    await waitFor(() => {
+      const restored = container.querySelector(`[data-history-message-id="${anchorId}"]`);
+      expect(restored).toBeTruthy();
+      expect(restored.getBoundingClientRect().top - scroller.getBoundingClientRect().top)
+        .toBe(originalOffset);
+    });
   });
 });
 

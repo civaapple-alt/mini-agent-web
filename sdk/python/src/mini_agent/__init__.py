@@ -2,7 +2,12 @@
 Mini Agent Official Python SDK
 """
 
-from mini_agent.client import AsyncMiniAgentClient, MiniAgentClient, setup_logging
+from mini_agent.client import (
+    APP_SERVER_PROTOCOL_VERSION,
+    AsyncMiniAgentClient,
+    MiniAgentClient,
+    setup_logging,
+)
 from mini_agent.errors import (
     SESSION_FORK_CONFLICT_CODE,
     AppServerError,
@@ -62,6 +67,8 @@ from mini_agent.types import (
     RuntimeStatus,
     ScheduledTask,
     ScheduledTaskState,
+    SessionContextManifestEntry,
+    SessionContextManifestResult,
     SessionForkResult,
     SessionInfo,
     ThreadCheckpoint,
@@ -83,8 +90,11 @@ from mini_agent.types import (
     TurnEventsResult,
     TurnInputMode,
     TurnReadResult,
+    TurnReconcileDisposition,
+    TurnReconcileResult,
     TurnStatus,
     TurnSubmissionResult,
+    UncertainToolCall,
     WorkflowState,
     WorldRefreshResult,
     WorldSetExecutionResult,
@@ -94,6 +104,7 @@ from mini_agent.types import (
 __version__ = "0.9.0"
 
 __all__ = [
+    "APP_SERVER_PROTOCOL_VERSION",
     "SESSION_FORK_CONFLICT_CODE",
     "AgentEvent",
     "AppServerError",
@@ -125,11 +136,11 @@ __all__ = [
     "KnownToolOutcome",
     "McpRetryResult",
     "McpStatusResult",
-    "ModelTiming",
     "MiniAgentClient",
     "MiniAgentError",
     "ModelRespondedEvent",
     "ModelStartedEvent",
+    "ModelTiming",
     "ModelUsage",
     "ProtocolVersionMismatchError",
     "RunFailedEvent",
@@ -140,6 +151,8 @@ __all__ = [
     "ScheduledTask",
     "ScheduledTaskState",
     "ServerProcessError",
+    "SessionContextManifestEntry",
+    "SessionContextManifestResult",
     "SessionForkResult",
     "SessionInfo",
     "SkillGroupActivatedEvent",
@@ -168,10 +181,13 @@ __all__ = [
     "TurnFinishedEvent",
     "TurnInputMode",
     "TurnReadResult",
+    "TurnReconcileDisposition",
+    "TurnReconcileResult",
     "TurnStartedEvent",
     "TurnStatus",
     "TurnSubmissionResult",
     "TurnTimeoutError",
+    "UncertainToolCall",
     "WorkflowState",
     "WorldRefreshResult",
     "WorldSetExecutionResult",

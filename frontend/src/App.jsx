@@ -127,6 +127,7 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isInterrupting, setIsInterrupting] = useState(false);
   const [resumeExecutionBusy, setResumeExecutionBusy] = useState(false);
+  const [reconcileExecutionBusy, setReconcileExecutionBusy] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState(null);
   const [pendingApproval, setPendingApproval] = useState(null);
   const [pendingApprovals, setPendingApprovals] = useState([]);
@@ -939,11 +940,13 @@ export default function App() {
       });
       if (!isCurrentSessionRequest(requestContext)) return;
       const replay = projectReplayPage(page);
-      if (replay.hasGap) {
-        // The bounded App Server cache no longer contains the complete gap;
-        // canonical history is authoritative. Applying the retained suffix
-        // afterward could replay an old turn_started over a settled snapshot.
-        showToast('事件回放存在缺口，已从最近会话快照恢复。', 'warning', 3500);
+      if (replay.hasGap || replay.events.length > 0) {
+        // V2 replay entries are lifecycle metadata only. Reconcile them through
+        // canonical Thread/Item projections instead of treating them as live
+        // message deltas or tool results.
+        if (replay.hasGap) {
+          showToast('事件回放存在缺口，已从最近会话快照恢复。', 'warning', 3500);
+        }
         await loadThreadHistory(threadId, projectId, requestContext, { preserveVisible: true });
       }
       if (replay.cursor !== null) {
@@ -951,9 +954,6 @@ export default function App() {
           scopedThreadKey(threadId, projectId),
           replay.cursor,
         );
-      }
-      for (const event of replay.events) {
-        handleServerEvent({ type: 'event', ...event }, { fromReplay: true });
       }
       // Runtime status is read after history and replay so an older retained
       // event cannot leave the conversation marked as generating forever.
@@ -1041,9 +1041,10 @@ export default function App() {
     const requestContext = context || currentSessionRequest();
     if (!preserveVisible) setIsLoadingHistory(true);
     try {
-      const [cp, itemsPage] = await Promise.all([
+      const [cp, itemsPage, contextManifestPage] = await Promise.all([
         api.readThread(threadId, { projectId, signal: requestContext.signal }),
         listNewestThreadItems(threadId, projectId, requestContext),
+        api.readContextManifest(threadId, { projectId, signal: requestContext.signal }),
       ]);
       if (!isCurrentSessionRequest(requestContext)) return;
       const newestPage = normalizeDescendingHistoryPage(itemsPage);
@@ -1154,9 +1155,27 @@ export default function App() {
           .filter((activity) => activity?.kind === 'context_injected')
           .flatMap((activity) => activity.contextInjections || [])
       ));
+      const manifestInjections = (contextManifestPage?.data || []).map((entry) => ({
+        id: entry.sourceId,
+        kind: entry.kind,
+        source: entry.sourceName,
+        workspace: entry.workspace,
+        path: entry.path,
+        scope: entry.appliesTo,
+        bytes: entry.bytes,
+        fingerprint: entry.versionFingerprint,
+        reused: entry.reused,
+        turnId: entry.turnId,
+        permissionBasis: entry.permissionBasis,
+        injectionReason: entry.injectionReason,
+        injectedAtMs: entry.injectedAtMs,
+      }));
       setContextInjections(mergeContextInjectionRecords(
-        presentationInjections,
-        cp.contextInjections || cp.context_injections || [],
+        manifestInjections,
+        [
+          ...presentationInjections,
+          ...(cp.contextInjections || cp.context_injections || []),
+        ],
       ));
       const workflowByTurn = new Map(
         presentations
@@ -2432,6 +2451,63 @@ export default function App() {
     }
   };
 
+  const handleReconcileExecution = async (
+    toolCallId,
+    disposition,
+    resultContent,
+    evidenceSummary,
+    requestId,
+  ) => {
+    if (currentSessionReadOnly) {
+      showToast('当前会话由其他进程运行，只能查看，暂不能核对。', 'info', 3000);
+      return;
+    }
+    const recovery = lastTurnResult?.recovery;
+    const turnId = recovery?.turn_id || recovery?.turnId || lastTurnResult?.turnId;
+    const checkpointSeq = Number(recovery?.checkpoint_seq ?? recovery?.checkpointSeq);
+    if (recovery?.status !== 'needs_reconciliation'
+      || !turnId
+      || !Number.isSafeInteger(checkpointSeq)
+      || !toolCallId
+      || !evidenceSummary.trim()) {
+      showToast('恢复状态已变化，或尚未填写核对依据；请刷新后重试。', 'warning', 3500);
+      return;
+    }
+    setReconcileExecutionBusy(true);
+    try {
+      const payload = {
+        checkpoint_seq: checkpointSeq,
+        tool_call_id: toolCallId,
+        request_id: requestId,
+        disposition,
+        evidence_summary: evidenceSummary,
+      };
+      if (disposition === 'completed') {
+        payload.result = { status: 'completed', content: resultContent };
+      }
+      await api.reconcileTurn(currentThread, turnId, payload, {
+        projectId: currentThreadProject,
+      });
+      const latest = await api.readTurn(currentThread, turnId, {
+        projectId: currentThreadProject,
+      });
+      setLastTurnResult((current) => current?.turnId === turnId
+        ? { ...current, recovery: latest.recovery }
+        : current);
+      showToast(
+        latest.recovery?.status === 'needs_reconciliation'
+          ? '该调用已记录；还有其他调用需要核对。'
+          : '核对结果已保存。确认恢复状态后，可手动继续当前 Turn。',
+        'success',
+        4000,
+      );
+    } catch (error) {
+      showToast(`核对工具结果失败：${error.message || '服务端未确认'}`, 'error', 4500);
+    } finally {
+      setReconcileExecutionBusy(false);
+    }
+  };
+
   const handleRespondApproval = async (
     requestId,
     decision,
@@ -3031,6 +3107,8 @@ export default function App() {
       turnTimings={turnTimings}
       onResumeExecution={handleResumeExecution}
       resumeExecutionBusy={resumeExecutionBusy}
+      onReconcileExecution={handleReconcileExecution}
+      reconcileExecutionBusy={reconcileExecutionBusy}
       policy={policy}
       onSendMessage={handleSendMessage}
       userSettings={userSettings}

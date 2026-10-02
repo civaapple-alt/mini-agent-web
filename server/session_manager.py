@@ -522,6 +522,27 @@ class SessionManager:
         )
 
     @staticmethod
+    def _execution_reconcile_request_id(
+        parent_request_id: str,
+        thread_id: str,
+        turn_id: str,
+        checkpoint_seq: int,
+        tool_call_id: str,
+    ) -> str:
+        identity = json.dumps(
+            [
+                parent_request_id,
+                thread_id,
+                turn_id,
+                checkpoint_seq,
+                tool_call_id,
+            ],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        return f"web-execution-reconcile:{hashlib.sha256(identity.encode()).hexdigest()[:48]}"
+
+    @staticmethod
     def _execution_recovery(checkpoint: Any) -> dict[str, Any] | None:
         recovery = getattr(checkpoint, "execution_recovery", None)
         if isinstance(recovery, ExecutionRecoveryInfo):
@@ -606,6 +627,73 @@ class SessionManager:
             "thread_id": target,
             "turn_id": turn_id,
             "status": submission.status,
+            "request_id": stable_request_id,
+        }
+
+    async def reconcile_execution_turn(
+        self,
+        thread_id: str,
+        turn_id: str,
+        checkpoint_seq: int,
+        tool_call_id: str,
+        request_id: str,
+        disposition: str,
+        evidence_summary: str,
+        result_status: str | None = None,
+        result_content: str | None = None,
+        project_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Persist one operator decision against the current recovery state."""
+        target = thread_id or "default"
+        resolved_project = self.resolve_thread_project(target, project_id)
+        runtime = await self.get_client_for_thread(target, resolved_project)
+        checkpoint = await runtime.read_thread(target)
+        recovery = self._execution_recovery(checkpoint)
+        if not recovery:
+            raise ValueError("no recoverable execution checkpoint is available")
+        recovery_turn_id = str(recovery.get("turn_id") or recovery.get("turnId") or "")
+        recovery_checkpoint_seq = _nonnegative_int(
+            recovery.get("checkpoint_seq") or recovery.get("checkpointSeq")
+        )
+        if recovery_turn_id != turn_id or recovery_checkpoint_seq != checkpoint_seq:
+            raise ValueError("execution checkpoint changed; refresh before reconciling")
+        if len(tool_call_id.encode("utf-8")) > 128:
+            raise ValueError("tool_call_id exceeds 128 bytes")
+        if len(evidence_summary.encode("utf-8")) > 1024:
+            raise ValueError("evidence_summary exceeds 1024 bytes")
+        if disposition == "completed":
+            if result_status not in {"completed", "failed"} or result_content is None:
+                raise ValueError(
+                    "completed disposition requires a completed or failed result"
+                )
+            if len(result_content.encode("utf-8")) > 64 * 1024:
+                raise ValueError("result_content exceeds 65536 bytes")
+        elif disposition == "not_executed":
+            if result_status is not None or result_content is not None:
+                raise ValueError(
+                    "not_executed disposition cannot include a tool result"
+                )
+        else:
+            raise ValueError("unsupported reconciliation disposition")
+        stable_request_id = self._execution_reconcile_request_id(
+            request_id, target, turn_id, checkpoint_seq, tool_call_id
+        )
+        result = await runtime.reconcile_turn(
+            turn_id,
+            checkpoint_seq,
+            tool_call_id,
+            stable_request_id,
+            disposition,
+            evidence_summary,
+            result_status=result_status,
+            result_content=result_content,
+            thread_id=target,
+        )
+        return {
+            "thread_id": target,
+            "turn_id": turn_id,
+            "checkpoint_seq": checkpoint_seq,
+            "status": result.status,
             "request_id": stable_request_id,
         }
 

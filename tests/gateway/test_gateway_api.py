@@ -7,7 +7,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from mini_agent import ThreadCheckpoint, TurnReadResult
+from mini_agent import (
+    SessionContextManifestResult,
+    ThreadCheckpoint,
+    TurnReadResult,
+    TurnReconcileResult,
+)
 
 from server.app import create_app
 from server.session_manager import session_manager
@@ -717,7 +722,11 @@ async def test_runtime_observation_routes_expose_snapshot_and_replay(
     )
     client_mock.replay_events.return_value = SimpleNamespace(
         data=[
-            {"threadId": "t-observe", "sequence": 5, "event": {"type": "run_started"}}
+            {
+                "threadId": "t-observe",
+                "sequence": 5,
+                "eventType": "run_started",
+            }
         ],
         next_cursor=5,
         oldest_sequence=5,
@@ -749,6 +758,94 @@ async def test_runtime_observation_routes_expose_snapshot_and_replay(
     client_mock.replay_events.assert_awaited_once_with(
         thread_id="t-observe", after_sequence=4, limit=2
     )
+
+
+@pytest.mark.asyncio
+async def test_gateway_reconcile_and_context_manifest_routes_use_app_server(
+    test_app, monkeypatch
+):
+    client_mock = AsyncMock()
+    client_mock.read_context_manifest.return_value = (
+        SessionContextManifestResult.from_dict(
+            {
+                "data": [
+                    {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "sourceId": "project-instructions",
+                        "sourceName": "AGENTS.md",
+                        "kind": "project_instructions",
+                        "versionFingerprint": "sha256:abc",
+                        "appliesTo": "workspace",
+                        "permissionBasis": "workspace instruction policy",
+                        "injectionReason": "include applicable project instructions",
+                        "bytes": 128,
+                        "reused": False,
+                        "injectedAtMs": 100,
+                    }
+                ]
+            }
+        )
+    )
+    client_mock.read_thread.return_value = ThreadCheckpoint.from_dict(
+        {
+            "threadId": "thread-1",
+            "executionRecovery": {
+                "turnId": "turn-1",
+                "status": "needs_reconciliation",
+                "checkpointSeq": 12,
+            },
+        }
+    )
+    client_mock.reconcile_turn.return_value = TurnReconcileResult.from_dict(
+        {
+            "value": {
+                "turnId": "turn-1",
+                "checkpointSeq": 12,
+                "status": "applied",
+            }
+        }
+    )
+    monkeypatch.setattr(
+        session_manager,
+        "get_client_for_thread",
+        AsyncMock(return_value=client_mock),
+    )
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        manifest = await client.get(
+            "/api/threads/thread-1/context-manifest",
+            params={"project_id": "project-1"},
+        )
+        reconciled = await client.post(
+            "/api/threads/thread-1/turns/turn-1/reconcile",
+            params={"project_id": "project-1"},
+            json={
+                "checkpoint_seq": 12,
+                "tool_call_id": "call-1",
+                "request_id": "operator-click-1",
+                "disposition": "completed",
+                "evidence_summary": "verified receipt",
+                "result": {"status": "completed", "content": "receipt-1"},
+            },
+        )
+
+    assert manifest.status_code == 200
+    assert manifest.json()["data"][0]["sourceId"] == "project-instructions"
+    assert reconciled.status_code == 200
+    assert reconciled.json()["status"] == "applied"
+    assert reconciled.json()["checkpoint_seq"] == 12
+    client_mock.read_context_manifest.assert_awaited_once_with("thread-1")
+    client_mock.reconcile_turn.assert_awaited_once()
+    reconcile_args = client_mock.reconcile_turn.await_args
+    assert reconcile_args.args[:3] == ("turn-1", 12, "call-1")
+    assert reconcile_args.args[4:6] == ("completed", "verified receipt")
+    assert reconcile_args.kwargs == {
+        "result_status": "completed",
+        "result_content": "receipt-1",
+        "thread_id": "thread-1",
+    }
 
 
 @pytest.mark.asyncio

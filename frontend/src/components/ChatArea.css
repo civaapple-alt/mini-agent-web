@@ -399,6 +399,50 @@
   opacity: 0.65;
 }
 
+.turn-reconciliation-list {
+  width: 100%;
+  display: grid;
+  gap: 10px;
+}
+
+.turn-reconciliation-card {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid var(--status-failed-soft);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.turn-reconciliation-card small {
+  color: var(--text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.turn-reconciliation-card label {
+  display: grid;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.turn-reconciliation-card textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 7px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.turn-reconciliation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .goal-verification-message {
   width: 100%;
   max-width: 860px;

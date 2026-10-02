@@ -368,6 +368,12 @@ export function PromptContextCard({
                 <div className="prompt-context-source-meta">
                   {[record.workspace, record.path].filter(Boolean).join(' · ') || '来源未知'}
                   {' · '}{record.scope || '作用范围未知'}
+                  {record.permissionBasis && (
+                    <span>{' · '}依据：{record.permissionBasis}</span>
+                  )}
+                  {record.injectionReason && (
+                    <span>{' · '}原因：{record.injectionReason}</span>
+                  )}
                   {record.supersedes && (
                     <span title={record.supersedes}>
                       {' · '}更新自 {record.supersedes.slice(0, 12)}

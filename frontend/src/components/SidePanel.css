@@ -330,6 +330,12 @@
 .child-session-view-warning > div strong { color: var(--text-primary); }
 .child-session-view-warning > div time { color: var(--text-muted); font-family: var(--font-mono); }
 .child-session-view-warning > .btn-action-small { flex: 0 0 auto; }
+.child-context-manifest { flex: 0 0 auto; max-height: 150px; overflow: auto; border: 1px solid var(--border-subtle); border-radius: 6px; padding: 6px 9px; color: var(--text-secondary); font-size: 10px; }
+.child-context-manifest summary { cursor: pointer; color: var(--text-primary); font-weight: 600; }
+.child-context-manifest ul { display: grid; gap: 7px; margin: 7px 0 0; padding-left: 16px; }
+.child-context-manifest li { display: grid; gap: 2px; overflow-wrap: anywhere; }
+.child-context-manifest li strong { color: var(--text-primary); }
+.child-context-manifest code { width: fit-content; color: var(--text-muted); }
 .child-session-load-older { flex: 0 0 auto; align-self: center; padding: 5px 9px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-surface); color: var(--text-secondary); font-size: 10px; cursor: pointer; }
 .child-session-load-older:hover:not(:disabled) { border-color: var(--border-focus); color: var(--text-primary); }
 .child-session-load-older:disabled { opacity: .6; cursor: wait; }

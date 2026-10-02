@@ -126,6 +126,9 @@ describe('ChatArea turn status', () => {
             turn_id: 'turn-reconcile',
             status: 'needs_reconciliation',
             reason: 'shell result is unknown',
+            uncertain_tool_calls: [
+              { tool_call_id: 'call-1', name: 'shell' },
+            ],
           },
         }}
       />,
@@ -133,6 +136,57 @@ describe('ChatArea turn status', () => {
 
     expect(screen.getByText(/工具执行结果需要核对后才能继续/)).toBeTruthy();
     expect(screen.getByRole('button', { name: '查看待核对活动' })).toBeTruthy();
+    expect(screen.getByLabelText('核对工具 shell')).toBeTruthy();
+  });
+
+  it('submits an explicit result or confirmed-not-executed disposition', () => {
+    const onReconcileExecution = vi.fn();
+    render(
+      <ChatArea
+        messages={[]}
+        isGenerating={false}
+        pendingApproval={null}
+        lastTurnResult={{
+          status: 'in_progress',
+          turnId: 'turn-reconcile',
+          recovery: {
+            status: 'needs_reconciliation',
+            turnId: 'turn-reconcile',
+            checkpointSeq: 7,
+            uncertainToolCalls: [
+              { toolCallId: 'call-1', name: 'send_message' },
+            ],
+          },
+        }}
+        onReconcileExecution={onReconcileExecution}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('核对依据（最多 1024 字节）'), {
+      target: { value: 'verified at the destination' },
+    });
+    fireEvent.change(screen.getByLabelText('已确认完成时提交的结果（最多 64 KiB）'), {
+      target: { value: 'message receipt 123' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '记录已完成结果' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认未执行' }));
+
+    expect(onReconcileExecution).toHaveBeenNthCalledWith(
+      1,
+      'call-1',
+      'completed',
+      'message receipt 123',
+      'verified at the destination',
+      expect.any(String),
+    );
+    expect(onReconcileExecution).toHaveBeenNthCalledWith(
+      2,
+      'call-1',
+      'not_executed',
+      '',
+      'verified at the destination',
+      expect.any(String),
+    );
   });
 
   it('shows the saved checkpoint progress and resumes the same Turn on request', () => {

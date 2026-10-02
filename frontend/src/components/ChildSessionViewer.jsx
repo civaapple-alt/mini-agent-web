@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { api } from '../api';
 import MessageItem from './MessageItem';
+import TurnReconciliationForm from './TurnReconciliationForm';
 import {
   filterEmptyMessages,
   aggregateStreamEvent,
@@ -165,6 +166,7 @@ export default function ChildSessionViewer({
   const childProjectId = child.project_id || projectId;
   const [checkpoint, setCheckpoint] = useState(null);
   const [entries, setEntries] = useState([]);
+  const [contextManifest, setContextManifest] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -213,7 +215,6 @@ export default function ChildSessionViewer({
 
   const replayRuntimeEvents = useCallback(async (signal) => {
     let cursor = replayCursorRef.current;
-    const replayed = [];
     for (let pageIndex = 0; pageIndex < MAX_EVENT_PAGES_PER_REFRESH; pageIndex += 1) {
       const page = await api.replayThreadEvents(
         child.child_thread_id,
@@ -226,7 +227,6 @@ export default function ChildSessionViewer({
         setReplayHasGap(!settledTurnPersistedRef.current);
       }
       const data = Array.isArray(page.data) ? page.data : [];
-      replayed.push(...data);
       const nextCursor = Number(page.next_cursor ?? page.nextCursor);
       if (!Number.isSafeInteger(nextCursor) || nextCursor <= cursor) break;
       cursor = nextCursor;
@@ -234,9 +234,8 @@ export default function ChildSessionViewer({
     }
     if (signal?.aborted || !mountedRef.current) return;
     replayCursorRef.current = Math.max(replayCursorRef.current, cursor);
-    mergeLiveEvents(replayed);
     setReplayError(null);
-  }, [child.child_thread_id, childProjectId, mergeLiveEvents]);
+  }, [child.child_thread_id, childProjectId]);
 
   const refresh = useCallback(async ({ quiet = false } = {}) => {
     if (requestRef.current) return;
@@ -245,7 +244,7 @@ export default function ChildSessionViewer({
     if (!quiet && checkpointRef.current) setRefreshing(true);
     else if (!checkpointRef.current) setLoading(true);
     try {
-      const [nextCheckpoint, page] = await Promise.all([
+      const [nextCheckpoint, page, manifest] = await Promise.all([
         api.readThread(child.child_thread_id, {
           projectId: childProjectId,
           signal: controller.signal,
@@ -254,6 +253,10 @@ export default function ChildSessionViewer({
           projectId: childProjectId,
           limit: ITEM_PAGE_SIZE,
           sortDirection: 'desc',
+          signal: controller.signal,
+        }),
+        api.readContextManifest(child.child_thread_id, {
+          projectId: childProjectId,
           signal: controller.signal,
         }),
       ]);
@@ -285,6 +288,7 @@ export default function ChildSessionViewer({
       if (settledTurnPersistedRef.current) setReplayHasGap(false);
       setCheckpoint(nextCheckpoint);
       setEntries(entriesRef.current);
+      setContextManifest(Array.isArray(manifest?.data) ? manifest.data : []);
       setOlderCursor(olderCursorRef.current);
       setError(null);
       setLastUpdatedAt(Date.now());
@@ -453,6 +457,46 @@ export default function ChildSessionViewer({
     }
   };
 
+  const reconcileExecution = async (
+    toolCallId,
+    disposition,
+    resultContent,
+    evidenceSummary,
+    requestId,
+  ) => {
+    const turnId = executionRecovery?.turn_id || executionRecovery?.turnId;
+    const checkpointSeq = Number(
+      executionRecovery?.checkpoint_seq ?? executionRecovery?.checkpointSeq,
+    );
+    if (!turnId || !Number.isSafeInteger(checkpointSeq) || checkpointSeq < 1) {
+      setRecoveryError('执行检查点信息不完整，请刷新子任务状态。');
+      return;
+    }
+    setRecoveryBusy(true);
+    setRecoveryError('');
+    try {
+      const payload = {
+        checkpoint_seq: checkpointSeq,
+        tool_call_id: toolCallId,
+        request_id: requestId,
+        disposition,
+        evidence_summary: evidenceSummary,
+      };
+      if (disposition === 'completed') {
+        payload.result = { status: 'completed', content: resultContent };
+      }
+      await api.reconcileTurn(child.child_thread_id, turnId, payload, {
+        projectId: childProjectId,
+      });
+      await refresh();
+    } catch (cause) {
+      setRecoveryError(cause?.message || '核对子任务工具结果失败');
+      await refresh({ quiet: true });
+    } finally {
+      setRecoveryBusy(false);
+    }
+  };
+
   const showExecutionActivity = () => {
     const transcript = transcriptRef.current;
     if (!transcript) return;
@@ -590,13 +634,45 @@ export default function ChildSessionViewer({
             </button>
           )}
           {needsReconciliation && (
-            <button type="button" className="btn-action-small" onClick={showExecutionActivity}>
-              查看执行记录
-            </button>
+            <div className="turn-reconciliation-list">
+              {(executionRecovery?.uncertain_tool_calls
+                || executionRecovery?.uncertainToolCalls
+                || []).map((call) => (
+                <TurnReconciliationForm
+                  key={call.tool_call_id || call.toolCallId}
+                  call={call}
+                  busy={recoveryBusy}
+                  onSubmit={reconcileExecution}
+                />
+              ))}
+              <button type="button" className="btn-action-small" onClick={showExecutionActivity}>
+                查看执行记录
+              </button>
+            </div>
           )}
         </div>
       )}
       {recoveryError && <div className="child-session-view-error" role="alert">{recoveryError}</div>}
+
+      {contextManifest.length > 0 && (
+        <details className="child-context-manifest">
+          <summary>Context 来源（{contextManifest.length}）</summary>
+          <ul>
+            {contextManifest.map((entry) => (
+              <li key={`${entry.sourceId}:${entry.turnId || ''}:${entry.versionFingerprint}`}>
+                <strong>{entry.sourceName || entry.sourceId}</strong>
+                <span>{[entry.kind, entry.workspace, entry.path, entry.appliesTo]
+                  .filter(Boolean).join(' · ')}</span>
+                {entry.versionFingerprint && (
+                  <code title={entry.versionFingerprint}>{entry.versionFingerprint.slice(0, 20)}</code>
+                )}
+                {entry.permissionBasis && <span>依据：{entry.permissionBasis}</span>}
+                {entry.injectionReason && <span>原因：{entry.injectionReason}</span>}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       {error && <div className="child-session-view-error" role="alert">{error}</div>}
       {replayHasGap && (

@@ -6488,6 +6488,15 @@ async def test_child_resume_rebinds_the_original_operation_before_resuming_check
         control_event_id="resume-checkpoint-request",
         control_source="user_panel",
     )
+    resume_execution.assert_awaited_once_with(
+        "child",
+        "turn-original",
+        11,
+        "resume-checkpoint-request",
+        "default",
+        parent_thread_id="parent",
+        client=client,
+    )
 
     client.child_task_action.assert_awaited_once_with(
         "child",
@@ -6499,15 +6508,66 @@ async def test_child_resume_rebinds_the_original_operation_before_resuming_check
         turn_id="turn-original",
         control_source="user_panel",
     )
-    resume_execution.assert_awaited_once_with(
-        "child",
-        "turn-original",
-        11,
-        "resume-checkpoint-request",
-        "default",
-        parent_thread_id="parent",
-        client=client,
+
+
+@pytest.mark.asyncio
+async def test_reconcile_turn_forwards_stable_request_to_app_server(
+    mock_session_manager, monkeypatch
+):
+    client = AsyncMock()
+    client.read_thread.return_value = SimpleNamespace(
+        execution_recovery={
+            "turn_id": "turn-1",
+            "checkpoint_seq": 9,
+            "status": "waiting_for_continue",
+        }
     )
+    client.reconcile_turn.return_value = SimpleNamespace(status="already_applied")
+    monkeypatch.setattr(
+        mock_session_manager,
+        "resolve_thread_project",
+        lambda _thread_id, project_id=None: project_id or "project-1",
+    )
+    monkeypatch.setattr(
+        mock_session_manager,
+        "get_client_for_thread",
+        AsyncMock(return_value=client),
+    )
+
+    result = await mock_session_manager.reconcile_execution_turn(
+        "thread-1",
+        "turn-1",
+        9,
+        "call-1",
+        "request-1",
+        "completed",
+        "confirmed at the destination",
+        "completed",
+        "receipt 123",
+        "project-1",
+    )
+    await mock_session_manager.reconcile_execution_turn(
+        "thread-1",
+        "turn-1",
+        9,
+        "call-1",
+        "request-1",
+        "completed",
+        "confirmed at the destination",
+        "completed",
+        "receipt 123",
+        "project-1",
+    )
+
+    assert result["status"] == "already_applied"
+    first_request_id = client.reconcile_turn.await_args_list[0].args[3]
+    second_request_id = client.reconcile_turn.await_args_list[1].args[3]
+    assert first_request_id == second_request_id
+    assert client.reconcile_turn.await_args.kwargs == {
+        "result_status": "completed",
+        "result_content": "receipt 123",
+        "thread_id": "thread-1",
+    }
 
 
 @pytest.mark.asyncio

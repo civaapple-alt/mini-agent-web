@@ -193,6 +193,20 @@ class ResumeTurnRequest(BaseModel):
     request_id: str = Field(..., min_length=1, max_length=128)
 
 
+class ReconciledToolResultBody(BaseModel):
+    status: Literal["completed", "failed"]
+    content: str = Field(..., max_length=65536)
+
+
+class ReconcileTurnRequest(BaseModel):
+    checkpoint_seq: int = Field(..., ge=1)
+    tool_call_id: str = Field(..., min_length=1, max_length=128)
+    request_id: str = Field(..., min_length=1, max_length=128)
+    disposition: Literal["completed", "not_executed"]
+    result: ReconciledToolResultBody | None = None
+    evidence_summary: str = Field(..., min_length=1, max_length=1024)
+
+
 class ChildTaskControlRequest(BaseModel):
     action: Literal[
         "update_queued",
@@ -554,6 +568,26 @@ async def replay_thread_events(
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
+@router.get("/{thread_id}/context-manifest", summary="Read Session Context Manifest")
+async def read_context_manifest(
+    thread_id: str,
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """Read bounded source provenance from the canonical App Server Session."""
+    try:
+        client = await session_manager.get_client_for_thread(thread_id, project_id)
+        manifest = await client.read_context_manifest(thread_id)
+        return {"thread_id": thread_id, **manifest.to_dict()}
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+
+
 @router.get("/{thread_id}/runtime/status", summary="Read runtime status")
 async def get_runtime_status(
     thread_id: str, project_id: str | None = Query(default=None)
@@ -866,8 +900,12 @@ async def control_session(
         raise HTTPException(status_code=404, detail=str(err)) from err
     except ValueError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err
-    except (RuntimeError, ServerProcessError, AppServerError) as err:
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
         raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
 
 
 @router.post("/{thread_id}/children", summary="Start a child task")
@@ -915,8 +953,12 @@ async def cancel_child_task(
         raise HTTPException(status_code=404, detail=str(err)) from err
     except ValueError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err
-    except (ServerProcessError, AppServerError) as err:
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
         raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
 
 
 @router.post(
@@ -1152,6 +1194,42 @@ async def resume_turn(
             turn_id,
             req.checkpoint_seq,
             req.request_id,
+            project_id,
+        )
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except ValueError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except ServerProcessError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except AppServerError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+
+
+@router.post(
+    "/{thread_id}/turns/{turn_id}/reconcile",
+    summary="Reconcile one uncertain tool invocation",
+)
+async def reconcile_turn(
+    thread_id: str,
+    turn_id: str,
+    req: ReconcileTurnRequest,
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """Record a bounded operator decision before the interrupted Turn resumes."""
+    try:
+        return await session_manager.reconcile_execution_turn(
+            thread_id,
+            turn_id,
+            req.checkpoint_seq,
+            req.tool_call_id,
+            req.request_id,
+            req.disposition,
+            req.evidence_summary,
+            req.result.status if req.result else None,
+            req.result.content if req.result else None,
             project_id,
         )
     except KeyError as err:

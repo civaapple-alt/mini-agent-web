@@ -311,6 +311,24 @@ export const threadApi = {
     return res.json();
   },
 
+  async reconcileTurn(threadId, turnId, payload, options = {}) {
+    const res = await request(
+      `/api/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(turnId)}/reconcile`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        ...requestSignal(options),
+      },
+      options.projectId,
+    );
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || `Failed to reconcile Turn ${turnId}`);
+    }
+    return res.json();
+  },
+
   async listThreadItems(threadId, options = {}) {
     const params = new URLSearchParams();
     if (options.turnId) params.set('turn_id', options.turnId);
@@ -451,6 +469,16 @@ export const threadApi = {
       options.projectId,
     );
     if (!res.ok) throw new Error(`Failed to replay events for ${threadId}`);
+    return res.json();
+  },
+
+  async readContextManifest(threadId = 'default', options = {}) {
+    const res = await request(
+      `/api/threads/${encodeURIComponent(threadId || 'default')}/context-manifest`,
+      requestSignal(options),
+      options.projectId,
+    );
+    if (!res.ok) throw new Error(`Failed to read Context Manifest for ${threadId}`);
     return res.json();
   },
 

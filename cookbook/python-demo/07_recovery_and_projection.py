@@ -46,25 +46,28 @@ EVENTS_FIXTURE = {
                 "threadId": THREAD_ID,
                 "turnId": TURN_ID,
                 "sequence": LAST_SEQUENCE,
-                "event": {"type": "assistant_text_delta", "delta": "late"},
+                "eventType": "model_responded",
+                "itemId": "assistant-1",
             },
             {
                 "threadId": THREAD_ID,
                 "turnId": "old-turn",
                 "sequence": 99,
-                "event": {"type": "turn_finished", "status": "completed"},
+                "eventType": "turn_finished",
             },
             {
                 "threadId": THREAD_ID,
                 "turnId": TURN_ID,
                 "sequence": 8,
-                "event": {"type": "tool_finished", "outcome": "retryable"},
+                "eventType": "tool_finished",
+                "toolCallId": "call-1",
             },
             {
                 "threadId": THREAD_ID,
                 "turnId": TURN_ID,
                 "sequence": 8,
-                "event": {"type": "tool_finished", "outcome": "retryable"},
+                "eventType": "tool_finished",
+                "toolCallId": "call-1",
             },
         ]
     }
@@ -179,8 +182,7 @@ async def reconcile_after_reconnect(
 
     checkpoint = await client.read_thread(thread_id=thread_id)
     settled = any(
-        envelope.get("event", {}).get("type") == "turn_finished"
-        for envelope in accepted_events
+        envelope.get("eventType") == "turn_finished" for envelope in accepted_events
     )
     return {
         "identity": {

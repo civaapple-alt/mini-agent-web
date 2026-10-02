@@ -101,6 +101,8 @@ export default function AppLayout({
   turnTimings,
   onResumeExecution,
   resumeExecutionBusy = false,
+  onReconcileExecution,
+  reconcileExecutionBusy = false,
   policy,
   onSendMessage,
   userSettings,
@@ -318,6 +320,8 @@ export default function AppLayout({
                 return onResumeExecution?.();
               }}
               resumeExecutionBusy={resumeExecutionBusy}
+              onReconcileExecution={onReconcileExecution}
+              reconcileExecutionBusy={reconcileExecutionBusy}
               policy={policy}
               onQuickPrompt={onSendMessage}
               onRetryPrompt={onSendMessage}

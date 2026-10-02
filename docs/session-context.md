@@ -6,16 +6,26 @@ system-prompt messages into browser history.
 
 ## Source records
 
-The context panel in the workspace side panel lists the current injected source
-inventory: source kind and name, workspace label, relative path, scope, byte
-size, and the fingerprint a newer version supersedes. Older Sessions without
-source metadata show “来源未知”.
+The workspace side panel reads the active Session's Context Manifest through
+`GET /api/threads/{thread_id}/context-manifest`. Child Session details request
+the child Thread's own manifest through the same route. Both views list bounded source
+identity and name, kind, version fingerprint, applicable scope, permission
+basis, injection reason, workspace/path labels, byte count, and whether the
+source was reused. The manifest holds at most 512 entries and survives Session
+reopen. Older Sessions without source metadata show “来源未知”.
+
+Manifest records contain metadata only. They never store injected source text,
+credentials, prompt messages, or tool results, and the manifest is not added to
+model input. Context bodies remain under the existing Session context and
+prompt limits. The canonical source records are written by App Server when a
+`context_injected` event is observed; Web Studio does not maintain a second
+source ledger.
 
 The conversation stream places a **Host 注入** card at each persisted injection
 boundary. The card shows the same metadata only. A normal `read_file` result
 remains a tool card with its ordinary tool lifecycle and output. The Gateway
-projects the current source inventory from the latest Session checkpoint so it
-remains available after older turn presentations leave the bounded history.
+reads the manifest from App Server so source history remains available after
+older turn presentations leave the bounded history.
 
 ## Request usage
 

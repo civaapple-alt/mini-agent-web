@@ -124,7 +124,7 @@ App Server 在每次模型请求前和整批工具完成后保存 execution chec
 
 App Server 每 10 秒记录一次执行器心跳。Responses provider 在 120 秒没有收到 provider 数据时结束当前采样并等待用户继续；识别出的暂时传输错误、不完整流和 HTTP 408、429、5xx 响应会按 1、2、4、8 秒退避，最多 5 次且总窗口不超过 120 秒。失败采样段的部分事件不会并入恢复后的回答。
 
-`turn/read` 和子任务投影提供有界的恢复状态、阶段、最后心跳和进展时间、checkpoint 序号及原因；运行中的 Turn 也可读取当前恢复快照。恢复或核对结束前，App Server 拒绝覆盖该 checkpoint 的新 `turn/start`。运行面板刷新或重新连接只重建这些状态，不会启动恢复请求。Main 的会话恢复入口和 Child 详情的继续入口都使用 App Server 的 `turn/resume`；待核对状态保留到任务执行记录的入口，由用户核实未知的工具副作用。
+`turn/read` 和子任务投影提供有界的恢复状态、阶段、最后心跳和进展时间、checkpoint 序号及原因；运行中的 Turn 也可读取当前恢复快照。所有未知调用核对完成前，App Server 拒绝 `turn/resume` 和覆盖该 checkpoint 的新 `turn/start`。运行面板刷新或重新连接只重建这些状态，不会启动恢复请求。Main 对话区和 Child Session 详情都通过 `turn/reconcile` 记录人工决定：`completed` 要求提交有界结构化结果，`not_executed` 确认副作用未发生并允许后续显式恢复。请求绑定 `turnId + checkpointSeq + toolCallId + requestId`；相同请求幂等，旧 checkpoint 或冲突 request ID 会被拒绝。核对只更新 App Server 的 execution journal，不会自行执行工具或恢复 Turn；全部核对后，用户仍需显式使用 `turn/resume`。
 
 运行详情把“会话检查点”和“执行检查点”分开展示。会话检查点在 Turn 结算后更新，供后续对话和 Child fork 使用；执行检查点是当前 Turn 最近的安全恢复位置，运行面板同时显示其阶段、最近进展和执行器心跳。检查点序号标识持久化日志位置，不代表完成步数；模型请求或工具批次执行期间，执行检查点可能保持不变。`checkpoint/committed` 只确认结算后的会话 checkpoint 已提交；运行详情会标出该通知所属的 Turn 和时间。
 
@@ -145,8 +145,8 @@ App Server 每 10 秒记录一次执行器心跳。Responses provider 在 120 �
 1200 像素时，抽屉使用浮层布局以保留可读的主消息流。
 
 子会话详情只显示该子 Session 自己的实时事件和持久化活动项。详情打开时会订阅按
-`project_id + child_thread_id` 路由的实时事件，并用有界 `turn/events` 回放补齐打开详情前或短暂断线期间的事件；
-Turn 结算后的 ThreadItems 仍是刷新与长期恢复来源。fork 时继承的父 checkpoint 继续作为子代理模型上下文，
+`project_id + child_thread_id` 路由的实时事件，并使用跨 App Server 重启的有界 `turn/events` 摘要推进游标、发现缺口；
+摘要不含文本增量、工具参数或工具正文，不能投影成聊天内容。ThreadItems 是持久活动和断线对账来源。fork 时继承的父 checkpoint 继续作为子代理模型上下文，
 但不会作为子代理消息流显示。事件回放缓存有缺口时，详情提示缺口并显示仍可回放的活动；结算后由持久化活动补齐。
 旧 Session 没有本地活动项或实时事件时显示明确的空态。详情按原顺序呈现执行活动，并与主会话使用相同的执行段规则：当前 Turn 的活动段保持展开，先前已结算活动折叠为摘要，结算后的最后一段与最终回复保持相邻可见。点击摘要可查看其中的思考和工具卡；工具输出仍由各自卡片展开，思考正文保持限高滚动。长任务提示在独立限高区域内阅读，不撑开整条消息流。
 运行中的任务突出当前阶段、最新报告、耗时和最近活动；已结束任务突出终态、最终回复或失败诊断、

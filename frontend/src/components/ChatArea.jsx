@@ -3,6 +3,7 @@ import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
 import { Sparkles, Terminal, Compass, TestTube2, ArrowDown, Folder } from 'lucide-react';
 import MessageItem from './MessageItem';
 import SessionTurnRail from './SessionTurnRail';
+import TurnReconciliationForm from './TurnReconciliationForm';
 import { collectInputMessages, getChildWakeupTurnIds } from '../utils/inputTrace';
 import { normalizeAssistantBlocks, orderMessagesByTurnHistory } from '../utils/messageState';
 import {
@@ -57,6 +58,8 @@ export default function ChatArea({
   turnTimings = null,
   onResumeExecution,
   resumeExecutionBusy = false,
+  onReconcileExecution,
+  reconcileExecutionBusy = false,
   threadItems = [],
   statusModel = null,
   policy = 'interactive',
@@ -712,21 +715,36 @@ export default function ChatArea({
             </button>
           )}
           {lastTurnResult.recovery?.status === 'needs_reconciliation' && (
-            <button
-              type="button"
-              className="turn-recovery-button"
-              onClick={() => {
-                const turnId = lastTurnResult.recovery?.turn_id
-                  || lastTurnResult.recovery?.turnId
-                  || lastTurnResult.turnId;
-                const entry = turnEntries.find((item) => (
-                  String(item.turnId || item.id || '') === String(turnId || '')
-                ));
-                if (!scrollToEntry(entry)) scrollToCurrentTurn();
-              }}
-            >
-              查看待核对活动
-            </button>
+            <div className="turn-reconciliation-list">
+              {(lastTurnResult.recovery?.uncertain_tool_calls
+                || lastTurnResult.recovery?.uncertainToolCalls
+                || []).map((call) => {
+                const toolCallId = call.tool_call_id || call.toolCallId || '';
+                return (
+                  <TurnReconciliationForm
+                    key={toolCallId}
+                    call={call}
+                    busy={reconcileExecutionBusy}
+                    onSubmit={onReconcileExecution}
+                  />
+                );
+              })}
+              <button
+                type="button"
+                className="turn-recovery-button"
+                onClick={() => {
+                  const turnId = lastTurnResult.recovery?.turn_id
+                    || lastTurnResult.recovery?.turnId
+                    || lastTurnResult.turnId;
+                  const entry = turnEntries.find((item) => (
+                    String(item.turnId || item.id || '') === String(turnId || '')
+                  ));
+                  if (!scrollToEntry(entry)) scrollToCurrentTurn();
+                }}
+              >
+                查看待核对活动
+              </button>
+            </div>
           )}
         </div>
       )}

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Upgrade the App Server contract and Session journal to V2. Add explicit
+  operator reconciliation for uncertain tool outcomes, Session-owned bounded
+  Context Manifest reads, and cross-restart metadata-only event replay. V1
+  clients and Session files are rejected without automatic migration; archive
+  or export Sessions with the previous release before upgrading.
+- Add manual recovery controls in Studio for tool calls whose side effects are
+  uncertain. Require a bounded operator result or confirmation that the call
+  did not run, and keep recovery tied to the original Turn and checkpoint.
+
 - Project optional `model_timing` values from `model_responded` through the
   Python SDK and Gateway, persist the latest timing in Turn presentations, and
   show TTFT and response latency on settled assistant replies. Older Sessions

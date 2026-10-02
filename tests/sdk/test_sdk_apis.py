@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 from mini_agent import (
+    APP_SERVER_PROTOCOL_VERSION,
+    ExecutionRecoveryInfo,
     ExecutionRecoveryPhase,
     ExecutionRecoveryRecommendation,
     ExecutionRecoveryStatus,
@@ -16,9 +18,14 @@ from mini_agent import (
     ThreadSettingsResult,
     TurnEventsResult,
     TurnReadResult,
+    TurnReconcileDisposition,
 )
 from mini_agent.client import _redact_secrets
-from mini_agent.errors import AppServerError, ServerProcessError
+from mini_agent.errors import (
+    AppServerError,
+    ProtocolVersionMismatchError,
+    ServerProcessError,
+)
 
 from tests.conftest import has_app_server
 
@@ -40,6 +47,10 @@ def test_goal_result_parses_verifier_model_snapshot():
         "provider_id": "kimi",
         "model_id": "kimi-k2",
     }
+
+
+def test_python_sdk_targets_app_server_protocol_v2():
+    assert APP_SERVER_PROTOCOL_VERSION == 2
 
 
 @pytest.mark.asyncio
@@ -412,7 +423,7 @@ async def test_restart_reuses_provider_and_resumes_the_same_session():
     async def fake_send(method, params=None):
         calls.append((method, params))
         if method == "initialize":
-            return {"protocolVersion": 1, "capabilityManifest": {}}
+            return {"protocolVersion": 2, "capabilityManifest": {}}
         if method == "session/info":
             return {
                 "value": {
@@ -459,14 +470,14 @@ async def test_restart_reuses_provider_and_resumes_the_same_session():
     initialize_calls = [params for method, params in calls if method == "initialize"]
     assert initialize_calls == [
         {
-            "protocolVersion": 1,
+            "protocolVersion": 2,
             "clientName": "custom-client",
             "clientVersion": "1.2.3",
             "capabilities": {"userQuestions": False},
             "providers": provider_selection,
         },
         {
-            "protocolVersion": 1,
+            "protocolVersion": 2,
             "clientName": "custom-client",
             "clientVersion": "1.2.3",
             "capabilities": {"userQuestions": False},
@@ -513,12 +524,12 @@ async def test_restart_resumes_durable_session_with_app_server(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_initialize_tolerates_older_server_without_session_info():
+async def test_initialize_tolerates_server_without_session_info():
     client = MiniAgentClient()
 
     async def fake_send(method, params=None):
         if method == "initialize":
-            return {"protocolVersion": 1, "capabilityManifest": {}}
+            return {"protocolVersion": 2, "capabilityManifest": {}}
         if method == "session/info":
             raise AppServerError(-32601, "method not found")
         raise AssertionError(f"unexpected method: {method}")
@@ -527,8 +538,126 @@ async def test_initialize_tolerates_older_server_without_session_info():
 
     result = await client.initialize()
 
-    assert result["protocolVersion"] == 1
+    assert result["protocolVersion"] == 2
     assert client._session_info is None
+
+
+@pytest.mark.asyncio
+async def test_initialize_rejects_protocol_v1():
+    client = MiniAgentClient()
+
+    async def fake_send(method, params=None):
+        assert method == "initialize"
+        return {"protocolVersion": 1, "capabilityManifest": {}}
+
+    client._send_request = fake_send
+
+    with pytest.raises(
+        ProtocolVersionMismatchError, match="Unsupported protocol version 1"
+    ):
+        await client.initialize()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_turn_sends_bounded_operator_decision():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {
+            "value": {
+                "turnId": "turn-1",
+                "checkpointSeq": 12,
+                "status": "applied",
+            }
+        }
+
+    client._send_request = fake_send
+    result = await client.reconcile_turn(
+        "turn-1",
+        12,
+        "call-1",
+        "request-1",
+        TurnReconcileDisposition.COMPLETED,
+        "verified against the receiver",
+        result_status="completed",
+        result_content="receipt 123",
+        thread_id="thread-1",
+    )
+
+    assert result.status == "applied"
+    assert calls == [
+        (
+            "turn/reconcile",
+            {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "checkpointSeq": 12,
+                "toolCallId": "call-1",
+                "requestId": "request-1",
+                "disposition": "completed",
+                "evidenceSummary": "verified against the receiver",
+                "result": {"status": "completed", "content": "receipt 123"},
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_read_context_manifest_returns_session_owned_provenance():
+    client = MiniAgentClient()
+    calls = []
+
+    async def fake_send(method, params=None):
+        calls.append((method, params))
+        return {
+            "value": {
+                "data": [
+                    {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "sourceId": "project-instructions",
+                        "sourceName": "AGENTS.md",
+                        "kind": "project_instructions",
+                        "versionFingerprint": "sha256:abc",
+                        "appliesTo": "workspace",
+                        "permissionBasis": "workspace instruction policy",
+                        "injectionReason": "include applicable project instructions",
+                        "bytes": 128,
+                        "reused": False,
+                        "injectedAtMs": 100,
+                    }
+                ]
+            }
+        }
+
+    client._send_request = fake_send
+    manifest = await client.read_context_manifest("thread-1")
+
+    assert len(manifest.data) == 1
+    assert manifest.data[0].source_id == "project-instructions"
+    assert manifest.data[0].permission_basis == "workspace instruction policy"
+    assert calls == [
+        ("session/context_manifest", {"threadId": "thread-1"}),
+    ]
+
+
+def test_execution_recovery_decodes_uncertain_tool_identities_without_arguments():
+    recovery = ExecutionRecoveryInfo.from_dict(
+        {
+            "turnId": "turn-1",
+            "status": "needs_reconciliation",
+            "phase": "tool_batch",
+            "checkpointSeq": 9,
+            "uncertainToolCalls": [{"toolCallId": "call-1", "name": "send_message"}],
+        }
+    )
+
+    assert [
+        (call.tool_call_id, call.name) for call in recovery.uncertain_tool_calls
+    ] == [("call-1", "send_message")]
+    assert "arguments" not in recovery.to_dict()["uncertainToolCalls"][0]
 
 
 @pytest.mark.asyncio
@@ -539,7 +668,7 @@ async def test_web_client_can_negotiate_user_question_capability():
     async def fake_send(method, params=None):
         calls.append((method, params))
         if method == "initialize":
-            return {"protocolVersion": 1, "capabilityManifest": {}}
+            return {"protocolVersion": 2, "capabilityManifest": {}}
         if method == "session/info":
             raise AppServerError(-32601, "method not found")
         return {"accepted": True}
@@ -580,7 +709,7 @@ async def test_restart_keeps_disabled_session_mode_without_durable_session():
 
     async def fake_send(method, params=None):
         if method == "initialize":
-            return {"protocolVersion": 1, "capabilityManifest": {}}
+            return {"protocolVersion": 2, "capabilityManifest": {}}
         if method == "session/info":
             return {"value": None}
         if method == "thread/start":
@@ -863,7 +992,7 @@ async def test_advanced_thread_and_workflow_apis(tmp_path: Path):
     ) as client:
         # 1. Initialize
         init_res = await client.initialize()
-        assert init_res.get("protocolVersion") == 1
+        assert init_res.get("protocolVersion") == 2
         assert init_res.get("serverVersion") == "0.9.0"
 
         # 2. Thread lifecycle
@@ -1040,7 +1169,7 @@ async def test_sdk_runtime_observation_api_mapping():
                     {
                         "threadId": "thread-1",
                         "sequence": 8,
-                        "event": {"type": "run_started"},
+                        "eventType": "run_started",
                     }
                 ],
                 "nextCursor": 8,
@@ -1060,6 +1189,7 @@ async def test_sdk_runtime_observation_api_mapping():
     assert isinstance(events, TurnEventsResult)
     assert events.next_cursor == 8
     assert events.data[0]["sequence"] == 8
+    assert "event" not in events.data[0]
     assert calls == [
         ("runtime/status", {"threadId": "thread-1"}),
         (

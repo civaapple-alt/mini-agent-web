@@ -112,6 +112,28 @@ class ExecutionRecoveryRecommendation(str, Enum):
     INSPECT = "inspect"
 
 
+class TurnReconcileDisposition(str, Enum):
+    """Explicit operator disposition for one uncertain tool invocation."""
+
+    COMPLETED = "completed"
+    NOT_EXECUTED = "not_executed"
+
+
+@dataclass
+class UncertainToolCall:
+    """Safe identity projection for a tool call awaiting operator review."""
+
+    tool_call_id: str
+    name: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> UncertainToolCall:
+        return cls(
+            tool_call_id=str(data.get("toolCallId", data.get("tool_call_id", ""))),
+            name=str(data.get("name", "")),
+        )
+
+
 @dataclass
 class ToolCall:
     """Represents a tool invocation requested by the model."""
@@ -366,6 +388,98 @@ class ContextInjectionRecord:
 
 
 @dataclass
+class SessionContextManifestEntry:
+    """Session-owned provenance metadata; source text is never included."""
+
+    thread_id: str
+    turn_id: str | None
+    source_id: str
+    source_name: str
+    kind: str
+    version_fingerprint: str
+    workspace: str | None
+    path: str | None
+    applies_to: str
+    permission_basis: str
+    injection_reason: str
+    bytes: int
+    reused: bool
+    injected_at_ms: int
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SessionContextManifestEntry:
+        return cls(
+            thread_id=str(data.get("threadId", data.get("thread_id", ""))),
+            turn_id=data.get("turnId", data.get("turn_id")),
+            source_id=str(data.get("sourceId", data.get("source_id", ""))),
+            source_name=str(data.get("sourceName", data.get("source_name", ""))),
+            kind=str(data.get("kind", "other")),
+            version_fingerprint=str(
+                data.get("versionFingerprint", data.get("version_fingerprint", ""))
+            ),
+            workspace=data.get("workspace"),
+            path=data.get("path"),
+            applies_to=str(data.get("appliesTo", data.get("applies_to", ""))),
+            permission_basis=str(
+                data.get("permissionBasis", data.get("permission_basis", ""))
+            ),
+            injection_reason=str(
+                data.get("injectionReason", data.get("injection_reason", ""))
+            ),
+            bytes=max(0, int(data.get("bytes", 0) or 0)),
+            reused=bool(data.get("reused", False)),
+            injected_at_ms=max(
+                0, int(data.get("injectedAtMs", data.get("injected_at_ms", 0)) or 0)
+            ),
+        )
+
+
+@dataclass
+class SessionContextManifestResult:
+    """Bounded Context Manifest projection restored from a Session."""
+
+    data: list[SessionContextManifestEntry] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SessionContextManifestResult:
+        value = data.get("value", data) if isinstance(data, dict) else {}
+        if not isinstance(value, dict):
+            return cls(raw=data if isinstance(data, dict) else {})
+        return cls(
+            data=[
+                SessionContextManifestEntry.from_dict(item)
+                for item in value.get("data", [])
+                if isinstance(item, dict)
+            ],
+            raw=data if isinstance(data, dict) else {},
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "data": [
+                {
+                    "threadId": item.thread_id,
+                    "turnId": item.turn_id,
+                    "sourceId": item.source_id,
+                    "sourceName": item.source_name,
+                    "kind": item.kind,
+                    "versionFingerprint": item.version_fingerprint,
+                    "workspace": item.workspace,
+                    "path": item.path,
+                    "appliesTo": item.applies_to,
+                    "permissionBasis": item.permission_basis,
+                    "injectionReason": item.injection_reason,
+                    "bytes": item.bytes,
+                    "reused": item.reused,
+                    "injectedAtMs": item.injected_at_ms,
+                }
+                for item in self.data
+            ]
+        }
+
+
+@dataclass
 class TurnSubmissionResult:
     """Result returned immediately when submitting a turn to the app server."""
 
@@ -407,6 +521,7 @@ class ExecutionRecoveryInfo:
     last_heartbeat_ms: int | None = None
     last_progress_ms: int | None = None
     reason: str | None = None
+    uncertain_tool_calls: list[UncertainToolCall] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -441,6 +556,11 @@ class ExecutionRecoveryInfo:
             payload["lastProgressMs"] = self.last_progress_ms
         if self.reason is not None:
             payload["reason"] = self.reason
+        if self.uncertain_tool_calls:
+            payload["uncertainToolCalls"] = [
+                {"toolCallId": call.tool_call_id, "name": call.name}
+                for call in self.uncertain_tool_calls
+            ]
         return payload
 
     @classmethod
@@ -473,7 +593,36 @@ class ExecutionRecoveryInfo:
             last_heartbeat_ms=optional_int("lastHeartbeatMs", "last_heartbeat_ms"),
             last_progress_ms=optional_int("lastProgressMs", "last_progress_ms"),
             reason=reason if isinstance(reason, str) else None,
+            uncertain_tool_calls=[
+                UncertainToolCall.from_dict(item)
+                for item in payload.get(
+                    "uncertainToolCalls", payload.get("uncertain_tool_calls", [])
+                )
+                if isinstance(item, dict)
+            ],
             raw=dict(payload),
+        )
+
+
+@dataclass
+class TurnReconcileResult:
+    """Acknowledgement for a durable App Server reconciliation decision."""
+
+    turn_id: str
+    checkpoint_seq: int
+    status: str
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TurnReconcileResult:
+        value = data.get("value", data) if isinstance(data, dict) else {}
+        return cls(
+            turn_id=str(value.get("turnId", value.get("turn_id", ""))),
+            checkpoint_seq=int(
+                value.get("checkpointSeq", value.get("checkpoint_seq", 0))
+            ),
+            status=str(value.get("status", "unknown")),
+            raw=data if isinstance(data, dict) else {},
         )
 
 

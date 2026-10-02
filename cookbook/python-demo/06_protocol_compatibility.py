@@ -1,7 +1,8 @@
 """Demo 06: Protocol Compatibility Smoke Test.
 
 This deterministic example uses no App Server process and no model provider.
-It validates that the 0.9.0 SDK parses public lifecycle events, dedicated
+It validates that the V2 SDK parses public lifecycle events, metadata-only
+replay summaries, dedicated
 ThreadItem notifications, bounded ThreadItem list projections, and the
 cross-repository stopping/session-fork control contract.
 """
@@ -22,6 +23,8 @@ from mini_agent import (
     ThreadItem,
     ThreadItemsListResult,
     ToolFinishedEvent,
+    TurnEventsResult,
+    TurnReconcileDisposition,
     parse_event,
 )
 
@@ -131,6 +134,26 @@ KNOWN_TOOL_OUTCOMES = (
     "retryable",
 )
 
+REPLAY_FIXTURE = {
+    "value": {
+        "data": [
+            {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "sequence": 12,
+                "eventType": "tool_finished",
+                "toolCallId": "call-1",
+                "toolName": "shell",
+                "contextSources": [],
+                "recordedAtMs": 100,
+            }
+        ],
+        "nextCursor": 18,
+        "oldestSequence": 2,
+        "hasGap": False,
+    }
+}
+
 
 def main() -> None:
     for payload in EVENT_FIXTURES:
@@ -193,6 +216,11 @@ def main() -> None:
     runtime_status = RuntimeStatus.from_dict(RUNTIME_STATUS_FIXTURE)
     assert runtime_status.phase == "stopping"
     assert runtime_status.turn_id == "turn-1"
+    replay = TurnEventsResult.from_dict(REPLAY_FIXTURE)
+    assert replay.data[0]["eventType"] == "tool_finished"
+    assert "event" not in replay.data[0]
+    assert replay.next_cursor == 18
+    assert TurnReconcileDisposition.COMPLETED.value == "completed"
     fork = SessionForkResult.from_dict(SESSION_FORK_FIXTURE)
     assert fork.session_id == "session-child"
     assert fork.parent_session_id == "session-parent"

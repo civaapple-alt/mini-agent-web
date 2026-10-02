@@ -37,6 +37,7 @@ from mini_agent.types import (
     McpStatusResult,
     RuntimeStatus,
     ScheduledTask,
+    SessionContextManifestResult,
     SessionForkResult,
     SessionInfo,
     ThreadCheckpoint,
@@ -52,6 +53,8 @@ from mini_agent.types import (
     ThreadSettingsResult,
     TurnEventsResult,
     TurnReadResult,
+    TurnReconcileDisposition,
+    TurnReconcileResult,
     TurnSubmissionResult,
     WorkflowState,
     WorldRefreshResult,
@@ -62,6 +65,7 @@ from mini_agent.types import (
 logger = logging.getLogger("mini_agent")
 
 DEFAULT_REQUEST_TIMEOUT_SECS = 30.0
+APP_SERVER_PROTOCOL_VERSION = 2
 STREAM_EVENT_QUEUE_LIMIT = 512
 STREAM_EVENT_QUEUE_BYTE_LIMIT = 2 * 1024 * 1024
 STREAM_EVENT_QUEUES_TOTAL_BYTE_LIMIT = 8 * 1024 * 1024
@@ -788,12 +792,12 @@ class MiniAgentClient:
         client_version: str = "0.9.0",
         providers: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Negotiate protocol version 1 and receive capability manifest."""
+        """Negotiate App Server protocol version 2 and receive capabilities."""
         self._client_name = client_name
         self._client_version = client_version
         self._provider_selection = dict(providers) if providers else None
         params: dict[str, Any] = {
-            "protocolVersion": 1,
+            "protocolVersion": APP_SERVER_PROTOCOL_VERSION,
             "clientName": client_name,
             "clientVersion": client_version,
             "capabilities": {"userQuestions": self.user_questions},
@@ -802,7 +806,7 @@ class MiniAgentClient:
             params["providers"] = providers
 
         res = await self._send_request("initialize", params)
-        if res.get("protocolVersion") != 1:
+        if res.get("protocolVersion") != APP_SERVER_PROTOCOL_VERSION:
             raise ProtocolVersionMismatchError(
                 f"Unsupported protocol version {res.get('protocolVersion')}"
             )
@@ -1267,6 +1271,53 @@ class MiniAgentClient:
             },
         )
         return TurnSubmissionResult.from_dict(result)
+
+    async def reconcile_turn(
+        self,
+        turn_id: str,
+        checkpoint_seq: int,
+        tool_call_id: str,
+        request_id: str,
+        disposition: TurnReconcileDisposition | str,
+        evidence_summary: str,
+        *,
+        result_status: Literal["completed", "failed"] | None = None,
+        result_content: str | None = None,
+        thread_id: str | None = None,
+    ) -> TurnReconcileResult:
+        """Record an operator decision for one uncertain tool call."""
+        if checkpoint_seq < 1:
+            raise ValueError("checkpoint_seq must be positive")
+        if not request_id or len(request_id.encode("utf-8")) > 128:
+            raise ValueError("request_id must be non-empty and at most 128 bytes")
+        if not tool_call_id or len(tool_call_id.encode("utf-8")) > 128:
+            raise ValueError("tool_call_id must be non-empty and at most 128 bytes")
+        if not evidence_summary.strip() or len(evidence_summary.encode("utf-8")) > 1024:
+            raise ValueError(
+                "evidence_summary must be non-empty and at most 1024 bytes"
+            )
+        disposition_value = TurnReconcileDisposition(disposition).value
+        params: dict[str, Any] = {
+            "threadId": thread_id or self._active_thread_id,
+            "turnId": turn_id,
+            "checkpointSeq": checkpoint_seq,
+            "toolCallId": tool_call_id,
+            "requestId": request_id,
+            "disposition": disposition_value,
+            "evidenceSummary": evidence_summary,
+        }
+        if disposition_value == TurnReconcileDisposition.COMPLETED.value:
+            if result_status not in {"completed", "failed"} or result_content is None:
+                raise ValueError(
+                    "completed disposition requires a completed or failed result"
+                )
+            if len(result_content.encode("utf-8")) > 64 * 1024:
+                raise ValueError("result_content must be at most 65536 bytes")
+            params["result"] = {"status": result_status, "content": result_content}
+        elif result_status is not None or result_content is not None:
+            raise ValueError("not_executed disposition must not include a tool result")
+        result = await self._send_request("turn/reconcile", params)
+        return TurnReconcileResult.from_dict(result)
 
     async def _read_turn(
         self, turn_id: str, request_timeout: float | None = None
@@ -1741,6 +1792,16 @@ class MiniAgentClient:
         if not val:
             return None
         return SessionInfo.from_dict(res)
+
+    async def read_context_manifest(
+        self, thread_id: str | None = None
+    ) -> SessionContextManifestResult:
+        """Read the bounded Session-owned provenance manifest for a Thread."""
+        result = await self._send_request(
+            "session/context_manifest",
+            {"threadId": thread_id or self._active_thread_id},
+        )
+        return SessionContextManifestResult.from_dict(result)
 
     async def read_notebook(
         self,

@@ -11,6 +11,8 @@ vi.mock('../api', () => ({
     readThread: vi.fn(),
     listThreadItems: vi.fn(),
     replayThreadEvents: vi.fn(),
+    reconcileTurn: vi.fn(),
+    readContextManifest: vi.fn(),
   },
 }));
 
@@ -52,6 +54,7 @@ describe('child agents drawer tab', () => {
       next_cursor: null,
       has_gap: false,
     });
+    api.readContextManifest.mockResolvedValue({ data: [] });
     api.listThreadItems.mockResolvedValue({
       data: [
         {
@@ -202,6 +205,32 @@ describe('child agents drawer tab', () => {
     expect(screen.getByText(/不会回填父会话 checkpoint 内容/)).toBeTruthy();
   });
 
+  it('shows child Session context provenance without source bodies', async () => {
+    api.readContextManifest.mockResolvedValue({
+      data: [{
+        sourceId: 'project-instructions',
+        sourceName: 'AGENTS.md',
+        kind: 'project_instructions',
+        versionFingerprint: 'sha256:context-version',
+        workspace: 'project-a',
+        path: 'AGENTS.md',
+        appliesTo: 'workspace',
+        permissionBasis: 'workspace instruction policy',
+        injectionReason: 'include applicable project instructions',
+        bytes: 128,
+      }],
+    });
+    render(
+      <ChildSessionViewer child={{ ...child, status: 'completed' }} projectId="project-a" onBack={vi.fn()} />,
+    );
+
+    expect(await screen.findByText(/include applicable project instructions/)).toBeTruthy();
+    expect(screen.getByText('sha256:context-versi')).toBeTruthy();
+    expect(api.readContextManifest).toHaveBeenCalledWith('child-a', expect.objectContaining({
+      projectId: 'project-a',
+    }));
+  });
+
   it('puts the latest report and live duration first for a running child', async () => {
     api.readThread.mockResolvedValue({ turn_active: true, messages: [] });
     render(
@@ -265,6 +294,7 @@ describe('child agents drawer tab', () => {
         phase: 'tool_batch',
         checkpoint_seq: 18,
         reason: 'shell result is unknown',
+        uncertain_tool_calls: [{ tool_call_id: 'call-child', name: 'shell' }],
       },
       messages: [],
     });
@@ -280,7 +310,23 @@ describe('child agents drawer tab', () => {
     await screen.findByText('工具结果需要核对');
     expect(screen.getByText('shell result is unknown')).toBeTruthy();
     expect(screen.queryByRole('button', { name: '继续当前 Turn' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '查看执行记录' }));
+    expect(screen.getByRole('button', { name: '查看执行记录' })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('核对依据（最多 1024 字节）'), {
+      target: { value: 'verified not sent' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '确认未执行' }));
+
+    await waitFor(() => expect(api.reconcileTurn).toHaveBeenCalledWith(
+      'child-a',
+      'child-turn-reconcile',
+      expect.objectContaining({
+        checkpoint_seq: 18,
+        tool_call_id: 'call-child',
+        disposition: 'not_executed',
+        evidence_summary: 'verified not sent',
+      }),
+      { projectId: 'project-a' },
+    ));
   });
 
   it('shows completed follow-up Turns under the same child Session card', async () => {

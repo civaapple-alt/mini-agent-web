@@ -22,11 +22,12 @@ from server.thread_titles import build_auto_thread_title
 
 MAX_SESSIONS = 128
 # Keep this at least as large as the App Server SessionStore limit. Oversized
-# checkpoint records are projected below, so a large history remains readable
-# without copying its full model context into the Gateway response.
-MAX_SESSION_BYTES = 32 * 1024 * 1024
+# checkpoint and item records are projected below, so large history remains
+# readable without copying full model context or responses into Gateway output.
+MAX_SESSION_BYTES = 256 * 1024 * 1024
+MAX_SESSION_RECORD_BYTES = 128 * 1024 * 1024
 MAX_JS_SAFE_INTEGER = (1 << 53) - 1
-MAX_RECORD_BYTES = 64 * 1024
+MAX_RECORD_PROJECTION_BYTES = 64 * 1024
 MAX_ERROR_CHARS = 2048
 MAX_CHECKPOINT_MESSAGES = 64
 MAX_TURN_PRESENTATIONS = 64
@@ -697,6 +698,71 @@ def _checkpoint_projection(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _item_record_projection(record: dict[str, Any]) -> dict[str, Any] | None:
+    """Bound large durable items before retaining them for Gateway history."""
+    message = record.get("message")
+    if not isinstance(message, dict):
+        return None
+    role = message.get("role")
+    if not isinstance(role, str) or role not in {
+        "user",
+        "assistant",
+        "tool",
+        "context",
+    }:
+        return None
+
+    projected_message: dict[str, Any] = {"role": role}
+    text = _bounded_text(message.get("text"), MAX_CHECKPOINT_MESSAGE_CHARS)
+    if text is not None:
+        projected_message["text"] = text
+    if role == "assistant":
+        reasoning = _bounded_text(
+            message.get("reasoning"), MAX_CHECKPOINT_MESSAGE_CHARS
+        )
+        if reasoning is not None:
+            projected_message["reasoning"] = reasoning
+    elif role == "tool":
+        name = _bounded_text(message.get("name"), 256)
+        if name is not None:
+            projected_message["name"] = name
+        projected_message["is_error"] = bool(message.get("is_error"))
+        content = _bounded_text(message.get("content"), MAX_CHECKPOINT_MESSAGE_CHARS)
+        if content is not None:
+            projected_message["content"] = content
+        outcome = message.get("outcome")
+        if isinstance(outcome, dict):
+            projected_outcome = {
+                key: value for key, value in outcome.items() if key != "content"
+            }
+            outcome_content = _bounded_text(
+                outcome.get("content"), MAX_CHECKPOINT_MESSAGE_CHARS
+            )
+            if outcome_content is not None:
+                projected_outcome["content"] = outcome_content
+            projected_message["outcome"] = projected_outcome
+        elif outcome is not None:
+            projected_message["outcome"] = outcome
+
+    projected_record = {
+        key: record[key]
+        for key in (
+            "kind",
+            "seq",
+            "item_id",
+            "thread_id",
+            "turn_id",
+            "timestamp_ms",
+            "item_kind",
+        )
+        if key in record
+    }
+    if "arguments" in record:
+        projected_record["arguments"] = record["arguments"]
+    projected_record["message"] = projected_message
+    return projected_record
+
+
 def _read_session_records(path: Path) -> tuple[list[dict[str, Any]], bool] | None:
     """Read bounded SessionStore records for projections and history queries."""
     session_path = path / "session.jsonl"
@@ -705,18 +771,40 @@ def _read_session_records(path: Path) -> tuple[list[dict[str, Any]], bool] | Non
             return None
         records = []
         skipped_oversized_records = False
-        for line in session_path.read_bytes().splitlines():
-            if len(line) > MAX_RECORD_BYTES:
-                skipped_oversized_records = True
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(record, dict):
-                if len(line) > MAX_RECORD_BYTES:
-                    if record.get("kind") != "checkpoint":
+        with session_path.open("rb") as session_file:
+            while True:
+                line = session_file.readline(MAX_SESSION_RECORD_BYTES + 2)
+                if not line:
+                    break
+                line_ended = line.endswith(b"\n")
+                record_size = len(line) - int(line_ended)
+                if record_size > MAX_SESSION_RECORD_BYTES:
+                    skipped_oversized_records = True
+                    if not line_ended:
+                        while True:
+                            remainder = session_file.readline(64 * 1024)
+                            if not remainder or remainder.endswith(b"\n"):
+                                break
+                    continue
+                if line_ended:
+                    line = line[:-1]
+                if record_size > MAX_RECORD_PROJECTION_BYTES:
+                    skipped_oversized_records = True
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(record, dict):
+                    continue
+                if record_size > MAX_RECORD_PROJECTION_BYTES:
+                    if record.get("kind") == "checkpoint":
+                        record = _checkpoint_projection(record)
+                    elif record.get("kind") == "item":
+                        record = _item_record_projection(record)
+                        if record is None:
+                            continue
+                    else:
                         continue
-                    record = _checkpoint_projection(record)
                 records.append(record)
     except OSError:
         return None

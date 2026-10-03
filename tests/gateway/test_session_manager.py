@@ -1638,6 +1638,54 @@ def test_session_catalog_lists_all_items_with_bounded_pages(tmp_path, monkeypatc
     )
 
 
+def test_session_catalog_projects_large_model_responses_before_listing(
+    tmp_path, monkeypatch
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    session_dir = session_base / "s-large-response"
+    session_dir.mkdir(parents=True)
+    records = [
+        {"seq": 1, "kind": "session_created", "session_id": "s-large-response"},
+        {"seq": 2, "kind": "thread_started", "thread_id": "t-large-response"},
+        {
+            "seq": 3,
+            "kind": "item",
+            "item_id": "answer-1",
+            "thread_id": "t-large-response",
+            "turn_id": "turn-1",
+            "timestamp_ms": 3,
+            "message": {"role": "assistant", "text": "x" * 70_000},
+        },
+    ]
+    (session_dir / "session.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    (session_base / "thread_index.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "threads": {"t-large-response": {"session_id": "s-large-response"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    page = SessionCatalog().list_thread_items(
+        workspace, "project-1", "t-large-response", limit=128
+    )
+
+    assert page is not None
+    item_text = page["data"][0]["item"]["text"]
+    assert item_text.startswith("x" * 100)
+    assert len(item_text) <= 16 * 1024 + 1
+    assert item_text.endswith("…")
+
+
 def test_session_catalog_restores_steer_prompt_missing_from_message_items(
     tmp_path, monkeypatch
 ):

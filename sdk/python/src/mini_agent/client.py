@@ -69,11 +69,13 @@ APP_SERVER_PROTOCOL_VERSION = 2
 STREAM_EVENT_QUEUE_LIMIT = 512
 STREAM_EVENT_QUEUE_BYTE_LIMIT = 2 * 1024 * 1024
 STREAM_EVENT_QUEUES_TOTAL_BYTE_LIMIT = 8 * 1024 * 1024
+STREAM_EVENT_LARGE_MESSAGE_BYTE_LIMIT = 128 * 1024 * 1024
+STREAM_EVENT_LARGE_QUEUES_TOTAL_BYTE_LIMIT = 256 * 1024 * 1024
 _STREAM_QUEUE_SIZE_KEY = "__mini_agent_sdk_queued_bytes"
-# SessionStore records are bounded to 512 KiB, but JSON-RPC wraps those
-# records in a response envelope. Keep asyncio's StreamReader limit above that
-# protocol bound so a valid checkpoint cannot break the stdio transport.
-APP_SERVER_STDIO_LINE_LIMIT = 2 * 1024 * 1024
+_STREAM_QUEUE_LARGE_SIZE_KEY = "__mini_agent_sdk_queued_large_bytes"
+# Model responses are capped at 16 MiB, but JSON can expand control characters
+# up to six times. Leave room for that event and its JSON-RPC envelope.
+APP_SERVER_STDIO_LINE_LIMIT = 129 * 1024 * 1024
 
 
 def setup_logging(
@@ -277,8 +279,10 @@ class MiniAgentClient:
         self._event_queues: list[asyncio.Queue[dict[str, Any]]] = []
         self._event_queue_threads: dict[asyncio.Queue[dict[str, Any]], str] = {}
         self._event_queue_bytes: dict[asyncio.Queue[dict[str, Any]], int] = {}
+        self._event_queue_large_bytes: dict[asyncio.Queue[dict[str, Any]], int] = {}
         self._overflowed_event_queues: set[asyncio.Queue[dict[str, Any]]] = set()
         self._queued_event_bytes = 0
+        self._queued_large_event_bytes = 0
         self._active_thread_id: str = "default"
         self.capability_manifest: dict[str, Any] = {}
         self._thread_settings: dict[str, ThreadSettingsResult] = {}
@@ -702,22 +706,58 @@ class MiniAgentClient:
             ).encode("utf-8")
         )
         queue_bytes = self._event_queue_bytes.get(queue, 0)
-        if (
-            queue.full()
-            or message_bytes > STREAM_EVENT_QUEUE_BYTE_LIMIT
+        normal_budget_exceeded = (
+            message_bytes > STREAM_EVENT_QUEUE_BYTE_LIMIT
             or queue_bytes + message_bytes > STREAM_EVENT_QUEUE_BYTE_LIMIT
             or self._queued_event_bytes + message_bytes
             > STREAM_EVENT_QUEUES_TOTAL_BYTE_LIMIT
-        ):
+        )
+        if queue.full():
             self._discard_stream_queue(queue)
             self._overflowed_event_queues.add(queue)
             queue.put_nowait({"type": "_stream_overflow"})
+            return
+        if normal_budget_exceeded:
+            if not self._is_large_turn_event(message):
+                self._discard_stream_queue(queue)
+                self._overflowed_event_queues.add(queue)
+                queue.put_nowait({"type": "_stream_overflow"})
+                return
+            queue_large_bytes = self._event_queue_large_bytes.get(queue, 0)
+            if (
+                message_bytes > STREAM_EVENT_LARGE_MESSAGE_BYTE_LIMIT
+                or queue_large_bytes + message_bytes
+                > STREAM_EVENT_LARGE_QUEUES_TOTAL_BYTE_LIMIT
+                or self._queued_large_event_bytes + message_bytes
+                > STREAM_EVENT_LARGE_QUEUES_TOTAL_BYTE_LIMIT
+            ):
+                self._discard_stream_queue(queue)
+                self._overflowed_event_queues.add(queue)
+                queue.put_nowait({"type": "_stream_overflow"})
+                return
+            queued_message = dict(message)
+            queued_message[_STREAM_QUEUE_SIZE_KEY] = 0
+            queued_message[_STREAM_QUEUE_LARGE_SIZE_KEY] = message_bytes
+            queue.put_nowait(queued_message)
+            self._event_queue_large_bytes[queue] = queue_large_bytes + message_bytes
+            self._queued_large_event_bytes += message_bytes
             return
         queued_message = dict(message)
         queued_message[_STREAM_QUEUE_SIZE_KEY] = message_bytes
         queue.put_nowait(queued_message)
         self._event_queue_bytes[queue] = queue_bytes + message_bytes
         self._queued_event_bytes += message_bytes
+
+    @staticmethod
+    def _is_large_turn_event(message: dict[str, Any]) -> bool:
+        """Identify App Server events that carry full model response content."""
+        event = message.get("event")
+        return isinstance(event, dict) and event.get("type") in {
+            "assistant_reasoning_delta",
+            "assistant_text_delta",
+            "model_responded",
+            "tool_started",
+        }
 
     def _release_stream_message(
         self, queue: asyncio.Queue[dict[str, Any]], message: dict[str, Any]
@@ -729,6 +769,14 @@ class MiniAgentClient:
                 0, self._event_queue_bytes.get(queue, 0) - message_bytes
             )
             self._queued_event_bytes = max(0, self._queued_event_bytes - message_bytes)
+        large_message_bytes = message.pop(_STREAM_QUEUE_LARGE_SIZE_KEY, 0)
+        if large_message_bytes:
+            self._event_queue_large_bytes[queue] = max(
+                0, self._event_queue_large_bytes.get(queue, 0) - large_message_bytes
+            )
+            self._queued_large_event_bytes = max(
+                0, self._queued_large_event_bytes - large_message_bytes
+            )
 
     def _discard_stream_queue(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
         """Discard buffered messages while releasing their byte budget."""
@@ -739,6 +787,7 @@ class MiniAgentClient:
                 break
             self._release_stream_message(queue, message)
         self._event_queue_bytes[queue] = 0
+        self._event_queue_large_bytes[queue] = 0
 
     async def _handle_approval_request(self, params: dict[str, Any]) -> None:
         """Handle server approval/request notification."""
@@ -1397,6 +1446,7 @@ class MiniAgentClient:
         self._event_queues.append(queue)
         self._event_queue_threads[queue] = target_thread
         self._event_queue_bytes[queue] = 0
+        self._event_queue_large_bytes[queue] = 0
 
         try:
             start_kwargs: dict[str, Any] = {
@@ -1535,6 +1585,7 @@ class MiniAgentClient:
             self._event_queues.remove(queue)
             self._event_queue_threads.pop(queue, None)
             self._event_queue_bytes.pop(queue, None)
+            self._event_queue_large_bytes.pop(queue, None)
             self._overflowed_event_queues.discard(queue)
 
     # -------------------------------------------------------------------------

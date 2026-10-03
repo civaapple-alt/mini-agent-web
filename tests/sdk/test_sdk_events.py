@@ -714,8 +714,8 @@ async def test_read_loop_reaps_process_after_stdout_failure():
 
 
 @pytest.mark.asyncio
-async def test_start_sets_stdio_line_limit_above_session_record_bound(monkeypatch):
-    """Valid large checkpoint responses must fit the SDK stdout reader."""
+async def test_start_sets_stdio_line_limit_for_max_thread_item_page(monkeypatch):
+    """A full bounded item page must fit the SDK stdout reader."""
 
     class FakeStream:
         async def readline(self):
@@ -759,7 +759,7 @@ async def test_start_sets_stdio_line_limit_above_session_record_bound(monkeypatc
     await client.stop()
 
     assert captured["limit"] == APP_SERVER_STDIO_LINE_LIMIT
-    assert APP_SERVER_STDIO_LINE_LIMIT > 512 * 1024
+    assert APP_SERVER_STDIO_LINE_LIMIT == 129 * 1024 * 1024
 
 
 @pytest.mark.asyncio
@@ -908,6 +908,59 @@ def test_stream_queue_bounds_bytes_per_stream_and_client(monkeypatch):
     first_message = first.get_nowait()
     client._release_stream_message(first, first_message)
     assert client._queued_event_bytes == 0
+
+
+def test_stream_queue_reserves_bounded_space_for_full_model_responses(monkeypatch):
+    monkeypatch.setattr("mini_agent.client.STREAM_EVENT_QUEUE_BYTE_LIMIT", 128)
+    monkeypatch.setattr("mini_agent.client.STREAM_EVENT_QUEUES_TOTAL_BYTE_LIMIT", 128)
+    monkeypatch.setattr("mini_agent.client.STREAM_EVENT_LARGE_MESSAGE_BYTE_LIMIT", 1024)
+    monkeypatch.setattr(
+        "mini_agent.client.STREAM_EVENT_LARGE_QUEUES_TOTAL_BYTE_LIMIT", 1024
+    )
+    client = MiniAgentClient()
+    queue = asyncio.Queue(maxsize=8)
+    client._event_queue_large_bytes[queue] = 0
+
+    client._enqueue_stream_message(
+        queue,
+        {
+            "threadId": "thread-1",
+            "event": {"type": "model_responded", "text": "x" * 256},
+        },
+    )
+
+    assert queue.qsize() == 1
+    assert client._event_queue_large_bytes[queue] > 128
+    assert client._queued_large_event_bytes == client._event_queue_large_bytes[queue]
+    message = queue.get_nowait()
+    assert message["event"]["type"] == "model_responded"
+    client._release_stream_message(queue, message)
+    assert client._event_queue_large_bytes[queue] == 0
+    assert client._queued_large_event_bytes == 0
+
+
+def test_stream_queue_rejects_large_response_beyond_reserve_without_leaking_bytes(
+    monkeypatch,
+):
+    monkeypatch.setattr("mini_agent.client.STREAM_EVENT_QUEUE_BYTE_LIMIT", 32)
+    monkeypatch.setattr("mini_agent.client.STREAM_EVENT_QUEUES_TOTAL_BYTE_LIMIT", 32)
+    monkeypatch.setattr("mini_agent.client.STREAM_EVENT_LARGE_MESSAGE_BYTE_LIMIT", 64)
+    monkeypatch.setattr(
+        "mini_agent.client.STREAM_EVENT_LARGE_QUEUES_TOTAL_BYTE_LIMIT", 64
+    )
+    client = MiniAgentClient()
+    queue = asyncio.Queue(maxsize=8)
+    client._event_queue_large_bytes[queue] = 0
+
+    client._enqueue_stream_message(
+        queue,
+        {"event": {"type": "model_responded", "text": "x" * 128}},
+    )
+
+    assert queue.qsize() == 1
+    assert queue.get_nowait()["type"] == "_stream_overflow"
+    assert client._event_queue_large_bytes[queue] == 0
+    assert client._queued_large_event_bytes == 0
 
 
 @pytest.mark.asyncio

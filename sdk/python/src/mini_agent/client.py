@@ -1703,11 +1703,14 @@ class MiniAgentClient:
                 params[name] = value
         return await self._send_request("web/search/settings/update", params)
 
-    async def test_web_search(self, query: str) -> dict[str, Any]:
-        """Run one bounded search using the currently selected Host provider."""
-        return await self._send_request(
-            "web/search/test", {"query": query}, timeout=40.0
-        )
+    async def test_web_search(
+        self, query: str, provider: str | None = None
+    ) -> dict[str, Any]:
+        """Run one bounded search using a selected or explicitly requested provider."""
+        params: dict[str, Any] = {"query": query}
+        if provider is not None:
+            params["provider"] = provider
+        return await self._send_request("web/search/test", params, timeout=40.0)
 
     async def test_model_connection(
         self, provider_id: str, model_id: str

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Simplify Web Search settings by removing repeated key guidance and placing an
+  independent test action in each provider card. Use one shared query and the
+  selected provider's saved Host key without changing the default provider.
 - Keep the Runtime Settings panel open after changing the execution scope,
   approval policy, or continuation mode so users can adjust multiple settings
   without reopening the panel.

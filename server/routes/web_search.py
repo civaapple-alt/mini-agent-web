@@ -89,23 +89,36 @@ async def update_web_search_settings(
         ) from err
 
 
-@router.post("/test", summary="Run a bounded search against the selected provider")
+@router.post("/test", summary="Run a bounded search against a configured provider")
 async def test_web_search(
     request: dict[str, Any], project_id: str | None = Query(default=None)
 ) -> dict[str, Any]:
     query = request.get("query")
+    provider = request.get("provider")
     if (
-        set(request) != {"query"}
+        set(request) - {"query", "provider"}
         or not isinstance(query, str)
         or not query.strip()
         or len(query.strip().encode()) > 2000
+        or (
+            "provider" in request
+            and provider is not None
+            and (
+                not isinstance(provider, str)
+                or provider not in {"deepseek", "exa", "kimi"}
+            )
+        )
     ):
         raise HTTPException(
-            status_code=422, detail="query must contain 1 to 2000 bytes"
+            status_code=422,
+            detail="query must contain 1 to 2000 bytes and provider must be deepseek, exa, kimi, or omitted",
         )
     try:
         client = await session_manager.get_client_for_project(project_id)
-        result = await client.test_web_search(query.strip())
+        if provider is None:
+            result = await client.test_web_search(query.strip())
+        else:
+            result = await client.test_web_search(query.strip(), provider=provider)
         value = result.get("value", result) if isinstance(result, dict) else {}
         results = value.get("results") if isinstance(value, dict) else None
         result_count = value.get("resultCount") if isinstance(value, dict) else None

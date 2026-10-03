@@ -26,12 +26,14 @@ export const webSearchApi = {
   },
 
   async testWebSearch(query, options = {}) {
+    const body = { query };
+    if (options.provider) body.provider = options.provider;
     const res = await request(
       '/api/web-search/test',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify(body),
         ...requestSignal(options),
       },
       options.projectId,

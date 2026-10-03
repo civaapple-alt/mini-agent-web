@@ -13,15 +13,17 @@ Gateway, and browser do not persist or return saved key values. Search calls
 may incur provider charges.
 
 Search API keys are managed separately from model-provider API keys, even when
-both settings use the same vendor. The Web Search panel follows the model
-settings display: a saved key is never filled back into the password field,
-the field says `已配置；输入新值可替换`, and a helper confirms whether a key is
-saved. Clearing a search key affects only Web Search settings.
+both settings use the same vendor. The Web Search panel never fills a saved key
+back into the password field. A configured field says
+`已配置；输入新值可替换`, and the provider card shows whether a key is saved.
+Clearing a search key affects only Web Search settings.
 
-The Web Search panel can run a test search with the saved provider and key. It
-returns at most three result links and snippets; it does not start a model
-request. Save configuration changes before testing. The request is sent to the
-selected search provider and may incur a charge.
+The Web Search panel keeps one shared test query and places a test action inside
+each provider card. Each action uses that provider's saved Host key without
+changing the selected default provider. A provider must have a saved key; save a
+new or replacement key before testing it. Results appear in the matching card,
+with at most three links and snippets. A test does not start a model request and
+may incur a provider charge.
 
 A settings change applies when a new Thread runtime is built. An already
 running Thread retains its current tool catalog. With no selected provider and
@@ -51,10 +53,10 @@ conversation activity does not label results by provider.
 | --- | --- |
 | `GET /api/web-search/settings` | Reads provider selection and configured flags; accepts optional `project_id` to select the local App Server connection. |
 | `POST /api/web-search/settings` | Updates provider and optional key fields; keys are write-only. |
-| `POST /api/web-search/test` | Runs one bounded search with a query and returns at most three results. |
+| `POST /api/web-search/test` | Runs one bounded search with a `query` and optional `provider` (`deepseek`, `exa`, or `kimi`); omission uses the selected provider. Returns at most three results. |
 | `MiniAgentClient.get_web_search_settings()` | Calls `web/search/settings/read`. |
 | `MiniAgentClient.update_web_search_settings()` | Calls `web/search/settings/update`, omitting credentials not supplied by the caller. |
-| `MiniAgentClient.test_web_search()` | Calls `web/search/test` using the selected saved provider and key. |
+| `MiniAgentClient.test_web_search()` | Calls `web/search/test` using the selected provider when `provider` is omitted, or the requested provider's saved key when supplied. |
 
 Tests use mocked App Server responses and local fixtures. They do not call
 DeepSeek, Exa, or Kimi.

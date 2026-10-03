@@ -44,6 +44,7 @@ import { getStatusViewModel, normalizeTheme } from './utils/statusModel.js';
 import { isIncompleteTurnStatus } from './utils/turnHistory.js';
 import {
   isRuntimeSettled,
+  projectRecoverableTurnResult,
   projectReplayPage,
   shouldRefreshAfterInterruptStatus,
 } from './utils/sessionRecovery.js';
@@ -1116,18 +1117,7 @@ export default function App() {
       const persistedTurn = cp.last_turn_status || cp.session?.last_turn_status;
       const executionRecovery = cp.execution_recovery || cp.executionRecovery || null;
       if (executionRecovery && executionRecovery.status !== 'settled') {
-        setLastTurnResult({
-          status: 'in_progress',
-          turnId: executionRecovery.turn_id
-            || executionRecovery.turnId
-            || cp.last_turn_id
-            || cp.session?.last_turn_id
-            || null,
-          error: executionRecovery.status === 'needs_reconciliation'
-            ? executionRecovery.reason || null
-            : null,
-          recovery: executionRecovery,
-        });
+        setLastTurnResult(projectRecoverableTurnResult(cp, executionRecovery));
       } else if (!turnActive && isIncompleteTurnStatus(persistedTurn)) {
         setLastTurnResult({
           status: persistedTurn,

@@ -8,6 +8,12 @@ the refreshed page overlaps the latest page already in memory. If the pages no
 longer overlap, Studio restarts from the newest page because the bounded
 response cannot determine a safe cursor shift.
 
+Recovered checkpoint messages use the same `historyOrder` positions as their
+canonical ThreadItems. This preserves each input's position relative to its
+Turn's reasoning and tool activity, even when the newest page uses negative
+offsets. When a Turn is waiting to continue, Studio keeps its persisted stop
+reason and completed step count beside the continuation action.
+
 The conversation timeline measures variable-height rows and mounts only the
 visible range plus a small overscan window. The Turn navigation rail is
 virtualized separately. Loading an older page preserves the first visible

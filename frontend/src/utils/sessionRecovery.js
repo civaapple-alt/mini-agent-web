@@ -1,6 +1,44 @@
+import { isIncompleteTurnStatus } from './turnHistory.js';
+
 /** Whether the authoritative status snapshot has no active Turn. */
 export function isRuntimeSettled(status) {
   return ['idle', 'completed', 'failed'].includes(status?.phase);
+}
+
+/** Project the durable stop cause and progress while a Turn awaits recovery. */
+export function projectRecoverableTurnResult(checkpoint = {}, recovery = null) {
+  const session = checkpoint?.session || {};
+  const result = recovery || checkpoint?.execution_recovery || checkpoint?.executionRecovery || {};
+  const recoveryTurnId = result.turn_id || result.turnId || null;
+  const checkpointTurnId = checkpoint.last_turn_id || session.last_turn_id || null;
+  const sameTurn = !recoveryTurnId
+    || !checkpointTurnId
+    || String(recoveryTurnId) === String(checkpointTurnId);
+  const checkpointStatus = sameTurn
+    ? checkpoint.last_turn_status || session.last_turn_status
+    : null;
+  const status = isIncompleteTurnStatus(checkpointStatus)
+    ? checkpointStatus
+    : isIncompleteTurnStatus(result.reason)
+      ? result.reason
+      : 'in_progress';
+
+  return {
+    status,
+    turnId: recoveryTurnId || checkpointTurnId,
+    stopReason: (sameTurn && (checkpoint.last_stop_reason || session.last_stop_reason))
+      || result.reason
+      || null,
+    steps: sameTurn
+      ? checkpoint.last_turn_steps ?? session.last_turn_steps ?? 0
+      : 0,
+    error: result.status === 'needs_reconciliation'
+      ? result.reason || null
+      : sameTurn
+        ? checkpoint.last_turn_error || session.last_turn_error || null
+        : null,
+    recovery: result,
+  };
 }
 
 /** Reload the authoritative snapshot when a stop may have settled or advanced. */

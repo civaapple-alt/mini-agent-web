@@ -641,7 +641,7 @@ function normalizedHistoryText(value) {
 export function assignHistoryTurnIds(messages = [], entries = []) {
   const candidates = (entries || [])
     .map((entry, index) => ({
-      index,
+      historyOrder: Number.isFinite(entry?.historyOrder) ? entry.historyOrder : index,
       turnId: entry.turnId || entry.turn_id || null,
       capturedAt: entry.capturedAt || entry.captured_at || null,
       item: entry.item || {},
@@ -697,7 +697,7 @@ export function assignHistoryTurnIds(messages = [], entries = []) {
         ? { inputItemId: candidate.item.id }
         : {}),
       turnId: candidate.turnId,
-      historyOrder: candidate.index,
+      historyOrder: candidate.historyOrder,
       ...(message.role === 'user' && candidate.item.inputSource
         ? { inputSource: candidate.item.inputSource }
         : {}),

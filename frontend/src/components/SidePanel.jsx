@@ -254,6 +254,7 @@ function WorkflowFileContent({ path, content, emptyMessage }) {
 
 export function PromptContextCard({
   injections = [],
+  contextManifestError = null,
   contextUsage = null,
   contextCacheUsage = null,
   status = {},
@@ -355,6 +356,11 @@ export function PromptContextCard({
 
       <div className="prompt-context-section">
         <strong>注入来源</strong>
+        {contextManifestError && (
+          <p className="prompt-context-warning" role="status">
+            Context Manifest 读取失败：{contextManifestError}。会话历史仍已加载，来源列表使用已有记录。
+          </p>
+        )}
         {injections.length === 0 ? (
           <p className="prompt-context-unknown">来源未知（旧会话未保存来源元数据）</p>
         ) : (
@@ -448,6 +454,7 @@ export default function SidePanel({
   lastTurnResult = null,
   status = null,
   contextInjections = [],
+  contextManifestError = null,
   contextUsage = null,
   contextCacheUsage = null,
   sessionMeta = null,
@@ -1273,6 +1280,7 @@ export default function SidePanel({
 
                   <PromptContextCard
                     injections={contextInjections}
+                    contextManifestError={contextManifestError}
                     contextUsage={contextUsage}
                     contextCacheUsage={contextCacheUsage}
                     status={worldData.status}

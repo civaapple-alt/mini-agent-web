@@ -72,4 +72,21 @@ describe('PromptContextCard', () => {
     expect(screen.getByText(/来源未知/)).toBeDefined();
     expect(screen.getByText('字节构成未知')).toBeDefined();
   });
+
+  it('keeps a visible warning when the manifest is unavailable', () => {
+    render(
+      <PromptContextCard
+        contextManifestError="thread already has an active turn"
+        injections={[{
+          id: 'saved-source',
+          source: 'AGENTS.md',
+          fingerprint: 'saved-fingerprint',
+          bytes: 128,
+        }]}
+      />,
+    );
+
+    expect(screen.getByRole('status').textContent).toContain('会话历史仍已加载');
+    expect(screen.getByText('AGENTS.md')).toBeDefined();
+  });
 });

@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep large saved model responses available to bounded Gateway history previews,
   raise the Session catalog file cap to 256 MiB, and allow bounded 128 MiB
   model-response events through the SDK's 129 MiB stdio line limit.
+- Keep conversation history available when Context Manifest reads fail and
+  display the source-metadata error separately; read manifests during active Turns.
 - Make turn context injection cards easier to scan by naming the current Turn,
   showing each source's purpose first, and collapsing technical metadata.
 - Simplify Web Search settings by removing repeated key guidance and placing an

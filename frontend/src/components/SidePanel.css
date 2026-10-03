@@ -987,6 +987,16 @@
   line-height: 1.45;
 }
 
+.prompt-context-warning {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--warning-border, #e7b35e);
+  border-radius: 8px;
+  background: var(--warning-soft, #fff8e8);
+  color: var(--warning-text, #805b18);
+  font-size: 0.85rem;
+}
+
 .prompt-context-sources {
   display: grid;
   gap: 7px;

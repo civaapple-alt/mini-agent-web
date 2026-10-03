@@ -60,6 +60,7 @@ import { publishChildRuntimeEvent } from './utils/childRuntimeEvents.js';
 import {
   countNewItemsOnRefresh,
   historyItemKey,
+  loadThreadHistoryProjections,
   listOlderThreadItems,
   listNewestThreadItems,
   mergeHistoryPages,
@@ -124,6 +125,7 @@ export default function App() {
   const [contextUsage, setContextUsage] = useState(null);
   const [contextCacheUsage, setContextCacheUsage] = useState(null);
   const [contextInjections, setContextInjections] = useState([]);
+  const [contextManifestError, setContextManifestError] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isInterrupting, setIsInterrupting] = useState(false);
   const [resumeExecutionBusy, setResumeExecutionBusy] = useState(false);
@@ -196,6 +198,7 @@ export default function App() {
   const approvalSubmissionRef = useRef(new Map());
   const resolvedApprovalIdsRef = useRef(new Set());
   const sessionEpochRef = useRef(0);
+  const contextManifestReadSequenceRef = useRef(0);
   const sessionRequestControllerRef = useRef(null);
   const sessionSyncRef = useRef(null);
   const routeNavigationRef = useRef(null);
@@ -432,6 +435,8 @@ export default function App() {
     setContextUsage(null);
     setContextCacheUsage(null);
     setContextInjections([]);
+    setContextManifestError(null);
+    contextManifestReadSequenceRef.current += 1;
     setIsLoadingHistory(loadingHistory);
   };
 
@@ -1040,12 +1045,19 @@ export default function App() {
   ) => {
     const requestContext = context || currentSessionRequest();
     if (!preserveVisible) setIsLoadingHistory(true);
+    const manifestReadSequence = ++contextManifestReadSequenceRef.current;
     try {
-      const [cp, itemsPage, contextManifestPage] = await Promise.all([
-        api.readThread(threadId, { projectId, signal: requestContext.signal }),
-        listNewestThreadItems(threadId, projectId, requestContext),
-        api.readContextManifest(threadId, { projectId, signal: requestContext.signal }),
-      ]);
+      const { thread: cp, items: itemsPage, contextManifestPromise } = await loadThreadHistoryProjections({
+        readThread: () => api.readThread(threadId, {
+          projectId,
+          signal: requestContext.signal,
+        }),
+        readNewestItems: () => listNewestThreadItems(threadId, projectId, requestContext),
+        readContextManifest: () => api.readContextManifest(threadId, {
+          projectId,
+          signal: requestContext.signal,
+        }),
+      });
       if (!isCurrentSessionRequest(requestContext)) return;
       const newestPage = normalizeDescendingHistoryPage(itemsPage);
       const newestKeys = new Set(newestPage.entries.map(historyItemKey));
@@ -1155,28 +1167,41 @@ export default function App() {
           .filter((activity) => activity?.kind === 'context_injected')
           .flatMap((activity) => activity.contextInjections || [])
       ));
-      const manifestInjections = (contextManifestPage?.data || []).map((entry) => ({
-        id: entry.sourceId,
-        kind: entry.kind,
-        source: entry.sourceName,
-        workspace: entry.workspace,
-        path: entry.path,
-        scope: entry.appliesTo,
-        bytes: entry.bytes,
-        fingerprint: entry.versionFingerprint,
-        reused: entry.reused,
-        turnId: entry.turnId,
-        permissionBasis: entry.permissionBasis,
-        injectionReason: entry.injectionReason,
-        injectedAtMs: entry.injectedAtMs,
-      }));
-      setContextInjections(mergeContextInjectionRecords(
-        manifestInjections,
-        [
-          ...presentationInjections,
-          ...(cp.contextInjections || cp.context_injections || []),
-        ],
-      ));
+      const persistedContextInjections = mergeContextInjectionRecords(
+        presentationInjections,
+        cp.contextInjections || cp.context_injections || [],
+      );
+      setContextInjections(persistedContextInjections);
+      void contextManifestPromise.then(({ page, error }) => {
+        if (!isCurrentSessionRequest(requestContext)
+          || contextManifestReadSequenceRef.current !== manifestReadSequence) return;
+        if (error) {
+          if (isAbortError(error)) return;
+          setContextManifestError(String(error?.message || error).slice(0, 240));
+          showToast('来源清单读取失败，会话历史仍已正常加载。', 'warning', 5000);
+          return;
+        }
+        const manifestInjections = (page?.data || []).map((entry) => ({
+          id: entry.sourceId,
+          kind: entry.kind,
+          source: entry.sourceName,
+          workspace: entry.workspace,
+          path: entry.path,
+          scope: entry.appliesTo,
+          bytes: entry.bytes,
+          fingerprint: entry.versionFingerprint,
+          reused: entry.reused,
+          turnId: entry.turnId,
+          permissionBasis: entry.permissionBasis,
+          injectionReason: entry.injectionReason,
+          injectedAtMs: entry.injectedAtMs,
+        }));
+        setContextManifestError(null);
+        setContextInjections(mergeContextInjectionRecords(
+          manifestInjections,
+          persistedContextInjections,
+        ));
+      });
       const workflowByTurn = new Map(
         presentations
           .filter((presentation) => presentation?.turnId && presentation.workflow?.id)
@@ -3088,6 +3113,7 @@ export default function App() {
       contextUsage={contextUsage}
       contextCacheUsage={contextCacheUsage}
       contextInjections={contextInjections}
+      contextManifestError={contextManifestError}
       isInterrupting={isInterrupting}
       pendingApproval={pendingApproval}
       pendingUserQuestion={pendingUserQuestion}

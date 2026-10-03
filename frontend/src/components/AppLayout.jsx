@@ -83,6 +83,7 @@ export default function AppLayout({
   contextUsage = null,
   contextCacheUsage = null,
   contextInjections = [],
+  contextManifestError = null,
   planActive,
   isInterrupting,
   pendingApproval,
@@ -419,6 +420,7 @@ export default function AppLayout({
             contextUsage={contextUsage}
             contextCacheUsage={contextCacheUsage}
             contextInjections={contextInjections}
+            contextManifestError={contextManifestError}
             lastTurnResult={lastTurnResult}
             sessionMeta={sessionMeta}
             threadId={currentThread}

@@ -12,7 +12,10 @@ the child Thread's own manifest through the same route. Both views list bounded 
 identity and name, kind, version fingerprint, applicable scope, permission
 basis, injection reason, workspace/path labels, byte count, and whether the
 source was reused. The manifest holds at most 512 entries and survives Session
-reopen. Older Sessions without source metadata show “来源未知”.
+reopen and can be read while a Turn is active. Older Sessions without source
+metadata show “来源未知”. A manifest read error does not block Thread/Item
+history; the side panel reports the error and uses source records already
+present in the persisted Thread projection.
 
 Manifest records contain metadata only. They never store injected source text,
 credentials, prompt messages, or tool results, and the manifest is not added to

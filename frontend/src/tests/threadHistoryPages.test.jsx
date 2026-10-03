@@ -4,6 +4,7 @@ import {
   countNewItemsOnRefresh,
   HISTORY_PAGE_SIZE,
   historyItemKey,
+  loadThreadHistoryProjections,
   listOlderThreadItems,
   listNewestThreadItems,
   mergeHistoryPages,
@@ -42,6 +43,31 @@ describe('thread history pages', () => {
       sortDirection: 'desc',
       projectId: 'project-a',
       signal: undefined,
+    });
+  });
+
+  it('returns canonical history without waiting for the optional manifest', async () => {
+    let rejectManifest;
+    const manifestRequest = new Promise((resolve, reject) => {
+      rejectManifest = reject;
+    });
+    const readThread = vi.fn().mockResolvedValue({ threadId: 'thread-a' });
+    const readNewestItems = vi.fn().mockResolvedValue({ data: [{ id: 'item-a' }] });
+    const readContextManifest = vi.fn(() => manifestRequest);
+
+    const result = await loadThreadHistoryProjections({
+      readThread,
+      readNewestItems,
+      readContextManifest,
+    });
+
+    expect(result.thread).toEqual({ threadId: 'thread-a' });
+    expect(result.items).toEqual({ data: [{ id: 'item-a' }] });
+    expect(readContextManifest).toHaveBeenCalledTimes(1);
+    rejectManifest(new Error('manifest unavailable'));
+    await expect(result.contextManifestPromise).resolves.toEqual({
+      page: null,
+      error: new Error('manifest unavailable'),
     });
   });
 

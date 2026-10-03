@@ -64,6 +64,24 @@ export function listNewestThreadItems(threadId, projectId, options = {}) {
   });
 }
 
+export function loadThreadHistoryProjections({
+  readThread,
+  readNewestItems,
+  readContextManifest,
+}) {
+  const contextManifestPromise = Promise.resolve()
+    .then(readContextManifest)
+    .then(
+      (page) => ({ page, error: null }),
+      (error) => ({ page: null, error }),
+    );
+  return Promise.all([readThread(), readNewestItems()]).then(([thread, items]) => ({
+    thread,
+    items,
+    contextManifestPromise,
+  }));
+}
+
 export function listOlderThreadItems(threadId, projectId, cursor, options = {}) {
   return api.listThreadItems(threadId, {
     limit: HISTORY_PAGE_SIZE,

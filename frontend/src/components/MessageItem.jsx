@@ -47,6 +47,20 @@ function getCurrentExecutionSegmentStartIndex(blocks, activeBlockIndex) {
   return segmentStartIndex;
 }
 
+const CONTEXT_KIND_LABELS = {
+  project_instructions: '项目说明',
+  skill: '技能',
+  workspace_state: '工作区状态',
+  other: '附加能力',
+};
+
+function formatContextInjectionBytes(bytes) {
+  const value = Number(bytes);
+  return Number.isSafeInteger(value) && value >= 0
+    ? `${value.toLocaleString()} 字节`
+    : '大小未知';
+}
+
 export default function MessageItem({
   message,
   isLast,
@@ -556,40 +570,58 @@ export default function MessageItem({
                 <section
                   key={block.id || `context_injected_${idx}`}
                   className="context-injection-card"
-                  aria-label="Host 注入的上下文来源"
+                  aria-label="本轮上下文来源"
                 >
                   <div className="context-injection-heading">
-                    <FileText size={13} />
-                    <strong>Host 注入</strong>
-                    <span>上下文来源元数据</span>
+                    <div className="context-injection-title">
+                      <FileText size={14} />
+                      <strong>本轮上下文</strong>
+                      <span className="context-injection-host-label">Host 注入</span>
+                    </div>
+                    <span className="context-injection-count">
+                      {records.length ? `${records.length} 个来源` : '来源未知'}
+                    </span>
                   </div>
                   {records.length === 0 ? (
-                    <div className="context-injection-empty">来源未知</div>
+                    <div className="context-injection-empty">本轮注入信息没有可显示的来源记录。</div>
                   ) : (
-                    <ul className="context-injection-list">
-                      {records.map((record) => (
-                        <li key={`${record.id}:${record.fingerprint}`}>
-                          <div className="context-injection-source">
-                            <strong>{record.source || '来源未知'}</strong>
-                            <span>{record.kind || '上下文'}</span>
-                          </div>
-                          <div className="context-injection-details">
-                            <span>
-                              {[record.workspace, record.path].filter(Boolean).join(' · ')
-                                || '来源未知'}
-                            </span>
-                            <span>{Number(record.bytes || 0).toLocaleString()} B</span>
-                            <span>作用范围：{record.scope || '未知'}</span>
-                            {record.supersedes && (
-                              <span title={record.supersedes}>
-                                更新自 {record.supersedes.slice(0, 12)}
-                              </span>
-                            )}
-                            {record.reused && <span>缓存来源复用</span>}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
+                    <>
+                      <p className="context-injection-summary">
+                        已加入本轮请求。这里只记录来源和用途，不展示正文。
+                      </p>
+                      <ul className="context-injection-list">
+                        {records.map((record, recordIndex) => {
+                          const location = [record.workspace, record.path]
+                            .filter((part) => part && part !== record.source)
+                            .join(' · ');
+                          return (
+                            <li key={`${record.id}:${record.fingerprint}`}>
+                              <strong>{record.source || `上下文来源 ${recordIndex + 1}`}</strong>
+                              <p>{record.scope || '已加入本轮上下文'}</p>
+                              {location && <span className="context-injection-origin">来源：{location}</span>}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      <details className="context-injection-metadata">
+                        <summary>来源详情</summary>
+                        <ul>
+                          {records.map((record) => (
+                            <li key={`${record.id}:${record.fingerprint}`}>
+                              <strong>{record.source || '来源未知'}</strong>
+                              <span>类型：{CONTEXT_KIND_LABELS[record.kind] || '上下文'}</span>
+                              <span>长度：{formatContextInjectionBytes(record.bytes)}</span>
+                              {record.supersedes && (
+                                <span title={record.supersedes}>
+                                  更新前版本：{record.supersedes.slice(0, 12)}
+                                </span>
+                              )}
+                              {record.reused && <span>已复用已有内容</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    </>
                   )}
                 </section>
               );

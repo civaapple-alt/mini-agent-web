@@ -497,73 +497,124 @@
   width: 100%;
   max-width: 760px;
   margin: 2px 0;
-  padding: 7px 9px;
+  padding: 10px 12px;
   border: 1px solid var(--border-color);
   border-left: 2px solid var(--accent-sky);
   border-radius: 6px;
   background: var(--bg-surface);
   color: var(--text-secondary);
-  font-size: 10px;
-  line-height: 1.45;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .context-injection-heading,
-.context-injection-source,
-.context-injection-details {
+.context-injection-title {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
 }
 
 .context-injection-heading {
-  color: var(--text-muted);
+  justify-content: space-between;
 }
 
-.context-injection-heading svg {
+.context-injection-title {
+  min-width: 0;
+  color: var(--text-primary);
+}
+
+.context-injection-title svg {
   flex: 0 0 auto;
   color: var(--accent-sky);
 }
 
-.context-injection-heading strong,
-.context-injection-source strong {
-  color: var(--text-primary);
+.context-injection-title strong {
   font-weight: 600;
+}
+
+.context-injection-host-label,
+.context-injection-count {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.context-injection-summary {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .context-injection-list {
   display: grid;
-  gap: 6px;
-  margin: 6px 0 0;
+  gap: 0;
+  margin: 7px 0 0;
   padding: 0;
   list-style: none;
 }
 
 .context-injection-list li {
   min-width: 0;
+  padding: 7px 0;
+  border-top: 1px solid var(--border-color);
 }
 
-.context-injection-source {
-  min-width: 0;
-}
-
-.context-injection-source strong,
-.context-injection-details span {
+.context-injection-list li > strong,
+.context-injection-metadata li > * {
   overflow-wrap: anywhere;
 }
 
-.context-injection-source > span {
-  color: var(--text-muted);
+.context-injection-list li > strong {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
-.context-injection-details {
-  flex-wrap: wrap;
-  padding-left: 20px;
+.context-injection-list li > p {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+}
+
+.context-injection-origin {
+  display: block;
+  margin-top: 2px;
   color: var(--text-muted);
-  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}
+
+.context-injection-metadata {
+  padding-top: 6px;
+  border-top: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.context-injection-metadata summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.context-injection-metadata ul {
+  display: grid;
+  gap: 4px;
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.context-injection-metadata li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 5px 7px;
+  border-radius: 4px;
+  background: var(--bg-card);
+}
+
+.context-injection-metadata li > strong {
+  color: var(--text-secondary);
 }
 
 .context-injection-empty {
-  margin: 5px 0 0 20px;
+  margin: 7px 0 0;
   color: var(--text-muted);
 }
 

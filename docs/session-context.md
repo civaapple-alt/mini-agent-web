@@ -21,11 +21,13 @@ prompt limits. The canonical source records are written by App Server when a
 `context_injected` event is observed; Web Studio does not maintain a second
 source ledger.
 
-The conversation stream places a **Host 注入** card at each persisted injection
-boundary. The card shows the same metadata only. A normal `read_file` result
-remains a tool card with its ordinary tool lifecycle and output. The Gateway
-reads the manifest from App Server so source history remains available after
-older turn presentations leave the bounded history.
+The conversation stream places a **本轮上下文** card at each persisted
+injection boundary. It names how many sources were added, then shows each
+source's purpose and workspace/path. Type, byte count, replacement, and reuse
+details stay collapsed until requested. The card never shows injected text. A
+normal `read_file` result remains a tool card with its ordinary tool lifecycle
+and output. The Gateway reads the manifest from App Server so source history
+remains available after older turn presentations leave the bounded history.
 
 ## Request usage
 

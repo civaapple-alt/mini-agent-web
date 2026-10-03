@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Make turn context injection cards easier to scan by naming the current Turn,
+  showing each source's purpose first, and collapsing technical metadata.
 - Simplify Web Search settings by removing repeated key guidance and placing an
   independent test action in each provider card. Use one shared query and the
   selected provider's saved Host key without changing the default provider.

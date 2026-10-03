@@ -120,7 +120,6 @@ export default function StatusRail({
     try {
       await onChangeExecution?.(nextAccess, nextPolicy);
       setShowFullAccessConfirm(false);
-      setShowSettings(false);
     } finally {
       setIsSavingSettings(false);
     }
@@ -130,7 +129,6 @@ export default function StatusRail({
     setIsSavingSettings(true);
     try {
       await onChangeContinuation?.(nextMode);
-      setShowSettings(false);
     } finally {
       setIsSavingSettings(false);
     }

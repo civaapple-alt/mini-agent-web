@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Keep the Runtime Settings panel open after changing the execution scope,
+  approval policy, or continuation mode so users can adjust multiple settings
+  without reopening the panel.
 - Upgrade the App Server contract and Session journal to V2. Add explicit
   operator reconciliation for uncertain tool outcomes, Session-owned bounded
   Context Manifest reads, and cross-restart metadata-only event replay. V1

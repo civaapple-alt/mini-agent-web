@@ -6,7 +6,7 @@ import {
   aggregateItemLifecycle,
   aggregateStreamEvent,
   aggregateThreadItems,
-  assignHistoryTurnIds,
+  assignCheckpointTurnIds,
   filterUnmatchedCheckpointInputs,
   filterEmptyMessages,
   restorePersistedTurnPresentation,
@@ -1129,16 +1129,37 @@ export default function App() {
       } else {
         setLastTurnResult(null);
       }
+      const itemTurnIds = new Set(itemEntries
+        .map((entry) => entry.turnId || entry.turn_id)
+        .filter(Boolean)
+        .map(String));
+      const activityItemTypes = new Set([
+        'agentMessage',
+        'agent_message',
+        'reasoning',
+        'toolCall',
+        'tool_call',
+        'contextCompaction',
+        'context_compaction',
+      ]);
+      const activityTurnIds = new Set(itemEntries
+        .filter((entry) => activityItemTypes.has(entry?.item?.type))
+        .map((entry) => entry.turnId || entry.turn_id)
+        .filter(Boolean)
+        .map(String));
+      const checkpointFallbackTurnIds = new Set(
+        [...itemTurnIds].filter((turnId) => !activityTurnIds.has(turnId)),
+      );
       const rawMessages = filterUnmatchedCheckpointInputs(
-        assignHistoryTurnIds(cp.messages || [], itemEntries),
+        assignCheckpointTurnIds(cp.messages || [], itemEntries),
         itemEntries,
-      ).filter((message) => itemEntries.some((entry) => (
-        String(entry.turnId || entry.turn_id || '') === String(message.turnId || '')
-      )));
+      ).filter((message) => {
+        if (itemTurnIds.size === 0) return true;
+        const turnId = String(message.turnId || '');
+        return turnId && itemTurnIds.has(turnId);
+      });
       const presentations = cp.presentations || cp.session?.presentations || [];
-      const loadedTurnIds = new Set(itemEntries.map((entry) => (
-        String(entry.turnId || entry.turn_id || '')
-      )));
+      const loadedTurnIds = itemTurnIds;
       setContextCacheUsage(
         cp.contextCacheUsage
           || cp.session?.context_cache_usage
@@ -1197,6 +1218,13 @@ export default function App() {
           .filter((presentation) => presentation?.turnId && presentation.workflow?.id)
           .map((presentation) => [String(presentation.turnId), presentation.workflow]),
       );
+      const checkpointToolResults = new Map((cp.messages || [])
+        .filter((message) => message?.role === 'tool')
+        .map((message) => [
+          String(message.call_id || message.callId || message.tool_call_id || message.toolCallId || ''),
+          message,
+        ])
+        .filter(([callId]) => callId));
       const persistedGoalObjective = cp.session?.goal?.objective?.trim() || '';
       let historyGoalObjective = persistedGoalObjective;
       let goalMessageAdded = false;
@@ -1215,9 +1243,9 @@ export default function App() {
           }
           return result;
         }
-        // Tool/context records are represented by the bounded ThreadItem
-        // projection below. Rendering them as messages creates blank assistant
-        // rows (or duplicates internal runtime text) during history replay.
+        // Tool/context records normally come from ThreadItems. For legacy
+        // checkpoint Turns without activity items, tool results are attached
+        // to their persisted assistant tool calls below.
         if (m.role !== 'user' && m.role !== 'assistant') return result;
         if (text.startsWith('<world_state') || text.includes('</world_state>')) return result;
         const messageId = m.id || `hist_${threadId}_${idx}`;
@@ -1228,6 +1256,34 @@ export default function App() {
             ? m.toolCalls
             : [];
         const isUserMessage = m.role === 'user';
+        const useCheckpointToolResults = itemEntries.length === 0
+          || checkpointFallbackTurnIds.has(String(m.turnId || ''));
+        const checkpointTools = !isUserMessage && useCheckpointToolResults
+          ? toolCalls.map((call, callIndex) => {
+            const callId = call?.id || call?.call_id || call?.tool_call_id;
+            const result = checkpointToolResults.get(String(callId || ''));
+            const failed = result?.is_error === true
+              || ['failed', 'error'].includes(
+                String(result?.outcome || result?.status || '').toLowerCase(),
+              );
+            const output = result?.content ?? result?.output ?? result?.text ?? null;
+            const name = call?.name || call?.function?.name || result?.name || 'tool';
+            const argumentsValue = call?.arguments ?? call?.function?.arguments ?? {};
+            return {
+              type: 'tool',
+              id: callId || `${m.id || `checkpoint-${idx}`}:tool:${callIndex}`,
+              call_id: callId || null,
+              name,
+              toolName: name,
+              arguments: argumentsValue,
+              args: argumentsValue,
+              status: result ? (failed ? 'failed' : 'completed') : 'running',
+              outcome: result?.outcome || null,
+              output,
+              error: failed ? output ?? 'Tool failed' : null,
+            };
+          })
+          : [];
         const inputSource = String(m.inputSource || m.input_source || 'user').toLowerCase();
         const isSteerMessage = isUserMessage && inputSource === 'steer';
         const workflow = isUserMessage && m.turnId
@@ -1247,7 +1303,7 @@ export default function App() {
             ? { textAttachments: textAttachmentNames.map((name) => ({ name })) }
             : {}),
           thinking: reasoning,
-          tools: [],
+          tools: checkpointTools,
           ...(isUserMessage
             ? {
               ...(isSteerMessage
@@ -1281,6 +1337,7 @@ export default function App() {
             ...(reasoning
               ? [{ type: 'thinking', id: `${messageId}:reasoning`, content: reasoning }]
               : []),
+            ...checkpointTools,
             ...(displayText
               ? [{ type: 'text', id: `${messageId}:text`, content: displayText }]
               : []),

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Preserve the stop reason and completed step count for resumable Turns, and
   preserve the canonical order of recovered inputs and Turn activity.
+- Restore assistant reasoning, tool calls, and saved tool results from a
+  checkpoint when its ThreadItem history contains only the input item.
 - Keep large saved model responses available to bounded Gateway history previews,
   raise the Session catalog file cap to 256 MiB, and allow bounded 128 MiB
   model-response events through the SDK's 129 MiB stdio line limit.

@@ -14,6 +14,12 @@ Turn's reasoning and tool activity, even when the newest page uses negative
 offsets. When a Turn is waiting to continue, Studio keeps its persisted stop
 reason and completed step count beside the continuation action.
 
+If a checkpoint contains a Turn's assistant/tool transcript but its ThreadItem
+page contains only the input item, Studio restores the saved assistant messages
+and joins tool results by call ID. Complete ThreadItem activity remains the
+preferred projection, so the fallback does not duplicate recorded execution
+items.
+
 The conversation timeline measures variable-height rows and mounts only the
 visible range plus a small overscan window. The Turn navigation rail is
 virtualized separately. Loading an older page preserves the first visible

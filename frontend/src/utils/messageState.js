@@ -706,6 +706,22 @@ export function assignHistoryTurnIds(messages = [], entries = []) {
   });
 }
 
+/** Recover Turn ownership from checkpoint message order when items are missing. */
+export function assignCheckpointTurnIds(messages = [], entries = []) {
+  let currentTurnId = null;
+  return assignHistoryTurnIds(messages, entries).map((message) => {
+    if (message?.role === 'user') {
+      currentTurnId = message.turnId || null;
+      return message;
+    }
+    if (message?.turnId) {
+      currentTurnId = message.turnId;
+      return message;
+    }
+    return currentTurnId ? { ...message, turnId: currentTurnId } : message;
+  });
+}
+
 /** Prefer durable input items when checkpoint compaction rewrites user text. */
 export function filterUnmatchedCheckpointInputs(messages = [], entries = []) {
   const hasDurableInputs = (entries || []).some((entry) => (
@@ -1101,8 +1117,48 @@ export function restorePersistedTurnPresentation(messages = [], entries = [], pr
     if (message?.role !== 'assistant' || !message.turnId) return [message];
     const key = String(message.turnId);
     const turnEntries = entriesByTurn.get(key) || [];
-    if (turnEntries.length === 0) return [message];
     if (restoredTurns.has(key)) return [];
+    const hasAssistantItems = turnEntries.some((entry) => isAssistantHistoryItem(entry?.item));
+    if (!hasAssistantItems) {
+      const checkpointMessages = messagesWithAssistantAnchors.filter((candidate) => (
+        candidate?.role === 'assistant' && String(candidate.turnId || '') === key
+      ));
+      if (checkpointMessages.length > 0) {
+        const presentation = presentationByTurn.get(key);
+        const beforeBlocks = checkpointMessages.map(() => []);
+        const afterBlocks = checkpointMessages.map(() => []);
+        for (const activity of presentation?.activities || []) {
+          const boundary = Math.max(0, Math.min(
+            checkpointMessages.length,
+            Number(activity?.afterAssistantSegments || 0),
+          ));
+          const targetIndex = boundary === 0
+            ? 0
+            : Math.min(boundary - 1, checkpointMessages.length - 1);
+          appendPresentationActivity(
+            boundary === 0 ? beforeBlocks[targetIndex] : afterBlocks[targetIndex],
+            activity,
+            key,
+          );
+        }
+        restoredTurns.add(key);
+        const modelTiming = normalizeModelTiming(
+          presentation?.modelTiming
+            || presentation?.model_timing
+            || message.modelTiming,
+        );
+        return checkpointMessages.map((checkpointMessage, index) => ({
+          ...checkpointMessage,
+          modelTiming,
+          blocks: [
+            ...beforeBlocks[index],
+            ...(checkpointMessage.blocks || []),
+            ...afterBlocks[index],
+          ],
+        }));
+      }
+    }
+    if (turnEntries.length === 0) return [message];
     const segments = replayPersistedTurnSegments(
       key,
       turnEntries,

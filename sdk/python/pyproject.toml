@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mini-agent"
-version = "0.9.0"
+version = "1.0.0"
 description = "Official Python SDK for Mini Agent App Server and Harness"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,7 +12,7 @@ license = { text = "MIT" }
 authors = [{ name = "Mini Agent Team" }]
 keywords = ["mini-agent", "agent", "ai", "coding-agent", "jsonrpc", "sdk"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",

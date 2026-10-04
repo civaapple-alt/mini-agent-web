@@ -97,7 +97,7 @@ request 并抛出 `AppServerRequestTimeoutError`（它继承 `ServerProcessError
 `SESSION_FORK_CONFLICT_CODE`（`-32001`）。
 
 `search_notebook()` 在 SDK 中对 App Server 返回的有界 Notebook 投影执行本地过滤；
-它不会发送 protocol v1 尚未定义的搜索 RPC。
+它直接过滤已有投影，不会发送独立的搜索 RPC。
 
 ## 深入阅读
 

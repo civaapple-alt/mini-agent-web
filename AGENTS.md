@@ -47,8 +47,11 @@ Do not add a README section merely to link to a document outside its directory.
   `server/__init__.py`, `server/app.py`, `frontend/package.json`,
   `frontend/package-lock.json`, and `uv.lock` together. Update the current
   release version in `README.md` and `CHANGELOG.md` too.
-- The current release is `0.9.0`; the wire protocol remains JSON-RPC protocol
-  version `1`. Do not change the wire protocol or public field names casually.
+- The current release is `1.0.0`; the App Server protocol negotiates version
+  `2` inside a JSON-RPC 2.0 envelope. Version 1 clients and Session journals
+  are incompatible; see the Harness
+  [App Server migration guide](https://github.com/civaapple-alt/mini-agent-harness/blob/main/docs/app-server.md)
+  before upgrading. Do not change the protocol or public field names casually.
 - Preserve unknown event types as `GenericEvent` so newer App Server events do
   not break older SDK consumers. Keep event identity bounded by Thread and Turn
   when streaming.

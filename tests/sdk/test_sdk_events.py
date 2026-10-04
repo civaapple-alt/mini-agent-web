@@ -1,4 +1,4 @@
-"""Contract tests for the version 0.9.0 Python SDK event surface."""
+"""Contract tests for the version 1.0.0 Python SDK event surface."""
 
 from __future__ import annotations
 

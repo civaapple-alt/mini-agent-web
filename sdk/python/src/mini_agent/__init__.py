@@ -101,7 +101,7 @@ from mini_agent.types import (
     WorldStateResult,
 )
 
-__version__ = "0.9.0"
+__version__ = "1.0.0"
 
 __all__ = [
     "APP_SERVER_PROTOCOL_VERSION",

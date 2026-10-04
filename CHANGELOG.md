@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+No changes yet.
+
+## [1.0.0] - 2026-10-04
+
+### Breaking Changes
+
+- App Server protocol and Session journal V2 reject V1 clients during
+  negotiation and reject V1 Session files without automatic migration. Back up
+  `~/.mini-agent/sessions/` with the previous release before upgrading;
+  see the Harness [App Server migration guide](https://github.com/civaapple-alt/mini-agent-harness/blob/main/docs/app-server.md).
+
+### Changes
+
 - Preserve the stop reason and completed step count for resumable Turns, and
   preserve the canonical order of recovered inputs and Turn activity.
 - Restore assistant reasoning, tool calls, and saved tool results from a
@@ -28,11 +41,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep the Runtime Settings panel open after changing the execution scope,
   approval policy, or continuation mode so users can adjust multiple settings
   without reopening the panel.
-- Upgrade the App Server contract and Session journal to V2. Add explicit
-  operator reconciliation for uncertain tool outcomes, Session-owned bounded
-  Context Manifest reads, and cross-restart metadata-only event replay. V1
-  clients and Session files are rejected without automatic migration; archive
-  or export Sessions with the previous release before upgrading.
 - Add manual recovery controls in Studio for tool calls whose side effects are
   uncertain. Require a bounded operator result or confirmation that the call
   did not run, and keep recovery tied to the original Turn and checkpoint.
@@ -132,8 +140,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add a project-menu Session Doctor. It inspects Session logs through the App
   Server maintenance command and offers a confirmed, backed-up repair for an
   incomplete final record.
-
-## [0.9.0] - 2026-09-27
 
 - Clarify runtime checkpoint diagnostics: distinguish the last settled Session
   checkpoint from the active Turn's execution recovery checkpoint, phase,

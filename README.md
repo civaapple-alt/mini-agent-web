@@ -3,8 +3,9 @@
 `mini-agent-web` 是 Mini Agent 运行系统的用户侧控制平面适配层，包含 Python SDK、
 FastAPI 网关和 Web Studio，并保留实验性 TUI 与 Cookbook。Web Studio 面向项目和
 长时间运行的 Session，负责把 App Server 的执行状态、审批、恢复、Child Session、
-Notebook 和运行事件变成可操作、可观察的工作台。当前发布版本为 `0.9.0`，使用
-JSON-RPC wire protocol version `1`。
+Notebook 和运行事件变成可操作、可观察的工作台。当前发布版本为 `1.0.0`，协商
+App Server protocol version `2`，请求使用 JSON-RPC 2.0 envelope。升级兼容性见
+[`docs/app-server.md`（Harness 仓库）](https://github.com/civaapple-alt/mini-agent-harness/blob/main/docs/app-server.md)。
 
 本仓不创建第二条 Agent 执行循环。App Server、Host 和 Capabilities 保持运行时、
 准入和副作用的权威；SDK、Gateway 和 Web Studio 负责连接、投影、控制和用户交互。

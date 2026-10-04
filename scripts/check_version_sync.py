@@ -1,14 +1,4 @@
-"""
-Check version synchronization across all package targets in mini-agent-web.
-
-Validates that the 6 canonical version declarations match exactly:
-1. Root pyproject.toml
-2. SDK pyproject.toml (sdk/python/pyproject.toml)
-3. Python SDK __init__.py (sdk/python/src/mini_agent/__init__.py)
-4. Gateway FastAPI App (server/app.py)
-5. Web Studio package.json (frontend/package.json)
-6. Web Studio package-lock.json (frontend/package-lock.json)
-"""
+"""Check release versions across the mini-agent-web workspace."""
 
 from __future__ import annotations
 
@@ -20,81 +10,118 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def read_text(relative_path: str) -> str:
+    return (ROOT / relative_path).read_text(encoding="utf-8")
+
+
+def capture(label: str, source: str, pattern: str) -> str:
+    match = re.search(pattern, source, re.MULTILINE | re.DOTALL)
+    if not match:
+        raise ValueError(f"Could not find {label}")
+    return match.group(1)
+
+
+def project_version(relative_path: str) -> str:
+    source = read_text(relative_path)
+    section = capture(
+        f"[project] section in {relative_path}",
+        source,
+        r"^\[project\]\s*(.*?)(?=^\[|\Z)",
+    )
+    return capture(
+        f"project.version in {relative_path}",
+        section,
+        r'^version\s*=\s*"([^\"]+)"',
+    )
+
+
+def lock_package_version(lock_text: str, package_name: str) -> str:
+    return capture(
+        f"{package_name} package version in uv.lock",
+        lock_text,
+        rf'^\[\[package\]\]\s*\nname = "{re.escape(package_name)}"\s*\nversion = "([^\"]+)"',
+    )
+
+
 def get_versions() -> dict[str, str]:
-    versions: dict[str, str] = {}
+    versions = {
+        "pyproject.toml": project_version("pyproject.toml"),
+        "sdk/python/pyproject.toml": project_version("sdk/python/pyproject.toml"),
+        "sdk/python/src/mini_agent/__init__.py": capture(
+            "SDK __version__",
+            read_text("sdk/python/src/mini_agent/__init__.py"),
+            r'^__version__\s*=\s*"([^\"]+)"',
+        ),
+        "sdk/python/src/mini_agent/client.py (_client_version)": capture(
+            "SDK client version",
+            read_text("sdk/python/src/mini_agent/client.py"),
+            r'^\s*self\._client_version\s*=\s*"([^\"]+)"',
+        ),
+        "sdk/python/src/mini_agent/client.py (client_version default)": capture(
+            "SDK initialize client_version default",
+            read_text("sdk/python/src/mini_agent/client.py"),
+            r'^\s*client_version:\s*str\s*=\s*"([^\"]+)"',
+        ),
+        "server/__init__.py": capture(
+            "server __version__",
+            read_text("server/__init__.py"),
+            r'^__version__\s*=\s*"([^\"]+)"',
+        ),
+        "server/app.py (FastAPI metadata)": capture(
+            "FastAPI version",
+            read_text("server/app.py"),
+            r'^\s*version\s*=\s*"([^\"]+)"',
+        ),
+        "server/app.py (/health)": capture(
+            "health response version",
+            read_text("server/app.py"),
+            r'^\s*"version"\s*:\s*"([^\"]+)"',
+        ),
+    }
 
-    # 1. Root pyproject.toml
-    root_toml = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    m_root = re.search(r'version\s*=\s*"([^"]+)"', root_toml)
-    if not m_root:
-        raise ValueError("Could not find version in pyproject.toml")
-    versions["pyproject.toml"] = m_root.group(1)
-
-    # 2. SDK pyproject.toml
-    sdk_toml = (ROOT / "sdk" / "python" / "pyproject.toml").read_text(encoding="utf-8")
-    m_sdk_toml = re.search(r'version\s*=\s*"([^"]+)"', sdk_toml)
-    if not m_sdk_toml:
-        raise ValueError("Could not find version in sdk/python/pyproject.toml")
-    versions["sdk/python/pyproject.toml"] = m_sdk_toml.group(1)
-
-    # 3. SDK __init__.py
-    sdk_init = (
-        ROOT / "sdk" / "python" / "src" / "mini_agent" / "__init__.py"
-    ).read_text(encoding="utf-8")
-    m_sdk_init = re.search(r'__version__\s*=\s*"([^"]+)"', sdk_init)
-    if not m_sdk_init:
-        raise ValueError(
-            "Could not find __version__ in sdk/python/src/mini_agent/__init__.py"
-        )
-    versions["sdk/python/src/mini_agent/__init__.py"] = m_sdk_init.group(1)
-
-    # 4. server/app.py
-    server_app = (ROOT / "server" / "app.py").read_text(encoding="utf-8")
-    m_server = re.search(r'version\s*=\s*"([^"]+)"', server_app)
-    if not m_server:
-        raise ValueError("Could not find version in server/app.py")
-    versions["server/app.py"] = m_server.group(1)
-
-    # 5. frontend/package.json
-    frontend_pkg = json.loads(
-        (ROOT / "frontend" / "package.json").read_text(encoding="utf-8")
-    )
-    if "version" not in frontend_pkg:
-        raise ValueError("Could not find version in frontend/package.json")
-    versions["frontend/package.json"] = frontend_pkg["version"]
-
-    # 6. frontend/package-lock.json
-    frontend_lock = json.loads(
-        (ROOT / "frontend" / "package-lock.json").read_text(encoding="utf-8")
-    )
-    if "version" not in frontend_lock:
-        raise ValueError("Could not find version in frontend/package-lock.json")
+    frontend_package = json.loads(read_text("frontend/package.json"))
+    frontend_lock = json.loads(read_text("frontend/package-lock.json"))
+    versions["frontend/package.json"] = frontend_package["version"]
     versions["frontend/package-lock.json"] = frontend_lock["version"]
+    versions['frontend/package-lock.json (packages[""])'] = frontend_lock["packages"][
+        ""
+    ]["version"]
 
+    uv_lock = read_text("uv.lock")
+    versions["uv.lock (mini-agent)"] = lock_package_version(uv_lock, "mini-agent")
+    versions["uv.lock (mini-agent-web)"] = lock_package_version(
+        uv_lock, "mini-agent-web"
+    )
+
+    versions["README.md"] = capture(
+        "current release in README.md",
+        read_text("README.md"),
+        r"当前发布版本为 `([^`]+)`",
+    )
     return versions
 
 
 def main() -> int:
     try:
         versions = get_versions()
-    except (ValueError, OSError, json.JSONDecodeError) as err:
+    except (KeyError, ValueError, OSError, json.JSONDecodeError) as err:
         print(f"[ERROR] Failed to extract versions: {err}", file=sys.stderr)
         return 1
 
     distinct = set(versions.values())
     if len(distinct) != 1:
         print(
-            f"[ERROR] Version drift detected! Expected all targets to match, found {len(distinct)} distinct versions:",
+            f"[ERROR] Version drift detected across {len(versions)} targets:",
             file=sys.stderr,
         )
-        for target, ver in versions.items():
-            print(f"  - {target}: {ver}", file=sys.stderr)
+        for target, version in versions.items():
+            print(f"  - {target}: {version}", file=sys.stderr)
         return 1
 
     matched_version = distinct.pop()
-    print(f"[OK] All 6 targets are cleanly synchronized at version: {matched_version}")
-    for target, ver in versions.items():
-        print(f"  [+] {target} == {ver}")
+    print(f"[OK] All {len(versions)} targets are synchronized at {matched_version}")
+    for target, version in versions.items():
+        print(f"  [+] {target} == {version}")
     return 0
 
 

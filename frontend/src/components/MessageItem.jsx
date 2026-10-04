@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Check,
   Copy,
   FileText,
+  Minimize2,
   Navigation,
   RotateCcw,
   Sparkles,
@@ -93,6 +94,15 @@ export default function MessageItem({
 
   const [previewImg, setPreviewImg] = useState(null);
 
+  useEffect(() => {
+    if (!previewImg) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setPreviewImg(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [previewImg]);
+
   if (message.messageKind === 'goal_verification') {
     return (
       <div className="goal-verification-message" role="status">
@@ -145,30 +155,27 @@ export default function MessageItem({
             <div
               className="img-lightbox-overlay"
               onClick={() => setPreviewImg(null)}
-              style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'var(--overlay-strong)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                zIndex: 1000,
-                cursor: 'zoom-out',
-              }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="图片预览"
             >
+              <button
+                type="button"
+                className="img-lightbox-close"
+                aria-label="收起图片预览"
+                title="收起图片预览"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setPreviewImg(null);
+                }}
+              >
+                <Minimize2 size={20} />
+              </button>
               <img
                 src={previewImg}
                 alt="Preview"
-                style={{
-                  maxWidth: '90vw',
-                  maxHeight: '90vh',
-                  borderRadius: '8px',
-                  boxShadow: 'var(--shadow-image)',
-                }}
-                onClick={(e) => e.stopPropagation()}
+                className="img-lightbox-image"
+                onClick={() => setPreviewImg(null)}
               />
             </div>
           )}

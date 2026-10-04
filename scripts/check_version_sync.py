@@ -1,4 +1,4 @@
-"""Check release versions across the mini-agent-web workspace."""
+"""Check Web release versions and its pinned external SDK wheel."""
 
 from __future__ import annotations
 
@@ -35,33 +35,17 @@ def project_version(relative_path: str) -> str:
     )
 
 
-def lock_package_version(lock_text: str, package_name: str) -> str:
+def lock_package_section(lock_text: str, package_name: str) -> str:
     return capture(
-        f"{package_name} package version in uv.lock",
+        f"{package_name} package in uv.lock",
         lock_text,
-        rf'^\[\[package\]\]\s*\nname = "{re.escape(package_name)}"\s*\nversion = "([^\"]+)"',
+        rf'^\[\[package\]\]\s*\nname = "{re.escape(package_name)}"\s*\n(.*?)(?=^\[\[package\]\]|\Z)',
     )
 
 
 def get_versions() -> dict[str, str]:
     versions = {
         "pyproject.toml": project_version("pyproject.toml"),
-        "sdk/python/pyproject.toml": project_version("sdk/python/pyproject.toml"),
-        "sdk/python/src/mini_agent/__init__.py": capture(
-            "SDK __version__",
-            read_text("sdk/python/src/mini_agent/__init__.py"),
-            r'^__version__\s*=\s*"([^\"]+)"',
-        ),
-        "sdk/python/src/mini_agent/client.py (_client_version)": capture(
-            "SDK client version",
-            read_text("sdk/python/src/mini_agent/client.py"),
-            r'^\s*self\._client_version\s*=\s*"([^\"]+)"',
-        ),
-        "sdk/python/src/mini_agent/client.py (client_version default)": capture(
-            "SDK initialize client_version default",
-            read_text("sdk/python/src/mini_agent/client.py"),
-            r'^\s*client_version:\s*str\s*=\s*"([^\"]+)"',
-        ),
         "server/__init__.py": capture(
             "server __version__",
             read_text("server/__init__.py"),
@@ -87,10 +71,11 @@ def get_versions() -> dict[str, str]:
         ""
     ]["version"]
 
-    uv_lock = read_text("uv.lock")
-    versions["uv.lock (mini-agent)"] = lock_package_version(uv_lock, "mini-agent")
-    versions["uv.lock (mini-agent-web)"] = lock_package_version(
-        uv_lock, "mini-agent-web"
+    lock_text = read_text("uv.lock")
+    web_package = lock_package_section(lock_text, "mini-agent-web")
+    sdk_package = lock_package_section(lock_text, "mini-agent")
+    versions["uv.lock (mini-agent-web)"] = capture(
+        "mini-agent-web locked version", web_package, r'^version = "([^\"]+)"'
     )
 
     versions["README.md"] = capture(
@@ -98,6 +83,35 @@ def get_versions() -> dict[str, str]:
         read_text("README.md"),
         r"当前发布版本为 `([^`]+)`",
     )
+
+    uv_sources = capture(
+        "tool.uv.sources section",
+        read_text("pyproject.toml"),
+        r"^\[tool\.uv\.sources\]\s*(.*?)(?=^\[|\Z)",
+    )
+    sdk_url = capture(
+        "mini-agent wheel URL in pyproject.toml",
+        uv_sources,
+        r'^mini-agent\s*=\s*\{\s*url\s*=\s*"([^\"]+)"',
+    )
+    lock_sdk_url = capture(
+        "mini-agent wheel URL in uv.lock",
+        sdk_package,
+        r'^source = \{ url = "([^\"]+)" \}',
+    )
+    lock_sdk_version = capture(
+        "mini-agent locked version", sdk_package, r'^version = "([^\"]+)"'
+    )
+    pinned_sdk_version = capture(
+        "SDK wheel version in pinned URL",
+        sdk_url,
+        r"mini_agent-([0-9]+\.[0-9]+\.[0-9]+)-py3-none-any\.whl$",
+    )
+    if sdk_url != lock_sdk_url or pinned_sdk_version != lock_sdk_version:
+        raise ValueError(
+            "The SDK wheel URL, uv.lock source, and locked SDK version do not match"
+        )
+    versions["pinned Harness SDK wheel"] = pinned_sdk_version
     return versions
 
 
@@ -108,18 +122,25 @@ def main() -> int:
         print(f"[ERROR] Failed to extract versions: {err}", file=sys.stderr)
         return 1
 
-    distinct = set(versions.values())
-    if len(distinct) != 1:
+    web_targets = {
+        target: version
+        for target, version in versions.items()
+        if target != "pinned Harness SDK wheel"
+    }
+    if len(set(web_targets.values())) != 1:
         print(
-            f"[ERROR] Version drift detected across {len(versions)} targets:",
+            f"[ERROR] Web release version drift across {len(web_targets)} targets:",
             file=sys.stderr,
         )
-        for target, version in versions.items():
+        for target, version in web_targets.items():
             print(f"  - {target}: {version}", file=sys.stderr)
         return 1
 
-    matched_version = distinct.pop()
-    print(f"[OK] All {len(versions)} targets are synchronized at {matched_version}")
+    matched_version = next(iter(web_targets.values()))
+    print(
+        f"[OK] Web release targets are synchronized at {matched_version}; "
+        f"Harness SDK {versions['pinned Harness SDK wheel']} is pinned separately"
+    )
     for target, version in versions.items():
         print(f"  [+] {target} == {version}")
     return 0

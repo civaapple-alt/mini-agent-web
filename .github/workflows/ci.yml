@@ -37,7 +37,7 @@ jobs:
         run: uv run python scripts/check_version_sync.py
 
   # =========================================================================
-  # 2. Python 模块化测试矩阵 (SDK + Gateway + TUI + Cookbook + Smoke)
+  # 2. Python 模块化测试矩阵 (Gateway + TUI + Smoke)
   # =========================================================================
   python-test:
     name: Python Test (${{ matrix.python-version }} on ${{ matrix.os }})
@@ -115,8 +115,8 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Build Python Distribution (Wheel & sdist)
-        run: uv build --package mini-agent
+      - name: Build Web Gateway Distribution (Wheel & sdist)
+        run: uv build --project .
 
       - name: Verify Clean Worktree (No uncommitted artifacts)
         run: |

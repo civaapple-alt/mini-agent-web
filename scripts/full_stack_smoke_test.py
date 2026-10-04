@@ -18,11 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-# Ensure sdk/python and repo root are in sys.path
+# Ensure the repo root is available; the SDK is installed from the pinned wheel.
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SDK_ROOT = REPO_ROOT / "sdk" / "python" / "src"
-if str(SDK_ROOT) not in sys.path:
-    sys.path.insert(0, str(SDK_ROOT))
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -293,21 +290,25 @@ def resolve_app_server_bin() -> Path:
 
     candidates = [
         REPO_ROOT.parent
-        / "mini-codex"
+        / "mini-agent-harness"
         / "target"
         / "release"
         / "mini-agent-app-server.exe",
         REPO_ROOT.parent
-        / "mini-codex"
+        / "mini-agent-harness"
         / "target"
         / "debug"
         / "mini-agent-app-server.exe",
         REPO_ROOT.parent
-        / "mini-codex"
+        / "mini-agent-harness"
         / "target"
         / "release"
         / "mini-agent-app-server",
-        REPO_ROOT.parent / "mini-codex" / "target" / "debug" / "mini-agent-app-server",
+        REPO_ROOT.parent
+        / "mini-agent-harness"
+        / "target"
+        / "debug"
+        / "mini-agent-app-server",
     ]
     existing = [c.resolve() for c in candidates if c.is_file()]
     if existing:
@@ -316,7 +317,7 @@ def resolve_app_server_bin() -> Path:
 
     raise FileNotFoundError(
         "Could not locate mini-agent-app-server binary. "
-        "Run `cargo build --release -p mini-agent-app-server` in mini-codex first."
+        "Run `cargo build --release -p mini-agent-app-server` in mini-agent-harness first."
     )
 
 

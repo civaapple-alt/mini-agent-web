@@ -2,15 +2,15 @@
 
 ## Scope
 
-This repository is the user-facing control-plane adapter for the Mini Agent
-runtime. It contains the `mini-agent` Python SDK, the FastAPI gateway, the
-React Web Studio, the TUI, and executable Cookbook examples for the Mini Agent
-App Server.
+This repository contains the FastAPI gateway, the React Web Studio, and an
+experimental TUI for the Mini Agent runtime. The Python SDK, its tests and
+documentation, and generic App Server examples are maintained by
+`mini-agent-harness`; this repository pins a released SDK package.
 
 Web Studio is the control and observation surface for projects and long-lived
 Sessions. It presents runtime state, approvals, recovery, Child Sessions,
-Notebook, and bounded events as user actions and projections. Keep the public
-SDK and the App Server JSON-RPC contract aligned.
+Notebook, and bounded events as user actions and projections. Keep Gateway and
+Studio behavior aligned with the released SDK and App Server JSON-RPC contract.
 
 The App Server, Host, and Capabilities remain authoritative for execution,
 admission, side effects, and durable Session state. This repository must not
@@ -40,13 +40,13 @@ Do not add a README section merely to link to a document outside its directory.
 
 ## Version and protocol
 
-- Keep the Web repository, SDK, server, frontend, and lockfile versions
-  synchronized with the matching `mini-agent-harness` release. Update
-  `pyproject.toml`, `sdk/python/pyproject.toml`,
-  `sdk/python/src/mini_agent/__init__.py`, the SDK client's default version,
-  `server/__init__.py`, `server/app.py`, `frontend/package.json`,
-  `frontend/package-lock.json`, and `uv.lock` together. Update the current
-  release version in `README.md` and `CHANGELOG.md` too.
+- Keep the Web repository, Gateway, frontend, and Web lockfile versions
+  synchronized with each other. The SDK version is independently pinned to a
+  released Harness wheel in `pyproject.toml` and `uv.lock`; it does not have to
+  match the Web release number. Update `pyproject.toml`, `server/__init__.py`,
+  `server/app.py`, `frontend/package.json`, `frontend/package-lock.json`, and
+  `uv.lock` together. Update the current Web release version in `README.md` and
+  `CHANGELOG.md` too.
 - The current release is `1.0.0`; the App Server protocol negotiates version
   `2` inside a JSON-RPC 2.0 envelope. Version 1 clients and Session journals
   are incompatible; see the Harness
@@ -55,8 +55,9 @@ Do not add a README section merely to link to a document outside its directory.
 - Preserve unknown event types as `GenericEvent` so newer App Server events do
   not break older SDK consumers. Keep event identity bounded by Thread and Turn
   when streaming.
-- Public behavior changes require updates to `CHANGELOG.md`, the README or guide
-  that owns the changed surface, and a focused test or Cookbook validation.
+- Public Gateway, TUI, or Studio behavior changes require updates to
+  `CHANGELOG.md`, the README or guide that owns the changed surface, and a
+  focused test. Update SDK behavior and generic protocol examples in Harness.
 
 ## Progressive information disclosure
 
@@ -80,27 +81,17 @@ uv run pytest -q
 npm --prefix frontend run lint
 npm --prefix frontend test
 npm --prefix frontend run build
-uv build --package mini-agent
-python ../mini-codex/scripts/check_docs_links.py README.md docs
+uv build --project .
 ```
 
-For live SDK tests, set `MINI_AGENT_APP_SERVER_PATH` to a matching
-`mini-agent-app-server` binary. The default test suite must not require a model
-provider or spend tokens.
-
-## Cookbook and examples
-
-- Every `cookbook/python-demo/*.py` file must remain syntactically compilable.
-- `06_protocol_compatibility.py` is the deterministic, no-provider protocol
-  contract check; extend its fixtures when the public event surface changes.
-- Demos 01–05 are explicit live-provider examples. Keep them out of implicit CI
-  dependencies and state their required environment in the Cookbook README.
+Web tests use the SDK wheel pinned in `uv.lock`. Tests requiring a local App
+Server must receive a compatible `MINI_AGENT_APP_SERVER_PATH`; the default test
+suite must not require a model provider or spend tokens.
 
 ## Change hygiene
 
 - Reuse the existing SDK/client and gateway abstractions; do not add duplicate
   protocol wrappers or parallel event-routing paths.
-- Keep SDK dependencies at zero unless a dependency is necessary and documented.
 - Do not commit generated `dist/`, frontend build output, logs, caches, or local
   `.env` files.
 - Before committing, inspect `git diff --check`, review the complete diff, and

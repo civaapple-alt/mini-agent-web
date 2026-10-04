@@ -42,7 +42,7 @@ child operation，再验证 Gateway 通过真实 `child/task` RPC 分配后续 a
 Server 持久化 `follow_up` 轮次；随后重启同一 child Session，由真实队列调度恢复该
 attempt 并在原 child Thread 启动。测试只拦截终端 `turn/start`，不调用模型。
 
-先从 `mini-codex` 构建当前 App Server：
+先从 `mini-agent-harness` 构建当前 App Server：
 
 ```powershell
 cargo build -p mini-agent-app-server
@@ -51,7 +51,7 @@ cargo build -p mini-agent-app-server
 再从 `mini-agent-web` 在 PowerShell 显式设置二进制路径并运行：
 
 ```powershell
-$env:MINI_AGENT_APP_SERVER_PATH = "..\mini-codex\target\debug\mini-agent-app-server.exe"
+$env:MINI_AGENT_APP_SERVER_PATH = "..\mini-agent-harness\target\debug\mini-agent-app-server.exe"
 uv run pytest tests/smoke/test_child_agent_report_scenario.py -q
 ```
 

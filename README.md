@@ -1,11 +1,11 @@
 # mini-agent-web
 
-`mini-agent-web` 是 Mini Agent 运行系统的用户侧控制平面适配层，包含 Python SDK、
-FastAPI 网关和 Web Studio，并保留实验性 TUI 与 Cookbook。Web Studio 面向项目和
+`mini-agent-web` 是 Mini Agent 运行系统的用户侧控制平面适配层，包含 FastAPI 网关
+和 Web Studio，并保留实验性 TUI。Web Studio 面向项目和
 长时间运行的 Session，负责把 App Server 的执行状态、审批、恢复、Child Session、
 Notebook 和运行事件变成可操作、可观察的工作台。当前发布版本为 `1.0.0`，协商
 App Server protocol version `2`，请求使用 JSON-RPC 2.0 envelope。升级兼容性见
-[`docs/app-server.md`（Harness 仓库）](https://github.com/civaapple-alt/mini-agent-harness/blob/main/docs/app-server.md)。
+[`Harness App Server 文档`](https://github.com/civaapple-alt/mini-agent-harness/blob/main/docs/app-server.md)。
 
 本仓不创建第二条 Agent 执行循环。App Server、Host 和 Capabilities 保持运行时、
 准入和副作用的权威；SDK、Gateway 和 Web Studio 负责连接、投影、控制和用户交互。
@@ -14,11 +14,9 @@ App Server protocol version `2`，请求使用 JSON-RPC 2.0 envelope。升级兼
 
 | 目标 | 入口 |
 | --- | --- |
-| 使用或开发 Python SDK | [`sdk/python/README.md`](sdk/python/README.md) |
 | 启动或修改 FastAPI 网关 | [`server/README.md`](server/README.md) |
 | 开发 React Web Studio | [`frontend/README.md`](frontend/README.md) |
 | 验证 Python SDK/App Server 的实验性 TUI | [`tui/README.md`](tui/README.md) |
-| 运行示例 | [`cookbook/python-demo/README.md`](cookbook/python-demo/README.md) |
 | 查看测试 | [`tests/README.md`](tests/README.md) |
 | 查阅稳定运行文档 | [`docs/README.md`](docs/README.md) |
 | 查阅架构决策 | [`.agents/notes/README.md`](.agents/notes/README.md) |
@@ -31,22 +29,26 @@ README。贡献规则从 [`AGENTS.md`](AGENTS.md) 开始。
 ```text
 Web Studio (browser) ── REST / WebSocket ──> FastAPI Server ──> Python SDK ── Stdio JSON-RPC ──> App Server
 Experimental TUI ── direct dependency ──────────────────> Python SDK ── Stdio JSON-RPC ──> App Server
-Cookbook ── direct dependency ──────────────────────────> Python SDK ── Stdio JSON-RPC ──> App Server
 ```
 
 - App Server 拥有 Thread、Turn、Goal 与 ThreadItem 的运行时语义；
-- Python SDK 是实验性 TUI 和 Cookbook 的直接运行时依赖，负责进程连接、JSON-RPC、
+- Python SDK 是 Gateway 和实验性 TUI 的运行时依赖，负责进程连接、JSON-RPC、
   类型解析和有界事件流；
 - Server 将 SDK 能力映射为 Web API 与 WebSocket；
-- Web Studio 通过 Server 使用 Web API 与 WebSocket；实验性 TUI 和 Cookbook
-  直接使用 Python SDK。用户主流程是 Gateway → Web Studio；TUI 只用于 App Server
-  边界验证，Cookbook 只用于 SDK 集成示例。
+- Web Studio 通过 Server 使用 Web API 与 WebSocket；TUI 直接使用 Python SDK。SDK 源码、
+  文档、测试和通用示例由 `mini-agent-harness` 维护。本仓依赖已发布的 SDK wheel；当前
+  `1.0.0` wheel 仍来自本仓历史 v1.0.0 Release，后续 SDK 发布归 Harness。
+
+SDK 使用指南位于 [Harness SDK 文档](https://github.com/civaapple-alt/mini-agent-harness/tree/main/sdk/python/README.md)，
+通用 App Server 示例位于 [Harness Cookbook](https://github.com/civaapple-alt/mini-agent-harness/tree/main/cookbook/python-demo/README.md)。
 
 ## 快速启动
 
 需要 Python 3.10+、`uv`、Node.js 和 npm，以及可执行的
 `mini-agent-app-server`。如果二进制不在 `PATH`，设置
-`MINI_AGENT_APP_SERVER_PATH`。
+`MINI_AGENT_APP_SERVER_PATH`。本分支之后的 Harness Release 会提供包含 CLI 和 App
+Server 的平台归档；已发布的 Harness v1.0.0 归档早于此变更，不含 App Server，可从
+Harness 仓库源码构建。
 
 ```bash
 uv sync
@@ -88,24 +90,20 @@ uv run pytest -q
 npm --prefix frontend run lint
 npm --prefix frontend test
 npm --prefix frontend run build
-uv build --package mini-agent
-python ../mini-codex/scripts/check_docs_links.py README.md docs
+uv build --project .
 ```
 
-默认验证不调用真实模型 Provider；需要 Provider 的示例只在 Cookbook 中显式
-运行。
+默认验证不调用真实模型 Provider。SDK 与 App Server 通用示例见 Harness Cookbook；
+本仓 TUI 用于 SDK/App Server 边界验证。
 
 ## 顶层目录
 
 ```text
-sdk/python/           Python SDK
 server/               FastAPI 网关
 frontend/             React Web Studio
 tui/                  实验性 Python SDK/App Server 验证 TUI
-cookbook/python-demo/ 示例程序
-tests/                Python 测试
+tests/                Gateway、TUI 与全栈冒烟测试
 docs/                 稳定运行与参考文档
-.agents/notes/        架构决策与提案
 ```
 
 MIT License。

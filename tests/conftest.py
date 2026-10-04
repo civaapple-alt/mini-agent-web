@@ -228,12 +228,13 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "MINI_AGENT_WEB_SEARCH",
     ):
         monkeypatch.delenv(name, raising=False)
+    executable_suffix = ".exe" if os.name == "nt" else ""
     local_server = (
         Path(__file__).parents[1].parent
-        / "mini-codex"
+        / "mini-agent-harness"
         / "target"
         / "debug"
-        / "mini-agent-app-server.exe"
+        / f"mini-agent-app-server{executable_suffix}"
     )
     if local_server.is_file():
         monkeypatch.setenv("MINI_AGENT_APP_SERVER_PATH", str(local_server))

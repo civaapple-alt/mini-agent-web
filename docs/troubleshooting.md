@@ -1,6 +1,6 @@
 # 故障排查指南 (Troubleshooting)
 
-本文档整理了在运行、调试 `mini-agent-web`（包含 SDK、FastAPI 网关、Web Studio 与 TUI）过程中可能遇到的常见故障与解决方案。
+本文档整理了在运行、调试 `mini-agent-web`（FastAPI 网关、Web Studio 与 TUI）过程中可能遇到的常见故障与解决方案。
 
 ---
 
@@ -11,18 +11,20 @@
 - Web Studio 页面提示 `Disconnected from App Server`。
 
 ### 排查与解决
-1. **检查全局 PATH**：在终端运行 `mini-agent-app-server --version`。如果提示命令不存在，说明二进制文件未编译或未加入环境变量；
-2. **本地编译**：在 `mini-codex` 目录下执行编译：
+1. **检查全局 PATH**：Unix 运行 `command -v mini-agent-app-server`，PowerShell 运行
+   `Get-Command mini-agent-app-server`。App Server 通过 stdio 工作，直接启动会等待
+   JSON-RPC 输入；
+2. **本地编译**：在 `mini-agent-harness` 目录下执行编译：
    ```bash
    cargo build -p mini-agent-app-server --release
    ```
 3. **显式配置路径**：在 `.env` 文件中设置绝对路径：
    ```env
    # Windows:
-   MINI_AGENT_APP_SERVER_PATH=D:\gh-ws\codex-ws\mini-codex\target\release\mini-agent-app-server.exe
+   MINI_AGENT_APP_SERVER_PATH=D:\gh-ws\codex-ws\mini-agent-harness\target\release\mini-agent-app-server.exe
    
    # Linux / macOS:
-   MINI_AGENT_APP_SERVER_PATH=/path/to/mini-codex/target/release/mini-agent-app-server
+   MINI_AGENT_APP_SERVER_PATH=/path/to/mini-agent-harness/target/release/mini-agent-app-server
    ```
 
 ---

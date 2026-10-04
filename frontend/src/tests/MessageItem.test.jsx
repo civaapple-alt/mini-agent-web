@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import MessageItem from '../components/MessageItem';
 
 describe('MessageItem resend action', () => {
@@ -78,8 +78,9 @@ describe('MessageItem resend action', () => {
     );
 
     expect(screen.getByText('Host 注入')).toBeDefined();
-    expect(screen.getByText('AGENTS.md')).toBeDefined();
-    expect(document.querySelector('.context-injection-card')).toBeTruthy();
+    const injectionCard = document.querySelector('.context-injection-card');
+    expect(injectionCard).toBeTruthy();
+    expect(within(injectionCard).getAllByText('AGENTS.md')).toHaveLength(2);
     expect(document.querySelector('.tool-card')).toBeTruthy();
     expect(screen.queryByText('must not appear in the metadata card')).toBeNull();
   });

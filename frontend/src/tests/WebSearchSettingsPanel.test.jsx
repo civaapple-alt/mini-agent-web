@@ -19,7 +19,7 @@ describe('WebSearchSettingsPanel', () => {
 
     const { container } = render(<WebSearchSettingsPanel />);
 
-    expect(await screen.findByRole('combobox', { name: '搜索服务' })).toBeDefined();
+    expect(await screen.findByRole('combobox', { name: '默认搜索服务' })).toBeDefined();
     expect(container.querySelectorAll('input[type="password"]')).toHaveLength(3);
     expect([...container.querySelectorAll('input[type="password"]')]
       .every((input) => input.value === '')).toBe(true);
@@ -32,9 +32,9 @@ describe('WebSearchSettingsPanel', () => {
     });
 
     const { container } = render(<WebSearchSettingsPanel />);
-    await screen.findByRole('combobox', { name: '搜索服务' });
+    await screen.findByRole('combobox', { name: '默认搜索服务' });
 
-    fireEvent.change(screen.getByLabelText('搜索服务'), { target: { value: 'exa' } });
+    fireEvent.change(screen.getByLabelText('默认搜索服务'), { target: { value: 'exa' } });
     const keyInput = screen.getByLabelText('Exa Search API 密钥');
     fireEvent.change(keyInput, { target: { value: 'exa-secret-value' } });
     fireEvent.click(screen.getByRole('button', { name: '保存搜索设置' }));

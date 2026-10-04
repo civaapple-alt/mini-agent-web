@@ -153,7 +153,13 @@ def create_mock_client(project_name: str = "test-project") -> AsyncMock:
     )
 
     def mock_update_thread_settings(
-        mode, builtin_tools=None, thread_id=None, continuation_mode=None
+        mode,
+        builtin_tools=None,
+        thread_id=None,
+        continuation_mode=None,
+        model_selection=None,
+        reasoning_effort=None,
+        reasoning_selection=None,
     ):
         tools = (
             builtin_tools
@@ -180,6 +186,11 @@ def create_mock_client(project_name: str = "test-project") -> AsyncMock:
                 "ask_user",
             ],
             continuation_mode=continuation_mode or "manual",
+            model_selection=None if model_selection is ... else model_selection,
+            reasoning_effort=None if reasoning_effort is ... else reasoning_effort,
+            reasoning_selection=(
+                None if reasoning_selection is ... else reasoning_selection
+            ),
             state_revision=0,
         )
 

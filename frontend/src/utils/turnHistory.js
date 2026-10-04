@@ -3,7 +3,7 @@ import {
   collectInputMessages,
   getChildWakeupTurnIds,
   getInputTrace,
-} from './inputTrace';
+} from './inputTrace.js';
 
 export const TURN_STATE_LABELS = {
   running: '运行中',

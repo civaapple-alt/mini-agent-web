@@ -85,8 +85,11 @@ git status
    ```bash
    uv run python scripts/check_version_sync.py
    uv build --package mini-agent
-   shasum -a 256 dist/mini_agent-1.0.0* > dist/SHA256SUMS
-   shasum -a 256 -c dist/SHA256SUMS
+   (
+     cd dist
+     shasum -a 256 mini_agent-1.0.0* > SHA256SUMS
+     shasum -a 256 -c SHA256SUMS
+   )
    ```
 4. 提交并推送版本变更，等待该提交的 CI 全部通过后再创建和推送 tag：
    ```bash

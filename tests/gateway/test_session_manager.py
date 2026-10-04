@@ -49,6 +49,9 @@ def mock_session_manager(tmp_path):
             ],
         }
     }
+    # Child-operation tests model an active parent unless a test supplies a
+    # frozen or resuming Session state explicitly.
+    mgr.session_control_state = AsyncMock(return_value={"status": "running"})
     return mgr
 
 
@@ -499,14 +502,18 @@ async def test_websocket_broadcast_is_project_scoped(mock_session_manager):
         def __init__(self):
             self.send_json = AsyncMock()
 
+        async def accept(self):
+            pass
+
+        async def close(self, **_kwargs):
+            pass
+
     pi_socket = FakeSocket()
     web_socket = FakeSocket()
     global_socket = FakeSocket()
-    mock_session_manager._active_connections = {
-        pi_socket: "pi",
-        web_socket: "mini-agent-web",
-        global_socket: None,
-    }
+    await mock_session_manager.connect_ws(pi_socket, "pi")
+    await mock_session_manager.connect_ws(web_socket, "mini-agent-web")
+    await mock_session_manager.connect_ws(global_socket)
 
     await mock_session_manager.broadcast_ws(
         {"type": "event", "projectId": "pi", "threadId": "default"}
@@ -515,6 +522,9 @@ async def test_websocket_broadcast_is_project_scoped(mock_session_manager):
     pi_socket.send_json.assert_awaited_once()
     web_socket.send_json.assert_not_awaited()
     global_socket.send_json.assert_awaited_once()
+    mock_session_manager.disconnect_ws(pi_socket)
+    mock_session_manager.disconnect_ws(web_socket)
+    mock_session_manager.disconnect_ws(global_socket)
 
 
 @pytest.mark.asyncio
@@ -527,14 +537,18 @@ async def test_accepted_approval_resolution_reaches_all_same_project_clients(
         def __init__(self):
             self.send_json = AsyncMock()
 
+        async def accept(self):
+            pass
+
+        async def close(self, **_kwargs):
+            pass
+
     same_project_a = FakeSocket()
     same_project_b = FakeSocket()
     other_project = FakeSocket()
-    mock_session_manager._active_connections = {
-        same_project_a: "project-1",
-        same_project_b: "project-1",
-        other_project: "project-2",
-    }
+    await mock_session_manager.connect_ws(same_project_a, "project-1")
+    await mock_session_manager.connect_ws(same_project_b, "project-1")
+    await mock_session_manager.connect_ws(other_project, "project-2")
     request_id = "approval-peer-resolution"
     fut = asyncio.get_running_loop().create_future()
     mock_session_manager._pending_approvals[request_id] = fut
@@ -565,7 +579,9 @@ async def test_accepted_approval_resolution_reaches_all_same_project_clients(
         assert payload["threadId"] == "thread-1"
         assert payload["turnId"] == "turn-1"
     other_project.send_json.assert_not_awaited()
-    mock_session_manager._active_connections.clear()
+    mock_session_manager.disconnect_ws(same_project_a)
+    mock_session_manager.disconnect_ws(same_project_b)
+    mock_session_manager.disconnect_ws(other_project)
     await fut
 
 
@@ -3350,7 +3366,9 @@ async def test_queue_drain_ignores_previous_failed_turns_for_queued_retries(
     )
 
     release_waiters = asyncio.Event()
-    clients = {}
+    parent_client = AsyncMock()
+    parent_client.session_control.return_value = {"status": "running"}
+    clients = {"parent": parent_client}
     for index in (3, 4):
         client = AsyncMock()
         client.get_runtime_status.return_value = SimpleNamespace(
@@ -4779,6 +4797,7 @@ async def test_start_child_task_runs_on_an_independent_client(
 ):
     """A child task forks exact context and keeps its own Turn registration."""
     source_client = AsyncMock()
+    source_client.session_control.return_value = {"status": "running"}
     child_client = AsyncMock()
     release_child = asyncio.Event()
     child_client.start_turn = AsyncMock(
@@ -4821,7 +4840,10 @@ async def test_start_child_task_runs_on_an_independent_client(
         "parent_checkpoint_seq": 3,
     }
     fork_thread = AsyncMock(return_value=fork)
-    get_client = AsyncMock(return_value=child_client)
+
+    async def get_client(thread_id, _project_id=None):
+        return source_client if thread_id == "parent" else child_client
+
     monkeypatch.setattr(mock_session_manager, "fork_thread", fork_thread)
     monkeypatch.setattr(mock_session_manager, "get_client_for_thread", get_client)
 
@@ -4877,6 +4899,7 @@ async def test_start_child_task_persists_full_intent_for_immediate_parallel_chil
 ):
     """Immediate children retain the prompt needed by App Server admission."""
     child_client = AsyncMock()
+    child_client.session_control.return_value = {"status": "running"}
     child_client.start_turn.return_value = SimpleNamespace(
         turn_id="child-turn-1", status="started"
     )
@@ -5205,6 +5228,7 @@ async def test_sequential_child_waits_for_missing_sequence_zero(
         }
     ]
     child_client = AsyncMock()
+    child_client.session_control.return_value = {"status": "running"}
     child_client.start_turn = AsyncMock(
         return_value=SimpleNamespace(turn_id="turn-sequence-zero", status="started")
     )
@@ -5477,6 +5501,7 @@ async def test_cancel_group_only_targets_the_parent_turn_group(
         1,
         "cancel_queued",
         request_id=client.child_task_action.await_args.kwargs["request_id"],
+        control_source="main_agent",
     )
     assert client.child_task_action.await_args.kwargs["request_id"].startswith(
         "gateway-control-"
@@ -7132,6 +7157,7 @@ async def test_drain_sequential_child_requires_completed_contiguous_prefix(
         }
     )
     child_client = AsyncMock()
+    child_client.session_control.return_value = {"status": "running"}
     child_client.start_turn = AsyncMock(
         return_value=SimpleNamespace(turn_id="turn-step-2", status="started")
     )
@@ -7189,6 +7215,7 @@ async def test_follow_up_waits_for_capacity_then_starts_same_child_attempt(
         "turn_id": None,
     }
     child_client = AsyncMock()
+    child_client.session_control.return_value = {"status": "running"}
     child_client.start_turn.return_value = SimpleNamespace(
         turn_id="turn-follow-up", status="started"
     )

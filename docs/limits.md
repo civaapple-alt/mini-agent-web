@@ -9,12 +9,20 @@ it does not reinterpret them or create another execution limit model.
 
 | Boundary | Limit | Behavior |
 | --- | ---: | --- |
-| JSON-RPC stdio line | 2 MiB | The SDK rejects an oversized App Server line before JSON parsing. |
+| JSON-RPC stdio line | 129 MiB | The SDK bounds each App Server line before JSON parsing. |
 | JSON-RPC request | 30 seconds by default | One total deadline covers writing and waiting for the correlated response; timeout raises `AppServerRequestTimeoutError`, a `ServerProcessError` subtype. |
 | `wait_for_turn` | 60 seconds by default | The caller can choose a different positive timeout. Transient `turn/read` timeouts are retried within this deadline; expiry raises `TurnTimeoutError`. |
 
 The SDK preserves unknown event types as generic events. This lets an older
 SDK display bounded data from a newer App Server without inventing semantics.
+
+The 129 MiB reader limit leaves room for a 16 MiB model response after JSON
+escaping and its JSON-RPC envelope. The App Server model-response limit remains
+16 MiB.
+
+The SDK also bounds queued stream events separately from stdio lines. Ordinary
+events use at most 2 MiB per queue and 8 MiB across queues. A large Turn event
+can use up to 128 MiB; all queued large Turn events share a 256 MiB limit.
 
 ## Gateway inputs and projections
 

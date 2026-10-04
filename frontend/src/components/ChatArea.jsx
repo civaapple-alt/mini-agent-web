@@ -48,6 +48,12 @@ function formatRecoveryProgressTime(value) {
   });
 }
 
+function formatReconciliationMessage(recovery, turnError) {
+  const reason = recovery?.reason;
+  const distinctReason = reason && reason !== turnError ? ` 原因：${reason}` : '';
+  return `工具执行结果需要核对后才能继续。${distinctReason}`;
+}
+
 export default function ChatArea({
   messages,
   isGenerating,
@@ -692,7 +698,7 @@ export default function ChatArea({
               || lastTurnResult.stopReason === 'failed'
               ? '重试请点本轮输入旁的“重新发送此提示词”；这会发起新请求，不会续接已断开的请求。'
               : lastTurnResult.recovery?.status === 'needs_reconciliation'
-                ? `工具执行结果需要核对后才能继续。${lastTurnResult.recovery.reason ? ` 原因：${lastTurnResult.recovery.reason}` : ''}`
+                ? formatReconciliationMessage(lastTurnResult.recovery, lastTurnResult.error)
                 : lastTurnResult.recovery?.status === 'waiting_for_continue'
                   ? '执行进度已保存，可以从最近完成的步骤继续。'
               : '当前回答可能不完整，可以继续发送指令推进下一轮。'}

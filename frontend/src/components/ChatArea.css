@@ -407,7 +407,7 @@
 
 .turn-reconciliation-card {
   display: grid;
-  gap: 7px;
+  gap: 10px;
   padding: 10px;
   border: 1px solid var(--status-failed-soft);
   border-radius: 8px;
@@ -419,9 +419,22 @@
   overflow-wrap: anywhere;
 }
 
+.turn-reconciliation-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  gap: 12px;
+}
+
+.turn-reconciliation-field {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+
 .turn-reconciliation-card label {
   display: grid;
-  gap: 4px;
+  gap: 6px;
   color: var(--text-secondary);
   font-size: 12px;
 }
@@ -437,10 +450,31 @@
   font: inherit;
 }
 
+.turn-reconciliation-help {
+  line-height: 1.45;
+}
+
+.turn-reconciliation-count {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .turn-reconciliation-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 12px;
+}
+
+.turn-reconciliation-action {
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+  align-content: start;
+  gap: 5px;
+}
+
+.turn-reconciliation-action small {
+  line-height: 1.45;
 }
 
 .goal-verification-message {

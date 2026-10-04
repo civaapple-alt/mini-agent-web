@@ -1,4 +1,4 @@
-"""Check Web release versions and its pinned external SDK wheel."""
+"""Check Web release versions and its editable Harness SDK source."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+SDK_SOURCE = "../mini-agent-harness/sdk/python"
 
 
 def read_text(relative_path: str) -> str:
@@ -89,29 +90,51 @@ def get_versions() -> dict[str, str]:
         read_text("pyproject.toml"),
         r"^\[tool\.uv\.sources\]\s*(.*?)(?=^\[|\Z)",
     )
-    sdk_url = capture(
-        "mini-agent wheel URL in pyproject.toml",
+    sdk_path = capture(
+        "mini-agent source path in pyproject.toml",
         uv_sources,
-        r'^mini-agent\s*=\s*\{\s*url\s*=\s*"([^\"]+)"',
+        r'^mini-agent\s*=\s*\{\s*path\s*=\s*"([^\"]+)"',
     )
-    lock_sdk_url = capture(
-        "mini-agent wheel URL in uv.lock",
+    if sdk_path != SDK_SOURCE:
+        raise ValueError(
+            f"mini-agent must use the sibling Harness SDK path {SDK_SOURCE!r}"
+        )
+
+    lock_sdk_path = capture(
+        "mini-agent editable source path in uv.lock",
         sdk_package,
-        r'^source = \{ url = "([^\"]+)" \}',
+        r'^source = \{ editable = "([^\"]+)" \}',
     )
     lock_sdk_version = capture(
         "mini-agent locked version", sdk_package, r'^version = "([^\"]+)"'
     )
-    pinned_sdk_version = capture(
-        "SDK wheel version in pinned URL",
-        sdk_url,
-        r"mini_agent-([0-9]+\.[0-9]+\.[0-9]+)-py3-none-any\.whl$",
-    )
-    if sdk_url != lock_sdk_url or pinned_sdk_version != lock_sdk_version:
+    if sdk_path != lock_sdk_path:
         raise ValueError(
-            "The SDK wheel URL, uv.lock source, and locked SDK version do not match"
+            "The SDK source path in pyproject.toml and uv.lock does not match"
         )
-    versions["pinned Harness SDK wheel"] = pinned_sdk_version
+
+    sdk_project_path = (ROOT / sdk_path / "pyproject.toml").resolve()
+    sdk_project = sdk_project_path.read_text(encoding="utf-8")
+    sdk_project_section = capture(
+        "[project] section in sibling Harness SDK pyproject.toml",
+        sdk_project,
+        r"^\[project\]\s*(.*?)(?=^\[|\Z)",
+    )
+    sdk_name = capture(
+        "sibling SDK project name",
+        sdk_project_section,
+        r'^name\s*=\s*"([^\"]+)"',
+    )
+    sdk_version = capture(
+        "sibling SDK project version",
+        sdk_project_section,
+        r'^version\s*=\s*"([^\"]+)"',
+    )
+    if sdk_name != "mini-agent" or lock_sdk_version != sdk_version:
+        raise ValueError(
+            "The sibling Harness SDK project name or version does not match uv.lock"
+        )
+    versions["Harness SDK (editable sibling source)"] = sdk_version
     return versions
 
 
@@ -125,7 +148,7 @@ def main() -> int:
     web_targets = {
         target: version
         for target, version in versions.items()
-        if target != "pinned Harness SDK wheel"
+        if target != "Harness SDK (editable sibling source)"
     }
     if len(set(web_targets.values())) != 1:
         print(
@@ -139,7 +162,8 @@ def main() -> int:
     matched_version = next(iter(web_targets.values()))
     print(
         f"[OK] Web release targets are synchronized at {matched_version}; "
-        f"Harness SDK {versions['pinned Harness SDK wheel']} is pinned separately"
+        f"Harness SDK {versions['Harness SDK (editable sibling source)']} "
+        f"is linked from {SDK_SOURCE}"
     )
     for target, version in versions.items():
         print(f"  [+] {target} == {version}")

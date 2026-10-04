@@ -35,14 +35,25 @@ Experimental TUI ── direct dependency ────────────�
 - Python SDK 是 Gateway 和实验性 TUI 的运行时依赖，负责进程连接、JSON-RPC、
   类型解析和有界事件流；
 - Server 将 SDK 能力映射为 Web API 与 WebSocket；
-- Web Studio 通过 Server 使用 Web API 与 WebSocket；TUI 直接使用 Python SDK。SDK 源码、
-  文档、测试和通用示例由 `mini-agent-harness` 维护。本仓在 `pyproject.toml` 和
-  `uv.lock` 中锁定已发布的 SDK wheel；运行 `uv sync` 时会将 SDK 安装到本仓的虚拟环境，
-  不需要再通过系统 Python 单独安装。当前 `1.0.0` wheel 仍来自本仓历史 v1.0.0 Release，
-  后续 SDK 发布归 Harness。
+- Web Studio 通过 Server 使用 Web API 与 WebSocket；TUI 直接使用 Python SDK。Harness
+  仓库维护 SDK 源码、文档、测试和通用示例。
 
 SDK 使用指南位于 [Harness SDK 文档](https://github.com/civaapple-alt/mini-agent-harness/tree/main/sdk/python/README.md)，
 通用 App Server 示例位于 [Harness Cookbook](https://github.com/civaapple-alt/mini-agent-harness/tree/main/cookbook/python-demo/README.md)。
+
+## 同时开发 Harness SDK
+
+把两个仓库放在同一个父目录下：
+
+```text
+work/
+├── mini-agent-harness/
+└── mini-agent-web/
+```
+
+`pyproject.toml` 将 `../mini-agent-harness/sdk/python` 配置为 editable 依赖。运行 `uv sync` 后，
+`uv run mini-agent-server` 会直接使用 Harness checkout 中的 SDK。修改 SDK 源码后无需
+重新安装，也无需给 `uv run` 添加 `--no-sync`。
 
 ## 快速启动
 
@@ -66,24 +77,6 @@ uv run mini-agent-server
 Gateway 通过 SDK 启动 `mini-agent-app-server` 子进程。SDK 默认从 Gateway 继承的
 `PATH` 查找可执行文件；正常使用时，把与 SDK 协议兼容的 Harness App Server 目录加入
 `PATH` 即可。只有二进制不在 `PATH` 时，才需要设置 `MINI_AGENT_APP_SERVER_PATH`。
-
-本地同时开发 Harness SDK 时，先在 Web Studio 仓库根目录运行 `uv sync`，再将相邻
-Harness 仓库中的 SDK 源码以 editable 方式装入 Web Studio 虚拟环境。macOS 或 Linux 运行：
-
-```bash
-uv pip install --python .venv/bin/python --editable ../mini-agent-harness/sdk/python
-uv run --no-sync mini-agent-server
-```
-
-Windows PowerShell 运行：
-
-```powershell
-uv pip install --python .venv\Scripts\python.exe --editable ..\mini-agent-harness\sdk\python
-uv run --no-sync mini-agent-server
-```
-
-`--no-sync` 可避免启动时将 editable SDK 换回 `uv.lock` 锁定的 wheel。再次运行
-`uv sync` 后，需要重新安装本地 SDK 源码。
 
 首次打开后，在 **设置 → Agent 能力 → 模型设置** 配置供应商和全局默认模型。API
 Key 由 Host 保存在当前用户的 `.mini-agent` 目录。输入框会在尚无可用默认模型时提供

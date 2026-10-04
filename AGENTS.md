@@ -5,12 +5,14 @@
 This repository contains the FastAPI gateway, the React Web Studio, and an
 experimental TUI for the Mini Agent runtime. The Python SDK, its tests and
 documentation, and generic App Server examples are maintained by
-`mini-agent-harness`; this repository pins a released SDK package.
+`mini-agent-harness`. During local development, this repository uses the SDK
+from a sibling `mini-agent-harness` checkout through an editable path source.
 
 Web Studio is the control and observation surface for projects and long-lived
 Sessions. It presents runtime state, approvals, recovery, Child Sessions,
 Notebook, and bounded events as user actions and projections. Keep Gateway and
-Studio behavior aligned with the released SDK and App Server JSON-RPC contract.
+Studio behavior aligned with the SDK source in the sibling checkout and the
+App Server JSON-RPC contract.
 
 The App Server, Host, and Capabilities remain authoritative for execution,
 admission, side effects, and durable Session state. This repository must not
@@ -41,9 +43,10 @@ Do not add a README section merely to link to a document outside its directory.
 ## Version and protocol
 
 - Keep the Web repository, Gateway, frontend, and Web lockfile versions
-  synchronized with each other. The SDK version is independently pinned to a
-  released Harness wheel in `pyproject.toml` and `uv.lock`; it does not have to
-  match the Web release number. Update `pyproject.toml`, `server/__init__.py`,
+  synchronized with each other. The SDK version comes from the sibling Harness
+  checkout and does not have to match the Web release number. Keep the editable
+  source path in `pyproject.toml` and `uv.lock` synchronized with that checkout.
+  Update `pyproject.toml`, `server/__init__.py`,
   `server/app.py`, `frontend/package.json`, `frontend/package-lock.json`, and
   `uv.lock` together. Update the current Web release version in `README.md` and
   `CHANGELOG.md` too.
@@ -84,9 +87,11 @@ npm --prefix frontend run build
 uv build --project .
 ```
 
-Web tests use the SDK wheel pinned in `uv.lock`. Tests requiring a local App
-Server must receive a compatible `MINI_AGENT_APP_SERVER_PATH`; the default test
-suite must not require a model provider or spend tokens.
+Web development and tests use the editable SDK source in the sibling Harness
+checkout. Keep both repositories under the same parent directory before running
+`uv sync`. Tests requiring a local App Server must receive a compatible
+`MINI_AGENT_APP_SERVER_PATH`; the default test suite must not require a model
+provider or spend tokens.
 
 ## Change hygiene
 

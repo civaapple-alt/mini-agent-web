@@ -10,6 +10,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    working-directory: mini-agent-web
+
 jobs:
   # =========================================================================
   # 1. 静态检查与版本守卫 (Fast Fail, < 20s)
@@ -19,6 +23,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: mini-agent-web
+
+      - name: Check out Harness Python SDK
+        uses: actions/checkout@v4
+        with:
+          repository: civaapple-alt/mini-agent-harness
+          ref: main
+          path: mini-agent-harness
+          sparse-checkout: sdk/python
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -56,6 +70,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: mini-agent-web
+
+      - name: Check out Harness Python SDK
+        uses: actions/checkout@v4
+        with:
+          repository: civaapple-alt/mini-agent-harness
+          ref: main
+          path: mini-agent-harness
+          sparse-checkout: sdk/python
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -80,13 +104,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: mini-agent-web
 
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: mini-agent-web/frontend/package-lock.json
 
       - name: Install Dependencies
         run: npm --prefix frontend ci
@@ -109,6 +135,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: mini-agent-web
+
+      - name: Check out Harness Python SDK
+        uses: actions/checkout@v4
+        with:
+          repository: civaapple-alt/mini-agent-harness
+          ref: main
+          path: mini-agent-harness
+          sparse-checkout: sdk/python
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5

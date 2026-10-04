@@ -376,11 +376,17 @@ async def phase_1_preflight(env: dict[str, str], app_server_bin: Path) -> None:
         catalog_result = await client.manage_model_catalog("get")
         catalog = catalog_result.get("catalog", catalog_result)
         default_model = catalog.get("defaultModel")
-        assert default_model, "Set a global default model in Web Studio before this smoke run"
+        assert default_model, (
+            "Set a global default model in Web Studio before this smoke run"
+        )
         provider_id = default_model.get("providerId")
         model_id = default_model.get("modelId")
         provider = next(
-            (item for item in catalog.get("providers", []) if item.get("id") == provider_id),
+            (
+                item
+                for item in catalog.get("providers", [])
+                if item.get("id") == provider_id
+            ),
             None,
         )
         assert provider and provider.get("apiKeyConfigured"), (
@@ -388,7 +394,9 @@ async def phase_1_preflight(env: dict[str, str], app_server_bin: Path) -> None:
         )
         log_ok(f"Primary model: {provider.get('name')} / {model_id}")
         verifier = catalog.get("verifierDefaultModel")
-        log_ok("Goal Verifier: configured" if verifier else "Goal Verifier: not configured")
+        log_ok(
+            "Goal Verifier: configured" if verifier else "Goal Verifier: not configured"
+        )
         assert caps.get("workflows") is True, "workflows capability missing"
         as_repo = find_git_root(app_server_bin)
         as_info = get_git_info(as_repo)

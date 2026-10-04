@@ -46,4 +46,7 @@ async def update_settings(req: UpdateSettingsRequest) -> dict[str, Any]:
         from fastapi import HTTPException
 
         raise HTTPException(status_code=422, detail=str(err)) from err
-    return {"status": "ok", "settings": {key: updated[key] for key in _UI_PREFERENCES if key in updated}}
+    return {
+        "status": "ok",
+        "settings": {key: updated[key] for key in _UI_PREFERENCES if key in updated},
+    }

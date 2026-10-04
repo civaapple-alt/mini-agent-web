@@ -23,16 +23,22 @@ _OPERATIONS = {
 }
 
 
-async def _manage(operation: str, fields: dict[str, Any], project_id: str | None) -> dict[str, Any]:
+async def _manage(
+    operation: str, fields: dict[str, Any], project_id: str | None
+) -> dict[str, Any]:
     if operation not in _OPERATIONS:
-        raise HTTPException(status_code=422, detail="Unsupported model catalog operation")
+        raise HTTPException(
+            status_code=422, detail="Unsupported model catalog operation"
+        )
     try:
         client = await session_manager.get_client_for_project(project_id)
         result = await client.manage_model_catalog(operation, **fields)
         value = result.get("value", result) if isinstance(result, dict) else {}
         catalog = value.get("catalog") if isinstance(value, dict) else None
         if not isinstance(catalog, dict):
-            raise HTTPException(status_code=502, detail="App Server returned an invalid model catalog")
+            raise HTTPException(
+                status_code=502, detail="App Server returned an invalid model catalog"
+            )
         response = {"catalog": catalog}
         if operation == "test_connection":
             result = value.get("connectionTest") if isinstance(value, dict) else None
@@ -51,7 +57,10 @@ async def _manage(operation: str, fields: dict[str, Any], project_id: str | None
                 or not isinstance(result.get("message"), str)
                 or len(result["message"]) > 256
             ):
-                raise HTTPException(status_code=502, detail="App Server returned an invalid connection test result")
+                raise HTTPException(
+                    status_code=502,
+                    detail="App Server returned an invalid connection test result",
+                )
             response["connectionTest"] = {
                 "status": result["status"],
                 "message": result["message"],
@@ -64,11 +73,15 @@ async def _manage(operation: str, fields: dict[str, Any], project_id: str | None
     except (KeyError, RuntimeError) as err:
         raise HTTPException(status_code=503, detail=str(err)) from err
     except Exception as err:  # SDK transport and App Server errors cross this boundary.
-        raise HTTPException(status_code=502, detail="Model settings request failed") from err
+        raise HTTPException(
+            status_code=502, detail="Model settings request failed"
+        ) from err
 
 
 @router.get("", summary="Read the Host-owned model catalog")
-async def get_model_catalog(project_id: str | None = Query(default=None)) -> dict[str, Any]:
+async def get_model_catalog(
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
     return await _manage("get", {}, project_id)
 
 

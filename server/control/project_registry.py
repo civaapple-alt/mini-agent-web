@@ -401,9 +401,7 @@ class ProjectRegistry:
             ):
                 project["builtin_skill_groups"] = list(dict.fromkeys(groups))
         if isinstance(updates.get("subagent"), dict):
-            project["subagent"] = self._normalize_subagent_config(
-                updates["subagent"]
-            )
+            project["subagent"] = self._normalize_subagent_config(updates["subagent"])
         if isinstance(updates.get("notebook"), dict):
             raw = updates["notebook"]
             max_entries = raw.get("max_entries")

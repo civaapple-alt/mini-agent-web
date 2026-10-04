@@ -107,7 +107,9 @@ def _process_attachments(
 
     if file_attachments:
         if len(file_attachments) > MAX_FILE_ATTACHMENTS:
-            raise ValueError(f"at most {MAX_FILE_ATTACHMENTS} file attachments are allowed")
+            raise ValueError(
+                f"at most {MAX_FILE_ATTACHMENTS} file attachments are allowed"
+            )
         for idx, attachment in enumerate(file_attachments):
             display_name = (
                 attachment.name.replace("\\", "/")
@@ -143,9 +145,13 @@ def _process_attachments(
             except (ValueError, TypeError) as err:
                 raise ValueError(f"文件附件编码无效: {display_name}") from err
             if len(content) > MAX_FILE_ATTACHMENT_BYTES:
-                raise ValueError(f"文件附件超过 {MAX_FILE_ATTACHMENT_BYTES} bytes: {display_name}")
+                raise ValueError(
+                    f"文件附件超过 {MAX_FILE_ATTACHMENT_BYTES} bytes: {display_name}"
+                )
             suffix = Path(display_name).suffix[:16]
-            file_path = ensure_attachment_dir() / f"file_{uuid4().hex}_{idx + 1}{suffix}"
+            file_path = (
+                ensure_attachment_dir() / f"file_{uuid4().hex}_{idx + 1}{suffix}"
+            )
             file_path.write_bytes(content)
             extra_context_parts.append(
                 f"[User Attached File: {file_path} (name: {display_name}; Gateway session attachment)]"

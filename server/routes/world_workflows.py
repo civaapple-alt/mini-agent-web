@@ -24,8 +24,12 @@ async def get_thread_model_settings(
     project_id: str | None = Query(default=None),
 ) -> dict[str, Any]:
     try:
-        routing_project_id = session_manager.resolve_thread_project(thread_id, project_id)
-        client = await session_manager.get_client_for_thread(thread_id, routing_project_id)
+        routing_project_id = session_manager.resolve_thread_project(
+            thread_id, project_id
+        )
+        client = await session_manager.get_client_for_thread(
+            thread_id, routing_project_id
+        )
         result = await client.get_thread_model_settings(thread_id)
         value = result.get("value", result) if isinstance(result, dict) else {}
         return {

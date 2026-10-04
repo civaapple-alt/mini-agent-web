@@ -490,9 +490,7 @@ async def _stream_turn_to_ws(
         project_id = requested_project_id or session_manager._client_projects.get(
             target_thread
         )
-        turn_start_lock = session_manager.get_turn_start_lock(
-            target_thread, project_id
-        )
+        turn_start_lock = session_manager.get_turn_start_lock(target_thread, project_id)
         await turn_start_lock.acquire()
         turn_start_lock_acquired = True
         stream_kwargs = {

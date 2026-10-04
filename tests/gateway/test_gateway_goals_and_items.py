@@ -334,9 +334,7 @@ async def test_thread_settings_accepts_model_supported_reasoning_level(
             "/api/threads/t-reasoning/settings",
             json={"reasoning_selection": {"kind": "level", "value": "disabled"}},
         )
-        read_response = await client.get(
-            "/api/threads/t-reasoning/model-settings"
-        )
+        read_response = await client.get("/api/threads/t-reasoning/model-settings")
 
     assert response.status_code == 200
     assert response.json()["reasoning_selection"] == {
@@ -431,7 +429,10 @@ async def test_model_gateway_forwards_catalog_without_exposing_api_keys(
     assert saved.json() == {"catalog": catalog}
     assert "private-provider-key" not in saved.text
     assert mock_client.manage_model_catalog.await_args_list[0].args == ("get",)
-    assert mock_client.manage_model_catalog.await_args_list[1].kwargs["apiKey"] == "private-provider-key"
+    assert (
+        mock_client.manage_model_catalog.await_args_list[1].kwargs["apiKey"]
+        == "private-provider-key"
+    )
 
 
 @pytest.mark.asyncio
@@ -461,7 +462,11 @@ async def test_model_gateway_returns_only_bounded_connection_test_status(
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/models/manage?project_id=goals_test_proj",
-            json={"operation": "test_connection", "providerId": "deepseek", "modelId": "flash"},
+            json={
+                "operation": "test_connection",
+                "providerId": "deepseek",
+                "modelId": "flash",
+            },
         )
 
     assert response.status_code == 200

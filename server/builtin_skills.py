@@ -41,13 +41,21 @@ def _group_specs() -> list[dict[str, Any]]:
         try:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         except FileNotFoundError as err:
-            raise RuntimeError(f"builtin Skill group metadata is missing: {metadata_path}") from err
+            raise RuntimeError(
+                f"builtin Skill group metadata is missing: {metadata_path}"
+            ) from err
         except (OSError, ValueError) as err:
-            raise RuntimeError(f"builtin Skill group metadata is invalid: {metadata_path}") from err
+            raise RuntimeError(
+                f"builtin Skill group metadata is invalid: {metadata_path}"
+            ) from err
 
         group_id = metadata.get("id")
         version = metadata.get("version")
-        if group_id != source.name or not isinstance(version, str) or not version.strip():
+        if (
+            group_id != source.name
+            or not isinstance(version, str)
+            or not version.strip()
+        ):
             raise RuntimeError(f"builtin Skill group metadata does not match {source}")
         specs.append(
             {

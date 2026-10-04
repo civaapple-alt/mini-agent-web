@@ -23,6 +23,7 @@ def proactor_loop_factory(*, use_subprocess: bool = False) -> asyncio.AbstractEv
         return asyncio.ProactorEventLoop()
     return asyncio.new_event_loop()
 
+
 # Ensure UTF-8 output on Windows consoles
 if sys.platform == "win32":
     try:

@@ -1,26 +1,24 @@
-# 怎样创建一个可交互、可恢复的 Agent 会话
+# Mini Agent Studio 的交互设计：状态、动作与恢复
 
-这组文章从 Mini Agent 当前的 App Server、Python SDK、Gateway 和 Web Studio 实现出发，讨论长时间运行的 Agent 怎样接收用户输入、等待控制动作、保存进度，并在客户端或服务进程中断后安全地继续。
+这组文章以当前 Web Studio 为观察对象。它记录界面怎样呈现 Agent 状态、怎样让用户介入，以及断线后怎样恢复可操作的视图。文章把当前实现当作设计案例，指出理解负担和后续可验证的改进方向。
 
-## 范围说明
+## 与 Harness 系列的分工
 
-你提到的个人助理愿景类似 Meta Muse 或 Grok bots，重点是比价、邮件处理和日程协助等个人需求。这是未来期望，不是当前仓库已经实现的产品范围。当前的 `mini-agent-harness/cookbook/python-demo/08_personal_agent.py` 是一个小型 SDK 会话示例：它附着命名 Session、处理 `ask_user`，并展示未完成状态的恢复边界；它没有实现比价、邮件或日历助理。示例保留原文件名和默认 Session ID，便于继续使用现有命令与会话数据。
+Harness 系列解释运行时怎样编排任务、管理上下文并控制工具执行。本系列讨论这些状态在 Web Studio 中如何被看见、理解和操作。涉及 App Server、Host、事件和恢复契约时，以 Harness 文档为准；涉及页面组织、文案、控件和操作反馈时，以本系列和 Web 源码为依据。
 
-文章会把当前实现事实和面向未来产品的设计建议分开说明。涉及协议字段、限制或运行行为时，以各仓库的当前规范为准。
+- [Harness 运行时骨架](https://github.com/civaapple-alt/mini-agent-harness/blob/main/docs/blogs/how-to-build-agent-harness/01-patterns.md)
+- [Harness 上下文与持久状态](https://github.com/civaapple-alt/mini-agent-harness/blob/main/docs/blogs/how-to-build-agent-harness/03-context-and-state.md)
+- [Harness 受控执行](https://github.com/civaapple-alt/mini-agent-harness/blob/main/docs/blogs/how-to-build-agent-harness/04-controlled-execution.md)
 
 ## 阅读顺序
 
-| 篇目 | 要回答的问题 |
+| 篇目 | 关注的问题 |
 | --- | --- |
-| [01 从愿景到会话模型](01-from-vision-to-session-model.md) | Session、Thread、Turn 和操作各自代表什么？ |
-| [02 把交互做成明确的控制动作](02-interaction-and-control.md) | Agent 提问、审批、纠偏、停止和恢复核对有什么区别？ |
-| [03 让持久化与恢复尊重副作用](03-persistence-and-recovery.md) | 服务重启后如何判断哪些工作可以续接，哪些必须核对？ |
-| [04 从组件边界推导设计原则](04-components-and-principles.md) | 哪一层拥有哪项事实，哪些取舍适合未来个人助理？ |
+| [01 让用户看懂 Agent 当前在做什么](01-reading-studio-states.md) | 哪些区域负责显示状态、活动和下一步？ |
+| [02 把 Agent 的停顿变成明确的用户动作](02-designing-user-actions.md) | 回答、审批、纠偏、停止和核对怎样区分？ |
+| [03 断线后怎样让界面重新对齐运行状态](03-restoring-the-studio-view.md) | 实时事件缺失后，界面怎样重新对齐权威状态？ |
+| [04 把经验变成可验证的原则和组件](04-principles-and-components.md) | 哪些交互规则值得保留，哪些组件值得重构？ |
 
-## 当前规范
+## 阅读说明
 
-- [Harness 运行时架构](https://github.com/civaapple-alt/mini-agent-harness/blob/main/docs/harness-framework.md)
-- [App Server 协议与恢复](https://github.com/civaapple-alt/mini-agent-harness/blob/main/docs/app-server.md)
-- [Web Studio 集成与重连](https://github.com/civaapple-alt/mini-agent-harness/blob/main/docs/studio-integration.md)
-- [Web Studio 用户提问](../../user-questions.md)
-- [Web Studio 执行检查点](../../child-tasks.md#main-与-child-的执行检查点)
+每篇先描述当前 Studio 的行为，再指出尚待验证的问题。文中的原则和组件边界属于设计假设。验证它们需要可重复的任务场景、用户操作记录和运行时结果，不能只凭代码结构或作者判断。

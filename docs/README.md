@@ -2,7 +2,8 @@
 
 本目录只维护 `mini-agent-web` Gateway、Web Studio 的稳定参考文档、运行手册和故障
 排查内容。Python SDK 与通用 App Server 示例由 `mini-agent-harness` 维护；Web
-通过锁定的 SDK 发布包消费 App Server 权威运行状态，不创建第二条 Agent 执行链路。
+通过同级 Harness checkout 的可编辑 SDK path source 联调，并消费 App Server 的权威
+运行状态，不创建第二条 Agent 执行链路。
 按问题选择文档即可；实现细节和历史决策不放在这里。
 
 | 文档 | 用途 |

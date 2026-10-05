@@ -19,6 +19,7 @@ App Server protocol version `2`，请求使用 JSON-RPC 2.0 envelope。升级兼
 | 验证 Python SDK/App Server 的实验性 TUI | [`tui/README.md`](tui/README.md) |
 | 查看测试 | [`tests/README.md`](tests/README.md) |
 | 查阅稳定运行文档 | [`docs/README.md`](docs/README.md) |
+| 了解怎样创建交互式 Agent 会话 | [`docs/blogs/how-to-create-interactive-agent-session.md`](docs/blogs/how-to-create-interactive-agent-session.md) |
 | 查阅架构决策 | [`.agents/notes/README.md`](.agents/notes/README.md) |
 
 根 README 只负责项目定位和目录导航；进入目标目录后，继续阅读该目录的

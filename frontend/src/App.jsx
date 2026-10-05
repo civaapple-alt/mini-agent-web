@@ -160,8 +160,6 @@ export default function App() {
   const [policy, setPolicy] = useState('interactive');
   const [continuationMode, setContinuationMode] = useState('manual');
   const [userSettings, setUserSettings] = useState({
-    access: 'project',
-    policy: 'interactive',
     theme: 'light',
     auto_scroll: true,
     word_wrap: true,
@@ -582,8 +580,6 @@ export default function App() {
       });
       if (context && !isCurrentSessionRequest(context)) return;
       setUserSettings((prev) => ({ ...prev, ...data }));
-      if (data.access) setAccessScope(data.access);
-      if (data.policy) setPolicy(data.policy);
       const activeTheme = normalizeTheme(data.theme);
       document.body.className = `theme-${activeTheme}`;
     } catch (err) {
@@ -606,6 +602,12 @@ export default function App() {
         signal: requestContext.signal,
       });
       if (!isCurrentSessionRequest(requestContext)) return;
+      if (snapshot.access === 'project' || snapshot.access === 'full_machine') {
+        setAccessScope(snapshot.access);
+      }
+      if (['interactive', 'automatic', 'trusted'].includes(snapshot.policy)) {
+        setPolicy(snapshot.policy);
+      }
       const approvals = (snapshot.pending_requests || [])
         .map((pending) => {
           const data = pending.data || {};
@@ -2895,6 +2897,7 @@ export default function App() {
       await Promise.all([
         loadSettings(context),
         loadThreadHistory(tid, nextProject, context),
+        loadPendingApproval(tid, nextProject, context),
       ]);
       showToast(`已创建新会话: ${finalTitle}`, 'success');
       return true;
@@ -2958,6 +2961,7 @@ export default function App() {
         loadSettings(context),
         loadWorkflows(newId, nextProject, context),
         loadRuntimeStatus(newId, nextProject, context),
+        loadPendingApproval(newId, nextProject, context),
       ]);
       showToast(
         `${contextPolicy === 'compact' ? '已派生并压缩分支' : '已派生独立分支'}: ${newId} · Session ${result.session_id || '未知'}`,
@@ -3162,11 +3166,6 @@ export default function App() {
       await api.setWorldExecution(nextAccess, nextPolicy, { projectId: currentThreadProject });
       setAccessScope(nextAccess);
       setPolicy(nextPolicy);
-      setUserSettings((prev) => ({
-        ...prev,
-        access: nextAccess,
-        policy: nextPolicy,
-      }));
     } catch (err) {
       showToast(`更新执行范围失败: ${err.message}`, 'error');
     }
@@ -3212,7 +3211,6 @@ export default function App() {
         { projectId: currentThreadProject },
       );
       setPolicy('trusted');
-      setUserSettings((prev) => ({ ...prev, policy: 'trusted' }));
       applyWorkflowState(currentThread, res, currentThreadProject);
       showToast('Auto Copilot 已显式开启：连续执行 + 信任执行，高风险仍需确认', 'success');
     } catch (err) {

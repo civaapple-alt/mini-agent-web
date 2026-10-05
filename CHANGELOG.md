@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
+- Restore project access scope and approval policy from the persisted project
+  snapshot when opening a Thread, including an empty Thread, so a page refresh
+  does not make saved execution settings appear to revert.
 - Set the GLM Coding Plan provider preset to its Responses Base URL, provide a
   one-click correction for the old Chat Completions URL, and match GLM 5.3
   reasoning parameters to the Responses API.

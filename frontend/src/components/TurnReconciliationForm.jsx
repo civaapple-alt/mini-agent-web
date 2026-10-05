@@ -56,6 +56,14 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
     requestRef.current = null;
   };
 
+  const updateOutcome = (value) => {
+    if (value !== outcome) {
+      setResultContent('');
+      requestRef.current = null;
+    }
+    setOutcome(value);
+  };
+
   return (
     <section className="turn-reconciliation-card" aria-label={`核对工具 ${name}`}>
       <strong>{name}</strong>
@@ -73,7 +81,7 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
               name={`${inputId}-disposition`}
               value="completed"
               checked={outcome === 'completed'}
-              onChange={() => setOutcome('completed')}
+              onChange={() => updateOutcome('completed')}
             />
             <span className="turn-reconciliation-choice-title">已执行并成功</span>
             <small>记录成功返回的内容；继续时会复用它，不会重跑这条调用。</small>
@@ -84,7 +92,7 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
               name={`${inputId}-disposition`}
               value="failed"
               checked={outcome === 'failed'}
-              onChange={() => setOutcome('failed')}
+              onChange={() => updateOutcome('failed')}
             />
             <span className="turn-reconciliation-choice-title">已执行但失败</span>
             <small>记录真实失败输出；继续时 Agent 会收到失败结果。</small>
@@ -95,7 +103,7 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
               name={`${inputId}-disposition`}
               value="not_executed"
               checked={outcome === 'not_executed'}
-              onChange={() => setOutcome('not_executed')}
+              onChange={() => updateOutcome('not_executed')}
             />
             <span className="turn-reconciliation-choice-title">确认尚未执行</span>
             <small>只在确认没有产生副作用时选择；继续时会重新执行这条调用。</small>

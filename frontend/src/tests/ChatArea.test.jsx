@@ -220,6 +220,48 @@ describe('ChatArea turn status', () => {
     );
   });
 
+  it('clears the previous tool output when the reconciliation outcome changes', () => {
+    render(
+      <ChatArea
+        messages={[]}
+        isGenerating={false}
+        pendingApproval={null}
+        lastTurnResult={{
+          status: 'in_progress',
+          turnId: 'turn-reconcile',
+          recovery: {
+            status: 'needs_reconciliation',
+            turnId: 'turn-reconcile',
+            uncertainToolCalls: [
+              { toolCallId: 'call-1', name: 'send_message' },
+            ],
+          },
+        }}
+        onReconcileExecution={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('radio', { name: /已执行但失败/ }));
+    fireEvent.change(screen.getByLabelText('核对依据（最多 1024 字节）'), {
+      target: { value: 'checked the destination state' },
+    });
+    fireEvent.change(screen.getByLabelText('工具实际失败输出（最多 64 KiB）'), {
+      target: { value: 'permission denied' },
+    });
+
+    fireEvent.click(screen.getByRole('radio', { name: /已执行并成功/ }));
+    expect(screen.getByLabelText('工具实际成功结果（最多 64 KiB）').value).toBe('');
+    expect(screen.getByLabelText('核对依据（最多 1024 字节）').value)
+      .toBe('checked the destination state');
+
+    fireEvent.click(screen.getByRole('radio', { name: /确认尚未执行/ }));
+    expect(screen.queryByLabelText('工具实际成功结果（最多 64 KiB）')).toBeNull();
+    expect(screen.getByText(/恢复时会重新运行这条工具调用/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('radio', { name: /已执行但失败/ }));
+    expect(screen.getByLabelText('工具实际失败输出（最多 64 KiB）').value).toBe('');
+  });
+
   it('shows the saved checkpoint progress and resumes the same Turn on request', () => {
     const onResumeExecution = vi.fn();
     render(

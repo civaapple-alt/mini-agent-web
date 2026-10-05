@@ -126,7 +126,7 @@ App Server 每 10 秒记录一次执行器心跳。Responses provider 在 120 �
 
 `turn/read` 和子任务投影提供有界的恢复状态、阶段、最后心跳和进展时间、checkpoint 序号及原因；运行中的 Turn 也可读取当前恢复快照。所有未知调用核对完成前，App Server 拒绝 `turn/resume` 和覆盖该 checkpoint 的新 `turn/start`。运行面板刷新或重新连接只重建这些状态，不会启动恢复请求。Main 对话区和 Child Session 详情都通过 `turn/reconcile` 记录人工决定：`completed` 要求提交有界结构化结果，`not_executed` 确认副作用未发生并允许后续显式恢复。请求绑定 `turnId + checkpointSeq + toolCallId + requestId`；相同请求幂等，旧 checkpoint 或冲突 request ID 会被拒绝。核对只更新 App Server 的 execution journal，不会自行执行工具或恢复 Turn；全部核对后，用户仍需显式使用 `turn/resume`。
 
-Studio 会先让用户选择“已执行并成功”、“已执行但失败”或“确认尚未执行”，再显示相应字段。成功或失败都使用 `completed` disposition，并通过 result 的 `status` 区分；真实工具输出会作为原调用结果交给 Agent。尚未执行时只记录核对依据，并会在显式恢复时重新运行该调用。核对依据只写入 execution journal，不会传给 Agent。保存核对决定不会自动恢复 Turn；全部调用核对完成后，用户还需显式继续。Studio 显示检查点编号和待核对调用数。超出字节上限时会提示删减内容。若恢复期间再次发生进程重启，当前被重跑的调用结果可能再次变为未知；之前的核对依据不会替代对这次执行结果的检查，已记录的 `completed` 或 `failed` 结果仍保存在 execution journal 中，需要按最新待核对项处理。
+Studio 会先让用户选择“已执行并成功”、“已执行但失败”或“确认尚未执行”，再显示相应字段。成功或失败都使用 `completed` disposition，并通过 result 的 `status` 区分；真实工具输出会作为原调用结果交给 Agent。切换实际状态时会清空之前填写的工具输出，避免把失败输出误提交为成功结果；核对依据会保留。尚未执行时只记录核对依据，并会在显式恢复时重新运行该调用。核对依据只写入 execution journal，不会传给 Agent。保存核对决定不会自动恢复 Turn；全部调用核对完成后，用户还需显式继续。Studio 显示检查点编号和待核对调用数。超出字节上限时会提示删减内容。若恢复期间再次发生进程重启，当前被重跑的调用结果可能再次变为未知；之前的核对依据不会替代对这次执行结果的检查，已记录的 `completed` 或 `failed` 结果仍保存在 execution journal 中，需要按最新待核对项处理。
 
 运行详情把“会话检查点”和“执行检查点”分开展示。会话检查点在 Turn 结算后更新，供后续对话和 Child fork 使用；执行检查点是当前 Turn 最近的安全恢复位置，运行面板同时显示其阶段、最近进展和执行器心跳。检查点序号标识持久化日志位置，不代表完成步数；模型请求或工具批次执行期间，执行检查点可能保持不变。`checkpoint/committed` 只确认结算后的会话 checkpoint 已提交；运行详情会标出该通知所属的 Turn 和时间。
 

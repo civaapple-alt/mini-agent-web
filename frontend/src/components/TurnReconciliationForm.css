@@ -16,7 +16,8 @@
 }
 
 .turn-reconciliation-intro,
-.turn-reconciliation-warning {
+.turn-reconciliation-warning,
+.turn-reconciliation-next-step {
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
@@ -85,8 +86,8 @@
 
 .turn-reconciliation-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
 }
 
 .turn-reconciliation-field {
@@ -101,6 +102,13 @@
   gap: 6px;
   color: var(--text-secondary);
   font-size: 12px;
+  font-weight: 600;
+}
+
+.turn-reconciliation-field-note {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 400;
 }
 
 .turn-reconciliation-field textarea {
@@ -114,6 +122,10 @@
   background: var(--bg-primary);
   color: var(--text-primary);
   font: inherit;
+}
+
+.turn-reconciliation-result-field textarea {
+  min-height: 108px;
 }
 
 .turn-reconciliation-field textarea:focus-visible,
@@ -146,6 +158,10 @@
   color: var(--status-failed);
 }
 
+.turn-reconciliation-next-step {
+  color: var(--text-secondary);
+}
+
 .turn-reconciliation-submit {
   justify-self: start;
   min-height: 34px;
@@ -162,7 +178,6 @@
     padding: 10px;
   }
 
-  .turn-reconciliation-fields,
   .turn-reconciliation-choices {
     grid-template-columns: minmax(0, 1fr);
   }

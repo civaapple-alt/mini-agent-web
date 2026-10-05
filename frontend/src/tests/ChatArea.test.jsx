@@ -185,7 +185,7 @@ describe('ChatArea turn status', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '保存实际结果' }));
     fireEvent.click(screen.getByRole('radio', { name: /确认尚未执行/ }));
-    fireEvent.click(screen.getByRole('button', { name: '确认未执行并允许重新运行' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存未执行确认' }));
 
     expect(onReconcileExecution).toHaveBeenNthCalledWith(
       1,

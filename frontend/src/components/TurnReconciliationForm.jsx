@@ -61,7 +61,7 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
       <strong>{name}</strong>
       <small>调用 ID：{toolCallId}</small>
       <p className="turn-reconciliation-intro">
-        这条调用的结果尚未确认。请先检查实际状态，再选择处理方式。
+        这条调用的结果尚未确认。请先检查实际状态，再选择处理方式。保存决定只更新检查点，不会执行工具或继续 Turn。
       </p>
 
       <fieldset className="turn-reconciliation-choice-group" disabled={busy}>
@@ -97,18 +97,21 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
           <div className="turn-reconciliation-fields">
             <div className="turn-reconciliation-field">
               <label htmlFor={evidenceId}>核对依据（最多 1024 字节）</label>
+              <small id={`${evidenceId}-note`} className="turn-reconciliation-field-note">
+                必填；仅作核对记录，不会传给 Agent。
+              </small>
               <textarea
                 id={evidenceId}
                 value={evidence}
                 maxLength={EVIDENCE_BYTE_LIMIT}
                 rows={3}
                 disabled={busy}
-                aria-describedby={`${evidenceId}-help`}
-                placeholder="说明核对来源，以及你观察到的实际状态。"
+                aria-describedby={`${evidenceId}-note ${evidenceId}-help`}
+                placeholder="写明查看了什么，以及确认了什么，例如目标系统状态、文件内容或执行日志。"
                 onChange={(event) => updateEvidence(event.target.value)}
               />
               <small id={`${evidenceId}-help`} className="turn-reconciliation-help">
-                必填。可填写目标系统状态、文件内容或执行日志等可复查依据。
+                填写可复查的依据。不要把这段说明当作工具输出。
               </small>
               <small
                 className={`turn-reconciliation-count${evidenceOverLimit ? ' over-limit' : ''}`}
@@ -121,20 +124,23 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
             </div>
 
             {disposition === 'completed' && (
-              <div className="turn-reconciliation-field">
+              <div className="turn-reconciliation-field turn-reconciliation-result-field">
                 <label htmlFor={resultId}>工具实际返回的结果（最多 64 KiB）</label>
+                <small id={`${resultId}-note`} className="turn-reconciliation-field-note">
+                  可留空；填写后会作为原调用结果交给 Agent。
+                </small>
                 <textarea
                   id={resultId}
                   value={resultContent}
                   maxLength={RESULT_BYTE_LIMIT}
-                  rows={3}
+                  rows={5}
                   disabled={busy}
-                  aria-describedby={`${resultId}-help`}
-                  placeholder="粘贴工具实际返回给模型的内容；工具没有文本输出时可留空。"
+                  aria-describedby={`${resultId}-note ${resultId}-help`}
+                  placeholder="粘贴这次工具调用真实产生的输出；没有文本输出时留空。"
                   onChange={(event) => updateResult(event.target.value)}
                 />
                 <small id={`${resultId}-help`} className="turn-reconciliation-help">
-                  这段内容会作为原调用结果交给 Agent 继续处理，请填写实际输出，不要填写核对过程。
+                  只填写实际输出，不要把核对依据或推测内容放在这里。
                 </small>
                 <small
                   className={`turn-reconciliation-count${resultOverLimit ? ' over-limit' : ''}`}
@@ -154,6 +160,10 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
             </p>
           )}
 
+          <p className="turn-reconciliation-next-step">
+            保存后会显示最新检查点；所有调用核对完成后，再点击“继续当前 Turn”。
+          </p>
+
           <button
             type="button"
             className="turn-recovery-button turn-reconciliation-submit"
@@ -161,10 +171,10 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
             onClick={submit}
           >
             {busy
-              ? '正在保存核对结果…'
+              ? '正在保存核对决定…'
               : disposition === 'completed'
                 ? '保存实际结果'
-                : '确认未执行并允许重新运行'}
+                : '保存未执行确认'}
           </button>
         </>
       )}

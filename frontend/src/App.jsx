@@ -2505,11 +2505,38 @@ export default function App() {
         const latest = await api.readTurn(currentThread, turnId, {
           projectId: currentThreadProject,
         });
-        if (latest?.recovery?.status === 'running') {
+        if (latest?.recovery) {
           setLastTurnResult((current) => current?.turnId === turnId
-            ? { ...current, recovery: latest.recovery }
+            ? {
+              ...current,
+              status: latest.status || current.status,
+              stopReason: latest.stop_reason ?? latest.stopReason ?? current.stopReason,
+              steps: latest.steps ?? current.steps,
+              error: latest.error ?? latest.recovery.reason ?? null,
+              recovery: latest.recovery,
+            }
             : current);
-          return;
+          if (latest.recovery.status === 'running') return;
+
+          setIsGenerating(false);
+          activeTurnIdRef.current = null;
+          setActiveTurnId(null);
+          if (latest.recovery.status === 'needs_reconciliation') {
+            showToast(
+              'App Server 在继续期间重启；最新工具结果需要重新核对后才能继续。',
+              'warning',
+              5000,
+            );
+            return;
+          }
+          if (latest.recovery.status === 'waiting_for_continue') {
+            showToast('恢复请求未启动；当前检查点仍有效，可以再次继续。', 'warning', 5000);
+            return;
+          }
+          if (latest.recovery.status === 'settled') {
+            showToast('当前 Turn 已结算；请查看会话中的最终结果。', 'info', 5000);
+            return;
+          }
         }
       } catch {
         // The server may be reconnecting; keep the checkpoint banner available.

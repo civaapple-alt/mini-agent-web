@@ -113,30 +113,44 @@ describe('ChatArea turn status', () => {
   });
 
   it('offers the execution record entry when a tool result needs reconciliation', () => {
-    render(
+    const props = {
+      messages: [],
+      isGenerating: false,
+      pendingApproval: null,
+      lastTurnResult: {
+        status: 'in_progress',
+        turnId: 'turn-reconcile',
+        error: 'process_restart_during_tool_call',
+        recovery: {
+          turn_id: 'turn-reconcile',
+          status: 'needs_reconciliation',
+          reason: 'process_restart_during_tool_call',
+          uncertain_tool_calls: [
+            { tool_call_id: 'call-1', name: 'shell' },
+          ],
+        },
+      },
+    };
+    const { rerender } = render(<ChatArea {...props} />);
+
+    expect(screen.getByText(/工具执行结果需要核对后才能继续/)).toBeTruthy();
+    expect(screen.getByText(/App Server 在工具调用期间重启/)).toBeTruthy();
+    expect(screen.queryByText('原因：process_restart_during_tool_call')).toBeNull();
+    expect(screen.getByRole('button', { name: '查看待核对活动' })).toBeTruthy();
+    expect(screen.getByLabelText('核对工具 shell')).toBeTruthy();
+    expect(screen.queryByLabelText('核对依据（最多 1024 字节）')).toBeNull();
+
+    rerender(
       <ChatArea
-        messages={[]}
-        isGenerating={false}
-        pendingApproval={null}
+        {...props}
         lastTurnResult={{
           status: 'in_progress',
           turnId: 'turn-reconcile',
-          error: 'unknown tool result',
-          recovery: {
-            turn_id: 'turn-reconcile',
-            status: 'needs_reconciliation',
-            reason: 'shell result is unknown',
-            uncertain_tool_calls: [
-              { tool_call_id: 'call-1', name: 'shell' },
-            ],
-          },
+          error: 'process_restart_during_tool_call',
         }}
       />,
     );
-
-    expect(screen.getByText(/工具执行结果需要核对后才能继续/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: '查看待核对活动' })).toBeTruthy();
-    expect(screen.getByLabelText('核对工具 shell')).toBeTruthy();
+    expect(screen.getByText(/请刷新会话，核对工具调用后再继续原 Turn/)).toBeTruthy();
   });
 
   it('submits an explicit result or confirmed-not-executed disposition', () => {
@@ -162,14 +176,16 @@ describe('ChatArea turn status', () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole('radio', { name: /已执行，记录实际结果/ }));
     fireEvent.change(screen.getByLabelText('核对依据（最多 1024 字节）'), {
       target: { value: 'verified at the destination' },
     });
-    fireEvent.change(screen.getByLabelText('已确认完成时提交的结果（最多 64 KiB）'), {
+    fireEvent.change(screen.getByLabelText('工具实际返回的结果（最多 64 KiB）'), {
       target: { value: 'message receipt 123' },
     });
-    fireEvent.click(screen.getByRole('button', { name: '记录已完成结果' }));
-    fireEvent.click(screen.getByRole('button', { name: '确认未执行' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存实际结果' }));
+    fireEvent.click(screen.getByRole('radio', { name: /确认尚未执行/ }));
+    fireEvent.click(screen.getByRole('button', { name: '确认未执行并允许重新运行' }));
 
     expect(onReconcileExecution).toHaveBeenNthCalledWith(
       1,

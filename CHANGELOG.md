@@ -11,8 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
-- Clarify tool-recovery evidence and result fields, and explain whether each
-  recovery choice reuses a recorded result or runs the call again.
+- Guide tool recovery by asking for the verified execution state first, showing
+  only the matching fields, and explaining whether recovery reuses a result or
+  runs the call again. Translate the common process-restart reason into a clear
+  explanation.
 - Keep the Gateway, Web Studio, and experimental TUI in this repository while
   consuming the Harness-owned Python SDK package. SDK source, tests, docs, and
   generic App Server examples now live in `mini-agent-harness`.

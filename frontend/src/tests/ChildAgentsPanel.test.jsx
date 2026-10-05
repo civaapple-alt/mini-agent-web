@@ -311,10 +311,11 @@ describe('child agents drawer tab', () => {
     expect(screen.getByText('shell result is unknown')).toBeTruthy();
     expect(screen.queryByRole('button', { name: '继续当前 Turn' })).toBeNull();
     expect(screen.getByRole('button', { name: '查看执行记录' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('radio', { name: /确认尚未执行/ }));
     fireEvent.change(screen.getByLabelText('核对依据（最多 1024 字节）'), {
       target: { value: 'verified not sent' },
     });
-    fireEvent.click(screen.getByRole('button', { name: '确认未执行' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认未执行并允许重新运行' }));
 
     await waitFor(() => expect(api.reconcileTurn).toHaveBeenCalledWith(
       'child-a',

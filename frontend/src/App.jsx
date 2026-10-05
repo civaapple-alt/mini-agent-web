@@ -2566,13 +2566,14 @@ export default function App() {
       setLastTurnResult((current) => current?.turnId === turnId
         ? { ...current, recovery: latest.recovery }
         : current);
-      showToast(
-        latest.recovery?.status === 'needs_reconciliation'
-          ? '该调用已记录；还有其他调用需要核对。'
-          : '核对结果已保存。确认恢复状态后，可手动继续当前 Turn。',
-        'success',
-        4000,
-      );
+      const toastMessage = latest.recovery?.status === 'needs_reconciliation'
+        ? '本次核对已保存；还有其他工具调用需要核对。'
+        : latest.recovery?.status === 'waiting_for_continue'
+          ? disposition === 'completed'
+            ? '实际结果已保存。继续当前 Turn 时会复用此结果，不会重跑这条调用。'
+            : '已确认这条调用尚未执行。继续当前 Turn 时会重新运行它。'
+          : '核对决定已保存；请刷新恢复状态后再继续。';
+      showToast(toastMessage, 'success', 5000);
     } catch (error) {
       showToast(`核对工具结果失败：${error.message || '服务端未确认'}`, 'error', 4500);
     } finally {

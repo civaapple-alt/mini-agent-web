@@ -48,10 +48,37 @@ function formatRecoveryProgressTime(value) {
   });
 }
 
-function formatReconciliationMessage(recovery, turnError) {
+function formatReconciliationMessage(recovery) {
   const reason = recovery?.reason;
-  const distinctReason = reason && reason !== turnError ? ` 原因：${reason}` : '';
-  return `工具执行结果需要核对后才能继续。${distinctReason}`;
+  const explanation = reason === 'process_restart_during_tool_call'
+    ? 'App Server 在工具调用期间重启，无法确认这条调用是否已产生副作用。'
+    : reason === 'process_restart'
+      ? 'App Server 重启后已保留执行检查点；待确认的工具调用需要逐条核对。'
+      : reason
+        ? `原因：${reason}`
+        : '';
+  return `工具执行结果需要核对后才能继续。${explanation ? ` ${explanation}` : ''}`;
+}
+
+function formatTurnError(error) {
+  if (error === 'process_restart_during_tool_call') {
+    return 'App Server 在工具调用期间重启';
+  }
+  if (error === 'process_restart') return 'App Server 重启';
+  return error;
+}
+
+function formatIncompleteTurnHint(turnResult) {
+  if (turnResult.recovery?.status === 'needs_reconciliation') {
+    return formatReconciliationMessage(turnResult.recovery);
+  }
+  if (turnResult.recovery?.status === 'waiting_for_continue') {
+    return '执行进度已保存，可以从最近完成的步骤继续。';
+  }
+  if (turnResult.error === 'process_restart_during_tool_call') {
+    return '当前工具调用结果可能未知。请刷新会话，核对后再继续原 Turn。';
+  }
+  return '当前回答可能不完整，可以继续发送指令推进下一轮。';
 }
 
 export default function ChatArea({
@@ -689,19 +716,15 @@ export default function ChatArea({
             {lastTurnResult.steps
               ? `已执行 ${lastTurnResult.steps} 步。`
               : '已保留当前检查点。'}
-            {lastTurnResult.error && (
+            {lastTurnResult.error && lastTurnResult.recovery?.status !== 'needs_reconciliation' && (
               <span className="turn-error-detail" title={lastTurnResult.error}>
-                {' '}原因：{lastTurnResult.error}
+                {' '}原因：{formatTurnError(lastTurnResult.error)}
               </span>
             )}
             {' '}{lastTurnResult.status === 'failed'
               || lastTurnResult.stopReason === 'failed'
               ? '重试请点本轮输入旁的“重新发送此提示词”；这会发起新请求，不会续接已断开的请求。'
-              : lastTurnResult.recovery?.status === 'needs_reconciliation'
-                ? formatReconciliationMessage(lastTurnResult.recovery, lastTurnResult.error)
-                : lastTurnResult.recovery?.status === 'waiting_for_continue'
-                  ? '执行进度已保存，可以从最近完成的步骤继续。'
-              : '当前回答可能不完整，可以继续发送指令推进下一轮。'}
+              : formatIncompleteTurnHint(lastTurnResult)}
           </span>
           {(recoveryPhaseLabel || recoveryProgressTime) && (
             <small className="turn-recovery-progress">

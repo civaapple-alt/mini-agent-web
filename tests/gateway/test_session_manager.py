@@ -6584,8 +6584,12 @@ async def test_child_resume_rebinds_the_original_operation_before_resuming_check
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("result_status", "result_content"),
+    [("completed", "receipt 123"), ("failed", "permission denied")],
+)
 async def test_reconcile_turn_forwards_stable_request_to_app_server(
-    mock_session_manager, monkeypatch
+    mock_session_manager, monkeypatch, result_status, result_content
 ):
     client = AsyncMock()
     client.read_thread.return_value = SimpleNamespace(
@@ -6615,8 +6619,8 @@ async def test_reconcile_turn_forwards_stable_request_to_app_server(
         "request-1",
         "completed",
         "confirmed at the destination",
-        "completed",
-        "receipt 123",
+        result_status,
+        result_content,
         "project-1",
     )
     await mock_session_manager.reconcile_execution_turn(
@@ -6627,8 +6631,8 @@ async def test_reconcile_turn_forwards_stable_request_to_app_server(
         "request-1",
         "completed",
         "confirmed at the destination",
-        "completed",
-        "receipt 123",
+        result_status,
+        result_content,
         "project-1",
     )
 
@@ -6637,8 +6641,8 @@ async def test_reconcile_turn_forwards_stable_request_to_app_server(
     second_request_id = client.reconcile_turn.await_args_list[1].args[3]
     assert first_request_id == second_request_id
     assert client.reconcile_turn.await_args.kwargs == {
-        "result_status": "completed",
-        "result_content": "receipt 123",
+        "result_status": result_status,
+        "result_content": result_content,
         "thread_id": "thread-1",
     }
 

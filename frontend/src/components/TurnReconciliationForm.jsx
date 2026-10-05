@@ -14,7 +14,7 @@ function createRequestId() {
 }
 
 export default function TurnReconciliationForm({ call, busy, onSubmit }) {
-  const [disposition, setDisposition] = useState('');
+  const [outcome, setOutcome] = useState('');
   const [evidence, setEvidence] = useState('');
   const [resultContent, setResultContent] = useState('');
   const inputId = useId();
@@ -29,21 +29,21 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
   const resultId = `${inputId}-result`;
   const canSubmit = Boolean(
     onSubmit
-      && disposition
+      && outcome
       && evidence.trim()
       && evidenceBytes <= EVIDENCE_BYTE_LIMIT
-      && (disposition !== 'completed' || resultBytes <= RESULT_BYTE_LIMIT)
+      && (outcome === 'not_executed' || resultBytes <= RESULT_BYTE_LIMIT)
       && !busy,
   );
 
   const submit = () => {
     if (!canSubmit) return;
-    const content = disposition === 'completed' ? resultContent : '';
-    const identity = JSON.stringify([disposition, content, evidence]);
+    const content = outcome === 'not_executed' ? '' : resultContent;
+    const identity = JSON.stringify([outcome, content, evidence]);
     if (requestRef.current?.identity !== identity) {
       requestRef.current = { identity, id: createRequestId() };
     }
-    onSubmit?.(toolCallId, disposition, content, evidence, requestRef.current.id);
+    onSubmit?.(toolCallId, outcome, content, evidence, requestRef.current.id);
   };
 
   const updateEvidence = (value) => {
@@ -67,24 +67,35 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
       <fieldset className="turn-reconciliation-choice-group" disabled={busy}>
         <legend>这条工具调用的实际状态</legend>
         <div className="turn-reconciliation-choices">
-          <label className={`turn-reconciliation-choice${disposition === 'completed' ? ' selected' : ''}`}>
+          <label className={`turn-reconciliation-choice${outcome === 'completed' ? ' selected' : ''}`}>
             <input
               type="radio"
               name={`${inputId}-disposition`}
               value="completed"
-              checked={disposition === 'completed'}
-              onChange={() => setDisposition('completed')}
+              checked={outcome === 'completed'}
+              onChange={() => setOutcome('completed')}
             />
-            <span className="turn-reconciliation-choice-title">已执行，记录实际结果</span>
-            <small>继续时会复用这份结果，不会再次执行这条调用。</small>
+            <span className="turn-reconciliation-choice-title">已执行并成功</span>
+            <small>记录成功返回的内容；继续时会复用它，不会重跑这条调用。</small>
           </label>
-          <label className={`turn-reconciliation-choice${disposition === 'not_executed' ? ' selected' : ''}`}>
+          <label className={`turn-reconciliation-choice${outcome === 'failed' ? ' selected' : ''}`}>
+            <input
+              type="radio"
+              name={`${inputId}-disposition`}
+              value="failed"
+              checked={outcome === 'failed'}
+              onChange={() => setOutcome('failed')}
+            />
+            <span className="turn-reconciliation-choice-title">已执行但失败</span>
+            <small>记录真实失败输出；继续时 Agent 会收到失败结果。</small>
+          </label>
+          <label className={`turn-reconciliation-choice${outcome === 'not_executed' ? ' selected' : ''}`}>
             <input
               type="radio"
               name={`${inputId}-disposition`}
               value="not_executed"
-              checked={disposition === 'not_executed'}
-              onChange={() => setDisposition('not_executed')}
+              checked={outcome === 'not_executed'}
+              onChange={() => setOutcome('not_executed')}
             />
             <span className="turn-reconciliation-choice-title">确认尚未执行</span>
             <small>只在确认没有产生副作用时选择；继续时会重新执行这条调用。</small>
@@ -92,9 +103,9 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
         </div>
       </fieldset>
 
-      {disposition && (
+      {outcome && (
         <>
-          <div className="turn-reconciliation-fields">
+          <div className={`turn-reconciliation-fields${outcome === 'not_executed' ? '' : ' with-result'}`}>
             <div className="turn-reconciliation-field">
               <label htmlFor={evidenceId}>核对依据（最多 1024 字节）</label>
               <small id={`${evidenceId}-note`} className="turn-reconciliation-field-note">
@@ -123,11 +134,13 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
               </small>
             </div>
 
-            {disposition === 'completed' && (
+            {outcome !== 'not_executed' && (
               <div className="turn-reconciliation-field turn-reconciliation-result-field">
-                <label htmlFor={resultId}>工具实际返回的结果（最多 64 KiB）</label>
+                <label htmlFor={resultId}>
+                  {outcome === 'failed' ? '工具实际失败输出（最多 64 KiB）' : '工具实际成功结果（最多 64 KiB）'}
+                </label>
                 <small id={`${resultId}-note`} className="turn-reconciliation-field-note">
-                  可留空；填写后会作为原调用结果交给 Agent。
+                  可留空；提交后会作为这次调用的真实结果交给 Agent。
                 </small>
                 <textarea
                   id={resultId}
@@ -136,7 +149,9 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
                   rows={5}
                   disabled={busy}
                   aria-describedby={`${resultId}-note ${resultId}-help`}
-                  placeholder="粘贴这次工具调用真实产生的输出；没有文本输出时留空。"
+                  placeholder={outcome === 'failed'
+                    ? '粘贴这次调用真实产生的错误或失败输出；没有文本输出时留空。'
+                    : '粘贴这次调用真实产生的成功输出；没有文本输出时留空。'}
                   onChange={(event) => updateResult(event.target.value)}
                 />
                 <small id={`${resultId}-help`} className="turn-reconciliation-help">
@@ -154,7 +169,7 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
             )}
           </div>
 
-          {disposition === 'not_executed' && (
+          {outcome === 'not_executed' && (
             <p className="turn-reconciliation-warning">
               恢复时会重新运行这条工具调用。若无法确认没有副作用，请先检查目标系统，不要选择此项。
             </p>
@@ -172,9 +187,11 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
           >
             {busy
               ? '正在保存核对决定…'
-              : disposition === 'completed'
-                ? '保存实际结果'
-                : '保存未执行确认'}
+              : outcome === 'completed'
+                ? '保存成功结果'
+                : outcome === 'failed'
+                  ? '保存失败结果'
+                  : '保存未执行确认'}
           </button>
         </>
       )}

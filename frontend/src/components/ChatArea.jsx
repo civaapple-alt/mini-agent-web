@@ -49,6 +49,18 @@ function formatRecoveryProgressTime(value) {
 }
 
 function formatReconciliationMessage(recovery) {
+  const uncertainCalls = recovery?.uncertain_tool_calls
+    || recovery?.uncertainToolCalls
+    || [];
+  const checkpointSeq = recovery?.checkpoint_seq ?? recovery?.checkpointSeq;
+  const pendingSummary = uncertainCalls.length > 0
+    ? `还有 ${uncertainCalls.length} 条调用待核对。`
+    : '';
+  const checkpointSummary = checkpointSeq !== null
+    && checkpointSeq !== undefined
+    && Number.isSafeInteger(Number(checkpointSeq))
+    ? `执行检查点 ${checkpointSeq}。`
+    : '';
   const reason = recovery?.reason;
   const explanation = reason === 'process_restart_during_tool_call'
     ? 'App Server 在工具调用期间重启，无法确认这条调用是否已产生副作用。'
@@ -57,7 +69,7 @@ function formatReconciliationMessage(recovery) {
       : reason
         ? `原因：${reason}`
         : '';
-  return `工具执行结果需要核对后才能继续。${explanation ? ` ${explanation}` : ''}`;
+  return `工具执行结果需要核对后才能继续。${pendingSummary}${checkpointSummary}${explanation ? ` ${explanation}` : ''}`;
 }
 
 function formatTurnError(error) {
@@ -73,7 +85,14 @@ function formatIncompleteTurnHint(turnResult) {
     return formatReconciliationMessage(turnResult.recovery);
   }
   if (turnResult.recovery?.status === 'waiting_for_continue') {
-    return '执行进度已保存，可以从最近完成的步骤继续。';
+    const checkpointSeq = turnResult.recovery.checkpoint_seq
+      ?? turnResult.recovery.checkpointSeq;
+    const progressSummary = checkpointSeq !== null
+      && checkpointSeq !== undefined
+      && Number.isSafeInteger(Number(checkpointSeq))
+      ? `执行检查点 ${checkpointSeq} 已保存。`
+      : '执行进度已保存。';
+    return `${progressSummary}点击“继续当前 Turn”后会恢复原 Turn；已记录的工具结果会复用，确认未执行的调用会重新运行。`;
   }
   if (turnResult.error === 'process_restart_during_tool_call') {
     return '当前工具调用结果可能未知。请刷新会话，核对后再继续原 Turn。';

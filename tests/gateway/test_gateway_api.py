@@ -830,20 +830,40 @@ async def test_gateway_reconcile_and_context_manifest_routes_use_app_server(
                 "result": {"status": "completed", "content": "receipt-1"},
             },
         )
+        reconciled_failure = await client.post(
+            "/api/threads/thread-1/turns/turn-1/reconcile",
+            params={"project_id": "project-1"},
+            json={
+                "checkpoint_seq": 12,
+                "tool_call_id": "call-2",
+                "request_id": "operator-click-2",
+                "disposition": "completed",
+                "evidence_summary": "verified failed attempt",
+                "result": {"status": "failed", "content": "permission denied"},
+            },
+        )
 
     assert manifest.status_code == 200
     assert manifest.json()["data"][0]["sourceId"] == "project-instructions"
     assert reconciled.status_code == 200
     assert reconciled.json()["status"] == "applied"
     assert reconciled.json()["checkpoint_seq"] == 12
+    assert reconciled_failure.status_code == 200
     client_mock.read_context_manifest.assert_awaited_once_with("thread-1")
-    client_mock.reconcile_turn.assert_awaited_once()
-    reconcile_args = client_mock.reconcile_turn.await_args
+    assert client_mock.reconcile_turn.await_count == 2
+    reconcile_args = client_mock.reconcile_turn.await_args_list[0]
     assert reconcile_args.args[:3] == ("turn-1", 12, "call-1")
     assert reconcile_args.args[4:6] == ("completed", "verified receipt")
     assert reconcile_args.kwargs == {
         "result_status": "completed",
         "result_content": "receipt-1",
+        "thread_id": "thread-1",
+    }
+    failed_reconcile_args = client_mock.reconcile_turn.await_args_list[1]
+    assert failed_reconcile_args.args[4:6] == ("completed", "verified failed attempt")
+    assert failed_reconcile_args.kwargs == {
+        "result_status": "failed",
+        "result_content": "permission denied",
         "thread_id": "thread-1",
     }
 

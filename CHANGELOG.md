@@ -12,10 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changes
 
 - Guide tool recovery by asking for the verified execution state first, showing
-  only the matching fields, distinguishing audit evidence from the tool output
-  sent to the Agent, and explaining that saving a decision does not resume the
-  Turn. Refresh the recovery UI from the latest checkpoint when a resume loses
-  its connection during another App Server restart.
+  only the matching fields, and distinguish successful, failed, and confirmed
+  not-executed calls. Keep audit evidence separate from the tool output sent to
+  the Agent. Read the latest Turn recovery state after reconciliation and
+  terminal events, and report a saved decision separately from a failed status
+  refresh.
 - Keep the Gateway, Web Studio, and experimental TUI in this repository while
   consuming the Harness-owned Python SDK package. SDK source, tests, docs, and
   generic App Server examples now live in `mini-agent-harness`.

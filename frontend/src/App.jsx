@@ -1432,6 +1432,36 @@ export default function App() {
     });
   }
 
+  async function refreshTurnRecovery(threadId, turnId, projectId = currentThreadProjectRef.current) {
+    if (!turnId) return;
+    const requestContext = currentSessionRequest();
+    try {
+      const latest = await api.readTurn(threadId, turnId, {
+        projectId,
+        signal: requestContext.signal,
+      });
+      if (!isCurrentSessionRequest(requestContext)) return;
+      setLastTurnResult((previous) => {
+        if (currentThreadRef.current !== threadId
+          || currentThreadProjectRef.current !== projectId
+          || (previous?.turnId && String(previous.turnId) !== String(turnId))) {
+          return previous;
+        }
+        return {
+          ...(previous || {}),
+          status: latest.status || previous?.status || 'unknown',
+          turnId,
+          error: latest.error ?? previous?.error ?? latest.recovery?.reason ?? null,
+          recovery: latest.recovery || null,
+        };
+      });
+    } catch (err) {
+      if (!isAbortError(err) && isCurrentSessionRequest(requestContext)) {
+        console.debug('Failed to refresh Turn recovery state:', err);
+      }
+    }
+  }
+
   const recoverRuntimeAfterConnectionLoss = (threadId, projectId) => {
     const recoveryKey = scopedThreadKey(threadId, projectId);
     if (runtimeRecoveryRef.current.has(recoveryKey)) return;
@@ -1998,13 +2028,22 @@ export default function App() {
           // Turn settlement is lifecycle bookkeeping, not a second toast.
         } else {
           if (turnStatus !== 'completed') {
+            const terminalTurnId = data.turnId || data.turn_id || activeTurnIdRef.current;
             setLastTurnResult((previous) => ({
               status: turnStatus,
               stopReason: evt.stop_reason || evt.status || previous?.stopReason || null,
               steps: evt.steps ?? previous?.steps ?? 0,
-              turnId: data.turnId || previous?.turnId || null,
+              turnId: terminalTurnId || previous?.turnId || null,
               error: evt.error || previous?.error || null,
+              recovery: previous?.turnId && String(previous.turnId) === String(terminalTurnId)
+                ? previous.recovery
+                : null,
             }));
+            void refreshTurnRecovery(
+              currentThreadRef.current,
+              data.turnId || data.turn_id || activeTurnIdRef.current,
+              currentThreadProjectRef.current,
+            );
           } else {
             setLastTurnResult(null);
           }
@@ -2497,7 +2536,9 @@ export default function App() {
       if (result.status !== 'started' || result.turn_id !== turnId) {
         throw new Error(result.reason || '服务端未接受恢复请求');
       }
-      setLastTurnResult((current) => current?.turnId === turnId
+      setLastTurnResult((current) => currentThreadRef.current === currentThread
+        && currentThreadProjectRef.current === currentThreadProject
+        && String(current?.turnId || '') === String(turnId)
         ? { ...current, recovery: { ...recovery, status: 'running' } }
         : current);
     } catch (error) {
@@ -2506,7 +2547,9 @@ export default function App() {
           projectId: currentThreadProject,
         });
         if (latest?.recovery) {
-          setLastTurnResult((current) => current?.turnId === turnId
+          setLastTurnResult((current) => currentThreadRef.current === currentThread
+            && currentThreadProjectRef.current === currentThreadProject
+            && String(current?.turnId || '') === String(turnId)
             ? {
               ...current,
               status: latest.status || current.status,
@@ -2552,7 +2595,7 @@ export default function App() {
 
   const handleReconcileExecution = async (
     toolCallId,
-    disposition,
+    outcome,
     resultContent,
     evidenceSummary,
     requestId,
@@ -2568,6 +2611,7 @@ export default function App() {
       || !turnId
       || !Number.isSafeInteger(checkpointSeq)
       || !toolCallId
+      || !['completed', 'failed', 'not_executed'].includes(outcome)
       || !evidenceSummary.trim()) {
       showToast('恢复状态已变化，或尚未填写核对依据；请刷新后重试。', 'warning', 3500);
       return;
@@ -2578,31 +2622,75 @@ export default function App() {
         checkpoint_seq: checkpointSeq,
         tool_call_id: toolCallId,
         request_id: requestId,
-        disposition,
+        disposition: outcome === 'not_executed' ? 'not_executed' : 'completed',
         evidence_summary: evidenceSummary,
       };
-      if (disposition === 'completed') {
-        payload.result = { status: 'completed', content: resultContent };
+      if (outcome !== 'not_executed') {
+        payload.result = { status: outcome, content: resultContent };
       }
       await api.reconcileTurn(currentThread, turnId, payload, {
         projectId: currentThreadProject,
       });
-      const latest = await api.readTurn(currentThread, turnId, {
-        projectId: currentThreadProject,
-      });
-      setLastTurnResult((current) => current?.turnId === turnId
-        ? { ...current, recovery: latest.recovery }
+      let latest;
+      try {
+        latest = await api.readTurn(currentThread, turnId, {
+          projectId: currentThreadProject,
+        });
+      } catch (error) {
+        showToast(
+          `核对决定已保存，但读取最新恢复状态失败：${error.message || '服务端暂不可用'}。请刷新会话确认下一步。`,
+          'warning',
+          6000,
+        );
+        return;
+      }
+      setLastTurnResult((current) => currentThreadRef.current === currentThread
+        && currentThreadProjectRef.current === currentThreadProject
+        && String(current?.turnId || '') === String(turnId)
+        ? {
+          ...current,
+          status: latest.status || current.status,
+          error: latest.error ?? latest.recovery?.reason ?? null,
+          recovery: latest.recovery || null,
+        }
         : current);
       const toastMessage = latest.recovery?.status === 'needs_reconciliation'
         ? '本次核对已保存；还有其他工具调用需要核对。'
         : latest.recovery?.status === 'waiting_for_continue'
-          ? disposition === 'completed'
-            ? '实际结果已保存。继续当前 Turn 时会复用此结果，不会重跑这条调用。'
-            : '已确认这条调用尚未执行。继续当前 Turn 时会重新运行它。'
+          ? outcome === 'completed'
+            ? '成功结果已保存。继续当前 Turn 时会复用此结果，不会重跑这条调用。'
+            : outcome === 'failed'
+              ? '失败结果已保存。继续当前 Turn 时 Agent 会收到这次失败，不会重跑这条调用。'
+              : '已确认这条调用尚未执行。继续当前 Turn 时会重新运行它。'
           : '核对决定已保存；请刷新恢复状态后再继续。';
       showToast(toastMessage, 'success', 5000);
     } catch (error) {
-      showToast(`核对工具结果失败：${error.message || '服务端未确认'}`, 'error', 4500);
+      try {
+        const latest = await api.readTurn(currentThread, turnId, {
+          projectId: currentThreadProject,
+        });
+        setLastTurnResult((current) => currentThreadRef.current === currentThread
+          && currentThreadProjectRef.current === currentThreadProject
+          && String(current?.turnId || '') === String(turnId)
+          ? {
+            ...current,
+            status: latest.status || current.status,
+            error: latest.error ?? latest.recovery?.reason ?? null,
+            recovery: latest.recovery || null,
+          }
+          : current);
+        showToast(
+          `核对请求未获确认，已重新读取最新恢复状态。请以页面状态为准。${error.message ? ` ${error.message}` : ''}`,
+          'warning',
+          6000,
+        );
+      } catch (refreshError) {
+        showToast(
+          `核对请求未获确认，最新状态也读取失败：${refreshError.message || error.message || '服务端暂不可用'}。请刷新会话确认。`,
+          'error',
+          6000,
+        );
+      }
     } finally {
       setReconcileExecutionBusy(false);
     }

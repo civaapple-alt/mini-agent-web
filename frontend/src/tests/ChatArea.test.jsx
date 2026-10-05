@@ -124,6 +124,7 @@ describe('ChatArea turn status', () => {
         recovery: {
           turn_id: 'turn-reconcile',
           status: 'needs_reconciliation',
+          checkpoint_seq: 12,
           reason: 'process_restart_during_tool_call',
           uncertain_tool_calls: [
             { tool_call_id: 'call-1', name: 'shell' },
@@ -134,6 +135,7 @@ describe('ChatArea turn status', () => {
     const { rerender } = render(<ChatArea {...props} />);
 
     expect(screen.getByText(/工具执行结果需要核对后才能继续/)).toBeTruthy();
+    expect(screen.getByText(/还有 1 条调用待核对。执行检查点 12。/)).toBeTruthy();
     expect(screen.getByText(/App Server 在工具调用期间重启/)).toBeTruthy();
     expect(screen.queryByText('原因：process_restart_during_tool_call')).toBeNull();
     expect(screen.getByRole('button', { name: '查看待核对活动' })).toBeTruthy();
@@ -150,10 +152,10 @@ describe('ChatArea turn status', () => {
         }}
       />,
     );
-    expect(screen.getByText(/请刷新会话，核对工具调用后再继续原 Turn/)).toBeTruthy();
+    expect(screen.getByText(/当前工具调用结果可能未知/)).toBeTruthy();
   });
 
-  it('submits an explicit result or confirmed-not-executed disposition', () => {
+  it('submits successful, failed, and confirmed-not-executed tool outcomes', () => {
     const onReconcileExecution = vi.fn();
     render(
       <ChatArea
@@ -176,14 +178,19 @@ describe('ChatArea turn status', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('radio', { name: /已执行，记录实际结果/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /已执行并成功/ }));
     fireEvent.change(screen.getByLabelText('核对依据（最多 1024 字节）'), {
       target: { value: 'verified at the destination' },
     });
-    fireEvent.change(screen.getByLabelText('工具实际返回的结果（最多 64 KiB）'), {
+    fireEvent.change(screen.getByLabelText('工具实际成功结果（最多 64 KiB）'), {
       target: { value: 'message receipt 123' },
     });
-    fireEvent.click(screen.getByRole('button', { name: '保存实际结果' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存成功结果' }));
+    fireEvent.click(screen.getByRole('radio', { name: /已执行但失败/ }));
+    fireEvent.change(screen.getByLabelText('工具实际失败输出（最多 64 KiB）'), {
+      target: { value: 'permission denied' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存失败结果' }));
     fireEvent.click(screen.getByRole('radio', { name: /确认尚未执行/ }));
     fireEvent.click(screen.getByRole('button', { name: '保存未执行确认' }));
 
@@ -197,6 +204,14 @@ describe('ChatArea turn status', () => {
     );
     expect(onReconcileExecution).toHaveBeenNthCalledWith(
       2,
+      'call-1',
+      'failed',
+      'permission denied',
+      'verified at the destination',
+      expect.any(String),
+    );
+    expect(onReconcileExecution).toHaveBeenNthCalledWith(
+      3,
       'call-1',
       'not_executed',
       '',
@@ -217,6 +232,7 @@ describe('ChatArea turn status', () => {
           turnId: 'turn-recovery',
           recovery: {
             status: 'waiting_for_continue',
+            checkpoint_seq: 14,
             phase: 'tool_batch',
             last_progress_ms: new Date(2026, 0, 2, 3, 4, 5).getTime(),
           },
@@ -227,6 +243,7 @@ describe('ChatArea turn status', () => {
 
     expect(screen.getByText(/阶段：工具批次/)).toBeTruthy();
     expect(screen.getByText(/最近进展/)).toBeTruthy();
+    expect(screen.getByText(/执行检查点 14 已保存/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '继续当前 Turn' }));
     expect(onResumeExecution).toHaveBeenCalledTimes(1);
   });

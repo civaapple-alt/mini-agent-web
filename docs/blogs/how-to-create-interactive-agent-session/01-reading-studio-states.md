@@ -14,6 +14,8 @@ Web Studio 把对话、运行状态和用户控制放在同一工作区。读懂
 
 这些职责能在 [`AppLayout.jsx`](../../../frontend/src/components/AppLayout.jsx)、[`StatusRail.jsx`](../../../frontend/src/components/StatusRail.jsx)、[`ChatArea.jsx`](../../../frontend/src/components/ChatArea.jsx) 和 [`InputBar.jsx`](../../../frontend/src/components/InputBar.jsx) 中找到。`StatusDetailsPane` 展示更细的执行状态。
 
+桌面可用宽度低于 `1100px` 时，项目侧栏折叠为图标栏；低于 `700px` 时改为可展开的抽屉。图标栏隐藏品牌名、会话列表和“最近”文字，避免内容被压成竖排；抽屉展开后恢复完整导航。
+
 ## 用四个问题检查一屏信息
 
 一个状态界面至少要让用户找到四个答案：

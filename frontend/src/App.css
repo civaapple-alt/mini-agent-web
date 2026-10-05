@@ -80,12 +80,13 @@
   }
 
   .codex-sidebar .sidebar-search-container,
+  .codex-sidebar .codex-brand-dropdown,
   .codex-sidebar .nav-row-label,
   .codex-sidebar .section-header-row,
   .codex-sidebar .project-folder-row .folder-name,
   .codex-sidebar .project-folder-row .project-row-actions,
-  .codex-sidebar .nested-thread-list,
-  .codex-sidebar .thread-row-content,
+  .codex-sidebar .project-nested-threads,
+  .codex-sidebar .sidebar-bottom-recent,
   .codex-sidebar .project-context-popover {
     display: none;
   }
@@ -155,8 +156,7 @@
   .codex-sidebar .section-header-row,
   .codex-sidebar .project-folder-row .folder-name,
   .codex-sidebar .project-folder-row .project-row-actions,
-  .codex-sidebar .nested-thread-list,
-  .codex-sidebar .thread-row-content,
+  .codex-sidebar .project-nested-threads,
   .codex-sidebar .project-context-popover {
     display: initial;
   }
@@ -165,9 +165,16 @@
   .codex-sidebar .section-header-row,
   .codex-sidebar .project-folder-row .folder-name,
   .codex-sidebar .project-folder-row .project-row-actions,
-  .codex-sidebar .nested-thread-list,
-  .codex-sidebar .thread-row-content {
+  .codex-sidebar .project-nested-threads {
     display: flex;
+  }
+
+  .codex-sidebar .codex-brand-dropdown {
+    display: flex;
+  }
+
+  .codex-sidebar .sidebar-bottom-recent {
+    display: block;
   }
 
   .codex-sidebar .sidebar-top-bar,

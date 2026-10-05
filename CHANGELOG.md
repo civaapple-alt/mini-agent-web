@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
+- Keep the project sidebar's medium-width icon rail compact, and restore the
+  full navigation when it opens as a mobile drawer.
 - Guide tool recovery by asking for the verified execution state first, showing
   only the matching fields, and distinguish successful, failed, and confirmed
   not-executed calls. Keep audit evidence separate from the tool output sent to

@@ -6,6 +6,7 @@ import './ModelSettingsPanel.css';
 const PROVIDER_KINDS = [
   ['deepseek', 'DeepSeek', 'deepseek', 'https://api.deepseek.com'],
   ['kimi', 'Kimi', 'kimi', 'https://api.moonshot.cn/v1'],
+  ['kimi', 'Kimi Code', 'kimi-code', 'https://api.kimi.com/coding/v1'],
   ['glm', 'GLM / Z.ai', 'glm', 'https://open.bigmodel.cn/api/paas/v4'],
   ['volcengine', '字节火山 / Volcengine', 'volcengine', 'https://ark.cn-beijing.volces.com/api/v3'],
   ['custom', '自定义 Responses', 'custom', ''],
@@ -15,6 +16,11 @@ const CAPABILITIES = ['structured_output', 'system_messages'];
 const REASONING_LEVELS = ['disabled', 'low', 'medium', 'high', 'xhigh', 'max'];
 const STANDARD_REASONING_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const API_DEFAULT_REASONING = { kind: 'api_default' };
+const KIMI_REASONING_PARAMETER_MAP = {
+  low: { reasoning: { effort: 'low' } },
+  high: { reasoning: { effort: 'high' } },
+  max: { reasoning: { effort: 'max' } },
+};
 
 function reasoningSelectionKey(selection) {
   if (selection?.kind === 'level' && typeof selection.value === 'string') {
@@ -45,11 +51,7 @@ const SMART_MATCHES = [
   {
     provider: 'kimi', id: 'kimi-k3', name: 'Kimi K3', contextWindow: 1_048_576,
     inputModalities: ['text', 'image'], reasoningLevels: ['low', 'high', 'max'],
-    reasoningParameterMap: {
-      low: { reasoning_effort: 'low' },
-      high: { reasoning_effort: 'high' },
-      max: { reasoning_effort: 'max' },
-    },
+    reasoningParameterMap: KIMI_REASONING_PARAMETER_MAP,
   },
   {
     provider: 'glm', id: 'glm-5.3', name: 'GLM-5.3', contextWindow: 1_000_000,
@@ -76,6 +78,15 @@ const emptyModel = () => ({
   inputModalities: ['text'], capabilities: [], reasoningLevels: [],
   reasoningParameterMap: {}, smartManaged: false,
 });
+
+const KIMI_CODE_MODEL_SUGGESTION = {
+  id: 'k3-256k',
+  name: 'Kimi K3 256K',
+  contextWindow: 262_144,
+  inputModalities: ['text', 'image'],
+  reasoningLevels: ['low', 'high', 'max'],
+  reasoningParameterMap: KIMI_REASONING_PARAMETER_MAP,
+};
 
 function refKey(ref) {
   return ref ? `${ref.providerId}::${ref.modelId}` : '';
@@ -512,7 +523,11 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
   };
 
   const addSuggestedModel = () => {
-    const suggestion = SMART_MATCHES.find((item) => item.provider === selectedProvider?.kind);
+    const isKimiCodeEndpoint = selectedProvider?.kind === 'kimi'
+      && selectedProvider.baseUrl.trim().replace(/\/+$/, '').endsWith('/coding/v1');
+    const suggestion = isKimiCodeEndpoint
+      ? KIMI_CODE_MODEL_SUGGESTION
+      : SMART_MATCHES.find((item) => item.provider === selectedProvider?.kind);
     if (!suggestion) return;
     const { provider: _provider, ...model } = suggestion;
     setModelIndex(null);
@@ -560,7 +575,7 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
               {PROVIDER_KINDS.map(([kind, name, id, baseUrl]) => (
                 <button
                   type="button"
-                  key={kind}
+                  key={id}
                   onClick={() => {
                     setProviderMenuOpen(false);
                     providerMenuButtonRef.current?.focus();

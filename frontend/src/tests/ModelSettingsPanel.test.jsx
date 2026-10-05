@@ -140,10 +140,50 @@ describe('ModelSettingsPanel smart matching', () => {
           id: 'kimi-k3',
           name: 'Kimi K3 自定义名称',
           smartManaged: false,
-          reasoningParameterMap: expect.objectContaining({ high: { reasoning_effort: 'high' } }),
+          reasoningParameterMap: expect.objectContaining({ high: { reasoning: { effort: 'high' } } }),
         }),
       }),
     ));
+  });
+
+  it('suggests the Kimi Code model for a Coding API endpoint', async () => {
+    const codeProvider = {
+      ...provider,
+      id: 'kimi-code',
+      name: 'Kimi Code',
+      baseUrl: 'https://api.kimi.com/coding/v1',
+    };
+    modelApi.getModelCatalog.mockResolvedValue({
+      catalog: {
+        providers: [codeProvider],
+        defaultModel: null,
+        defaultReasoningSelection: { kind: 'api_default' },
+        verifierDefaultModel: null,
+        projectDefaults: {},
+      },
+    });
+
+    render(<ModelSettingsPanel onToast={vi.fn()} />);
+    await screen.findByText('Kimi Code');
+    fireEvent.click(screen.getByRole('button', { name: '添加本地建议' }));
+
+    expect(screen.getByPlaceholderText('供应商要求的模型 ID').value).toBe('k3-256k');
+    expect(screen.getByLabelText('显示名称').value).toBe('Kimi K3 256K');
+    expect(JSON.parse(screen.getByLabelText('推理参数映射（JSON）').value)).toEqual({
+      low: { reasoning: { effort: 'low' } },
+      high: { reasoning: { effort: 'high' } },
+      max: { reasoning: { effort: 'max' } },
+    });
+  });
+
+  it('offers a separate Kimi Code provider preset', async () => {
+    render(<ModelSettingsPanel onToast={vi.fn()} />);
+    await screen.findByText('Kimi');
+    fireEvent.click(screen.getByRole('button', { name: '添加供应商' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Kimi Code' }));
+
+    expect(screen.getByLabelText('供应商名称').value).toBe('Kimi Code');
+    expect(screen.getByLabelText('Base URL').value).toBe('https://api.kimi.com/coding/v1');
   });
 
   it('tests a saved model only after the user clicks the connection button', async () => {

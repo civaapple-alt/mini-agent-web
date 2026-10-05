@@ -136,6 +136,8 @@
 .model-settings-panel textarea:focus { border-color: var(--border-focus); }
 .model-provider-save-row { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 10px; }
 .model-provider-fields small { color: var(--text-muted); font-size: 11px; }
+.model-provider-guidance { display: grid; gap: 4px; color: var(--text-muted); font-size: 11px; line-height: 1.45; }
+.model-provider-guidance .model-text-button { justify-self: start; }
 .model-connection-result { color: var(--text-secondary); font-size: 11px; }
 .model-connection-result.succeeded { color: var(--accent-green); }
 .model-connection-result.failed,

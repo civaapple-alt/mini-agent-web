@@ -3,11 +3,16 @@ import { KeyRound, Plus, RefreshCw, Save, Sparkles, Trash2, X } from 'lucide-rea
 import { api } from '../api';
 import './ModelSettingsPanel.css';
 
+const GLM_RESPONSES_BASE_URL = 'https://open.bigmodel.cn/api/v1';
+const GLM_CHAT_COMPLETIONS_BASE_URLS = new Set([
+  'https://open.bigmodel.cn/api/paas/v4',
+  'https://open.bigmodel.cn/api/coding/paas/v4',
+]);
 const PROVIDER_KINDS = [
   ['deepseek', 'DeepSeek', 'deepseek', 'https://api.deepseek.com'],
   ['kimi', 'Kimi', 'kimi', 'https://api.moonshot.cn/v1'],
   ['kimi', 'Kimi Code', 'kimi-code', 'https://api.kimi.com/coding/v1'],
-  ['glm', 'GLM / Z.ai', 'glm', 'https://open.bigmodel.cn/api/paas/v4'],
+  ['glm', 'GLM / Z.ai', 'glm', GLM_RESPONSES_BASE_URL],
   ['volcengine', '字节火山 / Volcengine', 'volcengine', 'https://ark.cn-beijing.volces.com/api/v3'],
   ['custom', '自定义 Responses', 'custom', ''],
 ];
@@ -17,6 +22,11 @@ const REASONING_LEVELS = ['disabled', 'low', 'medium', 'high', 'xhigh', 'max'];
 const STANDARD_REASONING_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const API_DEFAULT_REASONING = { kind: 'api_default' };
 const KIMI_REASONING_PARAMETER_MAP = {
+  low: { reasoning: { effort: 'low' } },
+  high: { reasoning: { effort: 'high' } },
+  max: { reasoning: { effort: 'max' } },
+};
+const GLM_REASONING_PARAMETER_MAP = {
   low: { reasoning: { effort: 'low' } },
   high: { reasoning: { effort: 'high' } },
   max: { reasoning: { effort: 'max' } },
@@ -56,11 +66,12 @@ const SMART_MATCHES = [
   {
     provider: 'glm', id: 'glm-5.3', name: 'GLM-5.3', contextWindow: 1_000_000,
     maxOutputTokens: 128_000, inputModalities: ['text'], reasoningLevels: ['low', 'high', 'max'],
-    reasoningParameterMap: {
-      low: { thinking: { type: 'enabled' }, reasoning_effort: 'low' },
-      high: { thinking: { type: 'enabled' }, reasoning_effort: 'high' },
-      max: { thinking: { type: 'enabled' }, reasoning_effort: 'max' },
-    },
+    reasoningParameterMap: GLM_REASONING_PARAMETER_MAP,
+  },
+  {
+    provider: 'glm', id: 'glm-5.3-flash', name: 'GLM-5.3-Flash', contextWindow: 1_000_000,
+    maxOutputTokens: 128_000, inputModalities: ['text', 'image'], reasoningLevels: ['low', 'high', 'max'],
+    reasoningParameterMap: GLM_REASONING_PARAMETER_MAP,
   },
   {
     provider: 'volcengine', id: 'doubao-seed-2-1-pro-260628', name: 'Doubao Seed 2.1 Pro',
@@ -153,6 +164,9 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
   const modelEditorBackdropPointerDown = useRef(false);
 
   const selectedProvider = catalog.providers.find((provider) => provider.id === selectedProviderId) || null;
+  const activeProvider = providerDraft || selectedProvider;
+  const isLegacyGlmBaseUrl = activeProvider?.kind === 'glm'
+    && GLM_CHAT_COMPLETIONS_BASE_URLS.has(activeProvider.baseUrl.trim().replace(/\/+$/, ''));
   const providerDraftDirty = providerIsNew
     ? Boolean(providerDraft)
     : Boolean(providerDraft && selectedProvider
@@ -616,6 +630,16 @@ export default function ModelSettingsPanel({ onToast, onDraftChange }) {
               <div className="model-provider-fields">
                 <label>供应商名称<input value={providerDraft?.name ?? selectedProvider?.name ?? ''} onChange={(event) => setProviderDraft({ ...(providerDraft || selectedProvider), name: event.target.value })} /></label>
                 <label>Base URL<input value={providerDraft?.baseUrl ?? selectedProvider?.baseUrl ?? ''} onChange={(event) => setProviderDraft({ ...(providerDraft || selectedProvider), baseUrl: event.target.value })} placeholder="Responses API 地址前缀" /></label>
+                {isLegacyGlmBaseUrl && !providerIsNew && (
+                  <div className="model-provider-guidance" role="note">
+                    <span>当前地址是 Chat Completions 接口。本应用使用 Responses API，智谱基址应为 {GLM_RESPONSES_BASE_URL}。</span>
+                    <button
+                      type="button"
+                      className="model-text-button"
+                      onClick={() => setProviderDraft({ ...activeProvider, baseUrl: GLM_RESPONSES_BASE_URL })}
+                    >切换到 Responses 地址</button>
+                  </div>
+                )}
                 <label>API Key<input type="password" value={apiKeyDraft} onChange={(event) => setApiKeyDraft(event.target.value)} placeholder={selectedProvider?.apiKeyConfigured ? '已配置；输入新值可替换' : '输入 API Key'} autoComplete="new-password" /><small>{selectedProvider?.apiKeyConfigured ? 'API Key 已配置，保存的 Key 不会显示。' : '尚未配置 API Key。'}</small></label>
               </div>
               <div className="model-provider-save-row">

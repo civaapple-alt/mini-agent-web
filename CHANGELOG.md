@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
+- Set the GLM Coding Plan provider preset to its Responses Base URL, provide a
+  one-click correction for the old Chat Completions URL, and match GLM 5.3
+  reasoning parameters to the Responses API.
 - Pair the latest provider input usage with the model context profile saved for
   that request. Show input usage against the full context window, separately
   report the budget after output reserve, and flag either limit. Keep the

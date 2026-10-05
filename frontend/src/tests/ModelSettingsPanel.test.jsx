@@ -186,6 +186,83 @@ describe('ModelSettingsPanel smart matching', () => {
     expect(screen.getByLabelText('Base URL').value).toBe('https://api.kimi.com/coding/v1');
   });
 
+  it('offers the GLM Coding Plan Responses base URL', async () => {
+    render(<ModelSettingsPanel onToast={vi.fn()} />);
+    await screen.findByText('Kimi');
+    fireEvent.click(screen.getByRole('button', { name: '添加供应商' }));
+    fireEvent.click(screen.getByRole('button', { name: 'GLM / Z.ai' }));
+
+    expect(screen.getByLabelText('Base URL').value).toBe('https://open.bigmodel.cn/api/v1');
+  });
+
+  it('offers a one-click correction for the saved GLM Chat Completions URL', async () => {
+    const glmProvider = {
+      ...provider,
+      id: 'glm',
+      name: 'GLM / Z.ai',
+      kind: 'glm',
+      baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    };
+    modelApi.getModelCatalog.mockResolvedValue({
+      catalog: {
+        providers: [glmProvider],
+        defaultModel: null,
+        defaultReasoningSelection: { kind: 'api_default' },
+        verifierDefaultModel: null,
+        projectDefaults: {},
+      },
+    });
+
+    render(<ModelSettingsPanel onToast={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: '切换到 Responses 地址' }));
+
+    expect(screen.getByLabelText('Base URL').value).toBe('https://open.bigmodel.cn/api/v1');
+    fireEvent.click(screen.getByRole('button', { name: /保存供应商/ }));
+    await waitFor(() => expect(modelApi.manageModelCatalog).toHaveBeenCalledWith(
+      'upsert_provider',
+      expect.objectContaining({
+        provider: expect.objectContaining({
+          id: 'glm',
+          baseUrl: 'https://open.bigmodel.cn/api/v1',
+        }),
+      }),
+    ));
+  });
+
+  it('matches GLM Flash against the Responses API model and reasoning settings', async () => {
+    const glmProvider = {
+      ...provider,
+      id: 'glm',
+      name: 'GLM / Z.ai',
+      kind: 'glm',
+    };
+    modelApi.getModelCatalog.mockResolvedValue({
+      catalog: {
+        providers: [glmProvider],
+        defaultModel: null,
+        defaultReasoningSelection: { kind: 'api_default' },
+        verifierDefaultModel: null,
+        projectDefaults: {},
+      },
+    });
+
+    render(<ModelSettingsPanel onToast={vi.fn()} />);
+    await screen.findByText('GLM / Z.ai');
+    fireEvent.click(screen.getByRole('button', { name: '手动添加' }));
+    const idInput = screen.getByPlaceholderText('供应商要求的模型 ID');
+    fireEvent.change(idInput, { target: { value: 'glm-5.3-flash' } });
+    fireEvent.click(idInput.parentElement.querySelector('button'));
+
+    expect(screen.getByLabelText('显示名称').value).toBe('GLM-5.3-Flash');
+    expect(screen.getByLabelText('上下文窗口').value).toBe('1000000');
+    expect(screen.getByLabelText('最大输出 Token').value).toBe('128000');
+    expect(JSON.parse(screen.getByLabelText('推理参数映射（JSON）').value)).toEqual({
+      low: { reasoning: { effort: 'low' } },
+      high: { reasoning: { effort: 'high' } },
+      max: { reasoning: { effort: 'max' } },
+    });
+  });
+
   it('tests a saved model only after the user clicks the connection button', async () => {
     const model = { id: 'kimi-k3', name: 'Kimi K3', enabled: true };
     modelApi.getModelCatalog.mockResolvedValue({

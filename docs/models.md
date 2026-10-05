@@ -21,6 +21,14 @@ Kimi API 与 Kimi Code 使用不同的预设和 Base URL。Kimi Code 使用
 `https://api.kimi.com/coding/v1`，在该地址添加本地建议时会选用 `k3-256k`。Kimi
 模型建议将 `low`、`high` 和 `max` 映射到 Responses API 的 `reasoning.effort`。
 
+GLM Coding Plan 使用 Responses 协议时，Base URL 填
+`https://open.bigmodel.cn/api/v1`。`/api/paas/v4` 和
+`/api/coding/paas/v4` 是 Chat Completions 地址；已保存旧地址时，可在 GLM
+供应商设置中选择 **切换到 Responses 地址**，保存后再测试连接。GLM 模型建议将推理等级
+映射到 Responses API 的 `reasoning.effort`；不要把 Chat Completions 的
+`thinking` / `reasoning_effort` 字段映射到 Responses 请求。更新已保存的模型时，在编辑窗口
+按当前模型 ID 点击 **智能匹配** 并保存，可刷新旧参数映射。
+
 供应商、模型和默认值按卡片显式保存。未保存时切换或关闭页面会要求确认；删除供应商、
 模型和清除 API Key 也会先在应用内确认。清除供应商凭据后，页面只显示未配置状态。
 

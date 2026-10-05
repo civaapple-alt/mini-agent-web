@@ -158,7 +158,7 @@ describe('ContextUsageControl', () => {
       .toBe('false');
   });
 
-  it('uses the window snapshot for the last request instead of the selected model', () => {
+  it('uses the request model window for its percentage and keeps output reserve separate', () => {
     render(
       <ContextUsageControl
         contextUsage={{
@@ -173,7 +173,7 @@ describe('ContextUsageControl', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: /1\.8K \/ 1\.5K · 120\.0%/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: /1\.8K \/ 2\.0K · 90\.0%/ })).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: /打开会话上下文详情/ }));
     expect(screen.getByText(/kimi\/k3-256k/)).toBeDefined();
     expect(screen.queryByText(/超过保存的模型窗口/)).toBeNull();

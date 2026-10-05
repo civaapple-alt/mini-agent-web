@@ -76,8 +76,8 @@ export function ContextUsageControl({ contextUsage, contextCacheUsage = null }) 
     ? (hasOutputLimit ? windowSize - maxOutputTokens : windowSize)
     : null;
   const hasInputBudget = Number.isFinite(inputBudget) && inputBudget > 0;
-  const windowRatio = hasInputBudget && inputTokens !== null
-    ? inputTokens / inputBudget
+  const windowRatio = hasWindow && inputTokens !== null
+    ? inputTokens / windowSize
     : null;
   const windowPercent = formatContextPercentage(windowRatio);
   const latestCacheHitRatio = contextCacheHitRatio(usage);
@@ -99,7 +99,7 @@ export function ContextUsageControl({ contextUsage, contextCacheUsage = null }) 
       ? `窗口未知 · 会话命中 ${cacheHitPercent}`
       : '上下文用量未知')
     : hasInputBudget
-      ? `${compactTokens(inputTokens)} / ${compactTokens(inputBudget)} · ${windowPercent} · ${cacheHitScope}命中 ${cacheHitPercent}`
+      ? `${compactTokens(inputTokens)} / ${compactTokens(windowSize)} · ${windowPercent} · ${cacheHitScope}命中 ${cacheHitPercent}`
       : `输入 ${compactTokens(inputTokens)} · 窗口未知 · ${cacheHitScope}命中 ${cacheHitPercent}`;
   const progressWidth = (ratio) => (
     ratio === null ? '0%' : `${Math.min(100, Math.max(0, ratio * 100))}%`
@@ -130,7 +130,7 @@ export function ContextUsageControl({ contextUsage, contextCacheUsage = null }) 
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-label={`上下文使用状态：${summary}。打开会话上下文详情`}
-        title="查看输入预算占用、会话缓存命中率和来源占比"
+        title="查看模型窗口占用、会话缓存命中率和来源占比"
       >
         <Activity size={12} />
         <span>{summary}</span>
@@ -140,7 +140,7 @@ export function ContextUsageControl({ contextUsage, contextCacheUsage = null }) 
           <div className="composer-context-usage-title">最近一次模型请求</div>
           <div className="composer-context-usage-highlights">
             <div className="composer-context-usage-highlight">
-              <span>输入预算占用</span>
+              <span>模型窗口占用</span>
               <strong>{windowPercent}</strong>
               <div className="composer-context-progress" aria-hidden="true">
                 <span style={{ width: progressWidth(windowRatio) }} />
@@ -185,7 +185,7 @@ export function ContextUsageControl({ contextUsage, contextCacheUsage = null }) 
             {' · '}上下文窗口：{hasWindow ? `${windowSize.toLocaleString()} tokens` : '未知'}
             {' · '}最大输出：{hasOutputLimit ? `${maxOutputTokens.toLocaleString()} tokens` : '未记录'}
             {' · '}可用输入预算：{hasInputBudget ? `${inputBudget.toLocaleString()} tokens` : '未知'}
-            {windowRatio !== null ? ` · 最近输入 ${windowPercent}` : ''}
+            {windowRatio !== null ? ` · 最近输入占窗口 ${windowPercent}` : ''}
           </div>
           {inputTokens !== null && hasWindow && inputTokens > windowSize && (
             <p className="composer-context-unknown" role="status">

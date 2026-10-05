@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
+- Pair the latest provider input usage with the model context profile saved for
+  that request. Show the configured input budget and flag usage above the
+  configured window or output reserve. Keep the percentage visible above 100%.
 - Add a separate Kimi Code provider preset for the Coding API, suggest `k3-256k`
   for that endpoint, and map Kimi reasoning levels to `reasoning.effort`.
 - Keep the project sidebar's medium-width icon rail compact, and restore the

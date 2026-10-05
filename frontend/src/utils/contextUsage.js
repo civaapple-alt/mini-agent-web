@@ -31,6 +31,24 @@ export function normalizeContextUsage(value) {
       finiteNonNegative(field(rawBytes, key)),
     ]))
     : null;
+  const rawModelContext = field(source, 'modelContext', 'model_context');
+  const selection = field(rawModelContext, 'selection') || rawModelContext || {};
+  const modelContext = rawModelContext && typeof rawModelContext === 'object'
+    ? {
+      providerId: field(selection, 'providerId', 'provider_id') || '',
+      modelId: field(selection, 'modelId', 'model_id') || '',
+      contextWindowTokens: finiteNonNegative(field(
+        rawModelContext,
+        'contextWindowTokens',
+        'context_window_tokens',
+      )),
+      maxOutputTokens: finiteNonNegative(field(
+        rawModelContext,
+        'maxOutputTokens',
+        'max_output_tokens',
+      )),
+    }
+    : null;
   const rawUsageTotals = source.usageTotals || source.usage_totals;
   const usageTotals = rawUsageTotals && typeof rawUsageTotals === 'object'
     ? {
@@ -61,6 +79,7 @@ export function normalizeContextUsage(value) {
       ? finiteNonNegative(field(usage, 'outputTokens', 'output_tokens'))
       : null,
     contextBytes,
+    modelContext,
     usageTotals,
   };
 }

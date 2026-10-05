@@ -34,6 +34,26 @@ test('provider usage with no cache field remains unknown', () => {
   assert.equal(usage.cachedInputTokens, null);
 });
 
+test('model context limits stay paired with the provider usage snapshot', () => {
+  const usage = normalizeContextUsage({
+    context_usage: {
+      usage: { input_tokens: 1800 },
+      model_context: {
+        selection: { provider_id: 'kimi', model_id: 'k3-256k' },
+        context_window_tokens: 262144,
+        max_output_tokens: 64000,
+      },
+    },
+  });
+
+  assert.deepEqual(usage.modelContext, {
+    providerId: 'kimi',
+    modelId: 'k3-256k',
+    contextWindowTokens: 262144,
+    maxOutputTokens: 64000,
+  });
+});
+
 test('provider cache count is shown as the reported total', () => {
   const usage = normalizeContextUsage({
     usage: { inputTokens: 1200, cachedInputTokens: 850 },

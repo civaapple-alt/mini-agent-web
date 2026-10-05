@@ -60,17 +60,24 @@ const SLASH_COMMANDS = [
 
 const reasoningLevelLabel = (level) => (level === 'disabled' ? 'disabled（关闭）' : level);
 
-export function ContextUsageControl({ contextUsage, contextCacheUsage = null, contextWindow }) {
+export function ContextUsageControl({ contextUsage, contextCacheUsage = null }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
   const usage = normalizeContextUsage(contextUsage);
   const categories = contextCategoryBreakdown(usage) || [];
   const inputTokens = usage?.inputTokens ?? null;
   const cachedInputTokens = usage?.cachedInputTokens ?? null;
-  const windowSize = Number(contextWindow);
+  const modelContext = usage?.modelContext ?? null;
+  const windowSize = Number(modelContext?.contextWindowTokens);
   const hasWindow = Number.isFinite(windowSize) && windowSize > 0;
-  const windowRatio = hasWindow && inputTokens !== null
-    ? inputTokens / windowSize
+  const maxOutputTokens = Number(modelContext?.maxOutputTokens);
+  const hasOutputLimit = Number.isFinite(maxOutputTokens) && maxOutputTokens > 0;
+  const inputBudget = hasWindow
+    ? (hasOutputLimit ? windowSize - maxOutputTokens : windowSize)
+    : null;
+  const hasInputBudget = Number.isFinite(inputBudget) && inputBudget > 0;
+  const windowRatio = hasInputBudget && inputTokens !== null
+    ? inputTokens / inputBudget
     : null;
   const windowPercent = formatContextPercentage(windowRatio);
   const latestCacheHitRatio = contextCacheHitRatio(usage);
@@ -81,11 +88,19 @@ export function ContextUsageControl({ contextUsage, contextCacheUsage = null, co
     : latestCacheHitRatio;
   const cacheHitScope = hasSessionCacheRate ? '会话' : '最近';
   const cacheHitPercent = formatContextPercentage(cacheHitRatio);
+  const compactTokens = (tokens) => {
+    if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
+    if (tokens < 10_000 && tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`;
+    if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`;
+    return tokens.toLocaleString();
+  };
   const summary = inputTokens === null
     ? (hasSessionCacheRate
       ? `窗口未知 · 会话命中 ${cacheHitPercent}`
       : '上下文用量未知')
-    : `窗口 ${windowPercent} · ${cacheHitScope}命中 ${cacheHitPercent}`;
+    : hasInputBudget
+      ? `${compactTokens(inputTokens)} / ${compactTokens(inputBudget)} · ${windowPercent} · ${cacheHitScope}命中 ${cacheHitPercent}`
+      : `输入 ${compactTokens(inputTokens)} · 窗口未知 · ${cacheHitScope}命中 ${cacheHitPercent}`;
   const progressWidth = (ratio) => (
     ratio === null ? '0%' : `${Math.min(100, Math.max(0, ratio * 100))}%`
   );
@@ -115,7 +130,7 @@ export function ContextUsageControl({ contextUsage, contextCacheUsage = null, co
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-label={`上下文使用状态：${summary}。打开会话上下文详情`}
-        title="查看模型窗口占用、会话缓存命中率和来源占比"
+        title="查看输入预算占用、会话缓存命中率和来源占比"
       >
         <Activity size={12} />
         <span>{summary}</span>
@@ -125,7 +140,7 @@ export function ContextUsageControl({ contextUsage, contextCacheUsage = null, co
           <div className="composer-context-usage-title">最近一次模型请求</div>
           <div className="composer-context-usage-highlights">
             <div className="composer-context-usage-highlight">
-              <span>窗口占用</span>
+              <span>输入预算占用</span>
               <strong>{windowPercent}</strong>
               <div className="composer-context-progress" aria-hidden="true">
                 <span style={{ width: progressWidth(windowRatio) }} />
@@ -164,10 +179,30 @@ export function ContextUsageControl({ contextUsage, contextCacheUsage = null, co
             )}
           </div>
           <div className="composer-context-usage-window">
-            模型窗口：{hasWindow
-              ? `${windowSize.toLocaleString()} tokens${windowRatio === null ? '' : ` · 本次输入约 ${windowPercent}`}`
-              : '大小未知'}
+            模型：{modelContext?.providerId && modelContext?.modelId
+              ? `${modelContext.providerId}/${modelContext.modelId}`
+              : '历史请求未记录模型'}
+            {' · '}上下文窗口：{hasWindow ? `${windowSize.toLocaleString()} tokens` : '未知'}
+            {' · '}最大输出：{hasOutputLimit ? `${maxOutputTokens.toLocaleString()} tokens` : '未记录'}
+            {' · '}可用输入预算：{hasInputBudget ? `${inputBudget.toLocaleString()} tokens` : '未知'}
+            {windowRatio !== null ? ` · 最近输入 ${windowPercent}` : ''}
           </div>
+          {inputTokens !== null && hasWindow && inputTokens > windowSize && (
+            <p className="composer-context-unknown" role="status">
+              最近请求用量超过保存的模型窗口；请核对该次请求实际路由和模型配置。旧用量不能证明当前窗口接受了超限请求。
+            </p>
+          )}
+          {inputTokens !== null && hasInputBudget && hasOutputLimit
+            && inputTokens > inputBudget && inputTokens <= windowSize && (
+              <p className="composer-context-unknown" role="status">
+                最近输入高于可用输入预算（模型窗口减去最大输出预留）；实际输出上限可能需要下调。
+              </p>
+          )}
+          {!modelContext && inputTokens !== null && (
+            <p className="composer-context-unknown" role="status">
+              这条历史用量没有保存模型窗口快照，因此无法准确计算窗口占比。
+            </p>
+          )}
           <div className="composer-context-usage-title">来源构成估算</div>
           {categories.length === 0 ? (
             <p className="composer-context-unknown">来源构成未知</p>
@@ -1364,7 +1399,6 @@ export default function InputBar({
                   key={JSON.stringify([projectId || null, currentThread])}
                   contextUsage={contextUsage}
                   contextCacheUsage={contextCacheUsage}
-                  contextWindow={effectiveEntry?.model?.contextWindow}
                 />
                 <label className="composer-model-select-wrap" title={effectiveModelProblem || '切换当前 Thread 的模型'}>
                   <span>模型</span>

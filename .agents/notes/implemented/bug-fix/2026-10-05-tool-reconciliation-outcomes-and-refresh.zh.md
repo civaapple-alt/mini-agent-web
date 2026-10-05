@@ -22,4 +22,5 @@
 - `npm run lint`：通过。
 - `npm run build`：通过。Vite 提示压缩后的 JavaScript 包超过 500 KiB。
 - `git diff --check`：通过。
+- `GET /threads/t-mut7tva5?project_id=nature`：返回 200。服务端下发的 JavaScript 与 `frontend/dist` 构建产物 SHA-256 一致。
 - 未完成浏览器视觉走查：当前会话没有可用的浏览器控制会话。

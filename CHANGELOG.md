@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
+- Add a separate Kimi Code provider preset for the Coding API, suggest `k3-256k`
+  for that endpoint, and map Kimi reasoning levels to `reasoning.effort`.
 - Keep the project sidebar's medium-width icon rail compact, and restore the
   full navigation when it opens as a mobile drawer.
 - Guide tool recovery by asking for the verified execution state first, showing

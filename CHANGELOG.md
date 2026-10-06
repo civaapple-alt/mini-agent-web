@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
+- Render enlarged message images in a viewport-level preview above the
+  virtualized conversation, and constrain the image to the available viewport
+  height and width.
 - Simplify the active user-question card palette, keep recommended options
   visually neutral, and show a loading indicator only on the option currently
   being submitted instead of checkmarks on every option.

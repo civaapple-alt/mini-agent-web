@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Check,
   Copy,
@@ -151,7 +152,7 @@ export default function MessageItem({
           )}
 
           {/* Image Lightbox Modal */}
-          {previewImg && (
+          {previewImg && typeof document !== 'undefined' && createPortal(
             <div
               className="img-lightbox-overlay"
               onClick={() => setPreviewImg(null)}
@@ -177,7 +178,8 @@ export default function MessageItem({
                 className="img-lightbox-image"
                 onClick={() => setPreviewImg(null)}
               />
-            </div>
+            </div>,
+            document.body,
           )}
 
           {/* Render Referenced Files */}

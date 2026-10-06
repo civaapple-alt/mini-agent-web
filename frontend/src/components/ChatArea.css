@@ -637,17 +637,25 @@
 .img-lightbox-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: 5000;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 24px;
+  overflow: auto;
   background: var(--overlay-strong);
   cursor: zoom-out;
 }
 
 .img-lightbox-image {
+  display: block;
   max-width: 90vw;
   max-height: 90vh;
+  max-width: min(90vw, calc(100vw - 48px));
+  max-height: min(90vh, calc(100vh - 48px));
+  max-width: min(90vw, calc(100dvw - 48px));
+  max-height: min(90dvh, calc(100dvh - 48px));
+  object-fit: contain;
   border-radius: 8px;
   box-shadow: var(--shadow-image);
   cursor: zoom-out;

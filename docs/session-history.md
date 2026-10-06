@@ -20,8 +20,10 @@ and joins tool results by call ID. Complete ThreadItem activity remains the
 preferred projection, so the fallback does not duplicate recorded execution
 items.
 
-Clicking a user message image opens a full-size preview. Click the image,
-backdrop, or minimize control, or press Escape to return to the conversation.
+Clicking a user message image opens a viewport-level preview above the virtualized
+conversation. The image scales to the available screen width and height. Click
+the image, backdrop, or minimize control, or press Escape to return to the
+conversation.
 
 The conversation timeline measures variable-height rows and mounts only the
 visible range plus a small overscan window. The Turn navigation rail is

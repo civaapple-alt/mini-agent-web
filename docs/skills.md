@@ -135,11 +135,12 @@ and skill activity boundaries. The browser does not infer Skill use or write
 history; legacy Sessions without this projection keep their existing history
 shape.
 
-每个已启用 Skill 的根目录也是受信任的只读目录。模型可以在当前 Turn 中通过
-现有 `read_file` 按需查看该目录下的 `references/`、`scripts/`、`assets/` 和其他
-说明文件；发现阶段不会递归加载它们。Skill 目录的 `read_file` 输出合计最多
-64 KiB，仍受分页、UTF-8 和路径边界限制。该授权仅用于读取，不会自动执行脚本，
-也不会允许修改 Skill 文件；Shell 执行和文件写入继续使用 Host 的审批与沙箱规则。
+每个已启用 Skill 的根目录都会作为受信任的读取根加入工具 Workspace。模型可以在
+当前 Turn 中通过现有 `read_file` 按需查看该目录下的 `references/`、`scripts/`、
+`assets/` 和其他说明文件；发现阶段不会递归加载它们。Skill 目录的 `read_file`
+输出合计最多 64 KiB，仍受分页、UTF-8 和路径边界限制。项目工作区或显式配置的写入根
+内的 Skill 文件按普通文件的写入范围和审批策略处理；其他工作区外 Skill 根保持只读。
+读取授权不会自动执行脚本；Shell 执行仍使用 Host 的审批与沙箱规则。
 
 ## Input history
 

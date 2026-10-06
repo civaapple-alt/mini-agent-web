@@ -252,6 +252,7 @@ export default function InputBar({
   pendingApprovalCount = 0,
   approvalDockPendingApproval = pendingApproval,
   approvalDockCount = pendingApprovalCount,
+  approvalDockIsInterrupting = null,
   approvalActionsDisabled = false,
   approvalBlockedMessage = null,
   onRespondApproval,
@@ -1085,7 +1086,8 @@ export default function InputBar({
       <ApprovalDock
         pendingApproval={approvalDockPendingApproval}
         pendingApprovalCount={approvalDockCount}
-        isInterrupting={isInterrupting}
+        currentThreadId={currentThread}
+        isInterrupting={approvalDockIsInterrupting ?? isInterrupting}
         actionsDisabled={approvalActionsDisabled}
         blockedMessage={approvalBlockedMessage}
         onRespondApproval={onRespondApproval}

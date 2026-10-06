@@ -166,6 +166,12 @@
   color: var(--status-approval);
 }
 
+.dock-source-thread {
+  color: var(--text-secondary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .composer-approval-dock button:disabled,
 .composer-approval-dock input:disabled {
   opacity: 0.48;

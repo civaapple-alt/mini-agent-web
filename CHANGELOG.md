@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replay, and label the initial WebSocket handshake as connecting.
 - Keep a bounded recent event window in memory per Thread so opening a child
   Session viewer mid-Turn shows activity the page already received.
+- Surface approvals from direct child Threads in the parent Session's composer
+  dock, with the child Thread identity, while keeping unrelated Session
+  approvals out of the current view.
 - Avoid reporting an event replay gap on a fresh Session open when no previous
   event cursor exists; reconcile from canonical history and keep warnings for
   gaps after an established stream reconnects.

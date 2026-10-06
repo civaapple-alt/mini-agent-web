@@ -5,6 +5,7 @@ import { getApprovalObservation } from '../../utils/approvalPresentation';
 export default function ApprovalDock({
   pendingApproval,
   pendingApprovalCount = 1,
+  currentThreadId = null,
   isInterrupting,
   actionsDisabled = false,
   blockedMessage = null,
@@ -17,6 +18,8 @@ export default function ApprovalDock({
   const disabled = Boolean(isInterrupting || actionsDisabled);
 
   const observation = getApprovalObservation(pendingApproval);
+  const approvalThreadId = pendingApproval.data?.threadId || pendingApproval.data?.thread_id;
+  const fromChildThread = Boolean(approvalThreadId && currentThreadId && approvalThreadId !== currentThreadId);
 
   const handleApprove = (scope = 'once') => {
     if (disabled) return;
@@ -72,6 +75,12 @@ export default function ApprovalDock({
           ID: {pendingApproval.requestId}
         </span>
       </div>
+
+      {fromChildThread && (
+        <div className="dock-source-thread">
+          来自子会话 <span className="font-mono">{approvalThreadId}</span>
+        </div>
+      )}
 
       <div className={`dock-action-content font-mono custom-scrollbar ${observation.hasDestructiveChange ? 'has-destructive-change' : ''}`}>
         <div className="dock-action-summary">

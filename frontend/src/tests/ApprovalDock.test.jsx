@@ -106,4 +106,23 @@ describe('ApprovalDock', () => {
     fireEvent.click(screen.getByText('涉及文件 2 个'));
     expect(screen.getByText('docs/_probe.md')).toBeDefined();
   });
+
+  it('labels a pending approval from a child Thread', () => {
+    render(
+      <ApprovalDock
+        currentThreadId="parent-thread"
+        pendingApproval={{
+          requestId: 'child-approval',
+          data: {
+            threadId: 'child-thread',
+            actionSummary: 'shell command `python3 make_aligned.py`',
+          },
+        }}
+        onRespondApproval={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(/来自子会话/)).toBeDefined();
+    expect(screen.getByText('child-thread')).toBeDefined();
+  });
 });

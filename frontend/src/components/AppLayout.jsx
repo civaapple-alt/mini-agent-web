@@ -94,6 +94,7 @@ export default function AppLayout({
   pendingApproval,
   pendingApprovalCount = 0,
   pendingApprovals = [],
+  pendingOtherThreadApprovals = [],
   onContinuePlanning,
   onStartImplementation,
   onClosePlan,
@@ -181,6 +182,21 @@ export default function AppLayout({
     const callId = pendingApprovalCallId(approval);
     return !callId || !timelineToolCallIds.has(callId);
   });
+  const childThreadIds = new Set(childTasks.children
+    .map((child) => child.child_thread_id || child.thread_id)
+    .filter(Boolean));
+  const childApprovals = pendingOtherThreadApprovals.filter((approval) => {
+    const data = approval.data || {};
+    const threadId = data.threadId || data.thread_id;
+    return threadId && childThreadIds.has(threadId);
+  });
+  const approvalDockApprovals = [...fallbackApprovals, ...childApprovals];
+  const approvalDockApproval = approvalDockApprovals[0] || null;
+  const approvalDockThreadId = approvalDockApproval?.data?.threadId
+    || approvalDockApproval?.data?.thread_id;
+  const approvalDockIsChildThread = Boolean(
+    approvalDockThreadId && approvalDockThreadId !== currentThread,
+  );
   const handleAttentionRequestHandled = React.useCallback((requestId) => {
     setAttentionRequest((current) => current?.id === requestId ? null : current);
   }, []);
@@ -407,18 +423,21 @@ export default function AppLayout({
             onOpenSettings={onOpenSettings}
             pendingApproval={pendingApproval}
             pendingApprovalCount={pendingApprovalCount}
-            approvalDockPendingApproval={fallbackApprovals[0] || null}
-            approvalDockCount={fallbackApprovals.length}
+            approvalDockPendingApproval={approvalDockApproval}
+            approvalDockCount={approvalDockApprovals.length}
+            approvalDockIsInterrupting={isInterrupting && !approvalDockIsChildThread}
             approvalActionsDisabled={Boolean(
               statusModel?.connection !== 'online'
-                || statusModel?.sessionReadOnly
-                || statusModel?.lifecycle === 'stopping'
+                || (!approvalDockIsChildThread
+                  && (statusModel?.sessionReadOnly || statusModel?.lifecycle === 'stopping'))
             )}
             approvalBlockedMessage={statusModel?.connection !== 'online'
               ? '连接恢复后才能提交审批'
-              : statusModel?.sessionReadOnly
+              : !approvalDockIsChildThread && statusModel?.sessionReadOnly
                 ? '当前会话只读，不能提交审批'
-                : '当前 Turn 正在停止，等待运行时确认'}
+                : !approvalDockIsChildThread && statusModel?.lifecycle === 'stopping'
+                  ? '当前 Turn 正在停止，等待运行时确认'
+                  : null}
             onRespondApproval={onRespondApproval}
             onStartPlanTask={onStartPlanTask}
             onStartGoal={onStartGoal}

@@ -41,6 +41,10 @@ import {
   writeStudioRoute,
 } from './utils/sessionState.js';
 import { getStatusViewModel, normalizeTheme } from './utils/statusModel.js';
+import {
+  partitionApprovalsByThread,
+  projectOtherThreadApprovalEvent,
+} from './utils/approvalScopes.js';
 import { isIncompleteTurnStatus } from './utils/turnHistory.js';
 import {
   isRuntimeSettled,
@@ -140,6 +144,7 @@ export default function App() {
   const [activeTurnId, setActiveTurnId] = useState(null);
   const [pendingApproval, setPendingApproval] = useState(null);
   const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [pendingOtherThreadApprovals, setPendingOtherThreadApprovals] = useState([]);
   const [pendingUserQuestion, setPendingUserQuestion] = useState(null);
   const [pendingMessages, setPendingMessages] = useState([]);
   const [composerDraft, setComposerDraft] = useState(null);
@@ -200,6 +205,8 @@ export default function App() {
   const goalStateRef = useRef(goalState);
   const pendingApprovalRef = useRef(pendingApproval);
   const pendingApprovalsRef = useRef(pendingApprovals);
+  const pendingOtherThreadApprovalsRef = useRef(pendingOtherThreadApprovals);
+  const approvalNotificationRevisionRef = useRef(0);
   const approvalSubmissionRef = useRef(new Map());
   const resolvedApprovalIdsRef = useRef(new Set());
   const sessionEpochRef = useRef(0);
@@ -228,12 +235,18 @@ export default function App() {
   hasActiveThreadRef.current = hasActiveThread;
   pendingApprovalRef.current = pendingApproval;
   pendingApprovalsRef.current = pendingApprovals;
+  pendingOtherThreadApprovalsRef.current = pendingOtherThreadApprovals;
   setActiveProjectId(currentThreadProject);
 
   const clearPendingApprovals = () => {
     setPendingApprovals([]);
     setPendingApproval(null);
     setPendingUserQuestion(null);
+  };
+
+  const clearAllPendingApprovals = () => {
+    clearPendingApprovals();
+    setPendingOtherThreadApprovals([]);
   };
 
   const rememberInterruptedTurn = (turnId) => {
@@ -292,6 +305,25 @@ export default function App() {
   const enqueuePendingApproval = (approval) => {
     if (!approval?.requestId) return;
     const key = approvalIdentity(approval);
+    const approvalThreadId = approval.data?.threadId || approval.data?.thread_id;
+    const approvalProjectId = approval.data?.projectId || approval.data?.project_id;
+    const isOtherThread = Boolean(
+      approvalThreadId
+      && approvalThreadId !== currentThreadRef.current
+      && (!approvalProjectId || approvalProjectId === currentThreadProjectRef.current),
+    );
+    if (isOtherThread) {
+      setPendingOtherThreadApprovals((previous) => {
+        const existingIndex = previous.findIndex(
+          (item) => approvalIdentity(item) === key,
+        );
+        if (existingIndex === -1) return [...previous, approval];
+        const copy = [...previous];
+        copy[existingIndex] = approval;
+        return copy;
+      });
+      return;
+    }
     setPendingApprovals((previous) => {
       const existingIndex = previous.findIndex(
         (item) => approvalIdentity(item) === key,
@@ -309,6 +341,9 @@ export default function App() {
 
   const removePendingApproval = (approval) => {
     const key = approvalIdentity(approval);
+    setPendingOtherThreadApprovals((previous) => previous.filter(
+      (item) => approvalIdentity(item) !== key,
+    ));
     setPendingApprovals((previous) => previous.filter(
       (item) => approvalIdentity(item) !== key,
     ));
@@ -416,7 +451,7 @@ export default function App() {
     interruptTurnIdRef.current = null;
     interruptedTurnIdsRef.current.clear();
     queueDispatchingRef.current = false;
-    clearPendingApprovals();
+    clearAllPendingApprovals();
     approvalSubmissionRef.current.clear();
     setPendingMessages([]);
     setComposerDraft(null);
@@ -638,10 +673,10 @@ export default function App() {
     context = null,
   ) => {
     const requestContext = context || currentSessionRequest();
+    const notificationRevision = approvalNotificationRevisionRef.current;
     try {
       const snapshot = await api.getWorldApproval({
         projectId,
-        threadId,
         signal: requestContext.signal,
       });
       if (!isCurrentSessionRequest(requestContext)) return;
@@ -659,7 +694,7 @@ export default function App() {
             data: {
               ...data,
               projectId: pending.project_id || data.projectId || projectId,
-              threadId: pending.thread_id || data.threadId || threadId,
+              threadId: pending.thread_id || data.threadId || data.thread_id || null,
               turnId: pending.turn_id || data.turnId || null,
             },
           };
@@ -673,17 +708,39 @@ export default function App() {
           (item) => approvalIdentity(item) === approvalIdentity(approval),
         ) === index
       ));
-      if (uniqueApprovals.length === 0) {
+      const partitioned = partitionApprovalsByThread(
+        uniqueApprovals,
+        threadId,
+        projectId,
+      );
+      setPendingOtherThreadApprovals((previous) => {
+        const snapshotApprovals = partitioned.otherThreads;
+        if (approvalNotificationRevisionRef.current === notificationRevision) {
+          return snapshotApprovals;
+        }
+
+        // A WebSocket approval notification can arrive while the snapshot is
+        // in flight. Keep that newer event projection and merge in the
+        // snapshot; resolved IDs prevent an older snapshot from resurrecting
+        // an approval that was settled during the request.
+        const merged = [...snapshotApprovals, ...previous].filter((approval) => (
+          !resolvedApprovalIdsRef.current.has(approvalIdentity(approval))
+        ));
+        return merged.filter((approval, index) => (
+          merged.findIndex((item) => approvalIdentity(item) === approvalIdentity(approval)) === index
+        ));
+      });
+      if (partitioned.currentThread.length === 0) {
         clearPendingApprovals();
         return;
       }
-      setPendingApprovals(uniqueApprovals);
+      setPendingApprovals(partitioned.currentThread);
       setPendingApproval((current) => (
-        current && uniqueApprovals.some(
+        current && partitioned.currentThread.some(
           (item) => approvalIdentity(item) === approvalIdentity(current),
         )
           ? current
-          : uniqueApprovals[0]
+          : partitioned.currentThread[0]
       ));
     } catch (err) {
       if (isAbortError(err) || !isCurrentSessionRequest(requestContext)) return;
@@ -1764,15 +1821,83 @@ export default function App() {
   const handleServerEvent = (data, { fromReplay = false } = {}) => {
     if (!data) return;
 
-    const eventThread = data.threadId || data.thread_id || data.data?.threadId || data.data?.thread_id;
+    const eventThread = data.threadId
+      || data.thread_id
+      || data.data?.threadId
+      || data.data?.thread_id
+      || data.approval?.threadId
+      || data.approval?.thread_id;
     const eventProject = data.projectId
       || data.project_id
       || data.data?.projectId
       || data.data?.project_id
+      || data.approval?.projectId
+      || data.approval?.project_id
       || currentThreadProjectRef.current;
     if (data.type === 'event') {
       publishChildRuntimeEvent({ ...data, projectId: eventProject });
     }
+
+    const otherThreadApproval = projectOtherThreadApprovalEvent(
+      data,
+      currentThreadRef.current,
+      currentThreadProjectRef.current,
+    );
+    if (otherThreadApproval) {
+      approvalNotificationRevisionRef.current += 1;
+      if (otherThreadApproval.kind === 'error') {
+        const { requestId, callId, threadId, turnId } = otherThreadApproval;
+        const tracked = pendingOtherThreadApprovalsRef.current.find((approval) => {
+          const details = approval.data || {};
+          return approval.requestId === requestId
+            && (!callId || (details.callId || details.call_id) === callId)
+            && (!threadId || (details.threadId || details.thread_id) === threadId);
+        });
+        const errorApproval = {
+          requestId,
+          data: {
+            projectId: otherThreadApproval.projectId,
+            threadId,
+            turnId,
+            callId,
+          },
+        };
+        const key = approvalIdentity(tracked || errorApproval);
+        const locallySubmitted = approvalSubmissionRef.current.has(key);
+        if (tracked || locallySubmitted) {
+          resolvedApprovalIdsRef.current.add(key);
+          if (resolvedApprovalIdsRef.current.size > 128) {
+            const oldest = resolvedApprovalIdsRef.current.values().next().value;
+            resolvedApprovalIdsRef.current.delete(oldest);
+          }
+          removePendingApproval(tracked || errorApproval);
+          approvalSubmissionRef.current.delete(key);
+          showToast('子会话审批提交失败：请求可能已失效，请刷新子任务状态。', 'warning', 5000);
+          void loadPendingApproval(currentThreadRef.current, currentThreadProjectRef.current);
+        }
+        return;
+      }
+      const requestId = otherThreadApproval.requestId;
+      const incoming = {
+        requestId,
+        data: otherThreadApproval.approval,
+      };
+      if (otherThreadApproval.kind === 'requested' && requestId) {
+        resolvedApprovalIdsRef.current.delete(approvalIdentity(incoming));
+        enqueuePendingApproval(incoming);
+      } else if (otherThreadApproval.kind === 'resolved' && requestId) {
+        const key = approvalIdentity(incoming);
+        resolvedApprovalIdsRef.current.add(key);
+        if (resolvedApprovalIdsRef.current.size > 128) {
+          const oldest = resolvedApprovalIdsRef.current.values().next().value;
+          resolvedApprovalIdsRef.current.delete(oldest);
+        }
+        removePendingApproval(incoming);
+        approvalSubmissionRef.current.delete(key);
+      }
+      return;
+    }
+
     if (!hasActiveThreadRef.current) {
       if (data.type === 'event' && ['turn_finished', 'run_finished', 'run_failed'].includes(data.event?.type)) {
         loadThreads();
@@ -3111,19 +3236,27 @@ export default function App() {
     requestedScope = 'once',
     callId = null,
   ) => {
-    if (interruptPendingRef.current || isInterrupting) {
-      // The dock is disabled during interruption. Keep its non-actionable
-      // state visible until the Gateway publishes the resolved approval so a
-      // user can see why a click cannot release the tool.
-      showToast('当前轮次正在停止，该审批已失效。', 'info', 2500);
-      return;
-    }
-    const approval = pendingApprovalsRef.current.find((item) => (
+    const candidates = [
+      ...pendingApprovalsRef.current,
+      ...pendingOtherThreadApprovalsRef.current,
+    ].filter((item) => (
       item.requestId === requestId
       && (!callId || (item.data?.callId || item.data?.call_id) === callId)
-    )) || pendingApprovalRef.current;
+    ));
+    const matches = candidates.filter((item, index) => (
+      candidates.findIndex((candidate) => approvalIdentity(candidate) === approvalIdentity(item)) === index
+    ));
+    const approval = matches.length === 1 ? matches[0] : null;
     if (!approval) {
       showToast('该审批已失效，请刷新当前会话状态。', 'warning', 3000);
+      return;
+    }
+    const approvalScopeThreadId = approval.data?.threadId || approval.data?.thread_id;
+    const belongsToCurrentThread = !approvalScopeThreadId
+      || approvalScopeThreadId === currentThreadRef.current;
+    if (belongsToCurrentThread && (interruptPendingRef.current || isInterrupting)) {
+      // A stop locks approvals for its own Thread, not for an unrelated child.
+      showToast('当前轮次正在停止，该审批已失效。', 'info', 2500);
       return;
     }
     const approvalKey = approvalIdentity(approval);
@@ -3689,6 +3822,7 @@ export default function App() {
       onRefreshInterruptState={handleRefreshInterruptState}
       pendingApproval={pendingApproval}
       pendingApprovals={pendingApprovals}
+      pendingOtherThreadApprovals={pendingOtherThreadApprovals}
       pendingUserQuestion={pendingUserQuestion}
       onRespondUserQuestion={handleRespondUserQuestion}
       pendingApprovalCount={pendingApprovals.length}

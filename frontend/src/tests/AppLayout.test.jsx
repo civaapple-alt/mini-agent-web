@@ -3,15 +3,33 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AppLayout from '../components/AppLayout';
 
+const { childTasksMock } = vi.hoisted(() => ({ childTasksMock: vi.fn() }));
+
 vi.mock('../components/Header', () => ({ default: () => null }));
 vi.mock('../components/Sidebar', () => ({ default: () => null }));
 vi.mock('../components/ChatArea', () => ({ default: () => null }));
-vi.mock('../components/InputBar', () => ({ default: () => null }));
+vi.mock('../components/InputBar', () => ({
+  default: ({ approvalDockPendingApproval, approvalDockCount, onRespondApproval }) => (
+    approvalDockPendingApproval ? (
+      <div data-testid="approval-dock">
+        <span>{approvalDockPendingApproval.data.actionSummary}</span>
+        <span>{approvalDockCount}</span>
+        <button type="button" onClick={() => onRespondApproval(
+          approvalDockPendingApproval.requestId,
+          'approve',
+          '',
+          'once',
+          approvalDockPendingApproval.data.callId,
+        )}>允许子会话调用</button>
+      </div>
+    ) : null
+  ),
+}));
 vi.mock('../components/StatusRail', () => ({ default: () => null }));
 vi.mock('../components/SettingsModal', () => ({ default: () => null }));
 vi.mock('../components/Toast', () => ({ default: () => null }));
 vi.mock('../hooks/useChildTasks', () => ({
-  default: () => ({ children: [], loading: false, error: null, refresh: vi.fn() }),
+  default: (...args) => childTasksMock(...args),
 }));
 vi.mock('../components/SidePanel', () => ({
   default: ({ isOpen, isDocked, dockPreference, canDock, onToggleDock }) => (
@@ -33,9 +51,57 @@ describe('AppLayout side panel docking', () => {
   const widthStorageKey = 'mini-agent-web.side-panel-width';
 
   beforeEach(() => {
+    childTasksMock.mockReturnValue({ children: [], loading: false, error: null, refresh: vi.fn() });
     window.localStorage.removeItem(storageKey);
     window.localStorage.removeItem(widthStorageKey);
     window.innerWidth = 1400;
+  });
+
+  it('shows pending approvals from direct child Threads and hides unrelated Thread approvals', () => {
+    childTasksMock.mockReturnValue({
+      children: [{ child_thread_id: 'child-thread' }],
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+    });
+    const onRespondApproval = vi.fn();
+    render(
+      <AppLayout
+        currentThread="parent-thread"
+        currentThreadProject="project-a"
+        threads={[]}
+        messages={[]}
+        threadItems={[]}
+        pendingOtherThreadApprovals={[
+          {
+            requestId: 'child-approval',
+            data: {
+              projectId: 'project-a',
+              threadId: 'child-thread',
+              callId: 'child-call',
+              actionSummary: 'shell command `python3 make_aligned.py`',
+            },
+          },
+          {
+            requestId: 'other-approval',
+            data: {
+              projectId: 'project-a',
+              threadId: 'unrelated-thread',
+              actionSummary: 'unrelated action',
+            },
+          },
+        ]}
+        onRespondApproval={onRespondApproval}
+        userSettings={{ auto_scroll: true, word_wrap: true, font_size: 13 }}
+      />,
+    );
+
+    expect(screen.getByText('shell command `python3 make_aligned.py`')).toBeTruthy();
+    expect(screen.queryByText('unrelated action')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '允许子会话调用' }));
+    expect(onRespondApproval).toHaveBeenCalledWith(
+      'child-approval', 'approve', '', 'once', 'child-call',
+    );
   });
 
   it('persists the dock preference, keeps the main pane alongside it, and falls back on narrow windows', async () => {

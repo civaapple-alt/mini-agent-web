@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
+- Simplify the context usage popover, fold source estimates by default, keep
+  recent-request and session cache-hit rates separately labeled, and show hit
+  rates to two decimal places.
 - Preserve assistant segment boundaries and intermediate narration after history replay; fold
   thinking and tool activity within each segment instead of merging an entire Turn.
 - Restore processed time from the Session journal's Turn start/settled timestamps, and omit

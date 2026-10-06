@@ -25,6 +25,7 @@ import { api } from '../api';
 import {
   contextCacheHitRatio,
   contextCategoryBreakdown,
+  formatContextHitPercentage,
   formatContextPercentage,
   normalizeContextUsage,
 } from '../utils/contextUsage';
@@ -276,12 +277,7 @@ export function PromptContextCard({
   const normalizedUsage = normalizeContextUsage(contextUsage);
   const categories = contextCategoryBreakdown(normalizedUsage) || [];
   const latestCacheHitRatio = contextCacheHitRatio(normalizedUsage);
-  const hasSessionCacheRate = contextCacheUsage?.cacheHitRatio !== null
-    && contextCacheUsage?.cacheHitRatio !== undefined;
-  const cacheHitRatio = hasSessionCacheRate
-    ? contextCacheUsage.cacheHitRatio
-    : latestCacheHitRatio;
-  const cacheHitPercent = formatContextPercentage(cacheHitRatio);
+  const latestCacheHitPercent = formatContextHitPercentage(latestCacheHitRatio);
   const injectedBytes = (injections || []).reduce(
     (total, record) => total + Math.max(0, Number(record?.bytes) || 0),
     0,
@@ -335,17 +331,17 @@ export function PromptContextCard({
         </div>
         <div className="prompt-context-cache-summary">
           <div>
-            <span>{hasSessionCacheRate ? '本会话累计缓存命中率' : '最近请求缓存命中率'}</span>
-            <strong>{cacheHitPercent}</strong>
+            <span>最近请求缓存命中率</span>
+            <strong>{latestCacheHitPercent}</strong>
           </div>
           <div className="prompt-context-cache-progress" aria-hidden="true">
-            <span style={{ width: cacheHitRatio === null
+            <span style={{ width: latestCacheHitRatio === null
               ? '0%'
-              : `${Math.min(100, Math.max(0, cacheHitRatio * 100))}%` }} />
+              : `${Math.min(100, Math.max(0, latestCacheHitRatio * 100))}%` }} />
           </div>
           {contextCacheUsage && (
             <small>
-              {contextCacheUsage.cacheReportCount.toLocaleString()} / {contextCacheUsage.requestCount.toLocaleString()} 次用量报告含缓存数值
+              本会话 {contextCacheUsage.cacheReportCount.toLocaleString()} / {contextCacheUsage.requestCount.toLocaleString()} 次请求含缓存统计
               {contextCacheUsage.untrackedTurns > 0
                 ? `；${contextCacheUsage.untrackedTurns} 个历史回合未累计`
                 : ''}
@@ -433,7 +429,7 @@ export function PromptContextCard({
           </>
         )}
         <p className="prompt-context-estimate-note">
-          各来源占比由最近请求的输入字节估算；会话缓存命中率按含缓存数值的 Provider 报告加权汇总，不分摊到来源。
+          各来源占比由最近请求的输入字节估算，token 数仅供参考。
         </p>
       </div>
     </div>

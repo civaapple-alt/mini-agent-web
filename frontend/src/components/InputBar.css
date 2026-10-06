@@ -1210,11 +1210,9 @@ body.theme-dark .btn-dock-deny {
 }
 
 .composer-context-session-cache {
-  margin-top: 8px;
-  padding: 8px;
-  border: 1px solid var(--border-color);
-  border-radius: 7px;
-  background: var(--bg-app);
+  margin-top: 7px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
 }
 
 .composer-context-session-cache > div {
@@ -1259,16 +1257,32 @@ body.theme-dark .btn-dock-deny {
 }
 
 .composer-context-usage-window {
-  margin-top: 7px;
-  padding-top: 7px;
-  border-top: 1px solid var(--border-color);
+  margin-top: 5px;
   color: var(--text-muted);
+  font-size: 10px;
 }
 
 .composer-context-estimates {
   display: grid;
   gap: 5px;
   margin-top: 8px;
+}
+
+.composer-context-breakdown-details {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.composer-context-breakdown-details > summary {
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-weight: 600;
+  list-style-position: inside;
+}
+
+.composer-context-breakdown-details > summary::marker {
+  color: var(--text-muted);
 }
 
 .composer-context-breakdown-stack {

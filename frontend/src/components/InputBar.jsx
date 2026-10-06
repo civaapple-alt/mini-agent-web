@@ -17,6 +17,7 @@ import { api } from '../api';
 import {
   contextCacheHitRatio,
   contextCategoryBreakdown,
+  formatContextHitPercentage,
   formatContextPercentage,
   normalizeContextUsage,
 } from '../utils/contextUsage.js';
@@ -81,13 +82,7 @@ export function ContextUsageControl({ contextUsage, contextCacheUsage = null }) 
     : null;
   const windowPercent = formatContextPercentage(windowRatio);
   const latestCacheHitRatio = contextCacheHitRatio(usage);
-  const hasSessionCacheRate = contextCacheUsage?.cacheHitRatio !== null
-    && contextCacheUsage?.cacheHitRatio !== undefined;
-  const cacheHitRatio = hasSessionCacheRate
-    ? contextCacheUsage.cacheHitRatio
-    : latestCacheHitRatio;
-  const cacheHitScope = hasSessionCacheRate ? '会话' : '最近';
-  const cacheHitPercent = formatContextPercentage(cacheHitRatio);
+  const latestCacheHitPercent = formatContextHitPercentage(latestCacheHitRatio);
   const compactTokens = (tokens) => {
     if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
     if (tokens < 10_000 && tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`;
@@ -95,12 +90,10 @@ export function ContextUsageControl({ contextUsage, contextCacheUsage = null }) 
     return tokens.toLocaleString();
   };
   const summary = inputTokens === null
-    ? (hasSessionCacheRate
-      ? `窗口未知 · 会话命中 ${cacheHitPercent}`
-      : '上下文用量未知')
+    ? '上下文用量未知'
     : hasInputBudget
-      ? `${compactTokens(inputTokens)} / ${compactTokens(windowSize)} · ${windowPercent} · ${cacheHitScope}命中 ${cacheHitPercent}`
-      : `输入 ${compactTokens(inputTokens)} · 窗口未知 · ${cacheHitScope}命中 ${cacheHitPercent}`;
+      ? `${compactTokens(inputTokens)} / ${compactTokens(windowSize)} · ${windowPercent} · 请求命中 ${latestCacheHitPercent}`
+      : `输入 ${compactTokens(inputTokens)} · 窗口未知 · 请求命中 ${latestCacheHitPercent}`;
   const progressWidth = (ratio) => (
     ratio === null ? '0%' : `${Math.min(100, Math.max(0, ratio * 100))}%`
   );
@@ -130,7 +123,7 @@ export function ContextUsageControl({ contextUsage, contextCacheUsage = null }) 
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-label={`上下文使用状态：${summary}。打开会话上下文详情`}
-        title="查看模型窗口占用、会话缓存命中率和来源占比"
+        title="查看模型窗口占用、最近请求缓存命中率和来源估算"
       >
         <Activity size={12} />
         <span>{summary}</span>
@@ -147,10 +140,10 @@ export function ContextUsageControl({ contextUsage, contextCacheUsage = null }) 
               </div>
             </div>
             <div className="composer-context-usage-highlight cache">
-              <span>{hasSessionCacheRate ? '本会话累计命中率' : '最近请求命中率'}</span>
-              <strong>{cacheHitPercent}</strong>
+              <span>最近请求缓存命中率</span>
+              <strong>{latestCacheHitPercent}</strong>
               <div className="composer-context-progress" aria-hidden="true">
-                <span style={{ width: progressWidth(cacheHitRatio) }} />
+                <span style={{ width: progressWidth(latestCacheHitRatio) }} />
               </div>
             </div>
           </div>
@@ -162,87 +155,78 @@ export function ContextUsageControl({ contextUsage, contextCacheUsage = null }) 
             <span>缓存输入</span>
             <strong>{cachedInputTokens === null ? '未知' : `${cachedInputTokens.toLocaleString()} tokens`}</strong>
           </div>
+          <div className="composer-context-usage-window">
+            上下文窗口：{hasWindow ? `${windowSize.toLocaleString()} tokens` : '未知'}
+          </div>
           <div className="composer-context-session-cache">
             <div>
               <span>本会话累计缓存命中率</span>
-              <strong>{formatContextPercentage(contextCacheUsage?.cacheHitRatio ?? null)}</strong>
+              <strong>{formatContextHitPercentage(contextCacheUsage?.cacheHitRatio ?? null)}</strong>
             </div>
             {contextCacheUsage ? (
               <p>
-                {contextCacheUsage.cacheReportCount.toLocaleString()} / {contextCacheUsage.requestCount.toLocaleString()} 次用量报告含缓存数值
+                {contextCacheUsage.cacheReportCount.toLocaleString()} / {contextCacheUsage.requestCount.toLocaleString()} 次请求含缓存统计
                 {contextCacheUsage.untrackedTurns > 0
-                  ? `；${contextCacheUsage.untrackedTurns} 个历史回合没有逐请求累计`
+                  ? ` · ${contextCacheUsage.untrackedTurns} 个历史回合未累计`
                   : ''}
               </p>
             ) : (
-              <p>历史累计用量未知；本会话后续请求完成后开始累计。</p>
+              <p>会话累计数据将在请求完成后生成。</p>
             )}
-          </div>
-          <div className="composer-context-usage-window">
-            模型：{modelContext?.providerId && modelContext?.modelId
-              ? `${modelContext.providerId}/${modelContext.modelId}`
-              : '历史请求未记录模型'}
-            {' · '}上下文窗口：{hasWindow ? `${windowSize.toLocaleString()} tokens` : '未知'}
-            {' · '}最大输出：{hasOutputLimit ? `${maxOutputTokens.toLocaleString()} tokens` : '未记录'}
-            {' · '}可用输入预算：{hasInputBudget ? `${inputBudget.toLocaleString()} tokens` : '未知'}
-            {windowRatio !== null ? ` · 最近输入占窗口 ${windowPercent}` : ''}
           </div>
           {inputTokens !== null && hasWindow && inputTokens > windowSize && (
             <p className="composer-context-unknown" role="status">
-              最近请求用量超过保存的模型窗口；请核对该次请求实际路由和模型配置。旧用量不能证明当前窗口接受了超限请求。
+              本次输入量高于模型上下文窗口，请检查模型配置。
             </p>
           )}
           {inputTokens !== null && hasInputBudget && hasOutputLimit
             && inputTokens > inputBudget && inputTokens <= windowSize && (
               <p className="composer-context-unknown" role="status">
-                最近输入高于可用输入预算（模型窗口减去最大输出预留）；实际输出上限可能需要下调。
+                本次输入已超过扣除最大输出预留后的预算。
               </p>
           )}
-          {!modelContext && inputTokens !== null && (
-            <p className="composer-context-unknown" role="status">
-              这条历史用量没有保存模型窗口快照，因此无法准确计算窗口占比。
-            </p>
-          )}
-          <div className="composer-context-usage-title">来源构成估算</div>
-          {categories.length === 0 ? (
-            <p className="composer-context-unknown">来源构成未知</p>
-          ) : (
-            <>
-              <div className="composer-context-breakdown-stack" role="img" aria-label="各上下文来源占比">
-                {categories.map((category) => (
-                  <span
-                    key={category.key}
-                    style={{
-                      width: `${category.share * 100}%`,
-                      backgroundColor: `var(--context-color-${category.key})`,
-                    }}
-                    title={`${category.label} ${formatContextPercentage(category.share)}`}
-                  />
-                ))}
-              </div>
-              <div className="composer-context-estimates">
-                {categories.map((category) => (
-                  <div className="composer-context-estimate" key={category.key}>
-                    <span className="composer-context-estimate-label">
-                      <span
-                        className="composer-context-estimate-dot"
-                        style={{ backgroundColor: `var(--context-color-${category.key})` }}
-                        aria-hidden="true"
-                      />
-                      <span className="composer-context-estimate-name">{category.label}</span>
-                      <small title={`${category.bytes.toLocaleString()} B`}>
-                        {category.estimatedTokens === null
-                          ? 'Token 估算未知'
-                          : `≈ ${category.estimatedTokens.toLocaleString()} tokens`}
-                      </small>
-                    </span>
-                    <strong>{formatContextPercentage(category.share)}</strong>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-          <p>来源占比按输入字节估算；会话缓存命中率按含缓存数值的 Provider 报告加权汇总，不分摊到来源。</p>
+          <details className="composer-context-breakdown-details">
+            <summary>来源构成估算</summary>
+            {categories.length === 0 ? (
+              <p className="composer-context-unknown">来源构成未知</p>
+            ) : (
+              <>
+                <div className="composer-context-breakdown-stack" role="img" aria-label="各上下文来源占比">
+                  {categories.map((category) => (
+                    <span
+                      key={category.key}
+                      style={{
+                        width: `${category.share * 100}%`,
+                        backgroundColor: `var(--context-color-${category.key})`,
+                      }}
+                      title={`${category.label} ${formatContextPercentage(category.share)}`}
+                    />
+                  ))}
+                </div>
+                <div className="composer-context-estimates">
+                  {categories.map((category) => (
+                    <div className="composer-context-estimate" key={category.key}>
+                      <span className="composer-context-estimate-label">
+                        <span
+                          className="composer-context-estimate-dot"
+                          style={{ backgroundColor: `var(--context-color-${category.key})` }}
+                          aria-hidden="true"
+                        />
+                        <span className="composer-context-estimate-name">{category.label}</span>
+                        <small title={`${category.bytes.toLocaleString()} B`}>
+                          {category.estimatedTokens === null
+                            ? 'Token 估算未知'
+                            : `≈ ${category.estimatedTokens.toLocaleString()} tokens`}
+                        </small>
+                      </span>
+                      <strong>{formatContextPercentage(category.share)}</strong>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            <p>占比按输入字节估算，token 数仅供参考。</p>
+          </details>
         </section>
       )}
     </div>

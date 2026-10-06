@@ -220,3 +220,8 @@ export function formatContextPercentage(ratio) {
     ? '<0.1%'
     : `${percentage.toFixed(1)}%`;
 }
+
+export function formatContextHitPercentage(ratio) {
+  if (!Number.isFinite(ratio) || ratio < 0) return '未知';
+  return `${(ratio * 100).toFixed(2)}%`;
+}

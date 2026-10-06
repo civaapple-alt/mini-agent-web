@@ -34,10 +34,12 @@ remains available after older turn presentations leave the bounded history.
 
 ## Request usage
 
-The collapsed composer control shows model-window occupancy and the session's
-cumulative cache-hit ratio when Provider cache reports are available. Expanding
-it also shows the most recent `model_responded` input and cached-input token
-counts. The session ratio is token-weighted across Provider usage reports in
+The collapsed composer control shows model-window occupancy and the most recent
+request's cache-hit ratio. Expanding it also shows the most recent
+`model_responded` input and cached-input token counts, plus the session's
+cumulative cache-hit ratio when Provider cache reports are available. These
+metrics keep fixed labels and are never substituted for each other. The session
+ratio is token-weighted across Provider usage reports in
 persisted Turn presentations that include a cached-input count:
 `sum(cached_input_tokens) / sum(input_tokens for reports with cached counts)`.
 The report count and usage-report count show how much of the available Provider
@@ -47,8 +49,9 @@ ratio is unknown when no cache-bearing report has input tokens. Old Turns
 without per-request totals are counted as untracked rather than treating their
 latest report as a historical average.
 
-The detail popover closes on an outside click or Escape. Its expanded state is
-reset when the selected project or Thread changes.
+Cache-hit rates display two decimal places. The detail popover closes on an
+outside click or Escape. Its expanded state is reset when the selected project
+or Thread changes.
 
 The most recent request's zero cached-input count is shown as zero; missing
 usage or a zero input count leaves its own ratio unknown. The model context
@@ -61,8 +64,9 @@ user input when the App Server reports them. If Studio cannot match an input,
 it keeps the timing metadata on the assistant reply. If timing data is missing,
 Studio omits it; the SDK keeps the timing fields optional for compatibility.
 
-The expanded usage view shows a segmented context-source bar and a percentage
-for each category. Studio apportions the Provider-reported input-token total
+The source breakdown is folded by default in the expanded usage view. When
+opened, it shows a segmented context-source bar and a percentage for each
+category. Studio apportions the Provider-reported input-token total
 by each category's serialized byte share and labels the token count as an
 estimate. It does not assign cached tokens to individual sources. The session
 cache-hit ratio is based on Provider reports, not an estimate derived from

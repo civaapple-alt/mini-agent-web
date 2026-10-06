@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   thinking and tool activity within each segment instead of merging an entire Turn.
 - Restore processed time from the Session journal's Turn start/settled timestamps, and omit
   estimates derived from item commit timestamps.
+- Open pasted text attachments in a scrollable preview, loading historical content on demand
+  from the current Thread's bounded Gateway attachment store.
 - Render enlarged message images in a viewport-level preview above the
   virtualized conversation, and constrain the image to the available viewport
   height and width.

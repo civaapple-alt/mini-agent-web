@@ -685,6 +685,8 @@ export default function ChatArea({
                   )}
                   <MessageItem
                     message={msg}
+                    threadId={traceScope?.threadId}
+                    projectId={traceScope?.projectId}
                     isLast={endIndex === displayMessages.length - 1}
                     isLastInTurn={turnId
                       ? lastAssistantIndexByTurn.get(turnId) === endIndex

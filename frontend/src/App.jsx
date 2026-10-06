@@ -53,7 +53,7 @@ import { buildAutoThreadTitle, isDefaultThreadTitle } from './utils/threadTitle.
 import {
   cleanInputText,
   createInputTrace,
-  extractTextAttachmentNames,
+  extractTextAttachmentReferences,
   isInternalCompactionMessage,
 } from './utils/inputTrace.js';
 import { startImplementationTurn } from './utils/planWorkflow.js';
@@ -1292,8 +1292,8 @@ export default function App() {
           ? workflowByTurn.get(String(m.turnId)) || null
           : null;
         const displayText = isUserMessage ? cleanInputText(m.text) : m.text;
-        const textAttachmentNames = isUserMessage
-          ? extractTextAttachmentNames(m.text)
+        const textAttachmentReferences = isUserMessage
+          ? extractTextAttachmentReferences(m.text)
           : [];
         result.push({
           id: messageId,
@@ -1301,8 +1301,8 @@ export default function App() {
           turnId: m.turnId || null,
           text: displayText || '',
           ...(workflow ? { workflow } : {}),
-          ...(isUserMessage && textAttachmentNames.length > 0
-            ? { textAttachments: textAttachmentNames.map((name) => ({ name })) }
+          ...(isUserMessage && textAttachmentReferences.length > 0
+            ? { textAttachments: textAttachmentReferences }
             : {}),
           thinking: reasoning,
           tools: checkpointTools,
@@ -1325,7 +1325,7 @@ export default function App() {
                 source: isSteerMessage ? 'steer' : 'user',
                 capturedAt: m.capturedAt || m.createdAt || m.created_at || null,
                 images: m.images,
-                textAttachments: textAttachmentNames,
+                textAttachments: textAttachmentReferences,
                 referencedFiles: m.referencedFiles,
                 attachmentText: m.text,
                 historical: true,

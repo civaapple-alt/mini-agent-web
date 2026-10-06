@@ -750,6 +750,8 @@ export default function ChildSessionViewer({
                       <MessageItem
                         key={message.id || `child-message-${index}`}
                         message={message}
+                        threadId={child.child_thread_id}
+                        projectId={childProjectId}
                         isLast={index === messages.length - 1}
                         isLastInTurn={message.turnId
                           ? lastAssistantIndexByTurn.get(String(message.turnId)) === index

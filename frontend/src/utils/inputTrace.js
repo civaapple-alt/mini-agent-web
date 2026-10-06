@@ -78,16 +78,25 @@ function summarizeAttachmentText(text) {
   };
 }
 
-export function extractTextAttachmentNames(text) {
+export function extractTextAttachmentReferences(text) {
   const value = String(text || '');
   return [...value.matchAll(/\[User Attached Text:\s*([^\]]+)\]/g)]
     .map((match) => {
-      const named = match[1].match(/\(name:\s*([^;)]+)(?:;|\))/);
-      if (named?.[1]) return named[1].trim();
       const path = match[1].split(' (')[0].trim();
-      return path.split(/[\\/]/).pop() || 'pasted-text.txt';
+      const filename = path.split(/[\\/]/).pop() || '';
+      const named = match[1].match(/\(name:\s*([^;)]+)(?:;|\))/);
+      return {
+        name: named?.[1]?.trim() || filename || 'pasted-text.txt',
+        attachmentId: match[1].match(
+          /(?:^|[\\/])(pasted_[0-9a-f]{32}_[1-4]\.txt)(?=\s|$)/i,
+        )?.[1] || null,
+      };
     })
-    .filter(Boolean);
+    .filter((attachment) => attachment.name);
+}
+
+export function extractTextAttachmentNames(text) {
+  return extractTextAttachmentReferences(text).map((attachment) => attachment.name);
 }
 
 export function extractFileAttachmentNames(text) {
@@ -229,7 +238,7 @@ function entryInputMessage(entry, index, scope) {
     id: item.id || `history_item_${index}`,
     role: 'user',
     text: cleanInputText(item.text),
-    textAttachments: extractTextAttachmentNames(item.text).map((name) => ({ name })),
+    textAttachments: extractTextAttachmentReferences(item.text),
     fileAttachments: extractFileAttachmentNames(item.text).map((name) => ({ name })),
     turnId,
     historyOrder: Number.isFinite(entry?.historyOrder) ? entry.historyOrder : index,

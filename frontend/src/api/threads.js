@@ -258,6 +258,19 @@ export const threadApi = {
     return res.json();
   },
 
+  async readTextAttachment(threadId, attachmentId, options = {}) {
+    const res = await request(
+      `/api/threads/${encodeURIComponent(threadId)}/text-attachments/${encodeURIComponent(attachmentId)}`,
+      requestSignal(options),
+      options.projectId,
+    );
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error.detail || `无法读取文本附件 ${attachmentId}`);
+    }
+    return res.json();
+  },
+
   async respondUserQuestion(threadId, response, options = {}) {
     const res = await request(
       `/api/threads/${encodeURIComponent(threadId)}/user-questions/respond`,

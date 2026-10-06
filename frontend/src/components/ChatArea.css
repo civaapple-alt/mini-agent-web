@@ -647,6 +647,68 @@
   cursor: zoom-out;
 }
 
+.text-attachment-overlay {
+  cursor: default;
+}
+
+.text-attachment-preview {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 1000px);
+  max-height: min(90vh, calc(100vh - 48px));
+  max-height: min(90dvh, calc(100dvh - 48px));
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-image);
+  color: var(--text-primary);
+  cursor: auto;
+}
+
+.text-attachment-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 52px;
+  padding: 12px 72px 12px 18px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.text-attachment-preview-header span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-attachment-preview-content {
+  min-height: 0;
+  margin: 0;
+  padding: 18px;
+  overflow: auto;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.text-attachment-preview-state {
+  padding: 28px 20px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.text-attachment-preview-state.error {
+  color: var(--status-error);
+}
+
 .img-lightbox-image {
   display: block;
   max-width: 90vw;
@@ -700,6 +762,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  font: inherit;
   max-width: 240px;
   padding: 4px 7px;
   border: 1px solid var(--border-color);
@@ -707,6 +770,23 @@
   background: var(--bg-surface);
   color: var(--status-running);
   font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.user-text-attachment-chip:hover:not(:disabled) {
+  border-color: var(--status-running);
+  background: var(--bg-card-hover);
+}
+
+.user-text-attachment-chip:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.user-text-attachment-chip:disabled {
+  opacity: 0.65;
+  cursor: default;
 }
 
 .user-text-attachment-chip span {

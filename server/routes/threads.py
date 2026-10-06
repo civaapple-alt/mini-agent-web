@@ -5,6 +5,7 @@ Thread management endpoints with metadata enrichment (title, summary, date group
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -17,6 +18,7 @@ from mini_agent.errors import (
 from pydantic import BaseModel, Field
 
 from server.control.fork_errors import SessionForkConflictError
+from server.routes.agent_models import MAX_TEXT_ATTACHMENT_BYTES
 from server.session_catalog import session_catalog
 from server.session_doctor import (
     SessionDoctorError,
@@ -32,6 +34,9 @@ from server.thread_attention import thread_attention_reasons
 from server.thread_titles import is_default_thread_title
 
 router = APIRouter(prefix="/api/threads", tags=["Threads"])
+TEXT_ATTACHMENT_ID_PATTERN = re.compile(
+    r"^pasted_[0-9a-f]{32}_[1-4]\.txt$", re.IGNORECASE
+)
 
 
 @router.post(
@@ -1150,6 +1155,46 @@ async def read_thread(
         raise HTTPException(status_code=503, detail=str(err)) from err
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.get(
+    "/{thread_id}/text-attachments/{attachment_id}",
+    summary="Read a bounded pasted text attachment",
+)
+async def read_text_attachment(
+    thread_id: str,
+    attachment_id: str,
+    project_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """Read only Gateway-created pasted text files for this Project/Thread."""
+    if not TEXT_ATTACHMENT_ID_PATTERN.fullmatch(attachment_id):
+        raise HTTPException(status_code=404, detail="文本附件不存在")
+
+    try:
+        root = session_manager.attachments_path_for_thread(
+            thread_id, project_id
+        ).resolve()
+        target = (root / attachment_id).resolve(strict=True)
+    except (FileNotFoundError, OSError) as err:
+        raise HTTPException(status_code=404, detail="文本附件不存在") from err
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+
+    if not target.is_relative_to(root):
+        raise HTTPException(status_code=403, detail="文本附件路径无效")
+
+    try:
+        with target.open("rb") as attachment_file:
+            content = attachment_file.read(MAX_TEXT_ATTACHMENT_BYTES + 1)
+    except OSError as err:
+        raise HTTPException(status_code=404, detail="文本附件不存在") from err
+    if len(content) > MAX_TEXT_ATTACHMENT_BYTES:
+        raise HTTPException(status_code=413, detail="文本附件超过 128 KiB 限制")
+    return {
+        "attachment_id": attachment_id,
+        "content": content.decode("utf-8", errors="replace"),
+        "size_bytes": len(content),
+    }
 
 
 @router.get("/{thread_id}/turns/{turn_id}", summary="Read Turn recovery status")

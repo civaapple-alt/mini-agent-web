@@ -18,11 +18,12 @@ import ContextCompactionGroup from './ContextCompactionGroup';
 import ErrorBoundary from './ErrorBoundary';
 import ChildTaskBatchCard from './ChildTaskBatchCard';
 import AssistantActivityGroup from './AssistantActivityGroup';
+import TextAttachmentPreview from './TextAttachmentPreview';
 import { groupCompactionBlocks, normalizeAssistantBlocks } from '../utils/messageState';
 import { groupSettledAssistantBlocks } from '../utils/turnHistory';
 import {
   extractFileAttachmentNames,
-  extractTextAttachmentNames,
+  extractTextAttachmentReferences,
 } from '../utils/inputTrace';
 
 function getCurrentExecutionSegmentStartIndex(blocks, activeBlockIndex) {
@@ -81,6 +82,8 @@ export default function MessageItem({
   isChildTaskTurn = false,
   modelTimingForPrompt = null,
   modelTimingDisplayedOnPrompt = false,
+  threadId = null,
+  projectId = null,
 }) {
   const { role, text, thinking, tools = [], blocks = [], usage, modelTiming } = message;
   const formatModelTimingLabels = (timing) => [
@@ -98,15 +101,19 @@ export default function MessageItem({
   };
 
   const [previewImg, setPreviewImg] = useState(null);
+  const [previewTextAttachment, setPreviewTextAttachment] = useState(null);
 
   useEffect(() => {
-    if (!previewImg) return undefined;
+    if (!previewImg && !previewTextAttachment) return undefined;
     const closeOnEscape = (event) => {
-      if (event.key === 'Escape') setPreviewImg(null);
+      if (event.key === 'Escape') {
+        setPreviewImg(null);
+        setPreviewTextAttachment(null);
+      }
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [previewImg]);
+  }, [previewImg, previewTextAttachment]);
 
   if (message.messageKind === 'goal_verification') {
     return (
@@ -126,7 +133,7 @@ export default function MessageItem({
     } = message;
     const displayedTextAttachments = textAttachments.length > 0
       ? textAttachments
-      : extractTextAttachmentNames(message.text).map((name) => ({ name }));
+      : extractTextAttachmentReferences(message.text);
     const displayedFileAttachments = fileAttachments.length > 0
       ? fileAttachments
       : extractFileAttachmentNames(message.text).map((name) => ({ name }));
@@ -147,7 +154,10 @@ export default function MessageItem({
                     src={imgUrl}
                     alt={`Attached ${i + 1}`}
                     className="user-msg-image"
-                    onClick={() => setPreviewImg(imgUrl)}
+                    onClick={() => {
+                      setPreviewTextAttachment(null);
+                      setPreviewImg(imgUrl);
+                    }}
                     title="点击放大预览图片"
                   />
                 </div>
@@ -186,6 +196,15 @@ export default function MessageItem({
             document.body,
           )}
 
+          {previewTextAttachment && typeof document !== 'undefined' && (
+            <TextAttachmentPreview
+              attachment={previewTextAttachment}
+              threadId={threadId || message.inputTrace?.scope?.threadId}
+              projectId={projectId || message.inputTrace?.scope?.projectId}
+              onClose={() => setPreviewTextAttachment(null)}
+            />
+          )}
+
           {/* Render Referenced Files */}
           {referencedFiles && referencedFiles.length > 0 && (
             <div className="user-referenced-files-row">
@@ -200,14 +219,23 @@ export default function MessageItem({
           {displayedTextAttachments.length > 0 && (
             <div className="user-text-attachments-row">
               {displayedTextAttachments.map((attachment, index) => (
-                <span
+                <button
+                  type="button"
                   key={`${attachment.name}_${index}`}
                   className="user-text-attachment-chip font-mono"
-                  title={attachment.content?.slice(0, 240) || attachment.name}
+                  title={typeof attachment.content === 'string' || attachment.attachmentId
+                    ? '点击预览文本附件'
+                    : '该历史文本附件暂不可预览'}
+                  aria-label={`预览文本附件 ${attachment.name}`}
+                  disabled={typeof attachment.content !== 'string' && !attachment.attachmentId}
+                  onClick={() => {
+                    setPreviewImg(null);
+                    setPreviewTextAttachment(attachment);
+                  }}
                 >
                   <FileText size={11} />
                   <span>{attachment.name}</span>
-                </span>
+                </button>
               ))}
             </div>
           )}

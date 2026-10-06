@@ -15,6 +15,7 @@ from mini_agent.errors import (
     ServerProcessError,
 )
 
+from server.control.runtime_resources import SessionParkingError
 from server.routes.agent_models import (
     MAX_FILE_ATTACHMENTS,
     MAX_TEXT_ATTACHMENT_BYTES,
@@ -561,14 +562,14 @@ async def _stream_turn_to_ws(
 ) -> None:
     """Stream events from MiniAgentClient directly to the initiating WebSocket."""
     target_thread = thread_id or "default"
-    current_task = asyncio.current_task()
     effort = session_manager.get_settings(requested_project_id).get(
         "reasoning_effort", "high"
     )
     active_turn_id: str | None = None
-    project_id: str | None = None
-    turn_start_lock: asyncio.Lock | None = None
-    turn_start_lock_acquired = False
+    project_id: str | None = requested_project_id
+    admission_project_id: str | None = None
+    client = None
+    turn_settled = False
     try:
         client = await session_manager.get_client_for_thread(
             target_thread, requested_project_id
@@ -576,9 +577,9 @@ async def _stream_turn_to_ws(
         project_id = requested_project_id or session_manager._client_projects.get(
             target_thread
         )
-        turn_start_lock = session_manager.get_turn_start_lock(target_thread, project_id)
-        await turn_start_lock.acquire()
-        turn_start_lock_acquired = True
+        admission_project_id = session_manager.resolve_thread_project(
+            target_thread, project_id
+        )
         stream_kwargs = {
             "prompt": prompt,
             "mode": mode,
@@ -589,36 +590,35 @@ async def _stream_turn_to_ws(
             stream_kwargs["selected_skills"] = selected_skills
         if workflow:
             stream_kwargs["workflow"] = workflow
-        async for item in client.stream_turn(**stream_kwargs):
-            # Capture active turn id from submission or event
-            if item.get("type") == "_turn_submission":
-                turn_id = item.get("data", {}).get("turn_id") or getattr(
-                    item.get("submission"), "turn_id", None
+        (
+            stream,
+            first_item,
+            active_turn_id,
+        ) = await session_manager.start_stream_with_admission(
+            client,
+            target_thread,
+            admission_project_id,
+            **stream_kwargs,
+        )
+
+        async def items_with_submission():
+            if first_item is not None:
+                yield first_item
+            async for streamed_item in stream:
+                yield streamed_item
+
+        async for item in items_with_submission():
+            turn_id = session_manager.stream_turn_id(item)
+            if turn_id and not active_turn_id:
+                active_turn_id = turn_id
+                session_manager.set_active_turn(
+                    target_thread,
+                    active_turn_id,
+                    project_id=admission_project_id,
                 )
-                if turn_id:
-                    active_turn_id = str(turn_id)
-                    session_manager.set_active_turn(
-                        target_thread,
-                        active_turn_id,
-                        current_task,
-                        project_id,
-                    )
-                    if turn_start_lock_acquired:
-                        turn_start_lock.release()
-                        turn_start_lock_acquired = False
-            elif item.get("type") == "event":
-                turn_id = item.get("turnId")
-                if turn_id:
-                    active_turn_id = str(turn_id)
-                    session_manager.set_active_turn(
-                        target_thread,
-                        active_turn_id,
-                        current_task,
-                        project_id,
-                    )
-                    if turn_start_lock_acquired:
-                        turn_start_lock.release()
-                        turn_start_lock_acquired = False
+            event = item.get("event") if isinstance(item, dict) else None
+            if isinstance(event, dict) and event.get("type") == "turn_finished":
+                turn_settled = True
 
             safe_item = to_json_serializable(item)
             # App Server notifications are centrally broadcast by the SDK
@@ -644,6 +644,17 @@ async def _stream_turn_to_ws(
         # Task cancellation is a transport/lifecycle event, not an
         # authoritative Turn settlement. The App Server must publish the
         # real turn_finished event before the Gateway clears a Turn.
+    except SessionParkingError as err:
+        error_payload = {
+            "type": "error",
+            "scope": "turn",
+            "terminal": True,
+            "threadId": target_thread,
+            "message": str(err),
+        }
+        if project_id:
+            error_payload["projectId"] = project_id
+        await session_manager.broadcast_ws(error_payload)
     except Exception as err:
         if isinstance(err, ServerProcessError):
             logger.warning(
@@ -665,11 +676,12 @@ async def _stream_turn_to_ws(
             error_payload["projectId"] = project_id
         await session_manager.broadcast_ws(error_payload)
     finally:
-        if turn_start_lock_acquired and turn_start_lock is not None:
-            turn_start_lock.release()
-        session_manager.clear_active_turn(
-            target_thread,
-            project_id,
-            active_turn_id,
-            current_task,
-        )
+        if active_turn_id and admission_project_id and client is not None:
+            if turn_settled:
+                session_manager.clear_active_turn(
+                    target_thread, admission_project_id, active_turn_id
+                )
+            else:
+                session_manager.watch_turn_until_settled(
+                    client, target_thread, admission_project_id, active_turn_id
+                )

@@ -9,7 +9,8 @@ import os
 import time
 from array import array
 from collections import OrderedDict
-from typing import Any
+from contextlib import AbstractAsyncContextManager
+from typing import Any, Protocol
 from urllib.parse import quote
 
 import psutil
@@ -22,7 +23,50 @@ VIEWER_LEASE_SECONDS = 45.0
 IDLE_PARK_SECONDS = 10 * 60.0
 PARK_SWEEP_SECONDS = 15.0
 MAX_PROCESS_HISTORIES = 512
+MAX_RESOURCE_SESSION_ROWS = 512
+RESOURCE_CATALOG_REFRESH_SECONDS = 15.0
 logger = logging.getLogger("mini_agent.server")
+
+
+class SessionParkingError(RuntimeError):
+    """Raised when a Thread cannot start while its App Server is stopping."""
+
+
+class RuntimeResourceOwner(Protocol):
+    def runtime_state_lock(self) -> AbstractAsyncContextManager[None]: ...
+
+    def runtime_client_bindings(self) -> dict[tuple[str, str], Any]: ...
+
+    def runtime_client_for_thread(
+        self, project_id: str, thread_id: str
+    ) -> Any | None: ...
+
+    def discard_runtime_client(self, client: Any) -> None: ...
+
+    def runtime_thread_has_active_work(
+        self, project_id: str, thread_id: str
+    ) -> bool: ...
+
+    def is_project_restarting(self, project_id: str) -> bool: ...
+
+    def list_all_project_sessions(self) -> list[dict[str, Any]]: ...
+
+    def list_all_project_child_sessions(self) -> list[dict[str, Any]]: ...
+
+    def list_pending_approvals(
+        self, project_id: str, thread_id: str
+    ) -> list[dict[str, Any]]: ...
+
+    def read_project_thread_summary(
+        self, thread_id: str, project_id: str
+    ) -> dict[str, Any] | None: ...
+
+    def get_turn_start_lock(self, thread_id: str, project_id: str) -> asyncio.Lock: ...
+
+    async def list_child_tasks(
+        self, thread_id: str, project_id: str
+    ) -> list[dict[str, Any]]: ...
+
 
 _ACTIVE_RUNTIME_PHASES = frozenset(
     {
@@ -104,7 +148,7 @@ class _MetricRing:
 class RuntimeResourceManager:
     """Observe managed subprocesses and park only verified-idle Sessions."""
 
-    def __init__(self, owner: Any) -> None:
+    def __init__(self, owner: RuntimeResourceOwner) -> None:
         self.owner = owner
         self._residency_task: asyncio.Task[None] | None = None
         self._sample_lock = asyncio.Lock()
@@ -118,8 +162,11 @@ class RuntimeResourceManager:
         self._idle_since: dict[tuple[str, str], float] = {}
         self._retry_after: dict[tuple[str, str], float] = {}
         self._parking: set[tuple[str, str]] = set()
+        self._parking_clients: dict[tuple[str, str], Any] = {}
         self._states: dict[tuple[str, str], str] = {}
         self._state_details: dict[tuple[str, str], list[str]] = {}
+        self._session_catalog_cache: dict[tuple[str, str], dict[str, Any]] | None = None
+        self._session_catalog_refreshed_at = 0.0
         self._shutting_down = False
 
     async def start(self) -> None:
@@ -137,14 +184,87 @@ class RuntimeResourceManager:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
-    def on_client_activated(self, project_id: str, thread_id: str) -> None:
+    def on_client_activated(self, project_id: str, thread_id: str, client: Any) -> None:
         key = (project_id, thread_id)
-        self._idle_since.setdefault(key, time.monotonic())
-        self._states.setdefault(key, "loaded")
+        parking_client = self._parking_clients.get(key)
+        if key in self._parking and parking_client is client:
+            # Rebinding the same process does not confirm that Park completed.
+            return
+        if key in self._parking and parking_client is not None:
+            if getattr(parking_client, "is_running", False):
+                # Keep admission closed while the process being stopped is live.
+                return
+            self._clear_park_gate(key)
+        now = time.monotonic()
+        if self._viewer_count(key, now):
+            self._idle_since.pop(key, None)
+        else:
+            self._idle_since[key] = now
+        self._states[key] = "loaded"
+        self._state_details.pop(key, None)
+        self._retry_after.pop(key, None)
+        self._session_catalog_cache = None
         self._last_sample = 0.0
+
+    def on_client_stopping(self, project_id: str, thread_id: str, client: Any) -> None:
+        key = (project_id, thread_id)
+        self._parking.add(key)
+        self._parking_clients[key] = client
+        self._states[key] = "parking"
+        self._state_details.pop(key, None)
+
+    def on_client_stop_result(
+        self,
+        project_id: str,
+        thread_id: str,
+        client: Any,
+        *,
+        confirmed: bool,
+    ) -> None:
+        key = (project_id, thread_id)
+        if self._parking_clients.get(key) is not client:
+            return
+        if not confirmed:
+            self._states[key] = "stopping_unconfirmed"
+            self._state_details[key] = ["尚未确认 App Server 退出"]
+            self._parking.add(key)
+            return
+        self._clear_park_gate(key)
+        self._states[key] = "parked"
+        self._state_details.pop(key, None)
+        self._idle_since.pop(key, None)
+        self._retry_after.pop(key, None)
+        self._session_catalog_cache = None
+
+    def on_client_stop_aborted(
+        self, project_id: str, thread_id: str, client: Any
+    ) -> None:
+        """Reopen admission when a planned stop never began."""
+        key = (project_id, thread_id)
+        if self._parking_clients.get(key) is not client:
+            return
+        self._clear_park_gate(key)
+        self._states[key] = "loaded"
+        self._state_details.pop(key, None)
+        self._retry_after.pop(key, None)
+        if self._viewer_count(key, time.monotonic()):
+            self._idle_since.pop(key, None)
+        else:
+            self._idle_since[key] = time.monotonic()
+
+    def _clear_park_gate(self, key: tuple[str, str]) -> None:
+        self._parking.discard(key)
+        self._parking_clients.pop(key, None)
 
     def is_parking(self, project_id: str, thread_id: str) -> bool:
         return (project_id, thread_id) in self._parking
+
+    def parking_threads(self, project_id: str) -> list[str]:
+        return sorted(
+            thread_id
+            for bound_project, thread_id in self._parking
+            if bound_project == project_id
+        )
 
     def update_viewer(
         self,
@@ -414,35 +534,9 @@ class RuntimeResourceManager:
             }
         )
 
-        clients: dict[tuple[str, str], Any] = dict(self.owner._project_clients)
-        for thread_id, client in self.owner._clients.items():
-            project_id = self.owner._client_projects.get(
-                thread_id, self.owner._current_project_id
-            )
-            clients.setdefault((project_id, thread_id), client)
+        clients = self.owner.runtime_client_bindings()
 
-        sessions: dict[tuple[str, str], dict[str, Any]] = {}
-        try:
-            for session in self.owner.list_all_project_sessions():
-                key = (
-                    str(session.get("project_id") or ""),
-                    str(session.get("thread_id") or ""),
-                )
-                if all(key):
-                    sessions[key] = session
-            for session in self.owner.list_all_project_child_sessions():
-                key = (
-                    str(session.get("project_id") or ""),
-                    str(session.get("thread_id") or ""),
-                )
-                if all(key):
-                    sessions[key] = session
-        except Exception as error:  # noqa: BLE001
-            # Resource sampling must not make the thread catalog unavailable.
-            logger.warning(
-                "Unable to read Session catalog for resource view: %s", error
-            )
-            sessions = {}
+        sessions = self._session_catalog_snapshot()
 
         for key in sorted(set(clients) | set(sessions)):
             project_id, thread_id = key
@@ -462,7 +556,7 @@ class RuntimeResourceManager:
                     project_id, thread_id, pid or 0, create_time or 0
                 )
                 state = self._states.get(key, "loaded")
-                if key in self._parking:
+                if state != "stopping_unconfirmed" and key in self._parking:
                     state = "parking"
                 elif viewer_count == 0 and state == "loaded":
                     state = "idle_grace"
@@ -530,15 +624,62 @@ class RuntimeResourceManager:
 
         return rows
 
+    def _session_catalog_snapshot(
+        self,
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        now = time.monotonic()
+        cached = self._session_catalog_cache
+        if (
+            cached is not None
+            and now - self._session_catalog_refreshed_at
+            < RESOURCE_CATALOG_REFRESH_SECONDS
+        ):
+            return cached
+
+        sessions: dict[tuple[str, str], dict[str, Any]] = {}
+        try:
+            for session in self.owner.list_all_project_sessions():
+                key = (
+                    str(session.get("project_id") or ""),
+                    str(session.get("thread_id") or ""),
+                )
+                if all(key):
+                    sessions[key] = session
+            for session in self.owner.list_all_project_child_sessions():
+                key = (
+                    str(session.get("project_id") or ""),
+                    str(session.get("thread_id") or ""),
+                )
+                if all(key):
+                    sessions[key] = session
+        except Exception as error:  # noqa: BLE001
+            # Resource sampling must not make the thread catalog unavailable.
+            logger.warning(
+                "Unable to read Session catalog for resource view: %s", error
+            )
+            sessions = {}
+
+        # Keep the newest parked/history entries. Live App Servers are joined
+        # separately on every snapshot, so they are never dropped by this UI cap.
+        newest = sorted(
+            sessions.items(),
+            key=lambda item: (
+                str(item[1].get("updated_at") or ""),
+                item[0][0],
+                item[0][1],
+            ),
+            reverse=True,
+        )[:MAX_RESOURCE_SESSION_ROWS]
+        self._session_catalog_cache = dict(newest)
+        self._session_catalog_refreshed_at = now
+        return self._session_catalog_cache
+
     def _activity(
         self, key: tuple[str, str], session: dict[str, Any]
     ) -> tuple[list[str], str]:
         project_id, thread_id = key
         blockers: list[str] = []
-        if (
-            key in self.owner._active_turns_by_project
-            or key in self.owner._active_tasks_by_project
-        ):
+        if self.owner.runtime_thread_has_active_work(project_id, thread_id):
             blockers.append("活动 Turn")
         if self.owner.list_pending_approvals(project_id, thread_id):
             blockers.append("等待审批")
@@ -612,39 +753,91 @@ class RuntimeResourceManager:
                     "blockers": self._state_details.get(key, []),
                 }
 
-        async with self.owner._lock:
+        async with self.owner.runtime_state_lock():
             # A second caller can pass the optimistic check above while it is
             # waiting for this lock. Keep Park idempotent at the transition.
             if key in self._parking:
                 return {"status": "parking", "blockers": []}
+            if self.owner.is_project_restarting(project_id):
+                blockers = ["项目运行时正在重启"]
+                self._state_details[key] = blockers
+                self._states[key] = "blocked"
+                return {"status": "blocked", "blockers": blockers}
             if self._viewer_count(key, time.monotonic()):
                 blockers = ["仍有可见查看者"]
                 self._state_details[key] = blockers
                 self._states[key] = "blocked"
                 return {"status": "blocked", "blockers": blockers}
-            client = self.owner._project_clients.get(key)
-            if client is None:
-                catalog = self.owner.read_project_thread(thread_id, project_id)
-                session = (catalog or {}).get("session") or {}
-                status = (
-                    "external_locked"
-                    if session.get("session_status") == "locked"
-                    else "parked"
-                )
-                self._states[key] = status
-                return {"status": status, "blockers": []}
-            if not getattr(client, "is_running", False):
-                self.owner._client_pool._discard_client(client)
+            client = self.owner.runtime_client_for_thread(*key)
+            if client is not None and not getattr(client, "is_running", False):
+                self.owner.discard_runtime_client(client)
                 self._states[key] = "parked"
+                self._idle_since.pop(key, None)
+                self._state_details.pop(key, None)
                 return {"status": "parked", "blockers": []}
-            blockers = self._local_blockers(key)
-            if blockers:
-                self._state_details[key] = blockers
-                self._states[key] = "blocked"
-                self._retry_after[key] = time.monotonic() + 60
-                return {"status": "blocked", "blockers": blockers}
-            self._parking.add(key)
-            self._states[key] = "checking"
+            if client is not None:
+                blockers = self._local_blockers(key)
+                if blockers:
+                    self._state_details[key] = blockers
+                    self._states[key] = "blocked"
+                    self._retry_after[key] = time.monotonic() + 60
+                    return {"status": "blocked", "blockers": blockers}
+                self._parking.add(key)
+                self._parking_clients[key] = client
+                self._states[key] = "checking"
+
+        if client is None:
+            # Read the append-aware summary outside the manager lock. This path
+            # must not parse or project a complete Session history.
+            try:
+                catalog = await asyncio.to_thread(
+                    self.owner.read_project_thread_summary,
+                    thread_id,
+                    project_id,
+                )
+            except Exception as error:  # noqa: BLE001
+                logger.warning(
+                    "Unable to read Session summary for Park %s/%s: %s",
+                    project_id,
+                    thread_id,
+                    error,
+                )
+                catalog = None
+            async with self.owner.runtime_state_lock():
+                if self.owner.runtime_client_for_thread(*key) is not None:
+                    return {"status": "loaded", "blockers": []}
+                if self._viewer_count(key, time.monotonic()):
+                    blockers = ["仍有可见查看者"]
+                    self._state_details[key] = blockers
+                    self._states[key] = "blocked"
+                    return {"status": "blocked", "blockers": blockers}
+                session = catalog or {}
+                if not catalog:
+                    blockers = ["Session 状态未知"]
+                    self._state_details[key] = blockers
+                    self._states[key] = "blocked"
+                    return {"status": "blocked", "blockers": blockers}
+                if session.get("turn_active") is True:
+                    blockers = ["活动 Turn"]
+                    self._state_details[key] = blockers
+                    self._states[key] = "blocked"
+                    return {"status": "blocked", "blockers": blockers}
+                session_status = session.get("session_status")
+                if session_status == "locked":
+                    status = "external_locked"
+                elif session.get("turn_active") is False and session_status in {
+                    "historical",
+                    "paused",
+                }:
+                    status = "parked"
+                else:
+                    blockers = ["Session 状态未知"]
+                    self._state_details[key] = blockers
+                    self._states[key] = "blocked"
+                    return {"status": "blocked", "blockers": blockers}
+                self._states[key] = status
+                self._state_details.pop(key, None)
+                return {"status": status, "blockers": []}
 
         start_lock: asyncio.Lock | None = None
         start_lock_acquired = False
@@ -657,7 +850,7 @@ class RuntimeResourceManager:
                 blockers = await self._runtime_blockers(key, client)
             except asyncio.TimeoutError:
                 blockers = ["Turn 启动尚未确认"]
-            async with self.owner._lock:
+            async with self.owner.runtime_state_lock():
                 blockers.extend(self._local_blockers(key))
                 if self._viewer_count(key, time.monotonic()):
                     blockers.append("仍有可见查看者")
@@ -666,48 +859,57 @@ class RuntimeResourceManager:
                     self._state_details[key] = blockers
                     self._states[key] = "blocked"
                     self._retry_after[key] = time.monotonic() + 60
-                    self._parking.discard(key)
+                    self._clear_park_gate(key)
                     return {"status": "blocked", "blockers": blockers}
-                if self.owner._project_clients.get(key) is not client:
-                    self._parking.discard(key)
+                if self.owner.runtime_client_for_thread(*key) is not client:
+                    self._clear_park_gate(key)
                     return {"status": "parked", "blockers": []}
                 self._states[key] = "parking"
 
             stop_started = True
             stopped = await client.stop(force=False, timeout=3.0)
             if not stopped:
-                self._states[key] = "stopping_unconfirmed"
-                self._state_details[key] = ["尚未确认 App Server 退出"]
+                async with self.owner.runtime_state_lock():
+                    self.on_client_stop_result(
+                        project_id, thread_id, client, confirmed=False
+                    )
                 # Keep the park gate closed until the OS process is confirmed gone.
                 return {
                     "status": "stopping_unconfirmed",
                     "blockers": self._state_details[key],
                 }
 
-            async with self.owner._lock:
-                self.owner._client_pool._discard_client(client)
-                self._parking.discard(key)
-                self._states[key] = "parked"
-                self._state_details.pop(key, None)
-                self._idle_since.pop(key, None)
-                self._retry_after.pop(key, None)
+            async with self.owner.runtime_state_lock():
+                self.owner.discard_runtime_client(client)
+                self.on_client_stop_result(
+                    project_id, thread_id, client, confirmed=True
+                )
             return {"status": "parked", "blockers": []}
         except Exception as error:  # noqa: BLE001
             logger.warning(
                 "Unable to park Session %s/%s: %s", project_id, thread_id, error
             )
-            self._parking.discard(key)
-            self._states[key] = "blocked"
-            self._state_details[key] = ["无法确认 App Server 空闲状态"]
-            self._retry_after[key] = time.monotonic() + 60
+            async with self.owner.runtime_state_lock():
+                if stop_started:
+                    self.on_client_stop_result(
+                        project_id, thread_id, client, confirmed=False
+                    )
+                else:
+                    self._clear_park_gate(key)
+                    self._states[key] = "blocked"
+                    self._state_details[key] = ["无法确认 App Server 空闲状态"]
+                    self._retry_after[key] = time.monotonic() + 60
             return {"status": "blocked", "blockers": self._state_details[key]}
         except asyncio.CancelledError:
             if stop_started:
-                self._states[key] = "stopping_unconfirmed"
-                self._state_details[key] = ["尚未确认 App Server 退出"]
+                async with self.owner.runtime_state_lock():
+                    self.on_client_stop_result(
+                        project_id, thread_id, client, confirmed=False
+                    )
             else:
-                self._parking.discard(key)
-                self._states[key] = "loaded"
+                async with self.owner.runtime_state_lock():
+                    self._clear_park_gate(key)
+                    self._states[key] = "loaded"
             raise
         finally:
             self._last_sample = 0.0
@@ -717,10 +919,7 @@ class RuntimeResourceManager:
     def _local_blockers(self, key: tuple[str, str]) -> list[str]:
         project_id, thread_id = key
         blockers = []
-        if (
-            key in self.owner._active_turns_by_project
-            or key in self.owner._active_tasks_by_project
-        ):
+        if self.owner.runtime_thread_has_active_work(project_id, thread_id):
             blockers.append("活动 Turn")
         if self.owner.list_pending_approvals(project_id, thread_id):
             blockers.append("等待审批")
@@ -760,9 +959,9 @@ class RuntimeResourceManager:
     async def _residency_loop(self) -> None:
         while not self._shutting_down:
             await asyncio.sleep(PARK_SWEEP_SECONDS)
-            await self._reconcile_unconfirmed()
+            await self.reconcile_unconfirmed()
             now = time.monotonic()
-            for key in list(self.owner._project_clients):
+            for key in list(self.owner.runtime_client_bindings()):
                 if key not in self._idle_since:
                     self._idle_since[key] = now
                 if self._viewer_count(key, now):
@@ -773,17 +972,19 @@ class RuntimeResourceManager:
                 if now - self._idle_since.get(key, now) >= IDLE_PARK_SECONDS:
                     await self._park_one(key, automatic=True)
 
-    async def _reconcile_unconfirmed(self) -> None:
+    async def reconcile_unconfirmed(self) -> None:
         for key, state in list(self._states.items()):
             if state != "stopping_unconfirmed":
                 continue
-            client = self.owner._project_clients.get(key)
+            client = self._parking_clients.get(key)
             if client is not None and getattr(client, "is_running", False):
                 continue
-            async with self.owner._lock:
-                client = self.owner._project_clients.get(key)
-                if client is not None and not getattr(client, "is_running", False):
-                    self.owner._client_pool._discard_client(client)
-                self._parking.discard(key)
-                self._states[key] = "parked"
-                self._state_details.pop(key, None)
+            if client is None:
+                # Without the exact process identity there is no exit proof.
+                continue
+            async with self.owner.runtime_state_lock():
+                if self._parking_clients.get(key) is client and not getattr(
+                    client, "is_running", False
+                ):
+                    self.owner.discard_runtime_client(client)
+                    self.on_client_stop_result(key[0], key[1], client, confirmed=True)

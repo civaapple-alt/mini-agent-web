@@ -12,6 +12,7 @@ from mini_agent import MiniAgentClient
 
 from server.config import settings
 from server.control.fork_errors import SessionForkConflictError
+from server.control.runtime_resources import SessionParkingError
 
 logger = logging.getLogger("mini_agent.server")
 
@@ -26,8 +27,11 @@ class ClientPool:
         self, thread_id: str, project_id: str, client: MiniAgentClient
     ) -> None:
         owner = self.owner
-        previous = owner._project_clients.get((project_id, thread_id))
-        owner._project_clients[(project_id, thread_id)] = client
+        binding_key = (project_id, thread_id)
+        previous = owner._project_clients.get(binding_key)
+        if previous is not client and owner._runtime_resources.is_parking(*binding_key):
+            raise SessionParkingError("Session is being parked; retry after it settles")
+        owner._project_clients[binding_key] = client
         # The unqualified compatibility maps cannot represent two projects'
         # same-named default Threads. Keep them pointed at the current Project;
         # project-qualified lookups use _project_clients as the authority.
@@ -38,7 +42,7 @@ class ClientPool:
         if thread_id == "default" and project_id == owner._current_project_id:
             owner._client = client
         if previous is not client:
-            owner._runtime_resources.on_client_activated(project_id, thread_id)
+            owner._runtime_resources.on_client_activated(project_id, thread_id, client)
 
     def all_clients(self) -> list[MiniAgentClient]:
         """Return all pooled clients once, including inactive project bindings."""
@@ -52,19 +56,37 @@ class ClientPool:
             clients.append(client)
         return clients
 
+    def runtime_bindings(self) -> dict[tuple[str, str], MiniAgentClient]:
+        """Return project-qualified clients for runtime observation."""
+        owner = self.owner
+        clients = dict(owner._project_clients)
+        for thread_id, client in owner._clients.items():
+            project_id = owner._client_projects.get(
+                thread_id, owner._current_project_id
+            )
+            clients.setdefault((project_id, thread_id), client)
+        return clients
+
+    def client_for_binding(
+        self, project_id: str, thread_id: str
+    ) -> MiniAgentClient | None:
+        return self.owner._project_clients.get((project_id, thread_id))
+
     @staticmethod
     def _is_usable_client(client: MiniAgentClient) -> bool:
         """Avoid reusing a client whose stdio process has already exited."""
         return getattr(client, "is_running", True) is not False
 
-    def _discard_client(self, client: MiniAgentClient) -> None:
-        """Remove every compatibility binding for a failed client process."""
+    def discard_client(self, client: MiniAgentClient) -> None:
+        """Remove every compatibility binding for a stopped client process."""
         owner = self.owner
         removed_threads: set[str] = set()
         for key, bound_client in list(owner._project_clients.items()):
             if bound_client is client:
                 removed_threads.add(key[1])
                 owner._project_clients.pop(key, None)
+                owner._active_turns_by_project.pop(key, None)
+                owner._active_tasks_by_project.pop(key, None)
         for thread_id, bound_client in list(owner._clients.items()):
             if bound_client is client:
                 removed_threads.add(thread_id)
@@ -79,6 +101,31 @@ class ClientPool:
             owner._active_tasks.pop(thread_id, None)
         if owner._client is client:
             owner._client = None
+            owner._initialized = False
+
+    def begin_project_restart(
+        self, project_id: str
+    ) -> dict[int, tuple[MiniAgentClient, set[tuple[str, str]]]]:
+        """Close admission for a Project and return its clients to stop."""
+        owner = self.owner
+        stop_bindings: dict[int, tuple[MiniAgentClient, set[tuple[str, str]]]] = {}
+
+        def remember(thread_id: str, client: MiniAgentClient) -> None:
+            owner._runtime_resources.on_client_stopping(project_id, thread_id, client)
+            binding = stop_bindings.setdefault(id(client), (client, set()))
+            binding[1].add((project_id, thread_id))
+
+        for (bound_project, thread_id), client in list(owner._project_clients.items()):
+            if bound_project != project_id:
+                continue
+            remember(thread_id, client)
+
+        # Include compatibility-only bindings used by older integrations.
+        for thread_id, client in list(owner._clients.items()):
+            if owner._client_projects.get(thread_id) != project_id:
+                continue
+            remember(thread_id, client)
+        return stop_bindings
 
     def live_thread_bindings(self) -> list[tuple[str, str]]:
         """Return active ``(project_id, thread_id)`` bindings for the UI catalog."""
@@ -207,7 +254,11 @@ class ClientPool:
             raise
 
     async def get_client_for_thread_locked(
-        self, thread_id: str, project_id: str | None = None
+        self,
+        thread_id: str,
+        project_id: str | None = None,
+        *,
+        allow_restarting: bool = False,
     ) -> MiniAgentClient:
         """Get or create a Thread client while the manager lock is held."""
         owner = self.owner
@@ -215,8 +266,10 @@ class ClientPool:
         project = owner._project_for_thread(target, project_id)
         resolved_project_id = str(project.get("id") or owner._current_project_id)
         binding_key = (resolved_project_id, target)
+        if resolved_project_id in owner._restarting_projects and not allow_restarting:
+            raise SessionParkingError("Project is restarting; retry after it settles")
         if owner._runtime_resources.is_parking(*binding_key):
-            raise RuntimeError("Session is being parked; retry after it settles")
+            raise SessionParkingError("Session is being parked; retry after it settles")
         existing = owner._project_clients.get(binding_key)
         if existing is None:
             legacy = owner._clients.get(target)
@@ -228,7 +281,7 @@ class ClientPool:
                 existing = legacy
                 owner._project_clients[binding_key] = legacy
         if existing is not None and not self._is_usable_client(existing):
-            self._discard_client(existing)
+            self.discard_client(existing)
             existing = None
         if existing is not None:
             self.activate_thread_client(target, resolved_project_id, existing)
@@ -261,16 +314,26 @@ class ClientPool:
         return client
 
     async def get_client_for_thread(
-        self, thread_id: str | None = None, project_id: str | None = None
+        self,
+        thread_id: str | None = None,
+        project_id: str | None = None,
+        *,
+        allow_restarting: bool = False,
     ) -> MiniAgentClient:
         owner = self.owner
         async with owner._lock:
             return await self.get_client_for_thread_locked(
-                thread_id or "default", project_id
+                thread_id or "default",
+                project_id,
+                allow_restarting=allow_restarting,
             )
 
     async def get_client_for_project(
-        self, project_id: str | None = None, thread_id: str | None = None
+        self,
+        project_id: str | None = None,
+        thread_id: str | None = None,
+        *,
+        allow_restarting: bool = False,
     ) -> MiniAgentClient:
         owner = self.owner
         target_project = project_id or owner._current_project_id
@@ -285,23 +348,40 @@ class ClientPool:
             )
         if target_project not in owner._projects_registry:
             raise KeyError(f"Project '{target_project}' not found")
+        if target_project in owner._restarting_projects and not allow_restarting:
+            raise SessionParkingError("Project is restarting; retry after it settles")
         if thread_id:
-            return await self.get_client_for_thread(thread_id, target_project)
+            return await self.get_client_for_thread(
+                thread_id, target_project, allow_restarting=allow_restarting
+            )
         if (
             owner._client is not None
             and owner._client_projects.get("default") == target_project
             and self._is_usable_client(owner._client)
+            and not owner._runtime_resources.is_parking(target_project, "default")
         ):
             return owner._client
         project_default = owner._project_clients.get((target_project, "default"))
-        if project_default is not None and self._is_usable_client(project_default):
+        if (
+            project_default is not None
+            and self._is_usable_client(project_default)
+            and not owner._runtime_resources.is_parking(target_project, "default")
+        ):
             if target_project == owner._current_project_id:
                 owner._client = project_default
             return project_default
         for (bound_project, _bound_thread), client in owner._project_clients.items():
-            if bound_project == target_project and self._is_usable_client(client):
+            if (
+                bound_project == target_project
+                and self._is_usable_client(client)
+                and not owner._runtime_resources.is_parking(
+                    bound_project, _bound_thread
+                )
+            ):
                 return client
-        return await self.get_client_for_thread("default", target_project)
+        return await self.get_client_for_thread(
+            "default", target_project, allow_restarting=allow_restarting
+        )
 
     def live_thread_ids(self) -> list[str]:
         return list(self.owner._clients)
@@ -360,7 +440,7 @@ class ClientPool:
             existing_child = owner._project_clients.get((source_project, new_thread_id))
             if existing_child is not None:
                 if not self._is_usable_client(existing_child):
-                    self._discard_client(existing_child)
+                    self.discard_client(existing_child)
                 else:
                     existing_meta = owner.get_thread_meta(new_thread_id, source_project)
                     existing_session_id = existing_meta.get("session_id")

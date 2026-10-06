@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from mini_agent.errors import AppServerError
 
+from server.control.runtime_resources import SessionParkingError
 from server.routes.agent_models import (
     MAX_FILE_ATTACHMENT_BYTES,
     MAX_FILE_ATTACHMENTS,
@@ -177,6 +178,10 @@ def _process_attachments(
 @router.post("/agent/turn", summary="Start and execute a turn synchronously")
 async def execute_turn(req: StartTurnRequest) -> dict[str, Any]:
     """Submit a prompt and wait for turn completion."""
+    thread_id = req.thread_id or "default"
+    project_id = session_manager.resolve_thread_project(thread_id, req.project_id)
+    turn_id: str | None = None
+    turn_settled = False
     try:
         enriched_prompt = _process_attachments(
             req.prompt,
@@ -193,27 +198,46 @@ async def execute_turn(req: StartTurnRequest) -> dict[str, Any]:
         start_kwargs = {
             "prompt": enriched_prompt,
             "mode": req.mode,
-            "thread_id": req.thread_id,
+            "thread_id": thread_id,
         }
         if req.selected_skills:
             start_kwargs["selected_skills"] = req.selected_skills
         if req.workflow:
             start_kwargs["workflow"] = req.workflow.model_dump()
-        sub = await client.start_turn(**start_kwargs)
+        sub = await session_manager.start_turn_with_admission(
+            client,
+            thread_id,
+            project_id,
+            **start_kwargs,
+        )
         if not sub.turn_id:
             return {"status": sub.status, "reason": sub.reason}
 
-        result = await client.wait_for_turn(sub.turn_id)
-        return {
-            "turn_id": result.turn_id,
-            "status": result.status,
-            "stop_reason": result.stop_reason,
-            "final_text": result.final_text,
-            "steps": result.steps,
-            "messages": result.messages,
-            "items": to_json_serializable(result.items),
-            "error": result.error,
-        }
+        turn_id = str(sub.turn_id)
+        try:
+            result = await session_manager.wait_for_turn_until_settled(
+                client, turn_id, "HTTP"
+            )
+            turn_settled = True
+            return {
+                "turn_id": result.turn_id,
+                "status": result.status,
+                "stop_reason": result.stop_reason,
+                "final_text": result.final_text,
+                "steps": result.steps,
+                "messages": result.messages,
+                "items": to_json_serializable(result.items),
+                "error": result.error,
+            }
+        finally:
+            if turn_settled:
+                session_manager.clear_active_turn(thread_id, project_id, turn_id)
+            else:
+                session_manager.watch_turn_until_settled(
+                    client, thread_id, project_id, turn_id
+                )
+    except SessionParkingError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
     except ValueError as err:
@@ -233,9 +257,25 @@ async def stream_turn(
     """Stream token deltas, tool executions, and turn events via Server-Sent Events (SSE)."""
 
     async def event_generator():
+        client = None
+        active_turn_id: str | None = None
+        event_project_id = project_id
+        admission_project_id = project_id
+        turn_settled = False
         try:
             client = await session_manager.get_client_for_thread(thread_id, project_id)
-            stream_kwargs = {"prompt": prompt, "mode": mode, "thread_id": thread_id}
+            event_project_id = project_id or session_manager._client_projects.get(
+                thread_id or "default"
+            )
+            admission_project_id = session_manager.resolve_thread_project(
+                thread_id or "default", event_project_id
+            )
+            target_thread_id = thread_id or "default"
+            stream_kwargs = {
+                "prompt": prompt,
+                "mode": mode,
+                "thread_id": target_thread_id,
+            }
             if selected_skills:
                 stream_kwargs["selected_skills"] = selected_skills[:8]
             if workflow_id:
@@ -244,10 +284,51 @@ async def stream_turn(
                     "id": workflow_id,
                     "mode": "auto",
                 }
-            async for item in client.stream_turn(**stream_kwargs):
+            (
+                stream,
+                first_item,
+                active_turn_id,
+            ) = await session_manager.start_stream_with_admission(
+                client,
+                target_thread_id,
+                admission_project_id,
+                **stream_kwargs,
+            )
+
+            async def items_with_submission():
+                if first_item is not None:
+                    yield first_item
+                async for streamed_item in stream:
+                    yield streamed_item
+
+            async for item in items_with_submission():
+                turn_id = session_manager.stream_turn_id(item)
+                if turn_id and not active_turn_id:
+                    active_turn_id = turn_id
+                    session_manager.set_active_turn(
+                        target_thread_id,
+                        turn_id,
+                        project_id=admission_project_id,
+                    )
+                event = item.get("event") if isinstance(item, dict) else None
+                if isinstance(event, dict) and event.get("type") == "turn_finished":
+                    turn_settled = True
                 safe_item = to_json_serializable(item)
                 payload = json.dumps(safe_item, ensure_ascii=False)
                 yield f"data: {payload}\n\n"
+        except SessionParkingError as err:
+            err_payload = json.dumps(
+                {
+                    "type": "error",
+                    "scope": "turn",
+                    "terminal": True,
+                    "threadId": thread_id or "default",
+                    "projectId": project_id,
+                    "message": str(err),
+                },
+                ensure_ascii=False,
+            )
+            yield f"data: {err_payload}\n\n"
         except Exception as err:
             logger.exception("SSE stream error")
             err_payload = json.dumps(
@@ -262,6 +343,22 @@ async def stream_turn(
                 ensure_ascii=False,
             )
             yield f"data: {err_payload}\n\n"
+        finally:
+            target_thread_id = thread_id or "default"
+            if active_turn_id and client is not None:
+                if turn_settled:
+                    session_manager.clear_active_turn(
+                        target_thread_id,
+                        admission_project_id,
+                        active_turn_id,
+                    )
+                else:
+                    session_manager.watch_turn_until_settled(
+                        client,
+                        target_thread_id,
+                        admission_project_id,
+                        active_turn_id,
+                    )
 
     return StreamingResponse(
         event_generator(),

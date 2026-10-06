@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import tracemalloc
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -43,7 +44,7 @@ class FakeClientPool:
         self.owner = owner
         self.discarded = []
 
-    def _discard_client(self, client):
+    def discard_client(self, client):
         self.discarded.append(client)
         for key, bound in list(self.owner._project_clients.items()):
             if bound is client:
@@ -63,6 +64,29 @@ class FakeOwner:
         self._start_lock = asyncio.Lock()
         self.session_catalog_reads = 0
 
+    @asynccontextmanager
+    async def runtime_state_lock(self):
+        async with self._lock:
+            yield
+
+    def runtime_client_bindings(self):
+        return dict(self._project_clients)
+
+    def runtime_client_for_thread(self, project_id, thread_id):
+        return self._project_clients.get((project_id, thread_id))
+
+    def discard_runtime_client(self, client):
+        self._client_pool.discard_client(client)
+
+    def runtime_thread_has_active_work(self, project_id, thread_id):
+        key = (project_id, thread_id)
+        return (
+            key in self._active_turns_by_project or key in self._active_tasks_by_project
+        )
+
+    def is_project_restarting(self, _project_id):
+        return False
+
     def list_pending_approvals(self, _project_id: str, _thread_id: str):
         return []
 
@@ -74,6 +98,9 @@ class FakeOwner:
 
     def read_project_thread(self, _thread_id: str, _project_id: str):
         return {"session": {"session_status": "available"}}
+
+    def read_project_thread_summary(self, _thread_id: str, _project_id: str):
+        return {"session_status": "historical", "turn_active": False}
 
     def list_all_project_sessions(self):
         self.session_catalog_reads += 1
@@ -199,6 +226,109 @@ async def test_unconfirmed_stop_keeps_park_gate_closed():
     assert manager.is_parking("project", "thread")
     assert client.stop_calls == 1
     assert owner._client_pool.discarded == []
+    row = next(
+        row
+        for row in manager._process_descriptors()
+        if row.get("thread_id") == "thread"
+    )
+    assert row["residency_state"] == "stopping_unconfirmed"
+
+
+def test_client_activation_clears_stale_park_state_after_old_process_exits():
+    manager = RuntimeResourceManager(FakeOwner(FakeClient()))
+    key = ("project", "thread")
+    old_client = FakeClient()
+    old_client.is_running = False
+    replacement = FakeClient()
+    manager._parking.add(key)
+    manager._parking_clients[key] = old_client
+    manager._states[key] = "stopping_unconfirmed"
+    manager._state_details[key] = ["尚未确认 App Server 退出"]
+    manager._retry_after[key] = 123.0
+    manager._idle_since[key] = 100.0
+
+    manager.on_client_activated("project", "thread", replacement)
+
+    assert not manager.is_parking(*key)
+    assert manager._states[key] == "loaded"
+    assert key not in manager._state_details
+    assert key not in manager._retry_after
+    assert manager._idle_since[key] > 100.0
+
+
+@pytest.mark.asyncio
+async def test_unloaded_park_uses_summary_outside_owner_lock():
+    owner = FakeOwner(FakeClient())
+    owner._project_clients.clear()
+    owner._clients.clear()
+    owner._client_projects.clear()
+    owner._lock_was_held_during_summary_read = None
+
+    def read_summary(_thread_id: str, _project_id: str):
+        owner._lock_was_held_during_summary_read = owner._lock.locked()
+        return {"session_status": "historical", "turn_active": False}
+
+    owner.read_project_thread_summary = read_summary
+    manager = RuntimeResourceManager(owner)
+
+    result = await manager.park_thread("project", "thread")
+
+    assert result == {"status": "parked", "blockers": []}
+    assert owner._lock_was_held_during_summary_read is False
+
+
+@pytest.mark.asyncio
+async def test_unloaded_park_blocks_when_summary_status_is_unknown():
+    owner = FakeOwner(FakeClient())
+    owner._project_clients.clear()
+    owner._clients.clear()
+    owner._client_projects.clear()
+    owner.read_project_thread_summary = lambda *_args: {"session_status": "unknown"}
+    manager = RuntimeResourceManager(owner)
+
+    result = await manager.park_thread("project", "thread")
+
+    assert result == {"status": "blocked", "blockers": ["Session 状态未知"]}
+
+
+def test_resource_session_catalog_is_cached_and_bounded(monkeypatch):
+    owner = FakeOwner(FakeClient())
+    manager = RuntimeResourceManager(owner)
+    now = [50.0]
+    monkeypatch.setattr(
+        "server.control.runtime_resources.time.monotonic", lambda: now[0]
+    )
+    reads = [0]
+
+    def list_sessions():
+        reads[0] += 1
+        return [
+            {
+                "project_id": "project",
+                "thread_id": f"thread-{index}",
+                "updated_at": f"2026-01-{index % 28 + 1:02}",
+            }
+            for index in range(700)
+        ]
+
+    def no_child_sessions():
+        reads[0] += 1
+        return []
+
+    owner.list_all_project_sessions = list_sessions
+    owner.list_all_project_child_sessions = no_child_sessions
+
+    first = manager._session_catalog_snapshot()
+    second = manager._session_catalog_snapshot()
+
+    assert len(first) == 512
+    assert second is first
+    assert reads == [2]
+    now[0] += 16
+    third = manager._session_catalog_snapshot()
+    assert len(third) == 512
+    assert third is not first
+    assert reads == [4]
 
 
 @pytest.mark.asyncio
@@ -261,7 +391,7 @@ async def test_cancelled_park_waits_for_process_exit_confirmation():
     assert owner._project_clients[("project", "thread")] is client
 
     client.is_running = False
-    await manager._reconcile_unconfirmed()
+    await manager.reconcile_unconfirmed()
 
     assert not manager.is_parking("project", "thread")
     assert manager._states[("project", "thread")] == "parked"

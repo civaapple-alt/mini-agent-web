@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+import threading
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -939,6 +940,7 @@ class SessionCatalog:
 
     def __init__(self) -> None:
         self._summary_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._summary_cache_lock = threading.RLock()
 
     @staticmethod
     def _valid_session_path(base: Path, session_id: str) -> Path | None:
@@ -1100,6 +1102,12 @@ class SessionCatalog:
         self, path: Path, project_id: str
     ) -> dict[str, Any] | None:
         """Project list summaries from an append-aware, bounded in-memory cache."""
+        with self._summary_cache_lock:
+            return self._read_session_summary_cached_locked(path, project_id)
+
+    def _read_session_summary_cached_locked(
+        self, path: Path, project_id: str
+    ) -> dict[str, Any] | None:
         session_path = path / "session.jsonl"
         try:
             stat = session_path.stat()
@@ -1221,6 +1229,64 @@ class SessionCatalog:
         # Legacy sessions created before thread_index.json remain readable. This
         # is a migration fallback, not the normal request-time lookup path.
         return self._find_thread_session(base, project_id, thread_id)
+
+    def find_summary_by_thread(
+        self, workspace: Path, project_id: str, thread_id: str
+    ) -> dict[str, Any] | None:
+        """Find a Thread using append-aware summaries, without loading history."""
+        base = _session_base(workspace)
+        if not base.is_dir():
+            return None
+
+        indexed_session_id = _read_thread_index(base).get(thread_id)
+        if indexed_session_id:
+            indexed_path = self._valid_session_path(base, indexed_session_id)
+            if indexed_path:
+                entry = self._read_session_summary_cached(indexed_path, project_id)
+                if entry and entry.get("thread_id") == thread_id:
+                    if _entry_has_conversation_history(entry):
+                        return entry
+                    recovered = self._find_thread_summary(
+                        base,
+                        project_id,
+                        thread_id,
+                        excluded_session_id=indexed_session_id,
+                    )
+                    return recovered or entry
+
+        return self._find_thread_summary(base, project_id, thread_id)
+
+    def _find_thread_summary(
+        self,
+        base: Path,
+        project_id: str,
+        thread_id: str,
+        excluded_session_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        candidates: list[dict[str, Any]] = []
+        try:
+            paths = sorted(base.iterdir(), key=lambda path: path.name)
+        except OSError:
+            return None
+        for path in paths:
+            if path.name == excluded_session_id:
+                continue
+            if not path.is_dir() or not (path / "session.jsonl").is_file():
+                continue
+            entry = self._read_session_summary_cached(path, project_id)
+            if entry and entry.get("thread_id") == thread_id:
+                candidates.append(entry)
+        if not candidates:
+            return None
+        return max(
+            candidates,
+            key=lambda item: (
+                _entry_has_conversation_history(item),
+                _bounded_int(item.get("turn_count")),
+                str(item.get("updated_at") or ""),
+                str(item.get("session_id") or ""),
+            ),
+        )
 
     def find_session_path(self, workspace: Path, thread_id: str) -> Path | None:
         """Resolve a Thread to its Session directory with restart recovery."""
@@ -1556,7 +1622,7 @@ class SessionCatalog:
         child_task_follow_up = previous.get("child_task_follow_up")
         child_task_control = previous.get("child_task_control")
         first_user_prompt = previous.get("first_user_prompt")
-        if first_user_prompt is None:
+        if not first_user_prompt:
             first_user_prompt = _first_user_prompt(records)
         skipped_oversized_records = bool(
             skipped_oversized_records or previous.get("skipped_oversized_records")

@@ -14,6 +14,8 @@ CPU 使用进程 CPU 时间增量除以采样间隔和系统逻辑 CPU 数计算
 
 App Server 的 JSON-RPC 总数和方法统计由对应 SDK Client 从启动时累计。进程重启后计数重新开始。页面不显示操作系统网络流量。Gateway 自身只显示 CPU 和内存。
 
+Thread/Child Session 目录摘要最多每 15 秒刷新一次，资源页最多展示最近更新的 512 条已休眠或历史 Session。运行中的 App Server 每次快照都会合并，因此不会被历史行数上限隐藏。资源页仍每 2 秒刷新进程指标，不会每次轮询都重新扫描 Session 目录。
+
 当系统可用内存低于总内存的 10% 或低于 1 GiB 时，页面显示提醒。提醒不会自动休眠或结束进程。
 
 ## 执行和驻留状态
@@ -36,6 +38,8 @@ App Server 的 JSON-RPC 总数和方法统计由对应 SDK Client 从启动时�
 | `blocked` | 休眠被阻止。详情列出活动 Turn、审批、后台任务、子操作或未知状态。 |
 
 多个浏览器打开同一个项目和 Thread 时，共用 ClientPool 中的 App Server。可见 Thread 页面每 15 秒续查看租约，45 秒未续期的租约会过期。隐藏页面、切换 Thread 或断开连接时，Studio 会释放租约。
+
+WebSocket、HTTP Turn 和 SSE Turn 共用同一条 Thread 启动锁：Gateway 收到 App Server 的 Turn ID 并登记为活动状态后才释放锁。项目运行时重启也会暂时关闭新 Turn admission；若 `stop()` 未确认退出，原 Session 保持门禁关闭，重启流程不会启动替代进程。没有受管进程时，手动 Park 只读取追加式 Session 摘要；无法确认 Session 状态时会阻止操作。
 
 最后一个查看者离开后，Gateway 等待 10 分钟再尝试自动休眠。手动休眠使用相同的活动检查。Gateway 会检查活动 Turn、审批、后台 Shell 任务和子操作，并查询 App Server Runtime Status。只有状态已确认空闲时，Gateway 才会关闭标准输入并等待 App Server 优雅退出。
 

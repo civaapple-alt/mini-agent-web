@@ -232,6 +232,19 @@ class ThreadRegistry:
             Path(project["primary_path"]), target_id, thread_id
         )
 
+    def read_project_thread_summary(
+        self, thread_id: str, project_id: str | None = None
+    ) -> dict[str, Any] | None:
+        """Read the cached Session summary without projecting conversation history."""
+        owner = self._owner
+        target_id = project_id or owner._current_project_id
+        project = owner._projects_registry.get(target_id)
+        if not project:
+            return None
+        return session_catalog.find_summary_by_thread(
+            Path(project["primary_path"]), target_id, thread_id
+        )
+
     def read_any_project_thread(
         self, thread_id: str, project_id: str | None = None
     ) -> dict[str, Any] | None:

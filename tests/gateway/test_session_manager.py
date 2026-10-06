@@ -91,6 +91,74 @@ async def test_gateway_restart_reattaches_canonical_session_without_new_turn(
     resumed_client.start_turn.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_turn_admission_registers_turn_before_releasing_shared_lock(
+    mock_session_manager,
+):
+    client = AsyncMock()
+    lock = mock_session_manager.get_turn_start_lock("thread-1", "default")
+    observed = {}
+
+    async def start_turn(**_kwargs):
+        observed["lock_held_during_submit"] = lock.locked()
+        return SimpleNamespace(turn_id="turn-1")
+
+    client.start_turn = AsyncMock(side_effect=start_turn)
+    submission = await mock_session_manager.start_turn_with_admission(
+        client,
+        "thread-1",
+        "default",
+        thread_id="thread-1",
+        prompt="hello",
+    )
+
+    assert submission.turn_id == "turn-1"
+    assert observed["lock_held_during_submit"] is True
+    assert lock.locked() is False
+    assert (
+        mock_session_manager._active_turns_by_project[("default", "thread-1")]
+        == "turn-1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_stream_admission_registers_submission_before_releasing_shared_lock(
+    mock_session_manager,
+):
+    client = AsyncMock()
+    lock = mock_session_manager.get_turn_start_lock("thread-1", "default")
+    observed = {}
+
+    async def stream_turn(**_kwargs):
+        observed["lock_held_during_submit"] = lock.locked()
+        yield {"type": "_turn_submission", "data": {"turn_id": "turn-1"}}
+        yield {"type": "event", "turnId": "turn-1", "event": {"type": "run_started"}}
+
+    client.stream_turn = stream_turn
+    (
+        stream,
+        first_item,
+        turn_id,
+    ) = await mock_session_manager.start_stream_with_admission(
+        client,
+        "thread-1",
+        "default",
+        thread_id="thread-1",
+        prompt="hello",
+    )
+
+    assert first_item["type"] == "_turn_submission"
+    assert turn_id == "turn-1"
+    assert observed["lock_held_during_submit"] is True
+    assert lock.locked() is False
+    assert (
+        mock_session_manager._active_turns_by_project[("default", "thread-1")]
+        == "turn-1"
+    )
+    assert (await anext(stream))["turnId"] == "turn-1"
+    mock_session_manager.clear_active_turn("thread-1", "default", "turn-1")
+
+
 def test_session_manager_project_collision_avoidance(mock_session_manager, tmp_path):
     """Ensure project creation handles duplicate names by appending incremental suffixes."""
     p1 = mock_session_manager.create_project("Alpha Project", path=str(tmp_path / "f1"))
@@ -7494,6 +7562,88 @@ async def test_restart_broadcasts_runtime_generation(mock_session_manager, monke
 
 
 @pytest.mark.asyncio
+async def test_restart_does_not_replace_unconfirmed_app_server(
+    mock_session_manager, monkeypatch
+):
+    old_client = AsyncMock()
+    old_client.is_running = True
+    old_client.stop = AsyncMock(return_value=False)
+    replacement_client = AsyncMock()
+    create_client = AsyncMock(return_value=replacement_client)
+    monkeypatch.setattr(mock_session_manager, "_create_client", create_client)
+    mock_session_manager._client = old_client
+    mock_session_manager._clients["default"] = old_client
+    mock_session_manager._client_projects["default"] = "default"
+    mock_session_manager._project_clients[("default", "default")] = old_client
+
+    with pytest.raises(RuntimeError, match="exit is unconfirmed"):
+        await mock_session_manager.restart_for_current_project()
+
+    create_client.assert_not_awaited()
+    assert mock_session_manager._runtime_resources.is_parking("default", "default")
+    assert mock_session_manager._project_clients[("default", "default")] is old_client
+    with pytest.raises(RuntimeError, match="being parked"):
+        await mock_session_manager.get_client_for_thread("default", "default")
+    with pytest.raises(RuntimeError, match="being parked"):
+        await mock_session_manager.get_client_for_project("default")
+
+    old_client.is_running = False
+    await mock_session_manager._runtime_resources.reconcile_unconfirmed()
+    resumed = await mock_session_manager.get_client_for_thread("default", "default")
+
+    assert resumed is replacement_client
+    create_client.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_project_restart_keeps_only_uncertain_process_gated(
+    mock_session_manager, monkeypatch
+):
+    stop_started = asyncio.Event()
+    never_finishes = asyncio.Event()
+    first = AsyncMock()
+    first.is_running = True
+
+    async def interrupted_stop(*, force):
+        assert force is True
+        stop_started.set()
+        await never_finishes.wait()
+        return False
+
+    first.stop = AsyncMock(side_effect=interrupted_stop)
+    second = AsyncMock()
+    second.is_running = True
+    second.stop = AsyncMock(return_value=True)
+    mock_session_manager._project_clients.update(
+        {
+            ("default", "default"): first,
+            ("default", "thread-2"): second,
+        }
+    )
+    mock_session_manager._clients.update({"default": first, "thread-2": second})
+    mock_session_manager._client_projects.update(
+        {"default": "default", "thread-2": "default"}
+    )
+    mock_session_manager._active_thread_projects.update(
+        {"default": "default", "thread-2": "default"}
+    )
+    monkeypatch.setattr(mock_session_manager, "broadcast_ws", AsyncMock())
+
+    task = asyncio.create_task(mock_session_manager.restart_for_current_project())
+    await stop_started.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert mock_session_manager._runtime_resources.is_parking("default", "default")
+    assert not mock_session_manager._runtime_resources.is_parking("default", "thread-2")
+    assert mock_session_manager._project_clients[("default", "default")] is first
+    assert mock_session_manager._project_clients[("default", "thread-2")] is second
+    second.stop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_project_restart_preserves_other_project_clients(
     mock_session_manager, monkeypatch, tmp_path
 ):
@@ -8170,6 +8320,47 @@ def test_session_catalog_cache_reads_only_appended_session_records(
     assert read_offsets[-1] == (file_size, None)
     assert appended["data"][0]["turn_count"] == 1
     assert appended["data"][0]["last_turn_status"] == "in_progress"
+
+
+def test_session_summary_cache_fills_first_prompt_after_empty_summary(
+    tmp_path, monkeypatch
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    session_dir = session_base / "session-1"
+    session_dir.mkdir(parents=True)
+    session_path = session_dir / "session.jsonl"
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    session_path.write_text(
+        json.dumps({"kind": "session_created", "session_id": "session-1"})
+        + "\n"
+        + json.dumps({"kind": "thread_started", "thread_id": "thread-1"})
+        + "\n",
+        encoding="utf-8",
+    )
+    catalog = SessionCatalog()
+
+    first = catalog.list_sessions(workspace, "project")["data"][0]
+    assert first["title"] == "会话 thread-1"
+
+    with session_path.open("a", encoding="utf-8") as session_file:
+        session_file.write(
+            json.dumps(
+                {
+                    "kind": "turn_started",
+                    "turn_id": "turn-1",
+                    "prompt": "Build the preview",
+                    "timestamp_ms": 10,
+                }
+            )
+            + "\n"
+        )
+    appended = catalog.list_sessions(workspace, "project")["data"][0]
+
+    assert appended["title"] == build_auto_thread_title("Build the preview")
 
 
 def test_session_summary_cache_skips_an_oversized_partial_record_tail(

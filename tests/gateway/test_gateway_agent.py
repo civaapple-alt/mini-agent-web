@@ -171,6 +171,27 @@ async def test_agent_turn_forwards_skill_selection_and_workflow(agent_test_app):
 
 
 @pytest.mark.asyncio
+async def test_agent_turn_returns_conflict_while_session_is_parking(agent_test_app):
+    mock_client = AsyncMock()
+    session_manager._client = mock_client
+    session_manager._clients["default"] = mock_client
+
+    with patch.object(
+        session_manager._runtime_resources, "is_parking", return_value=True
+    ):
+        transport = ASGITransport(app=agent_test_app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/agent/turn",
+                json={"prompt": "must wait", "mode": "start"},
+            )
+
+    assert response.status_code == 409
+    assert "being parked" in response.json()["detail"]
+    mock_client.start_turn.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_agent_stream_sse(agent_test_app):
     """Test GET /api/agent/stream Server-Sent Events (SSE) streaming."""
 

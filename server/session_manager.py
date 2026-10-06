@@ -14,6 +14,8 @@ import os
 import time
 import uuid
 from collections import OrderedDict
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +26,7 @@ from mini_agent.errors import MiniAgentError
 from server.control.approval_bridge import ApprovalBridge
 from server.control.client_pool import ClientPool
 from server.control.project_registry import ProjectRegistry
-from server.control.runtime_resources import RuntimeResourceManager
+from server.control.runtime_resources import RuntimeResourceManager, SessionParkingError
 from server.control.thread_registry import ThreadRegistry
 from server.control.turn_registry import TurnRegistry
 from server.control.ws_broker import WebSocketBroker
@@ -145,6 +147,7 @@ class SessionManager:
         self._current_project_path: Path = Path.cwd().resolve()
         self._current_project_id: str = self._current_project_path.name
         self._projects_registry: dict[str, dict[str, Any]] = {}
+        self._restarting_projects: set[str] = set()
         self._thread_metadata: dict[str, dict[str, Any]] = {}
         self._thread_metadata_by_project: dict[tuple[str, str], dict[str, Any]] = {}
         self._thread_registry = ThreadRegistry(self)
@@ -1371,9 +1374,15 @@ class SessionManager:
         return await self.get_background_task_target(thread_id, project_id)
 
     async def get_client_for_project(
-        self, project_id: str | None = None, thread_id: str | None = None
+        self,
+        project_id: str | None = None,
+        thread_id: str | None = None,
+        *,
+        allow_restarting: bool = False,
     ) -> MiniAgentClient:
-        return await self._client_pool.get_client_for_project(project_id, thread_id)
+        return await self._client_pool.get_client_for_project(
+            project_id, thread_id, allow_restarting=allow_restarting
+        )
 
     def live_thread_ids(self) -> list[str]:
         return self._client_pool.live_thread_ids()
@@ -1750,7 +1759,7 @@ class SessionManager:
         """Keep the child turn registered until its canonical result settles."""
         task = asyncio.current_task()
         try:
-            await self._wait_for_turn_until_settled(client, turn_id, "Child")
+            await self.wait_for_turn_until_settled(client, turn_id, "Child")
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -1800,7 +1809,7 @@ class SessionManager:
             except Exception:
                 logger.exception("Unable to drain queued child tasks for %s", thread_id)
 
-    async def _wait_for_turn_until_settled(
+    async def wait_for_turn_until_settled(
         self, client: MiniAgentClient, turn_id: str, owner: str
     ) -> Any:
         """Continue polling after SDK wait windows; timeouts do not settle Turns."""
@@ -2962,6 +2971,32 @@ class SessionManager:
     async def resource_history(self, process_key: str) -> dict[str, Any]:
         return await self._runtime_resources.history(process_key)
 
+    @asynccontextmanager
+    async def runtime_state_lock(self) -> AsyncIterator[None]:
+        """Serialize runtime resource transitions with client-pool mutations."""
+        async with self._lock:
+            yield
+
+    def runtime_client_bindings(self) -> dict[tuple[str, str], MiniAgentClient]:
+        return self._client_pool.runtime_bindings()
+
+    def runtime_client_for_thread(
+        self, project_id: str, thread_id: str
+    ) -> MiniAgentClient | None:
+        return self._client_pool.client_for_binding(project_id, thread_id)
+
+    def discard_runtime_client(self, client: MiniAgentClient) -> None:
+        self._client_pool.discard_client(client)
+
+    def runtime_thread_has_active_work(self, project_id: str, thread_id: str) -> bool:
+        key = (project_id, thread_id)
+        return (
+            key in self._active_turns_by_project or key in self._active_tasks_by_project
+        )
+
+    def is_project_restarting(self, project_id: str) -> bool:
+        return project_id in self._restarting_projects
+
     async def park_thread(
         self, thread_id: str, project_id: str | None = None
     ) -> dict[str, Any]:
@@ -2977,10 +3012,17 @@ class SessionManager:
     ) -> None:
         self._runtime_resources.update_viewer(websocket, project_id, thread_id, visible)
 
-    async def start(self) -> None:
+    async def start(self, *, _restart_project_id: str | None = None) -> None:
         """Start and initialize the background MiniAgentClient."""
         async with self._lock:
             current_project_id = self._current_project_id
+            if (
+                current_project_id in self._restarting_projects
+                and _restart_project_id != current_project_id
+            ):
+                raise RuntimeError(f"Project '{current_project_id}' is being restarted")
+            if self._runtime_resources.is_parking(current_project_id, "default"):
+                raise RuntimeError("Default Session is being parked")
             current_default = self._project_clients.get((current_project_id, "default"))
             if current_default is not None:
                 self._client = current_default
@@ -3024,11 +3066,13 @@ class SessionManager:
 
     async def restart_for_project(self, project_id: str) -> None:
         """Restart one Project runtime without touching other Projects."""
-        await self.cancel_pending_approvals(
-            project_id=project_id,
-            reason="项目运行时即将重启，审批已失效",
-        )
+        await self._runtime_resources.reconcile_unconfirmed()
+        start_locks: list[asyncio.Lock] = []
+        acquired_start_locks: list[asyncio.Lock] = []
+        stop_bindings: dict[int, tuple[MiniAgentClient, set[tuple[str, str]]]] = {}
         async with self._lock:
+            if project_id in self._restarting_projects:
+                raise RuntimeError(f"Project '{project_id}' is already restarting")
             active_keys = {
                 *(key for key in self._active_turns_by_project if key[0] == project_id),
                 *(key for key in self._active_tasks_by_project if key[0] == project_id),
@@ -3040,75 +3084,141 @@ class SessionManager:
                 raise RuntimeError(
                     f"Project '{project_id}' has active Turn(s): {active_threads}"
                 )
-
-            current_default_project = self._client_projects.get("default")
-            clients: list[MiniAgentClient] = []
-            for (bound_project, thread_id), client in list(
-                self._project_clients.items()
-            ):
-                if bound_project != project_id:
-                    continue
-                if client not in clients:
-                    clients.append(client)
-                self._project_clients.pop((bound_project, thread_id), None)
-                if self._clients.get(thread_id) is client:
-                    self._clients.pop(thread_id, None)
-                if self._client_projects.get(thread_id) == project_id:
-                    self._client_projects.pop(thread_id, None)
-                if self._active_thread_projects.get(thread_id) == project_id:
-                    self._active_thread_projects.pop(thread_id, None)
-                    self._active_turns.pop(thread_id, None)
-                    self._active_tasks.pop(thread_id, None)
-
-            # Older callers/tests may only have populated the compatibility
-            # view. Remove those bindings too, without touching other Projects.
-            for thread_id, client in list(self._clients.items()):
-                if self._client_projects.get(thread_id) != project_id:
-                    continue
-                if client not in clients:
-                    clients.append(client)
-                self._clients.pop(thread_id, None)
-                self._client_projects.pop(thread_id, None)
-                if self._active_thread_projects.get(thread_id) == project_id:
-                    self._active_thread_projects.pop(thread_id, None)
-                    self._active_turns.pop(thread_id, None)
-                    self._active_tasks.pop(thread_id, None)
-
-            for thread_id, bound_project in list(self._client_projects.items()):
-                if bound_project == project_id:
-                    self._client_projects.pop(thread_id, None)
-                    if self._active_thread_projects.get(thread_id) == project_id:
-                        self._active_thread_projects.pop(thread_id, None)
-
-            for key in list(self._active_tasks_by_project):
-                if key[0] == project_id:
-                    self._active_tasks_by_project.pop(key, None)
-                    self._active_turns_by_project.pop(key, None)
-            for thread_id, bound_project in list(self._active_thread_projects.items()):
-                if bound_project == project_id:
-                    self._active_thread_projects.pop(thread_id, None)
-
-            if current_default_project == project_id:
-                self._client = None
-                self._initialized = False
-        for client in set(clients):
-            await client.stop()
-        if project_id == self._current_project_id:
-            await self.start()
-        else:
-            await self._client_pool.get_client_for_project(project_id)
-            self._schedule_child_reconciliation(project_id)
-        self._runtime_generation += 1
-        await self.broadcast_ws(
-            {
-                "type": "notification",
-                "method": "gateway/runtime/restarted",
-                "data": {
-                    "projectId": project_id,
-                    "runtimeGeneration": self._runtime_generation,
-                },
+            parking_threads = self._runtime_resources.parking_threads(project_id)
+            if parking_threads:
+                raise RuntimeError(
+                    "App Server stop is still in progress for Thread(s): "
+                    + ", ".join(parking_threads)
+                )
+            self._restarting_projects.add(project_id)
+            thread_ids = {
+                thread_id
+                for bound_project, thread_id in self._project_clients
+                if bound_project == project_id
             }
-        )
+            thread_ids.update(
+                thread_id
+                for thread_id, bound_project in self._client_projects.items()
+                if bound_project == project_id
+            )
+            start_locks = [
+                self.get_turn_start_lock(thread_id, project_id)
+                for thread_id in sorted(thread_ids)
+            ]
+
+        try:
+            await self.cancel_pending_approvals(
+                project_id=project_id,
+                reason="项目运行时即将重启，审批已失效",
+            )
+            for start_lock in start_locks:
+                await start_lock.acquire()
+                acquired_start_locks.append(start_lock)
+
+            async with self._lock:
+                active_keys = {
+                    *(
+                        key
+                        for key in self._active_turns_by_project
+                        if key[0] == project_id
+                    ),
+                    *(
+                        key
+                        for key in self._active_tasks_by_project
+                        if key[0] == project_id
+                    ),
+                }
+                if active_keys:
+                    active_threads = ", ".join(
+                        sorted(thread_id for _, thread_id in active_keys)
+                    )
+                    raise RuntimeError(
+                        f"Project '{project_id}' has active Turn(s): {active_threads}"
+                    )
+                parking_threads = self._runtime_resources.parking_threads(project_id)
+                if parking_threads:
+                    raise RuntimeError(
+                        "App Server stop is still in progress for Thread(s): "
+                        + ", ".join(parking_threads)
+                    )
+
+                stop_bindings = self._client_pool.begin_project_restart(project_id)
+
+            unconfirmed: list[str] = []
+            stop_entries = list(stop_bindings.values())
+            for index, (client, binding_keys) in enumerate(stop_entries):
+                result_recorded = False
+                try:
+                    try:
+                        stopped = bool(await client.stop(force=True))
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as error:  # noqa: BLE001
+                        logger.warning(
+                            "Unable to stop App Server during restart: %s", error
+                        )
+                        stopped = False
+                    async with self._lock:
+                        for bound_project, thread_id in binding_keys:
+                            self._runtime_resources.on_client_stop_result(
+                                bound_project,
+                                thread_id,
+                                client,
+                                confirmed=stopped,
+                            )
+                            if not stopped:
+                                unconfirmed.append(thread_id)
+                        if stopped:
+                            self._client_pool.discard_client(client)
+                        result_recorded = True
+                except asyncio.CancelledError:
+                    async with self._lock:
+                        if not result_recorded:
+                            for bound_project, thread_id in binding_keys:
+                                self._runtime_resources.on_client_stop_result(
+                                    bound_project,
+                                    thread_id,
+                                    client,
+                                    confirmed=False,
+                                )
+                        for pending_client, pending_keys in stop_entries[index + 1 :]:
+                            for bound_project, thread_id in pending_keys:
+                                self._runtime_resources.on_client_stop_aborted(
+                                    bound_project,
+                                    thread_id,
+                                    pending_client,
+                                )
+                    raise
+
+            if unconfirmed:
+                threads = ", ".join(sorted(set(unconfirmed)))
+                raise RuntimeError(
+                    "App Server exit is unconfirmed; replacement was not started "
+                    f"for Thread(s): {threads}"
+                )
+            if project_id == self._current_project_id:
+                await self.start(_restart_project_id=project_id)
+            else:
+                await self._client_pool.get_client_for_project(
+                    project_id, allow_restarting=True
+                )
+                self._schedule_child_reconciliation(project_id)
+            self._runtime_generation += 1
+            await self.broadcast_ws(
+                {
+                    "type": "notification",
+                    "method": "gateway/runtime/restarted",
+                    "data": {
+                        "projectId": project_id,
+                        "runtimeGeneration": self._runtime_generation,
+                    },
+                }
+            )
+        finally:
+            for start_lock in reversed(acquired_start_locks):
+                start_lock.release()
+            async with self._lock:
+                self._restarting_projects.discard(project_id)
 
     async def stop(self) -> None:
         """Stop the background MiniAgentClient and close WebSocket connections."""
@@ -3236,6 +3346,12 @@ class SessionManager:
     ) -> dict[str, Any] | None:
         """Read a settled Thread projection without creating a Web checkpoint."""
         return self._thread_registry.read_project_thread(thread_id, project_id)
+
+    def read_project_thread_summary(
+        self, thread_id: str, project_id: str | None = None
+    ) -> dict[str, Any] | None:
+        """Read the cached Session summary without projecting conversation history."""
+        return self._thread_registry.read_project_thread_summary(thread_id, project_id)
 
     def read_any_project_thread(
         self, thread_id: str, project_id: str | None = None
@@ -5170,6 +5286,125 @@ class SessionManager:
             self._turn_start_locks.pop(stale_key, None)
         return lock
 
+    def _assert_turn_start_allowed(self, project_id: str, thread_id: str) -> None:
+        if project_id in self._restarting_projects:
+            raise SessionParkingError("Project is restarting; retry after it settles")
+        if self._runtime_resources.is_parking(project_id, thread_id):
+            raise SessionParkingError("Session is being parked; retry after it settles")
+
+    async def start_turn_with_admission(
+        self,
+        client: MiniAgentClient,
+        target_thread_id: str,
+        project_id: str,
+        **start_kwargs: Any,
+    ) -> Any:
+        """Serialize submission with Park and register the Turn before unlock."""
+        start_lock = self.get_turn_start_lock(target_thread_id, project_id)
+        await start_lock.acquire()
+        try:
+            self._assert_turn_start_allowed(project_id, target_thread_id)
+            submission = await client.start_turn(**start_kwargs)
+            turn_id = str(getattr(submission, "turn_id", "") or "")
+            if turn_id:
+                self.set_active_turn(target_thread_id, turn_id, project_id=project_id)
+            return submission
+        finally:
+            start_lock.release()
+
+    @staticmethod
+    def stream_turn_id(item: Any) -> str | None:
+        if not isinstance(item, dict):
+            return None
+        if item.get("type") == "_turn_submission":
+            data = item.get("data")
+            if isinstance(data, dict) and data.get("turn_id"):
+                return str(data["turn_id"])
+            submission = item.get("submission")
+            turn_id = getattr(submission, "turn_id", None)
+            return str(turn_id) if turn_id else None
+        turn_id = item.get("turnId") or item.get("turn_id")
+        return str(turn_id) if turn_id else None
+
+    async def start_stream_with_admission(
+        self,
+        client: MiniAgentClient,
+        target_thread_id: str,
+        project_id: str,
+        **stream_kwargs: Any,
+    ) -> tuple[Any, Any, str | None]:
+        """Consume the submission under the shared Park/Turn admission lock."""
+        start_lock = self.get_turn_start_lock(target_thread_id, project_id)
+        await start_lock.acquire()
+        try:
+            self._assert_turn_start_allowed(project_id, target_thread_id)
+            stream = client.stream_turn(**stream_kwargs)
+            first_item = await anext(stream, None)
+            turn_id = self.stream_turn_id(first_item)
+            if turn_id:
+                self.set_active_turn(target_thread_id, turn_id, project_id=project_id)
+            return stream, first_item, turn_id
+        finally:
+            start_lock.release()
+
+    def watch_turn_until_settled(
+        self,
+        client: MiniAgentClient,
+        thread_id: str,
+        project_id: str,
+        turn_id: str,
+    ) -> asyncio.Task[None]:
+        """Keep an interrupted HTTP/SSE observer from clearing a live Turn."""
+        return asyncio.create_task(
+            self._watch_turn_until_settled(client, thread_id, project_id, turn_id)
+        )
+
+    async def _watch_turn_until_settled(
+        self,
+        client: MiniAgentClient,
+        thread_id: str,
+        project_id: str,
+        turn_id: str,
+    ) -> None:
+        delay = 0.5
+        while True:
+            try:
+                await client.wait_for_turn(turn_id)
+                break
+            except asyncio.CancelledError:
+                raise
+            except TurnTimeoutError:
+                if getattr(client, "is_running", True) is False:
+                    break
+                await asyncio.sleep(delay)
+            except Exception as error:  # noqa: BLE001
+                logger.debug(
+                    "Turn %s wait failed while tracking settlement: %s",
+                    turn_id,
+                    error,
+                )
+                if getattr(client, "is_running", True) is False:
+                    break
+                try:
+                    runtime = await client.get_runtime_status(thread_id)
+                    phase = str(getattr(runtime, "phase", "") or "")
+                    runtime_turn_id = str(getattr(runtime, "turn_id", "") or "")
+                    if phase in {"idle", "completed", "failed"} or (
+                        runtime_turn_id and runtime_turn_id != turn_id
+                    ):
+                        break
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:  # noqa: BLE001
+                    logger.debug(
+                        "Runtime status unavailable while tracking Turn %s: %s",
+                        turn_id,
+                        error,
+                    )
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 5.0)
+        self.clear_active_turn(thread_id, project_id, turn_id)
+
     def _schedule_child_parent_wakeup(
         self, project_id: str, parent_thread_id: str
     ) -> None:
@@ -5528,7 +5763,7 @@ class SessionManager:
     ) -> None:
         task = asyncio.current_task()
         try:
-            await self._wait_for_turn_until_settled(client, turn_id, "Parent wake-up")
+            await self.wait_for_turn_until_settled(client, turn_id, "Parent wake-up")
         except asyncio.CancelledError:
             raise
         except Exception:

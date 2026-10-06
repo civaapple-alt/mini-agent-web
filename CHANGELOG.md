@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   memory, JSON-RPC traffic, and bounded sample history. Track visible Thread
   viewers, report Park blockers, and preserve the Session when an idle process
   is parked and later attached again. Cache Session summaries by JSONL identity
-  and parse only appended records.
+  and parse only appended records. Cache the resource-page Session catalog for
+  15 seconds with a 512-row history cap, serialize HTTP/SSE/WebSocket Turn
+  admission, and keep restart/Park gates closed until process exit is confirmed.
 - Show detected `PATH` commands separately from application CLI capabilities in
   World State, including Blender when found in its standard macOS app bundle.
 - Classify Skills by builtin group, personal root, project, or plugin origin;

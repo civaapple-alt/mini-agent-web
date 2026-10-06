@@ -106,6 +106,7 @@ export default function MessageItem({
   ].filter(Boolean);
   const modelTimingLabels = formatModelTimingLabels(modelTiming);
   const promptModelTimingLabels = formatModelTimingLabels(modelTimingForPrompt);
+  const isChildWakeupTurn = turnEntry?.source === 'child_wakeup';
   const [copied, setCopied] = useState(false);
 
   const handleCopyText = (content) => {
@@ -156,7 +157,7 @@ export default function MessageItem({
         ref={anchorRef}
         data-message-id={message.id}
         data-turn-id={turnEntry?.turnId || message.turnId || undefined}
-        className={`message-row user ${message.isSteer ? 'steer-message-row' : ''} ${message.isGoal ? 'goal-message-row' : ''} ${isTurnFocused ? 'turn-focus-highlight' : ''}`}
+        className={`message-row user ${message.isSteer ? 'steer-message-row' : ''} ${message.steerOrigin === 'parent_session' ? 'parent-session-steer-message-row' : ''} ${message.isGoal ? 'goal-message-row' : ''} ${isTurnFocused ? 'turn-focus-highlight' : ''}`}
       >
         <div className="user-bubble-container">
           {/* Render Attached Images in User Bubble */}
@@ -272,7 +273,7 @@ export default function MessageItem({
           {message.isSteer && (
             <div className="steer-message-label font-mono">
               <Navigation size={11} />
-              <span>实时纠偏</span>
+              <span>{message.steerOrigin === 'parent_session' ? '主会话中途纠偏' : '实时纠偏'}</span>
               <span className="steer-message-label-separator">·</span>
               <span>{steerDeliveryLabel(message)}</span>
             </div>
@@ -424,6 +425,25 @@ export default function MessageItem({
       className={`message-row assistant ${isTurnFocused ? 'turn-focus-highlight' : ''}`}
     >
       <div className="assistant-container">
+        {isChildWakeupTurn && isLastInTurn && (
+          <div className="assistant-turn-origin-row">
+            <div
+              className="assistant-turn-origin"
+              aria-label={`本轮由子代理更新触发${turnEntry.sourceDetail ? `：${turnEntry.sourceDetail}` : ''}`}
+            >
+              <Sparkles size={13} />
+              <strong>子代理更新触发本轮回复</strong>
+              {turnEntry.sourceDetail && (
+                <span className="assistant-turn-origin-detail">· {turnEntry.sourceDetail}</span>
+              )}
+            </div>
+            {modelTimingLabels.length > 0 && (
+              <div className="assistant-turn-origin-timing token-usage-meta font-mono" aria-label="模型响应耗时">
+                <span>{modelTimingLabels.join(' · ')}</span>
+              </div>
+            )}
+          </div>
+        )}
         {/* Render sequential blocks if present */}
         {renderedBlocks.length > 0 ? (
           renderedBlocks.map((block, idx) => {
@@ -686,7 +706,7 @@ export default function MessageItem({
                 <span>Tokens: In {usage.input_tokens || 0} · Out {usage.output_tokens || 0}</span>
               </div>
             )}
-            {!modelTimingDisplayedOnPrompt && modelTimingLabels.length > 0 && (
+            {!modelTimingDisplayedOnPrompt && !isChildWakeupTurn && modelTimingLabels.length > 0 && (
               <div className="token-usage-meta font-mono" aria-label="模型响应耗时">
                 <span>{modelTimingLabels.join(' · ')}</span>
               </div>

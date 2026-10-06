@@ -17,7 +17,7 @@ function tooltipDetails(entry) {
     entry?.metrics?.shellCount > 0 ? `命令 ${entry.metrics.shellCount} 次` : null,
   ].filter(Boolean).join(' · ');
   const sourceLabel = entry?.source && entry.source !== 'user'
-    ? getInputTraceSourceLabel(entry.source)
+    ? [getInputTraceSourceLabel(entry.source), entry.sourceDetail].filter(Boolean).join(' · ')
     : null;
 
   return { response, metrics, sourceLabel };

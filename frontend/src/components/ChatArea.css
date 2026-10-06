@@ -581,6 +581,31 @@
   margin-top: -10px;
 }
 
+.message-row.user.steer-message-row.parent-session-steer-message-row {
+  margin-top: 16px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--border-color);
+}
+
+.parent-session-steer-message-row .steer-message-label {
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: var(--status-running-soft);
+  color: var(--status-running);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.parent-session-steer-message-row .steer-message-label svg {
+  color: var(--status-running);
+  opacity: 1;
+}
+
+.parent-session-steer-message-row .steer-bubble {
+  border-color: color-mix(in srgb, var(--status-running) 34%, var(--border-color));
+  background: var(--status-running-soft);
+}
+
 .user-bubble-container {
   display: flex;
   flex-direction: column;
@@ -923,6 +948,54 @@
 .token-usage-meta {
   font-size: 10px;
   color: var(--text-muted);
+}
+
+.assistant-turn-origin-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  max-width: 100%;
+  margin-bottom: 8px;
+}
+
+.assistant-turn-origin {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 5px 9px;
+  border: 1px solid color-mix(in srgb, var(--status-running) 38%, var(--border-color));
+  border-radius: 6px;
+  background: var(--status-running-soft);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.assistant-turn-origin svg {
+  flex: 0 0 auto;
+  color: var(--status-running);
+}
+
+.assistant-turn-origin strong {
+  min-width: 0;
+  color: var(--status-running);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.assistant-turn-origin-detail {
+  min-width: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.assistant-turn-origin-timing {
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .user-model-timing-meta {

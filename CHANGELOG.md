@@ -44,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replay, and label the initial WebSocket handshake as connecting.
 - Keep a bounded recent event window in memory per Thread so opening a child
   Session viewer mid-Turn shows activity the page already received.
+- Read steer state from active child Turns before the message reaches durable
+  history. Separate and label parent-session steer messages in the child
+  timeline. Clearly label parent replies started by child updates and keep
+  their TTFT and response timing beside the source label. Show a completed
+  child's operation result when its final reply is missing from activity history.
 - Surface approvals from direct child Threads in the parent Session's composer
   dock, with the child Thread identity, while keeping unrelated Session
   approvals out of the current view.

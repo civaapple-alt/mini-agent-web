@@ -85,6 +85,34 @@ function formatTurnError(error) {
   return error;
 }
 
+function childWakeupDetails(messages, threadItems, childTasks) {
+  const children = (childTasks || []).filter((child) => child?.child_thread_id);
+  if (children.length === 0) return new Map();
+
+  const records = [
+    ...(messages || []).map((message) => ({ ...message, item: message })),
+    ...(threadItems || []),
+  ];
+  const detailsByTurn = new Map();
+  for (const record of records) {
+    const turnSource = record?.turnSource || record?.turn_source
+      || record?.item?.turnSource || record?.item?.turn_source;
+    if (String(turnSource || '').toLowerCase() !== 'child_wakeup') continue;
+    const turnId = record?.turnId || record?.turn_id || record?.item?.turnId || record?.item?.turn_id;
+    const text = record?.item?.text || record?.text;
+    if (!turnId || typeof text !== 'string' || !text) continue;
+
+    const related = children.filter((child) => text.includes(String(child.child_thread_id)));
+    if (related.length === 0) continue;
+    const names = [...new Set(related.map((child) => child.title || child.child_thread_id))];
+    const detail = names.length > 2
+      ? `${names.slice(0, 2).join('、')} 等 ${names.length} 个子任务`
+      : names.join('、');
+    detailsByTurn.set(String(turnId), detail);
+  }
+  return detailsByTurn;
+}
+
 function formatIncompleteTurnHint(turnResult) {
   if (turnResult.recovery?.status === 'needs_reconciliation') {
     return formatReconciliationMessage(turnResult.recovery);
@@ -220,11 +248,18 @@ export default function ChatArea({
       activeTurnId: statusModel?.scope?.turnId,
       lastTurnResult,
     });
+    const childWakeups = childWakeupDetails(messages, threadItems, childTasks);
+    const enrichedEntries = entries.map((entry) => {
+      const sourceDetail = entry.turnId
+        ? childWakeups.get(String(entry.turnId))
+        : null;
+      return sourceDetail ? { ...entry, sourceDetail } : entry;
+    });
     if (!(turnTimings instanceof Map) || turnTimings.size === 0) {
-      return entries;
+      return enrichedEntries;
     }
     const threadKey = scopedThreadKey(traceScope?.threadId, traceScope?.projectId);
-    return entries.map((entry) => {
+    return enrichedEntries.map((entry) => {
       if (!entry.turnId) return entry;
       const timing = turnTimings.get(`${threadKey}:${entry.turnId}`);
       if (!timing) return entry;
@@ -244,7 +279,7 @@ export default function ChatArea({
         ...(Number.isFinite(durationMs) && durationMs >= 0 ? { durationMs } : {}),
       };
     });
-  }, [messages, threadItems, traceScope, statusModel, lastTurnResult, turnTimings]);
+  }, [messages, threadItems, traceScope, statusModel, lastTurnResult, turnTimings, childTasks]);
 
   const displayMessages = useMemo(() => {
     const projectedInputs = collectInputMessages(messages, threadItems, traceScope);

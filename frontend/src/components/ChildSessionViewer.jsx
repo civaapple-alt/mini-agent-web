@@ -9,7 +9,7 @@ import {
   orderMessagesByTurnHistory,
   restorePersistedTurnPresentation,
 } from '../utils/messageState';
-import { collectInputMessages } from '../utils/inputTrace';
+import { cleanInputText, collectInputMessages, createInputTrace } from '../utils/inputTrace';
 import { subscribeChildRuntimeEvents } from '../utils/childRuntimeEvents';
 import {
   childTaskStatusLabels,
@@ -46,11 +46,61 @@ function mergeEntries(earlier, later) {
   return [...entriesByKey.values()];
 }
 
-function projectChildMessages(entries, child, projectId) {
+function projectChildMessages(entries, child, projectId, steerRequests = []) {
   const scope = { threadId: child.child_thread_id, projectId };
   const inputs = collectInputMessages([], entries, scope);
   const hydrated = restorePersistedTurnPresentation(inputs, entries);
-  return filterEmptyMessages(orderMessagesByTurnHistory(hydrated, entries));
+  const messages = filterEmptyMessages(orderMessagesByTurnHistory(hydrated, entries)).map((message) => (
+    message.isSteer ? { ...message, steerOrigin: 'parent_session' } : message
+  ));
+  const liveSteers = [];
+  const matchedMessageIndexes = new Set();
+
+  for (const steer of steerRequests || []) {
+    const requestId = steer?.requestId || steer?.request_id;
+    const turnId = steer?.turnId || steer?.turn_id;
+    const text = cleanInputText(steer?.text);
+    if (!requestId || !turnId || !text) continue;
+    const existingIndex = messages.findLastIndex((message, index) => (
+      !matchedMessageIndexes.has(index)
+      && message.role === 'user'
+      && message.isSteer
+      && String(message.turnId || '') === String(turnId)
+      && (message.steerRequestId === requestId || cleanInputText(message.text) === text)
+    ));
+    const delivery = {
+      isSteer: true,
+      messageKind: 'steer',
+      steerOrigin: 'parent_session',
+      steerTurnId: turnId,
+      steerRequestId: requestId,
+      steerApplicationStatus: steer.status || 'accepted',
+      steerDeliveryStatus: 'accepted',
+      inputSource: 'steer',
+    };
+    if (existingIndex >= 0) {
+      matchedMessageIndexes.add(existingIndex);
+      messages[existingIndex] = { ...messages[existingIndex], ...delivery };
+      continue;
+    }
+    liveSteers.push({
+      id: `user_steer_${requestId}`,
+      role: 'user',
+      text,
+      turnId,
+      ...delivery,
+      inputTrace: createInputTrace({
+        threadId: child.child_thread_id,
+        projectId,
+        turnId,
+        source: 'steer',
+        attachmentText: steer.text,
+        historical: true,
+      }),
+    });
+  }
+
+  return [...messages, ...liveSteers];
 }
 
 function eventTurnId(event) {
@@ -107,6 +157,27 @@ function getTaskResultText(result) {
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return null;
+}
+
+function normalizedResultText(value) {
+  return cleanInputText(value).trim().replace(/\s+/g, ' ');
+}
+
+function assistantMessageText(message) {
+  if (typeof message?.text === 'string' && message.text.trim()) return message.text;
+  return (Array.isArray(message?.blocks) ? message.blocks : [])
+    .filter((block) => block?.type === 'text' && typeof block.content === 'string')
+    .map((block) => block.content)
+    .join('\n\n');
+}
+
+function hasAssistantResultInMessages(result, messages) {
+  const normalizedResult = normalizedResultText(result);
+  if (!normalizedResult) return false;
+  return (messages || []).some((message) => (
+    message?.role === 'assistant'
+      && normalizedResultText(assistantMessageText(message)) === normalizedResult
+  ));
 }
 
 function isRunning(checkpoint, child) {
@@ -166,6 +237,7 @@ export default function ChildSessionViewer({
   const childProjectId = child.project_id || projectId;
   const [checkpoint, setCheckpoint] = useState(null);
   const [entries, setEntries] = useState([]);
+  const [steerRequests, setSteerRequests] = useState([]);
   const [contextManifest, setContextManifest] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -261,6 +333,30 @@ export default function ChildSessionViewer({
         }),
       ]);
       if (!mountedRef.current || controller.signal.aborted) return;
+      const turnActive = nextCheckpoint?.turn_active
+        ?? nextCheckpoint?.session?.turn_active;
+      const activeTurnId = nextCheckpoint?.active_turn_id
+        || nextCheckpoint?.activeTurnId
+        || nextCheckpoint?.session?.active_turn_id
+        || nextCheckpoint?.session?.activeTurnId
+        || child.current_turn_id
+        || child.turn_id
+        || null;
+      let nextSteerRequests = [];
+      if (activeTurnId && (turnActive === true || (turnActive == null && isRunning(nextCheckpoint, child)))) {
+        try {
+          const turn = await api.readTurn(child.child_thread_id, activeTurnId, {
+            projectId: childProjectId,
+            signal: controller.signal,
+          });
+          nextSteerRequests = turn.steer_requests || turn.steerRequests || [];
+        } catch (turnReadError) {
+          if (!controller.signal.aborted) {
+            console.debug('Failed to read child Turn steering state:', turnReadError);
+          }
+        }
+      }
+      if (!mountedRef.current || controller.signal.aborted) return;
       const newest = [...(Array.isArray(page.data) ? page.data : [])].reverse();
       const newestKeys = new Set(newest.map(itemKey));
       if (latestKeysRef.current) {
@@ -288,6 +384,7 @@ export default function ChildSessionViewer({
       if (settledTurnPersistedRef.current) setReplayHasGap(false);
       setCheckpoint(nextCheckpoint);
       setEntries(entriesRef.current);
+      setSteerRequests(nextSteerRequests);
       setContextManifest(Array.isArray(manifest?.data) ? manifest.data : []);
       setOlderCursor(olderCursorRef.current);
       setError(null);
@@ -330,6 +427,7 @@ export default function ChildSessionViewer({
     settledTurnPersistedRef.current = false;
     setCheckpoint(null);
     setEntries([]);
+    setSteerRequests([]);
     setLiveEvents([]);
     setReplayHasGap(false);
     setReplayError(null);
@@ -371,8 +469,8 @@ export default function ChildSessionViewer({
   }, [entries, checkpoint, liveEvents]);
 
   const persistedMessages = useMemo(
-    () => projectChildMessages(entries, child, childProjectId),
-    [entries, child, childProjectId],
+    () => projectChildMessages(entries, child, childProjectId, steerRequests),
+    [entries, child, childProjectId, steerRequests],
   );
   const activeTurnId = checkpoint?.active_turn_id
     || checkpoint?.session?.active_turn_id
@@ -423,12 +521,11 @@ export default function ChildSessionViewer({
   const parentCheckpointSeq = child.parent_checkpoint_seq
     ?? checkpoint?.parent_checkpoint_seq
     ?? checkpoint?.session?.parent_checkpoint_seq;
-  const hasFinalTurnReply = messages.some((message) => (
-    message.role === 'assistant'
-      && String(message.text || '').trim()
-      && (!activeTurnId || !message.turnId || String(message.turnId) === String(activeTurnId))
-  ));
-  const finalReplyFallback = hasFinalTurnReply ? null : getTaskResultText(child.result);
+  const taskResultText = getTaskResultText(child.operation_result)
+    || getTaskResultText(child.result);
+  const finalReplyFallback = taskResultText && !hasAssistantResultInMessages(taskResultText, messages)
+    ? taskResultText
+    : null;
   const showFinalReplyFallback = !running && !queued && !failed && Boolean(finalReplyFallback);
   const failureDetail = failure || child.error || child.operation_error;
 

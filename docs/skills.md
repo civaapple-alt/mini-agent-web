@@ -82,9 +82,10 @@ skill bodies. The Gateway and browser do not scan skill directories.
 ## Skill panel
 
 The WebStudio Skill tab renders the complete bounded catalog returned by the
-runtime. It does not maintain a second group or Skill list. Each returned group
-has its own status, activation labels, and Skill entries, so the panel remains
-accurate when a builtin resource changes.
+runtime. It does not maintain a second group or Skill list. Builtin groups have
+their own status and activation labels. User-directory and project Skills are
+shown under source headings; their `enabled` catalog field controls whether
+they can be selected, and they do not inherit a builtin-group toggle.
 
 The panel distinguishes the two entry points for every enabled group:
 
@@ -93,10 +94,11 @@ The panel distinguishes the two entry points for every enabled group:
 | `+ <group> · 组内按需` | Turn-level workflow activation; the selected group becomes the candidate group and the model selects relevant Skills from metadata. | No bulk preload; relevant bodies are read on demand. |
 | `$ 直接调用` | Skill-level activation; the user names one Skill such as `$knowledge-work:data`. | Host loads the selected body before model execution. |
 
-All enabled groups can use both entry points. `+ <group>` is not a shortcut for
-loading every body, and `$<group>:skill` is not a request to activate the whole
-group. The panel's `$` insertion always uses the canonical qualified name;
-compatibility aliases remain visible when provided by the manifest.
+Enabled builtin groups can use both entry points. `+ <group>` is not a shortcut
+for loading every body, and `$<group>:skill` is not a request to activate the
+whole group. Ungrouped user and project Skills use their canonical `$skill-name`
+token directly. The panel's `$` insertion always uses the canonical qualified
+name; compatibility aliases remain visible when provided by the manifest.
 
 If a group is enabled but the catalog contains no Skill entry for it, the panel
 shows a runtime-catalog warning. Reloading the panel refreshes discovery; if a

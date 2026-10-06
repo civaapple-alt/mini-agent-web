@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Show detected `PATH` commands separately from application CLI capabilities in
   World State, including Blender when found in its standard macOS app bundle.
+- Keep enabled user-directory and project Skills selectable in the Skill panel,
+  with source-specific headings and direct-activation guidance.
 - Allow Skill roots inside configured write roots to follow normal write and
   approval policy while keeping external Skill roots read-only.
 - Add a prioritized pending-action summary to StatusRail and jump to the exact

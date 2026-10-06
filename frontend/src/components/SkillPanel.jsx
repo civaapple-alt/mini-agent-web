@@ -1,6 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { Search, Sparkles, X } from 'lucide-react';
 
+const SOURCE_LABELS = {
+  user: '用户目录技能',
+  project: '项目技能',
+  plugin: '插件技能',
+};
+
 export default function SkillPanel({
   skills = [],
   groups = [],
@@ -135,14 +141,16 @@ export default function SkillPanel({
           {groupedSkills.map(([groupId, groupSkills]) => (
             <section key={groupId} className="skill-group-section">
               <div className="skill-group-heading">
-                <span className="skill-group-heading-label"><Sparkles size={11} /> {groupsById.get(groupId)?.label || `${groupId} · 内置技能组`}</span>
+                <span className="skill-group-heading-label"><Sparkles size={11} /> {groupsById.get(groupId)?.label || SOURCE_LABELS[groupId] || `${groupId} · 内置技能组`}</span>
                 <span className="skill-group-heading-count">{groupSkills.length} 项</span>
               </div>
               <div className="skill-group-section-guide">
-                下面每项都可以用 <code>${groupId}:技能名</code> 直接调用，也可能在 <code>+ {groupId}</code> 中被模型按需选中；点击卡片插入规范名。
+                {groupsById.has(groupId)
+                  ? <>下面每项都可以用 <code>${groupId}:技能名</code> 直接调用，也可能在 <code>+ {groupId}</code> 中被模型按需选中；点击卡片插入规范名。</>
+                  : <>这些技能可以用 <code>$skill-name</code> 直接调用；点击卡片插入规范名。</>}
               </div>
               {groupSkills.map((skill) => {
-                const groupEnabled = groupsById.has(groupId) && groupsById.get(groupId).enabled !== false;
+                const groupEnabled = !groupsById.has(groupId) || groupsById.get(groupId).enabled !== false;
                 const enabled = skill.enabled !== false && groupEnabled;
                 return (
                 <button
@@ -160,7 +168,9 @@ export default function SkillPanel({
                   <div className="skill-card-description">{skill.description || '暂无技能简介'}</div>
                   <div className="skill-card-capabilities">
                     <span className={`skill-capability-badge explicit ${enabled ? '' : 'disabled'}`}>$ 直接调用</span>
-                    <span className={`skill-capability-badge auto ${enabled ? '' : 'disabled'}`}>+ {groupId} 按需</span>
+                    {groupsById.has(groupId) && (
+                      <span className={`skill-capability-badge auto ${enabled ? '' : 'disabled'}`}>+ {groupId} 按需</span>
+                    )}
                   </div>
                   {Array.isArray(skill.aliases) && skill.aliases.length > 0 && (
                     <div className="skill-card-aliases">

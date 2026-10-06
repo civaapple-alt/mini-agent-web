@@ -87,6 +87,55 @@ describe('SkillPanel', () => {
     expect(screen.getByRole('button', { name: /\$knowledge-work:product-management/ }).disabled).toBe(true);
   });
 
+  it('keeps enabled user and project Skills available without builtin groups', () => {
+    const onInsertSkill = vi.fn();
+    render(
+      <SkillPanel
+        skills={[
+          {
+            name: 'frontend-design',
+            qualifiedName: 'frontend-design',
+            description: 'User Skill.',
+            source: 'user',
+            enabled: true,
+          },
+          {
+            name: 'blender-modeling',
+            qualifiedName: 'blender-modeling',
+            description: 'Project Skill.',
+            source: 'project',
+            enabled: true,
+          },
+          {
+            name: 'disabled-skill',
+            qualifiedName: 'disabled-skill',
+            description: 'Disabled Skill.',
+            source: 'user',
+            enabled: false,
+          },
+        ]}
+        groups={[{ id: 'pstack', version: '0.2.0', enabled: true }]}
+        onInsertSkill={onInsertSkill}
+      />,
+    );
+
+    expect(screen.getByText('用户目录技能')).toBeDefined();
+    expect(screen.getByText('项目技能')).toBeDefined();
+    expect(screen.queryByText('+ user 按需')).toBeNull();
+    expect(screen.queryByText('+ project 按需')).toBeNull();
+    const userSkill = screen.getByRole('button', { name: /\$frontend-design/ });
+    const projectSkill = screen.getByRole('button', { name: /\$blender-modeling/ });
+    const disabledSkill = screen.getByRole('button', { name: /\$disabled-skill/ });
+    expect(userSkill.disabled).toBe(false);
+    expect(projectSkill.disabled).toBe(false);
+    expect(disabledSkill.disabled).toBe(true);
+
+    fireEvent.click(userSkill);
+    fireEvent.click(projectSkill);
+    expect(onInsertSkill).toHaveBeenNthCalledWith(1, 'frontend-design');
+    expect(onInsertSkill).toHaveBeenNthCalledWith(2, 'blender-modeling');
+  });
+
   it('shows the disabled code-review group and offers an enable action', () => {
     const onToggleGroup = vi.fn();
     render(

@@ -79,12 +79,16 @@ export default function MessageItem({
   anchorRef = null,
   childTaskBatch = null,
   isChildTaskTurn = false,
+  modelTimingForPrompt = null,
+  modelTimingDisplayedOnPrompt = false,
 }) {
   const { role, text, thinking, tools = [], blocks = [], usage, modelTiming } = message;
-  const modelTimingLabels = [
-    Number.isSafeInteger(modelTiming?.ttftMs) ? `TTFT ${modelTiming.ttftMs}ms` : null,
-    Number.isSafeInteger(modelTiming?.responseMs) ? `响应 ${modelTiming.responseMs}ms` : null,
+  const formatModelTimingLabels = (timing) => [
+    Number.isSafeInteger(timing?.ttftMs) ? `TTFT ${timing.ttftMs}ms` : null,
+    Number.isSafeInteger(timing?.responseMs) ? `响应 ${timing.responseMs}ms` : null,
   ].filter(Boolean);
+  const modelTimingLabels = formatModelTimingLabels(modelTiming);
+  const promptModelTimingLabels = formatModelTimingLabels(modelTimingForPrompt);
   const [copied, setCopied] = useState(false);
 
   const handleCopyText = (content) => {
@@ -251,6 +255,11 @@ export default function MessageItem({
                 : displayedFileAttachments.length > 0 ? '（文件附件）' : '')}
             </span>
           </div>
+          {promptModelTimingLabels.length > 0 && (
+            <div className="token-usage-meta user-model-timing-meta font-mono" aria-label="模型响应耗时">
+              <span>{promptModelTimingLabels.join(' · ')}</span>
+            </div>
+          )}
           <div className="user-actions">
             <button
               className="msg-action-btn"
@@ -699,7 +708,7 @@ export default function MessageItem({
                 <span>Tokens: In {usage.input_tokens || 0} · Out {usage.output_tokens || 0}</span>
               </div>
             )}
-            {modelTimingLabels.length > 0 && (
+            {!modelTimingDisplayedOnPrompt && modelTimingLabels.length > 0 && (
               <div className="token-usage-meta font-mono" aria-label="模型响应耗时">
                 <span>{modelTimingLabels.join(' · ')}</span>
               </div>

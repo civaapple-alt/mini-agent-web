@@ -226,6 +226,32 @@ export default function ChatArea({
     return orderMessagesByTurnHistory(result, threadItems);
   }, [messages, threadItems, traceScope]);
 
+  const modelTimingPlacementByTurn = useMemo(() => {
+    const inputMessageByTurn = new Map();
+    const timingByTurn = new Map();
+    displayMessages.forEach((message, index) => {
+      const turnId = message?.turnId ? String(message.turnId) : null;
+      if (!turnId) return;
+      if (message.role === 'user' && !message.isSteer && !message.isGoal
+        && !inputMessageByTurn.has(turnId)) {
+        inputMessageByTurn.set(turnId, String(message.id || `msg_${index}`));
+      }
+      const timing = message.role === 'assistant' ? message.modelTiming : null;
+      if (timing && (
+        Number.isSafeInteger(timing.ttftMs) || Number.isSafeInteger(timing.responseMs)
+      )) {
+        timingByTurn.set(turnId, timing);
+      }
+    });
+
+    const placementByTurn = new Map();
+    timingByTurn.forEach((modelTiming, turnId) => {
+      const inputMessageId = inputMessageByTurn.get(turnId);
+      if (inputMessageId) placementByTurn.set(turnId, { inputMessageId, modelTiming });
+    });
+    return placementByTurn;
+  }, [displayMessages]);
+
   const lastAssistantIndexByTurn = useMemo(() => {
     const indexByTurn = new Map();
     displayMessages.forEach((message, index) => {
@@ -638,6 +664,14 @@ export default function ChatArea({
               const index = startIndex;
               const messageId = String(msg.id || `msg_${index}`);
               const turnId = msg.turnId ? String(msg.turnId) : null;
+              const isCurrentTurn = hasActiveTurn && (
+                activeTurnId
+                  ? activeTurnId === turnId
+                  : lastAssistantIndexByTurn.get(turnId) === lastAssistantMessageIndex
+              );
+              const modelTimingPlacement = turnId && !isCurrentTurn
+                ? modelTimingPlacementByTurn.get(turnId)
+                : null;
               // The active Turn remains stable while sampling and tools alternate; list position does not.
               const isCurrentTurnSegment = msg.role === 'assistant'
                 && hasActiveTurn
@@ -698,6 +732,12 @@ export default function ChatArea({
                     anchorRef={(node) => setMessageRef(messageId, node)}
                     childTaskBatch={childTaskBatchByMessage.batches.get(messageId) || null}
                     isChildTaskTurn={isChildTaskTurn}
+                    modelTimingForPrompt={msg.role === 'user'
+                      && modelTimingPlacement?.inputMessageId === messageId
+                      ? modelTimingPlacement.modelTiming
+                      : null}
+                    modelTimingDisplayedOnPrompt={msg.role === 'assistant'
+                      && Boolean(modelTimingPlacement)}
                   />
                   {turnDurationAnchors.after.has(index) && (
                     <TurnDurationLabel

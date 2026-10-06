@@ -56,9 +56,10 @@ window comes from the configured model catalog and is shown as unknown when
 unset.
 
 Settled assistant replies show the most recent model request's time to
-first non-empty output (TTFT) and total response time when the App Server
-reports them. If timing data is missing, Studio omits the timing metadata;
-the SDK keeps the timing fields optional for compatibility.
+first non-empty output (TTFT) and total response time below the corresponding
+user input when the App Server reports them. If Studio cannot match an input,
+it keeps the timing metadata on the assistant reply. If timing data is missing,
+Studio omits it; the SDK keeps the timing fields optional for compatibility.
 
 The expanded usage view shows a segmented context-source bar and a percentage
 for each category. Studio apportions the Provider-reported input-token total

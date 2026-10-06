@@ -211,7 +211,7 @@
 .turn-duration-label {
   max-width: 860px;
   width: 100%;
-  margin: -5px auto -8px;
+  margin: -5px auto 8px;
   padding: 0 8px;
   color: var(--text-muted);
   font: 11px/1.4 var(--font-mono);
@@ -860,6 +860,11 @@
 .token-usage-meta {
   font-size: 10px;
   color: var(--text-muted);
+}
+
+.user-model-timing-meta {
+  max-width: 100%;
+  text-align: right;
 }
 
 /* Word wrap toggling */

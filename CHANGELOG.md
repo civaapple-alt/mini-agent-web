@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bounded, redacted arguments so the user can inspect the command. Restore
   bounded reasoning, messages, and tool results from an unsettled Turn's
   execution checkpoint into the conversation timeline after restart.
+- Skip recovery reads for completed historical Turns without a recovery
+  checkpoint, avoiding `turn/read` 400 responses after the App Server restarts.
 - Keep tool activity pending until the runtime reports its result after a stop
   request, preserve Session-log duration over local timer estimates after
   replay, and label the initial WebSocket handshake as connecting.

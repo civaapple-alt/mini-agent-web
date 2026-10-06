@@ -1174,17 +1174,25 @@ export default function App() {
       });
       if (!isCurrentSessionRequest(requestContext)) return;
       let executionRecovery = cp.execution_recovery || cp.executionRecovery || null;
+      const activeTurnId = cp.active_turn_id
+        || cp.activeTurnId
+        || cp.session?.active_turn_id
+        || cp.session?.activeTurnId
+        || null;
+      const turnIsActive = cp.turn_active === true
+        || cp.turnActive === true
+        || Boolean(activeTurnId);
       const recoveryTurnId = executionRecovery?.turn_id
         || executionRecovery?.turnId
-        || cp.active_turn_id
-        || cp.session?.active_turn_id
-        || cp.last_turn_id
-        || cp.lastTurnId
-        || cp.session?.last_turn_id
-        || null;
+        || activeTurnId
+        || (turnIsActive
+          ? cp.last_turn_id || cp.lastTurnId || cp.session?.last_turn_id || null
+          : null);
+      const recoveryIsPending = executionRecovery
+        && executionRecovery.status !== 'settled';
       let recoveryItems = [];
       let persistedSteerRequests = [];
-      if (recoveryTurnId) {
+      if (recoveryTurnId && (turnIsActive || recoveryIsPending)) {
         try {
           const turn = await api.readTurn(threadId, recoveryTurnId, {
             projectId,

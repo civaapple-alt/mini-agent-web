@@ -27,3 +27,10 @@ Gateway 使用 Project 注册表解析 `project_id` 对应的主工作区。请�
 
 Gateway 在运行 Web Studio 的主机上启动应用。浏览器若连接远程 Gateway，应用会在
 Gateway 主机启动，而不是在浏览器所在的设备启动。
+
+## 环境探测
+
+运行详情中的环境状态来自 Harness 的有界 `world/state` 投影。Studio 将 `PATH` 中可用
+的命令与带有已解析 CLI 路径的应用能力分开展示。检测结果只描述当前主机环境，不授予
+工具权限。Harness 的命令范围、macOS Xcode 与 Python 模块验证，以及 Blender 检测规则
+见 [World State](https://github.com/civaapple-alt/mini-agent-harness/blob/main/docs/world-state.md)。

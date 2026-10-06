@@ -253,6 +253,57 @@ function WorkflowFileContent({ path, content, emptyMessage }) {
   );
 }
 
+export function EnvironmentToolsCard({ status }) {
+  const commands = Array.isArray(status?.available_commands)
+    ? status.available_commands
+    : Array.isArray(status?.commands_available)
+      ? status.commands_available
+      : [];
+  const applications = Array.isArray(status?.available_applications)
+    ? status.available_applications
+    : [];
+
+  return (
+    <div className="detail-card full-width environment-tools-card">
+      <span className="card-label">检测到的命令和应用</span>
+      <div className="environment-tools-sections">
+        <div className="environment-tools-section">
+          <span className="text-muted text-xs">PATH 命令</span>
+          <div className="tag-cloud">
+            {commands.length > 0 ? (
+              commands.map((command) => (
+                <span key={command} className="cmd-tag available font-mono">
+                  ✓ {command}
+                </span>
+              ))
+            ) : (
+              <span className="text-muted text-xs">未检测到可用命令</span>
+            )}
+          </div>
+        </div>
+
+        <div className="environment-tools-section">
+          <span className="text-muted text-xs">应用能力</span>
+          {applications.length > 0 ? (
+            <div className="environment-applications">
+              {applications.map((application) => (
+                <div key={application.id} className="environment-application">
+                  <span className="card-val">{application.name}</span>
+                  <code className="text-muted text-xs font-mono" title={application.cli_path}>
+                    CLI：{application.cli_path}
+                  </code>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <span className="text-muted text-xs">未检测到额外应用能力</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function PromptContextCard({
   injections = [],
   contextManifestError = null,
@@ -1258,21 +1309,7 @@ export default function SidePanel({
                     <span className="card-val font-mono">{worldData.workspace || 'N/A'}</span>
                   </div>
 
-                  <div className="detail-card full-width">
-                    <span className="card-label">可用工具链 (Installed Toolchains)</span>
-                    <div className="tag-cloud">
-                      {worldData.status?.commands_available &&
-                      worldData.status.commands_available.length > 0 ? (
-                        worldData.status.commands_available.map((cmd) => (
-                          <span key={cmd} className="cmd-tag available font-mono">
-                            ✓ {cmd}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-muted text-xs">未扫描到工具链</span>
-                      )}
-                    </div>
-                  </div>
+                  <EnvironmentToolsCard status={worldData.status} />
 
                   <PromptContextCard
                     injections={contextInjections}

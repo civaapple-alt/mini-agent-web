@@ -817,6 +817,32 @@
   border: 1px solid var(--status-success-border);
 }
 
+.environment-tools-sections {
+  display: grid;
+  gap: 10px;
+}
+
+.environment-tools-section {
+  display: grid;
+  gap: 6px;
+}
+
+.environment-applications {
+  display: grid;
+  gap: 8px;
+}
+
+.environment-application {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.environment-application code {
+  overflow-wrap: anywhere;
+}
+
 .xml-preview {
   background-color: var(--bg-app);
   border: 1px solid var(--border-color);

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
+- Show detected `PATH` commands separately from application CLI capabilities in
+  World State, including Blender when found in its standard macOS app bundle.
 - Add a prioritized pending-action summary to StatusRail and jump to the exact
   question, approval, or uncertain tool call in the virtualized timeline. Keep
   approval and reconciliation controls beside their activities, retain

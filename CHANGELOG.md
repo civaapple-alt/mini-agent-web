@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
+- Simplify the active user-question card palette, keep recommended options
+  visually neutral, and show a loading indicator only on the option currently
+  being submitted instead of checkmarks on every option.
 - Restore project access scope and approval policy from the persisted project
   snapshot when opening a Thread, including an empty Thread, so a page refresh
   does not make saved execution settings appear to revert.

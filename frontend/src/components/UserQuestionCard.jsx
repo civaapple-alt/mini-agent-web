@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, CircleHelp, Loader2, SkipForward } from 'lucide-react';
+import { ChevronDown, ChevronRight, CircleHelp, Loader2, SkipForward } from 'lucide-react';
 import './UserQuestionCard.css';
 
 function parseToolResult(tool) {
@@ -13,6 +13,7 @@ export default function UserQuestionCard({ tool, pendingInteraction, onRespond }
   const [expanded, setExpanded] = useState(false);
   const [freeText, setFreeText] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [submittingOptionId, setSubmittingOptionId] = useState(null);
   const toolId = tool?.id || tool?.callId || tool?.call_id;
   const interaction = pendingInteraction
     && (!toolId || (pendingInteraction.callId || pendingInteraction.call_id) === toolId)
@@ -41,11 +42,13 @@ export default function UserQuestionCard({ tool, pendingInteraction, onRespond }
   const submit = async (questionId, answer) => {
     if (!onRespond || !interaction || submitting) return;
     setSubmitting(true);
+    setSubmittingOptionId(answer.type === 'option' ? answer.optionId : null);
     try {
       const result = await onRespond({ interaction, questionId, answer });
       if (result?.accepted) setFreeText('');
     } finally {
       setSubmitting(false);
+      setSubmittingOptionId(null);
     }
   };
 
@@ -62,10 +65,11 @@ export default function UserQuestionCard({ tool, pendingInteraction, onRespond }
           <div className="user-question-options" role="group" aria-label="回答选项">
             {current.options.map((option) => (
               <button
-                className={`user-question-option ${option.recommended ? 'recommended' : ''}`}
+                className="user-question-option"
                 key={option.id}
                 type="button"
                 disabled={submitting}
+                aria-busy={submittingOptionId === option.id}
                 onClick={() => submit(current.id, { type: 'option', optionId: option.id })}
               >
                 <span className="user-question-option-copy">
@@ -82,7 +86,9 @@ export default function UserQuestionCard({ tool, pendingInteraction, onRespond }
                     </span>
                   )}
                 </span>
-                {submitting ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                {submittingOptionId === option.id && (
+                  <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                )}
               </button>
             ))}
           </div>

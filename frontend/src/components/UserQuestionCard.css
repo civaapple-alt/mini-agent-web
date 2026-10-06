@@ -1,16 +1,16 @@
 .user-question-card {
   margin: 8px 0;
-  border: 1px solid var(--border-color, #d8dee8);
+  border: 1px solid var(--border-color);
   border-radius: 12px;
-  background: var(--surface-primary, #fff);
-  color: var(--text-primary, #253044);
+  background: var(--bg-surface);
+  color: var(--text-primary);
   overflow: hidden;
 }
 
 .user-question-card.active {
   padding: 14px;
-  border-color: #93c5fd;
-  box-shadow: 0 2px 10px rgb(37 99 235 / 8%);
+  border-color: var(--accent-sky);
+  box-shadow: var(--shadow-card);
 }
 
 .user-question-card-header,
@@ -20,8 +20,8 @@
   gap: 8px;
 }
 
-.user-question-card-header { color: #2563eb; font-size: 13px; }
-.user-question-card-header span { margin-left: auto; color: #7c8798; font-size: 12px; }
+.user-question-card-header { color: var(--text-secondary); font-size: 13px; }
+.user-question-card-header span { margin-left: auto; color: var(--text-muted); font-size: 12px; }
 .user-question-prompt { margin: 12px 0; font-weight: 600; line-height: 1.55; }
 .user-question-options { display: grid; gap: 8px; }
 
@@ -32,27 +32,26 @@
   gap: 12px;
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid var(--border-color, #d8dee8);
+  border: 1px solid var(--border-color);
   border-radius: 9px;
-  background: var(--surface-secondary, #f8fafc);
+  background: var(--bg-card);
   color: inherit;
   text-align: left;
   cursor: pointer;
 }
 
-.user-question-option:hover:not(:disabled) { border-color: #60a5fa; background: #eff6ff; }
-.user-question-option.recommended { border-color: #38b987; background: #f0fdf7; }
+.user-question-option:hover:not(:disabled) { background: var(--bg-card-hover); }
 .user-question-option:disabled { cursor: wait; opacity: .7; }
 .user-question-option-copy { display: grid; gap: 3px; }
 .user-question-option-title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.user-question-recommended { padding: 2px 6px; border-radius: 999px; background: #d1fae5; color: #047857; font-size: 11px; font-weight: 600; }
-.user-question-option-description { display: grid; gap: 3px; color: #788397; font-size: 12px; line-height: 1.45; }
-.user-question-reason { color: #047857; }
+.user-question-recommended { padding: 2px 6px; border-radius: 999px; background: var(--bg-card-hover); color: var(--text-secondary); font-size: 11px; font-weight: 600; }
+.user-question-option-description { display: grid; gap: 3px; color: var(--text-muted); font-size: 12px; line-height: 1.45; }
+.user-question-reason { color: var(--text-secondary); }
 .user-question-free-text { display: flex; gap: 8px; margin-top: 10px; }
-.user-question-free-text input { flex: 1; min-width: 0; padding: 9px 10px; border: 1px solid var(--border-color, #d8dee8); border-radius: 8px; background: var(--surface-primary, #fff); color: inherit; }
-.user-question-free-text button { padding: 0 14px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; }
+.user-question-free-text input { flex: 1; min-width: 0; padding: 9px 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-input); color: inherit; }
+.user-question-free-text button { padding: 0 14px; border: 0; border-radius: 8px; background: var(--accent-sky); color: var(--on-accent); cursor: pointer; }
 .user-question-free-text button:disabled { opacity: .45; cursor: default; }
-.user-question-skip { display: inline-flex; align-items: center; gap: 5px; margin-top: 10px; padding: 4px 0; border: 0; background: transparent; color: #778397; cursor: pointer; }
+.user-question-skip { display: inline-flex; align-items: center; gap: 5px; margin-top: 10px; padding: 4px 0; border: 0; background: transparent; color: var(--text-secondary); cursor: pointer; }
 .user-question-history-toggle { width: 100%; padding: 10px 12px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .user-question-history-toggle strong { flex: 1; font-size: 12px; }
 .user-question-history-list { display: grid; gap: 8px; margin: 0; padding: 4px 14px 14px 36px; color: #586579; font-size: 12px; }

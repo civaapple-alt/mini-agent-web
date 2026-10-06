@@ -71,5 +71,5 @@ UI 可以提交 Turn、steer 或 interrupt 运行中的 Turn，并响应审批�
 实时回复以流式增量显示。App Server 完成 `reasoning` 或 `agentMessage` 后，Studio 用完整
 `ThreadItem` 校准流式内容。
 
-恢复同一 Turn 时，Studio 将连续助手执行段折叠为一个执行总览。展开总览可逐次查看
-模型调用、思考和工具。最终回复显示在总览下方。
+恢复同一 Turn 时，Studio 保留每个助手执行段及其文本顺序。每段中的思考和工具可单独
+折叠，段间的助手说明、技能状态和最终回复保持可见。

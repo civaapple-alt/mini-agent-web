@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
+- Preserve assistant segment boundaries and intermediate narration after history replay; fold
+  thinking and tool activity within each segment instead of merging an entire Turn.
 - Render enlarged message images in a viewport-level preview above the
   virtualized conversation, and constrain the image to the available viewport
   height and width.

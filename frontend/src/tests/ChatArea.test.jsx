@@ -592,7 +592,7 @@ describe('ChatArea restored assistant replies', () => {
     expect(screen.getByText('final response')).toBeTruthy();
   });
 
-  it('compresses earlier restored assistant segments and keeps the last segment expandable', () => {
+  it('keeps restored assistant narration visible between segment activity summaries', () => {
     const { container } = render(
       <ChatArea
         messages={[
@@ -602,6 +602,7 @@ describe('ChatArea restored assistant replies', () => {
             role: 'assistant',
             turnId: 'turn-segments',
             blocks: [
+              { type: 'text', id: 'segment-one-progress', content: 'First progress update' },
               { type: 'thinking', id: 'segment-one-thinking', content: 'earlier segment' },
               { type: 'tool', id: 'segment-one-tool', name: 'read_file', status: 'completed' },
             ],
@@ -611,6 +612,7 @@ describe('ChatArea restored assistant replies', () => {
             role: 'assistant',
             turnId: 'turn-segments',
             blocks: [
+              { type: 'text', id: 'segment-two-progress', content: 'Second progress update' },
               { type: 'thinking', id: 'segment-two-thinking', content: 'last segment' },
               { type: 'tool', id: 'segment-two-tool', name: 'apply_patch', status: 'completed' },
               { type: 'text', id: 'segment-two-answer', content: 'final answer' },
@@ -623,15 +625,12 @@ describe('ChatArea restored assistant replies', () => {
       />,
     );
 
-    expect(container.querySelectorAll('.assistant-activity-group-summary')).toHaveLength(1);
-    expect(screen.getByRole('button', { name: /已完成 2 次模型调用/ })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /已完成 2 次模型调用/ }));
-    fireEvent.click(screen.getByRole('button', { name: /模型调用 2/ }));
-    fireEvent.click(container.querySelector('.thinking-header'));
-    expect(container.querySelectorAll('.thinking-body')).toHaveLength(1);
-    expect(container.querySelector('.thinking-body')?.textContent).toContain('last segment');
-    expect(screen.queryByText('earlier segment')).toBeNull();
+    expect(container.querySelectorAll('.message-row.assistant')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: /已完成 \d+ 次模型调用/ })).toBeNull();
+    expect(screen.getByText('First progress update')).toBeTruthy();
+    expect(screen.getByText('Second progress update')).toBeTruthy();
     expect(screen.getByText('final answer')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /已完成 2 项活动/ })).toBeTruthy();
   });
 });
 

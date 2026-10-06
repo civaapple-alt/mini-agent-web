@@ -8,7 +8,6 @@ import { collectInputMessages, getChildWakeupTurnIds } from '../utils/inputTrace
 import { normalizeAssistantBlocks, orderMessagesByTurnHistory } from '../utils/messageState';
 import {
   buildTurnHistoryEntries,
-  groupAssistantExecutionSegments,
   isIncompleteTurnStatus,
 } from '../utils/turnHistory';
 import { buildTurnChildTaskBatch, getDelegateTaskAssignments } from '../utils/childTasks';
@@ -268,42 +267,12 @@ export default function ChatArea({
     ? String(statusModel.scope.turnId)
     : null;
   const presentationRows = useMemo(() => {
-    const rows = [];
-    for (let index = 0; index < displayMessages.length;) {
-      const message = displayMessages[index];
-      const turnId = message?.turnId ? String(message.turnId) : null;
-      let endIndex = index;
-      if (message?.role === 'assistant' && turnId) {
-        while (
-          endIndex + 1 < displayMessages.length
-          && displayMessages[endIndex + 1]?.role === 'assistant'
-          && String(displayMessages[endIndex + 1]?.turnId || '') === turnId
-        ) endIndex += 1;
-      }
-
-      const overlapsActiveTurn = hasActiveTurn && message?.role === 'assistant' && (
-        activeTurnId
-          ? activeTurnId === turnId
-          : endIndex === lastAssistantMessageIndex
-      );
-      const executionMessage = endIndex > index && !overlapsActiveTurn
-        ? groupAssistantExecutionSegments(displayMessages.slice(index, endIndex + 1))
-        : null;
-      if (executionMessage) {
-        rows.push({ message: executionMessage, startIndex: index, endIndex });
-      } else {
-        for (let messageIndex = index; messageIndex <= endIndex; messageIndex += 1) {
-          rows.push({
-            message: displayMessages[messageIndex],
-            startIndex: messageIndex,
-            endIndex: messageIndex,
-          });
-        }
-      }
-      index = endIndex + 1;
-    }
-    return rows;
-  }, [displayMessages, hasActiveTurn, activeTurnId, lastAssistantMessageIndex]);
+    return displayMessages.map((message, index) => ({
+      message,
+      startIndex: index,
+      endIndex: index,
+    }));
+  }, [displayMessages]);
 
   const virtualizer = useVirtualizer({
     count: presentationRows.length,

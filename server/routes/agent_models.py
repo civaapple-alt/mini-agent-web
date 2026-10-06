@@ -79,6 +79,9 @@ class StartTurnRequest(BaseModel):
 class SteerTurnRequest(BaseModel):
     turn_id: str = Field(..., description="Active turn ID to steer")
     text: str = Field(..., description="Corrective steering instruction")
+    request_id: str | None = Field(
+        default=None, min_length=1, max_length=192, description="Idempotency key"
+    )
     text_attachments: list[TextAttachment] = Field(
         default_factory=list,
         max_length=MAX_TEXT_ATTACHMENTS,

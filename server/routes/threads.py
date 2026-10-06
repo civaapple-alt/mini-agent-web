@@ -1213,6 +1213,7 @@ async def read_turn_recovery(
             "turn_id": turn.turn_id,
             "status": turn.status,
             "items": to_json_serializable(turn.items),
+            "steer_requests": to_json_serializable(turn.steer_requests),
             "error": turn.error,
             "recovery": turn.recovery.to_dict() if turn.recovery else None,
         }

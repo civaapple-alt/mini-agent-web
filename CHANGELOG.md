@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Correlate steer acknowledgements with their originating message and distinguish
   accepted, rejected, unsent, and unresolved requests; a transport timeout no
   longer claims either failure or injection.
+- Carry the stable browser steer request ID through Gateway and SDK into the
+  App Server journal, recover accepted/applied/unapplied status after restart,
+  and show “applied” only after the next model-context checkpoint. Treat stop
+  acknowledgements as pending until a terminal event or authoritative status
+  read settles the Turn, with a manual refresh when the result stays unknown.
 - Route late reasoning and text events back to their assistant segment by item ID,
   and accept a restarted Runtime's lower state revision during recovery.
 - Isolate App Server children from Gateway terminal signals and stop Session

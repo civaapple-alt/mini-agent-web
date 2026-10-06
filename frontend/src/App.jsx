@@ -134,6 +134,7 @@ export default function App() {
   const [contextManifestError, setContextManifestError] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isInterrupting, setIsInterrupting] = useState(false);
+  const [interruptOutcomeUnknown, setInterruptOutcomeUnknown] = useState(false);
   const [resumeExecutionBusy, setResumeExecutionBusy] = useState(false);
   const [reconcileExecutionBusy, setReconcileExecutionBusy] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState(null);
@@ -873,6 +874,7 @@ export default function App() {
         interruptPendingRef.current = false;
         interruptTurnIdRef.current = null;
         setIsInterrupting(false);
+        setInterruptOutcomeUnknown(false);
       }
       setIsGenerating(true);
       if (runtimeTurnId) {
@@ -893,6 +895,7 @@ export default function App() {
       setMessages((messages) => settleStaleStreamingPresentation(messages));
       setIsGenerating(false);
       setIsInterrupting(false);
+      setInterruptOutcomeUnknown(false);
       activeTurnIdRef.current = null;
       setActiveTurnId(null);
       interruptPendingRef.current = false;
@@ -937,10 +940,13 @@ export default function App() {
           signal: sessionRequestControllerRef.current?.signal,
         },
       );
-      if (!cancelled && interruptTurnIdRef.current) {
+      if (!cancelled && interruptTurnIdRef.current && Date.now() < deadline) {
         timer = window.setTimeout(refresh, 1500);
+      } else if (!cancelled && interruptTurnIdRef.current) {
+        setInterruptOutcomeUnknown(true);
       }
     };
+    const deadline = Date.now() + 30_000;
     timer = window.setTimeout(refresh, 500);
     return () => {
       cancelled = true;
@@ -1089,17 +1095,22 @@ export default function App() {
         || executionRecovery?.turnId
         || cp.active_turn_id
         || cp.session?.active_turn_id
+        || cp.last_turn_id
+        || cp.lastTurnId
+        || cp.session?.last_turn_id
         || null;
       let recoveryItems = [];
-      if (executionRecovery && executionRecovery.status !== 'settled' && recoveryTurnId) {
+      let persistedSteerRequests = [];
+      if (recoveryTurnId) {
         try {
           const turn = await api.readTurn(threadId, recoveryTurnId, {
             projectId,
             signal: requestContext.signal,
           });
           if (!isCurrentSessionRequest(requestContext)) return;
-          if (turn.recovery) executionRecovery = turn.recovery;
-          else if (turn.status !== 'in_progress') executionRecovery = null;
+          persistedSteerRequests = turn.steer_requests || turn.steerRequests || [];
+          if (executionRecovery && turn.recovery) executionRecovery = turn.recovery;
+          else if (executionRecovery && turn.status !== 'in_progress') executionRecovery = null;
           if (executionRecovery && executionRecovery.status !== 'settled') {
             recoveryItems = Array.isArray(turn.items) ? turn.items : [];
           }
@@ -1184,6 +1195,7 @@ export default function App() {
         : null;
       setIsGenerating(turnActive);
       setIsInterrupting(false);
+      setInterruptOutcomeUnknown(false);
       interruptPendingRef.current = false;
       interruptTurnIdRef.current = null;
       activeTurnIdRef.current = restoredTurnId;
@@ -1451,6 +1463,52 @@ export default function App() {
           }),
         });
       }
+      for (const steer of persistedSteerRequests) {
+        const requestId = steer.request_id || steer.requestId;
+        const steerTurnId = steer.turn_id || steer.turnId || recoveryTurnId;
+        const text = cleanInputText(steer.text || '');
+        const status = steer.status;
+        if (!requestId || !text) continue;
+        const deliveryFields = {
+          isSteer: true,
+          messageKind: 'steer',
+          steerTurnId,
+          steerRequestId: requestId,
+          steerApplicationStatus: status,
+          steerDeliveryStatus: 'accepted',
+          inputSource: 'steer',
+        };
+        const existingIndex = status === 'applied'
+          ? formatted.findLastIndex((message) => (
+            message.role === 'user'
+            && String(message.turnId || '') === String(steerTurnId)
+            && cleanInputText(message.text || '') === text
+          ))
+          : -1;
+        if (existingIndex >= 0) {
+          formatted[existingIndex] = { ...formatted[existingIndex], ...deliveryFields };
+          continue;
+        }
+        const messageId = `user_steer_${requestId}`;
+        formatted.push({
+          id: messageId,
+          role: 'user',
+          turnId: steerTurnId,
+          text,
+          ...deliveryFields,
+          thinking: '',
+          tools: [],
+          blocks: [{ type: 'text', id: `${messageId}:text`, content: text }],
+          inputTrace: createInputTrace({
+            threadId,
+            projectId,
+            turnId: steerTurnId,
+            source: 'steer',
+            attachmentText: steer.text,
+            historical: true,
+          }),
+        });
+      }
       setMessages(
         filterEmptyMessages(
           restorePersistedTurnPresentation(
@@ -1533,6 +1591,57 @@ export default function App() {
       if (isAbortError(err) || !isCurrentSessionRequest(requestContext)) return;
       console.debug('Failed to load turn failure details:', err);
     });
+  }
+
+  async function refreshSteerApplicationStatus(
+    threadId,
+    projectId,
+    turnId,
+    requestId,
+    attempt = 0,
+  ) {
+    const requestContext = currentSessionRequest();
+    try {
+      const turn = await api.readTurn(threadId, turnId, {
+        projectId,
+        signal: requestContext.signal,
+      });
+      if (!isCurrentSessionRequest(requestContext)) return;
+      const requests = turn.steer_requests || turn.steerRequests || [];
+      const steer = requests.find((item) => (
+        String(item.request_id || item.requestId || '') === String(requestId)
+      ));
+      const applicationStatus = steer?.status;
+      if (applicationStatus) {
+        setMessages((previous) => previous.map((message) => (
+          message.steerRequestId === requestId
+            ? {
+              ...message,
+              steerApplicationStatus: applicationStatus,
+              steerDeliveryStatus: 'accepted',
+            }
+            : message
+        )));
+      }
+      if (applicationStatus === 'accepted' && attempt < 40) {
+        window.setTimeout(() => {
+          if (currentThreadRef.current === threadId
+            && currentThreadProjectRef.current === projectId) {
+            void refreshSteerApplicationStatus(
+              threadId,
+              projectId,
+              turnId,
+              requestId,
+              attempt + 1,
+            );
+          }
+        }, 1200);
+      }
+    } catch (error) {
+      if (!isAbortError(error) && isCurrentSessionRequest(requestContext)) {
+        console.debug('Steer application status is not readable yet:', error);
+      }
+    }
   }
 
   async function refreshTurnRecovery(threadId, turnId, projectId = currentThreadProjectRef.current) {
@@ -1697,6 +1806,7 @@ export default function App() {
         queueDispatchingRef.current = false;
         setActiveTurnId(null);
         setIsInterrupting(false);
+        setInterruptOutcomeUnknown(false);
         setIsGenerating(false);
       }
       window.dispatchEvent(
@@ -1741,6 +1851,7 @@ export default function App() {
         setActiveTurnId(turnId);
         setIsGenerating(true);
         setIsInterrupting(false);
+        setInterruptOutcomeUnknown(false);
         queueDispatchingRef.current = false;
         interruptPendingRef.current = false;
         interruptTurnIdRef.current = null;
@@ -1760,6 +1871,7 @@ export default function App() {
     }
 
     if (data.type === 'steer_ack') {
+      const steerApplicationStatus = data.applicationStatus || 'accepted';
       setMessages((previous) => {
         const candidates = previous
           .map((message, index) => ({ message, index }))
@@ -1778,6 +1890,7 @@ export default function App() {
               ...message,
               steerDeliveryStatus: 'accepted',
               steerRuntimeStatus: data.status || null,
+              steerApplicationStatus,
             }
             : message
         ));
@@ -1793,8 +1906,20 @@ export default function App() {
         ? '✓ 纠偏已排队，等待运行时处理。'
         : data.status === 'started'
           ? '✓ 纠偏已提交，新运行正在启动。'
-          : '✓ 纠偏指令已注入当前运行。';
+          : steerApplicationStatus === 'applied'
+            ? '✓ 纠偏已进入后续模型上下文。'
+            : steerApplicationStatus === 'unapplied'
+              ? '纠偏请求未进入模型上下文。'
+              : '✓ 纠偏已受理，等待安全边界后应用。';
       showToast(confirmationMessage, 'info', 2500);
+      if (data.clientRequestId && data.turnId) {
+        void refreshSteerApplicationStatus(
+          data.threadId || currentThreadRef.current,
+          data.projectId ?? currentThreadProjectRef.current,
+          data.turnId,
+          data.clientRequestId,
+        );
+      }
       return;
     }
 
@@ -1837,6 +1962,14 @@ export default function App() {
         if (data.outcome === 'rejected') {
           showToast(`⚠️ ${data.message || '运行时拒绝了纠偏请求'}`, 'error', 4500);
         } else {
+          if (data.turnId) {
+            void refreshSteerApplicationStatus(
+              data.threadId || currentThreadRef.current,
+              data.projectId ?? currentThreadProjectRef.current,
+              data.turnId,
+              data.clientRequestId,
+            );
+          }
           showToast(
             '纠偏结果未确认：运行时可能已接收。请先查看会话流，不要直接重复发送。',
             'warning',
@@ -1916,6 +2049,7 @@ export default function App() {
         interruptPendingRef.current = false;
         interruptTurnIdRef.current = null;
         setIsInterrupting(false);
+        setInterruptOutcomeUnknown(false);
         activeTurnIdRef.current = data.turnId;
         setActiveTurnId(data.turnId);
         setIsGenerating(true);
@@ -1937,6 +2071,7 @@ export default function App() {
         interruptPendingRef.current = false;
         interruptTurnIdRef.current = null;
         setIsInterrupting(false);
+        setInterruptOutcomeUnknown(false);
         setIsGenerating(false);
         activeTurnIdRef.current = null;
         setActiveTurnId(null);
@@ -2218,6 +2353,7 @@ export default function App() {
           }
           setIsGenerating(false);
           setIsInterrupting(false);
+          setInterruptOutcomeUnknown(false);
           activeTurnIdRef.current = null;
           setActiveTurnId(null);
           interruptPendingRef.current = false;
@@ -2611,6 +2747,7 @@ export default function App() {
     interruptTurnIdRef.current = turnId;
     rememberInterruptedTurn(turnId);
     setIsInterrupting(true);
+    setInterruptOutcomeUnknown(false);
     setIsGenerating(false);
     // Keep the approval dock visible while the interrupt settles. Its actions
     // are disabled by isInterrupting, which makes the cancellation boundary
@@ -2623,6 +2760,7 @@ export default function App() {
       interruptPendingRef.current = false;
       interruptTurnIdRef.current = null;
       setIsInterrupting(false);
+      setInterruptOutcomeUnknown(false);
       setIsGenerating(Boolean(turnId));
       showToast(`停止请求发送失败：${err.message || '服务端未确认'}。`, 'error', 4000);
     };
@@ -2683,6 +2821,48 @@ export default function App() {
       copy[copy.length - 1] = last;
       return copy;
     });
+  };
+
+  const handleRefreshInterruptState = async () => {
+    const turnId = interruptTurnIdRef.current || activeTurnIdRef.current || activeTurnId;
+    if (!currentThread || !turnId) {
+      showToast('当前没有可核对的停止请求，请刷新会话状态。', 'warning', 4000);
+      return;
+    }
+    const requestContext = currentSessionRequest();
+    try {
+      const status = await api.getRuntimeStatus(currentThread, {
+        projectId: currentThreadProject,
+        signal: requestContext.signal,
+      });
+      if (!isCurrentSessionRequest(requestContext)) return;
+      applyRuntimeStatus(status, requestContext);
+      if (isRuntimeSettled(status)) {
+        setInterruptOutcomeUnknown(false);
+        await loadThreadHistory(currentThread, currentThreadProject, requestContext, {
+          preserveVisible: true,
+        });
+        showToast('已从运行时状态确认当前 Turn 已结算。', 'success', 4000);
+        return;
+      }
+      await api.readTurn(currentThread, turnId, {
+        projectId: currentThreadProject,
+        signal: requestContext.signal,
+      });
+      if (!isCurrentSessionRequest(requestContext)) return;
+      setInterruptOutcomeUnknown(true);
+      showToast(
+        status.phase === 'stopping'
+          ? '运行时仍在停止中；稍后可再次刷新，或重连后恢复会话。'
+          : '运行时尚未报告结算；停止结果仍未确认。',
+        'warning',
+        5000,
+      );
+    } catch (error) {
+      if (isAbortError(error) || !isCurrentSessionRequest(requestContext)) return;
+      setInterruptOutcomeUnknown(true);
+      showToast(`无法读取停止结果：${error.message || '服务暂不可用'}。请重连后刷新状态。`, 'warning', 6000);
+    }
   };
 
   const handleResumeExecution = async () => {
@@ -3479,6 +3659,8 @@ export default function App() {
       contextInjections={contextInjections}
       contextManifestError={contextManifestError}
       isInterrupting={isInterrupting}
+      interruptOutcomeUnknown={interruptOutcomeUnknown}
+      onRefreshInterruptState={handleRefreshInterruptState}
       pendingApproval={pendingApproval}
       pendingApprovals={pendingApprovals}
       pendingUserQuestion={pendingUserQuestion}

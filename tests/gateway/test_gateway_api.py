@@ -901,6 +901,14 @@ async def test_gateway_maps_typed_recovery_without_changing_wire_fields(
                 "checkpointSeq": 14,
                 "reason": "provider_temporarily_unavailable",
             },
+            "steerRequests": [
+                {
+                    "turnId": "turn-recovery",
+                    "requestId": "steer-1",
+                    "text": "continue after recovery",
+                    "status": "accepted",
+                }
+            ],
         }
     )
     monkeypatch.setattr(
@@ -922,6 +930,15 @@ async def test_gateway_maps_typed_recovery_without_changing_wire_fields(
         "reason": "provider_temporarily_unavailable",
     }
     assert "recommended_action" not in response.json()["recovery"]
+    assert response.json()["steer_requests"] == [
+        {
+            "turn_id": "turn-recovery",
+            "request_id": "steer-1",
+            "text": "continue after recovery",
+            "status": "accepted",
+            "reason": None,
+        }
+    ]
 
 
 @pytest.mark.asyncio

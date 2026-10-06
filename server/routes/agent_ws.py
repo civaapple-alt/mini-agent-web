@@ -427,10 +427,15 @@ async def _steer_turn_to_ws(
     """Submit steering without blocking the WebSocket receive loop."""
     try:
         client = await session_manager.get_client_for_thread(thread_id, project_id)
-        response = await client.steer_turn(turn_id, text, thread_id)
+        response = await client.steer_turn(
+            turn_id,
+            text,
+            thread_id,
+            request_id=client_request_id,
+        )
         result = response.get("value", response) if isinstance(response, dict) else None
         result_status = result.get("status") if isinstance(result, dict) else None
-        if result_status not in {"started", "steered", "queued"}:
+        if result_status not in {"started", "steered", "queued", "unapplied"}:
             outcome = "rejected" if result_status == "not_submitted" else "unconfirmed"
             reason = result.get("reason") if isinstance(result, dict) else None
             message = (
@@ -459,6 +464,9 @@ async def _steer_turn_to_ws(
                 "projectId": project_id,
                 "clientRequestId": client_request_id,
                 "status": result_status,
+                "applicationStatus": result.get("applicationStatus")
+                if isinstance(result, dict)
+                else None,
             }
         )
     except asyncio.CancelledError:

@@ -52,12 +52,15 @@ function getCurrentExecutionSegmentStartIndex(blocks, activeBlockIndex) {
 }
 
 function steerDeliveryLabel(message) {
+  if (message.steerApplicationStatus === 'accepted') return '已受理，等待安全边界';
+  if (message.steerApplicationStatus === 'applied') return '已进入后续上下文';
+  if (message.steerApplicationStatus === 'unapplied') return 'Turn 已停止，纠偏未应用';
   if (message.steerDeliveryStatus === 'accepted') {
     return {
       started: '已提交新运行',
-      steered: '已注入当前运行',
+      steered: '已受理，等待安全边界',
       queued: '已排队等待运行',
-    }[message.steerRuntimeStatus] || '已注入当前运行';
+    }[message.steerRuntimeStatus] || '已受理，等待安全边界';
   }
   return {
     pending: '等待运行时确认',

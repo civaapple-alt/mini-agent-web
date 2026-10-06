@@ -12,6 +12,7 @@ import {
   FileText,
   Settings,
   Activity,
+  RefreshCw,
 } from 'lucide-react';
 import { api } from '../api';
 import {
@@ -237,6 +238,8 @@ export function ContextUsageControl({ contextUsage, contextCacheUsage = null }) 
 export default function InputBar({
   isGenerating,
   isInterrupting = false,
+  interruptOutcomeUnknown = false,
+  onRefreshInterruptState = null,
   sessionReadOnly = false,
   currentThread = null,
   projectId = null,
@@ -1523,11 +1526,12 @@ export default function InputBar({
               <button
                 type="button"
                 className="btn-action stop"
-                disabled
-                title="正在等待任务停止并结算"
+                onClick={interruptOutcomeUnknown ? onRefreshInterruptState : undefined}
+                disabled={!interruptOutcomeUnknown || !onRefreshInterruptState}
+                title={interruptOutcomeUnknown ? '读取 App Server 的当前 Turn 状态' : '正在等待任务停止并结算'}
               >
-                <Square size={13} />
-                <span>停止中</span>
+                {interruptOutcomeUnknown ? <RefreshCw size={13} /> : <Square size={13} />}
+                <span>{interruptOutcomeUnknown ? '结果未确认 · 刷新' : '停止中'}</span>
               </button>
             ) : isGenerating ? (
               <button

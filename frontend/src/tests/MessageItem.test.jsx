@@ -40,6 +40,30 @@ describe('MessageItem resend action', () => {
     });
   });
 
+  it.each([
+    ['accepted', '已受理，等待安全边界'],
+    ['applied', '已进入后续上下文'],
+    ['unapplied', 'Turn 已停止，纠偏未应用'],
+  ])('shows the authoritative %s steer state', (status, label) => {
+    render(
+      <MessageItem
+        message={{
+          id: `steer-${status}`,
+          role: 'user',
+          text: '继续检查当前问题',
+          isSteer: true,
+          steerDeliveryStatus: 'accepted',
+          steerApplicationStatus: status,
+        }}
+        isLast
+        isGenerating={false}
+      />,
+    );
+
+    expect(screen.getByText(label)).toBeDefined();
+    expect(screen.queryByText('已注入当前运行')).toBeNull();
+  });
+
   it('renders Host injection metadata separately from an ordinary file read tool', () => {
     render(
       <MessageItem

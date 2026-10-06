@@ -338,7 +338,11 @@ async def test_agent_steer_and_interrupt_endpoints(agent_test_app):
     mock_client = AsyncMock()
     mock_client.steer_turn = AsyncMock(
         return_value={
-            "value": {"status": "steered"},
+            "value": {
+                "status": "steered",
+                "applicationStatus": "accepted",
+                "duplicate": False,
+            },
             "actionId": "act-steer-10",
             "actionSequence": 10,
         }
@@ -352,10 +356,21 @@ async def test_agent_steer_and_interrupt_endpoints(agent_test_app):
         # Steer
         steer_resp = await client.post(
             "/api/agent/steer",
-            json={"turn_id": "turn-1", "text": "use python instead of bash"},
+            json={
+                "turn_id": "turn-1",
+                "text": "use python instead of bash",
+                "request_id": "steer-http-1",
+            },
         )
         assert steer_resp.status_code == 200
         assert steer_resp.json()["status"] == "steered"
+        assert steer_resp.json()["application_status"] == "accepted"
+        mock_client.steer_turn.assert_awaited_once_with(
+            turn_id="turn-1",
+            text="use python instead of bash",
+            thread_id=None,
+            request_id="steer-http-1",
+        )
         assert steer_resp.json()["action_id"] == "act-steer-10"
 
         # Interrupt
@@ -622,7 +637,16 @@ def test_gateway_websocket_steer_interrupt_actions(agent_test_app):
     from starlette.testclient import TestClient
 
     mock_client = AsyncMock()
-    mock_client.steer_turn = AsyncMock(return_value={"actionId": "steer-ws-1"})
+    mock_client.steer_turn = AsyncMock(
+        return_value={
+            "value": {
+                "status": "steered",
+                "applicationStatus": "accepted",
+                "duplicate": False,
+            },
+            "actionId": "steer-ws-1",
+        }
+    )
     mock_client.interrupt_turn = AsyncMock(return_value={})
     session_manager._client = mock_client
     session_manager._clients["default"] = mock_client
@@ -636,12 +660,15 @@ def test_gateway_websocket_steer_interrupt_actions(agent_test_app):
                 "turnId": "turn-ws-1",
                 "text": "redirect to test",
                 "threadId": "default",
+                "clientRequestId": "steer-ws-request-1",
                 "source": "test-steer",
             }
         )
         ack = ws.receive_json()
         assert ack.get("type") == "steer_ack"
         assert ack.get("turnId") == "turn-ws-1"
+        assert ack.get("clientRequestId") == "steer-ws-request-1"
+        assert ack.get("applicationStatus") == "accepted"
 
         # 2. Interrupt
         ws.send_json(
@@ -671,11 +698,18 @@ def test_gateway_websocket_reads_approval_while_steer_is_pending(agent_test_app)
 
     approval_received = threading.Event()
 
-    async def delayed_steer(*_args):
+    async def delayed_steer(*_args, **_kwargs):
         # This models the App Server request waiting for the active turn to
         # reach a safe control point. It can finish only after the approval
         # branch has run on the same WebSocket receive loop.
         await asyncio.to_thread(approval_received.wait, 5)
+        return {
+            "value": {
+                "status": "steered",
+                "applicationStatus": "accepted",
+                "duplicate": False,
+            }
+        }
 
     def resolve_approval(*_args):
         approval_received.set()
@@ -718,6 +752,12 @@ def test_gateway_websocket_reads_approval_while_steer_is_pending(agent_test_app)
         "steer_ack",
     }
     assert mock_client.steer_turn.await_count == 1
+    mock_client.steer_turn.assert_awaited_once_with(
+        "turn-ws-deadlock",
+        "continue after approval",
+        "default",
+        request_id=None,
+    )
 
 
 @pytest.mark.asyncio

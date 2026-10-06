@@ -89,6 +89,8 @@ export default function AppLayout({
   contextManifestError = null,
   planActive,
   isInterrupting,
+  interruptOutcomeUnknown = false,
+  onRefreshInterruptState,
   pendingApproval,
   pendingApprovalCount = 0,
   pendingApprovals = [],
@@ -387,6 +389,8 @@ export default function AppLayout({
           <InputBar
             isGenerating={isGenerating}
             isInterrupting={isInterrupting}
+            interruptOutcomeUnknown={interruptOutcomeUnknown}
+            onRefreshInterruptState={onRefreshInterruptState}
             sessionReadOnly={sessionReadOnly}
             currentThread={currentThread}
             projectId={currentThreadProject}

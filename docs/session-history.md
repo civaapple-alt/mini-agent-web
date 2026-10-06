@@ -44,6 +44,29 @@ execution journal; it does not change the canonical ThreadItem page or its
 cursor. Settled Turns continue to come from `thread/items/list`. The event
 replay file remains metadata-only and cannot restore message bodies on its own.
 
+Steer messages use the same Turn and assistant activity segments. The Gateway
+passes the browser's stable `clientRequestId` through the SDK to
+`turn/steer.requestId`. After restart, `turn/read` restores the bounded steer
+request records and their `accepted`, `applied`, or `unapplied` status. An
+accepted steer is restored as a separate user message until a persisted input
+item proves it was applied; applied messages are matched by Turn and text so
+they do not appear twice. The original reasoning and tool activity remain in
+their existing item and segment positions.
+
+`accepted` means the App Server durably recorded the request. It does not mean
+the model has seen it. The UI reports “已受理，等待安全边界” until a later
+checkpoint proves the steer entered model context. If stop wins first, the
+status changes to “Turn 已停止，纠偏未应用”. A lost acknowledgement is
+resolved by reading the same Turn; retry only with the same request ID and
+payload.
+
+Stopping has separate admission and settlement states. An accepted
+`turn/interrupt` leaves the UI in “停止中” until a terminal Turn event or an
+authoritative runtime/Turn read confirms settlement. If the service disconnects
+or remains unreadable past the bounded wait, Studio says “结果未确认” and
+offers a status refresh. A refresh that still finds an active or stopping Turn
+does not clear the stop state or resend any operation.
+
 Clicking a user message image opens a viewport-level preview above the virtualized
 conversation. The image scales to the available screen width and height. Click
 the image, backdrop, or minimize control, or press Escape to return to the

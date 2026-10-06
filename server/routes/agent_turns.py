@@ -291,8 +291,16 @@ async def steer_turn(req: SteerTurnRequest) -> dict[str, Any]:
             turn_id=req.turn_id,
             text=enriched_text,
             thread_id=req.thread_id,
+            request_id=req.request_id,
         )
-        return {"status": "steered", "action_id": res.get("actionId")}
+        value = res.get("value", res) if isinstance(res, dict) else {}
+        return {
+            "status": value.get("status", "unknown"),
+            "application_status": value.get("applicationStatus"),
+            "duplicate": value.get("duplicate", False),
+            "reason": value.get("reason"),
+            "action_id": res.get("actionId") if isinstance(res, dict) else None,
+        }
     except AppServerError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
     except ValueError as err:

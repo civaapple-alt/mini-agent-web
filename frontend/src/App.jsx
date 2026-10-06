@@ -97,6 +97,11 @@ function createTurnResumeRequestId() {
   return `web-execution-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
+function createSteerRequestId() {
+  if (globalThis.crypto?.randomUUID) return `web-steer-${globalThis.crypto.randomUUID()}`;
+  return `web-steer-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 export default function App() {
   const initialSessionRouteRef = useRef(null);
   if (!initialSessionRouteRef.current) {
@@ -469,8 +474,8 @@ export default function App() {
     const wsClient = createAgentWebSocket(
       handleServerEvent,
       () => {
+        const wasConnected = hasConnectedRef.current;
         setIsConnected(true);
-        setConnectionState('online');
         wsRef.current?.send({
           action: 'ping',
           project_id: currentThreadProjectRef.current,
@@ -481,11 +486,20 @@ export default function App() {
         workflowRevisionsRef.current.clear();
         runtimeGenerationRef.current = 0;
         if (!hasActiveThreadRef.current) {
+          setConnectionState('online');
           hasConnectedRef.current = true;
           showToast('✓ 已连接到 Agent Gateway 服务端', 'success', 2000);
           return;
         }
         const context = currentSessionRequest();
+        if (wasConnected) {
+          // A live socket is not enough to make old controls safe again. Keep
+          // the Session in recovery state until its canonical projections and
+          // retained event window have been reconciled.
+          recoverRuntimeAfterConnectionLoss(context.threadId, context.projectId);
+          return;
+        }
+        setConnectionState('online');
         loadWorkflows(context.threadId, context.projectId, context);
         loadRuntimeStatus(context.threadId, context.projectId, context);
         loadPendingApproval(context.threadId, context.projectId, context);
@@ -941,6 +955,7 @@ export default function App() {
     const afterSequence = eventCursorsRef.current.get(
       scopedThreadKey(threadId, projectId),
     );
+    const hasKnownReplayCursor = Number.isSafeInteger(afterSequence) && afterSequence > 0;
     try {
       const page = await api.replayThreadEvents(threadId, afterSequence ?? 0, 128, {
         projectId,
@@ -953,7 +968,12 @@ export default function App() {
         // canonical Thread/Item projections instead of treating them as live
         // message deltas or tool results.
         if (replay.hasGap) {
-          showToast('事件回放存在缺口，已从最近会话快照恢复。', 'warning', 3500);
+          // A fresh page has no earlier cursor, so events evicted before its
+          // initial snapshot are not events this client missed. Warn only
+          // when a known cursor proves that an established stream had a gap.
+          if (hasKnownReplayCursor) {
+            showToast('事件回放存在缺口，已从最近会话快照恢复。', 'warning', 3500);
+          }
         }
         await loadThreadHistory(threadId, projectId, requestContext, { preserveVisible: true });
       }
@@ -1313,6 +1333,7 @@ export default function App() {
                   isSteer: true,
                   messageKind: 'steer',
                   steerTurnId: m.turnId || null,
+                  steerDeliveryStatus: 'accepted',
                   inputSource: 'steer',
                 }
                 : {}),
@@ -1468,6 +1489,10 @@ export default function App() {
     const recoveryKey = scopedThreadKey(threadId, projectId);
     if (runtimeRecoveryRef.current.has(recoveryKey)) return;
     runtimeRecoveryRef.current.add(recoveryKey);
+    // A replacement App Server starts its state revision from zero. Reset the
+    // previous process's revision before reading canonical runtime state so an
+    // authoritative idle snapshot can clear a stale stopping projection.
+    runtimeStatusRevisionRef.current = null;
     setConnectionState('reconnecting');
     const context = beginSessionRequest(threadId, projectId);
     startSessionSync(threadId, projectId);
@@ -1655,6 +1680,28 @@ export default function App() {
     }
 
     if (data.type === 'steer_ack') {
+      setMessages((previous) => {
+        const candidates = previous
+          .map((message, index) => ({ message, index }))
+          .filter(({ message }) => (
+            message.isSteer
+            && message.steerDeliveryStatus === 'pending'
+            && (!data.turnId || String(message.steerTurnId || '') === String(data.turnId))
+          ));
+        const target = data.clientRequestId
+          ? candidates.find(({ message }) => message.steerRequestId === data.clientRequestId)
+          : candidates.length === 1 ? candidates[0] : null;
+        if (!target) return previous;
+        return previous.map((message, index) => (
+          index === target.index
+            ? {
+              ...message,
+              steerDeliveryStatus: 'accepted',
+              steerRuntimeStatus: data.status || null,
+            }
+            : message
+        ));
+      });
       // A confirmed steer supersedes any stale incomplete-result banner from
       // the prior checkpoint while the continuation events are settling.
       setLastTurnResult((previous) => (
@@ -1662,7 +1709,12 @@ export default function App() {
           ? previous
           : null
       ));
-      showToast('✓ 纠偏指令已下发，模型正在安全结算转向...', 'info', 2000);
+      const confirmationMessage = data.status === 'queued'
+        ? '✓ 纠偏已排队，等待运行时处理。'
+        : data.status === 'started'
+          ? '✓ 纠偏已提交，新运行正在启动。'
+          : '✓ 纠偏指令已注入当前运行。';
+      showToast(confirmationMessage, 'info', 2500);
       return;
     }
 
@@ -1676,9 +1728,41 @@ export default function App() {
         message: data.message || '操作异常',
       });
       if (data.scope === 'runtime') {
+        // Runtime errors can be followed by a replacement App Server whose
+        // state revision starts lower than the failed process's last revision.
+        runtimeStatusRevisionRef.current = null;
         const runtimeThreadId = data.threadId || data.thread_id || currentThreadRef.current;
         const runtimeProjectId = data.projectId || data.project_id || currentThreadProjectRef.current;
         recoverRuntimeAfterConnectionLoss(runtimeThreadId, runtimeProjectId);
+        return;
+      }
+      if (data.clientRequestId) {
+        setMessages((previous) => {
+          const candidates = previous
+            .map((message, index) => ({ message, index }))
+            .filter(({ message }) => (
+              message.isSteer
+              && message.steerRequestId === data.clientRequestId
+              && message.steerDeliveryStatus === 'pending'
+            ));
+          if (candidates.length !== 1) return previous;
+          const targetIndex = candidates[0].index;
+          const outcome = data.outcome === 'rejected' ? 'rejected' : 'unconfirmed';
+          return previous.map((message, index) => (
+            index === targetIndex
+              ? { ...message, steerDeliveryStatus: outcome }
+              : message
+          ));
+        });
+        if (data.outcome === 'rejected') {
+          showToast(`⚠️ ${data.message || '运行时拒绝了纠偏请求'}`, 'error', 4500);
+        } else {
+          showToast(
+            '纠偏结果未确认：运行时可能已接收。请先查看会话流，不要直接重复发送。',
+            'warning',
+            6000,
+          );
+        }
         return;
       }
       if (data.scope === 'approval') {
@@ -2376,17 +2460,21 @@ export default function App() {
       textAttachments,
       referencedFiles,
     });
+    const steerRequestId = createSteerRequestId();
+    const steerMessageId = `user_steer_${steerRequestId}`;
 
     // 1. Render user's steer prompt in chat log immediately so it is clearly visible
     setMessages((prev) => [
       ...prev,
       {
-        id: 'user_steer_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        id: steerMessageId,
         role: 'user',
         text: promptText,
         isSteer: true,
         messageKind: 'steer',
         steerTurnId: activeTurnId,
+        steerRequestId,
+        steerDeliveryStatus: 'pending',
         images,
         textAttachments,
         referencedFiles,
@@ -2398,26 +2486,34 @@ export default function App() {
     ]);
 
     // 2. Transmit steer action over WebSocket
-    if (wsRef.current) {
-      const payload = {
-        action: 'steer',
-        turnId: activeTurnId,
-        text: promptText,
-        textAttachments,
-        threadId: currentThread,
-        project_id: currentThreadProject,
-        source,
-      };
-      const sent = wsRef.current.send(payload);
-      console.info('[Studio][turn-control]', {
-        action: 'steer',
-        source,
-        threadId: currentThread,
-        turnId: activeTurnId,
-        sent,
-        hasAttachments: images.length > 0 || textAttachments.length > 0,
-      });
+    const payload = {
+      action: 'steer',
+      turnId: activeTurnId,
+      text: promptText,
+      textAttachments,
+      threadId: currentThread,
+      project_id: currentThreadProject,
+      source,
+      clientRequestId: steerRequestId,
+    };
+    const sent = Boolean(wsRef.current?.send(payload));
+    if (!sent) {
+      setMessages((previous) => previous.map((message) => (
+        message.id === steerMessageId
+          ? { ...message, steerDeliveryStatus: 'not_sent' }
+          : message
+      )));
+      showToast('纠偏未发送：当前 WebSocket 未连接。', 'warning', 4000);
     }
+    console.info('[Studio][turn-control]', {
+      action: 'steer',
+      source,
+      threadId: currentThread,
+      turnId: activeTurnId,
+      requestId: steerRequestId,
+      sent,
+      hasAttachments: images.length > 0 || textAttachments.length > 0,
+    });
   };
 
   const handleInterrupt = (source = 'composer-stop') => {

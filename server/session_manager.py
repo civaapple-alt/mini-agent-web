@@ -3135,15 +3135,18 @@ class SessionManager:
             self._child_wake_deferred.clear()
             self._child_queue_retry_jobs.clear()
             self._client = None
-            for client in set(clients):
-                try:
-                    await asyncio.wait_for(client.stop(), timeout=3.0)
-                except asyncio.TimeoutError:
-                    pass
-                except Exception:  # noqa: BLE001, S110
-                    pass
             self._initialized = False
-            logger.info("MiniAgentClient processes terminated cleanly.")
+
+        async def stop_client(client: MiniAgentClient) -> None:
+            try:
+                await asyncio.wait_for(client.stop(), timeout=3.0)
+            except asyncio.TimeoutError:
+                logger.warning("Timed out stopping an App Server client")
+            except Exception:
+                logger.exception("Failed to stop an App Server client")
+
+        await asyncio.gather(*(stop_client(client) for client in set(clients)))
+        logger.info("MiniAgentClient processes terminated cleanly.")
         for task in tasks:
             try:
                 await asyncio.wait_for(asyncio.shield(task), timeout=0.5)

@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep tool activity pending until the runtime reports its result after a stop
   request, preserve Session-log duration over local timer estimates after
   replay, and label the initial WebSocket handshake as connecting.
+- Avoid reporting an event replay gap on a fresh Session open when no previous
+  event cursor exists; reconcile from canonical history and keep warnings for
+  gaps after an established stream reconnects.
+- Keep a reconnected Session in recovery state, with stale actions blocked,
+  until canonical history, runtime status, approvals, and event replay settle.
+- Correlate steer acknowledgements with their originating message and distinguish
+  accepted, rejected, unsent, and unresolved requests; a transport timeout no
+  longer claims either failure or injection.
+- Route late reasoning and text events back to their assistant segment by item ID,
+  and accept a restarted Runtime's lower state revision during recovery.
+- Isolate App Server children from Gateway terminal signals and stop Session
+  clients concurrently after releasing the manager lock.
 - Simplify the context usage popover, fold source estimates by default, keep
   recent-request and session cache-hit rates separately labeled, and show hit
   rates to two decimal places.

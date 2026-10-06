@@ -64,6 +64,9 @@ export default function Header({
   const [openingTarget, setOpeningTarget] = useState(null);
   const openTargetRequestRef = useRef(null);
   const openTargetMenuRef = useRef(null);
+  const visibleConnectionState = connectionState === 'online' && !isConnected
+    ? 'offline'
+    : connectionState || (isConnected ? 'online' : 'offline');
 
   // Close summary popover when clicking outside
   useEffect(() => {
@@ -429,14 +432,14 @@ export default function Header({
           <Settings size={14} />
         </button>
 
-        <div className={`connection-status ${isConnected ? 'online' : connectionState || 'offline'}`}>
+        <div className={`connection-status ${visibleConnectionState}`}>
           <span className="status-dot"></span>
           <span className="status-label">
-            {isConnected
+            {visibleConnectionState === 'online'
               ? 'ONLINE'
-              : connectionState === 'connecting'
+              : visibleConnectionState === 'connecting'
                 ? 'CONNECTING'
-                : connectionState === 'reconnecting'
+                : visibleConnectionState === 'reconnecting'
                   ? 'RECONNECTING'
                   : 'OFFLINE'}
           </span>

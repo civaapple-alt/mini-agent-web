@@ -9,7 +9,11 @@ from collections.abc import Coroutine
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from mini_agent.errors import ServerProcessError
+from mini_agent.errors import (
+    AppServerError,
+    AppServerRequestTimeoutError,
+    ServerProcessError,
+)
 
 from server.routes.agent_models import (
     MAX_FILE_ATTACHMENTS,
@@ -206,6 +210,12 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                 )
 
             elif action == "steer":
+                client_request_id = data.get("clientRequestId")
+                if (
+                    not isinstance(client_request_id, str)
+                    or len(client_request_id) > 192
+                ):
+                    client_request_id = None
                 thread_id = data.get("threadId") or "default"
                 project_id = project_for_message(data)
                 websocket_project_id = project_id
@@ -242,6 +252,8 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                                 "threadId": thread_id,
                                 "turnId": turn_id,
                                 "projectId": project_id,
+                                "clientRequestId": client_request_id,
+                                "outcome": "rejected",
                                 "message": f"文本附件无效: {err}",
                             }
                         )
@@ -251,7 +263,12 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                     # response can still be read from this same WebSocket.
                     spawn_background(
                         _steer_turn_to_ws(
-                            websocket, thread_id, turn_id, enriched_text, project_id
+                            websocket,
+                            thread_id,
+                            turn_id,
+                            enriched_text,
+                            project_id,
+                            client_request_id,
                         )
                     )
                 else:
@@ -261,6 +278,10 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
                             "message": "无法执行纠偏：当前没有正在执行的任务轮次",
                             "threadId": thread_id,
                             "projectId": project_id,
+                            "scope": "turn",
+                            "terminal": False,
+                            "clientRequestId": client_request_id,
+                            "outcome": "rejected",
                         }
                     )
 
@@ -401,13 +422,44 @@ async def _steer_turn_to_ws(
     turn_id: str,
     text: str,
     project_id: str | None = None,
+    client_request_id: str | None = None,
 ) -> None:
     """Submit steering without blocking the WebSocket receive loop."""
     try:
         client = await session_manager.get_client_for_thread(thread_id, project_id)
-        await client.steer_turn(turn_id, text, thread_id)
+        response = await client.steer_turn(turn_id, text, thread_id)
+        result = response.get("value", response) if isinstance(response, dict) else None
+        result_status = result.get("status") if isinstance(result, dict) else None
+        if result_status not in {"started", "steered", "queued"}:
+            outcome = "rejected" if result_status == "not_submitted" else "unconfirmed"
+            reason = result.get("reason") if isinstance(result, dict) else None
+            message = (
+                f"运行时未提交纠偏请求: {reason or 'Turn 状态不允许纠偏'}"
+                if outcome == "rejected"
+                else f"运行时未返回可识别的纠偏确认，结果未确认: {reason or result_status or 'missing status'}"
+            )
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "scope": "turn",
+                    "terminal": False,
+                    "threadId": thread_id,
+                    "turnId": turn_id,
+                    "projectId": project_id,
+                    "clientRequestId": client_request_id,
+                    "outcome": outcome,
+                    "message": message,
+                }
+            )
+            return
         await websocket.send_json(
-            {"type": "steer_ack", "turnId": turn_id, "projectId": project_id}
+            {
+                "type": "steer_ack",
+                "turnId": turn_id,
+                "projectId": project_id,
+                "clientRequestId": client_request_id,
+                "status": result_status,
+            }
         )
     except asyncio.CancelledError:
         raise
@@ -418,10 +470,25 @@ async def _steer_turn_to_ws(
                 {
                     "type": "error",
                     "scope": "turn",
+                    "terminal": False,
                     "threadId": thread_id,
                     "turnId": turn_id,
                     "projectId": project_id,
-                    "message": f"纠偏下发失败: {err}",
+                    "clientRequestId": client_request_id,
+                    "outcome": (
+                        "unconfirmed"
+                        if isinstance(err, AppServerRequestTimeoutError)
+                        else "rejected"
+                        if isinstance(err, AppServerError)
+                        else "unconfirmed"
+                    ),
+                    "message": (
+                        f"纠偏请求等待超时，是否已接收尚未确认: {err}"
+                        if isinstance(err, AppServerRequestTimeoutError)
+                        else f"纠偏请求结果未确认: {err}"
+                        if not isinstance(err, AppServerError)
+                        else f"运行时拒绝了纠偏请求: {err}"
+                    ),
                 }
             )
         except Exception:

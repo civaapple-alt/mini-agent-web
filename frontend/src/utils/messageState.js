@@ -584,13 +584,19 @@ function reconcileCompletedAssistantItem(messages, item, targetIndex, type) {
 function findTurnAssistantIndex(messages, turnId) {
   if (!turnId) return -1;
 
-  // A steer is a user-visible boundary inside the same engine turn. Once a
-  // steer has been rendered, the next engine event must start a new assistant
-  // segment instead of being appended to the steer bubble.
+  // A steer is a visible boundary for new items inside the same engine turn.
+  // Callers with stable item IDs route late events to their original segment
+  // before falling back to this latest-segment lookup.
   let crossedLatestSteer = false;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    if (message.role === 'user' && message.isSteer && message.steerTurnId === turnId) {
+    if (
+      message.role === 'user'
+      && message.isSteer
+      && message.steerTurnId === turnId
+      && message.steerDeliveryStatus !== 'rejected'
+      && message.steerDeliveryStatus !== 'not_sent'
+    ) {
       crossedLatestSteer = true;
       continue;
     }
@@ -603,6 +609,22 @@ function findTurnAssistantIndex(messages, turnId) {
     }
   }
   return -1;
+}
+
+function findAssistantItemIndex(messages, turnId, itemId, blockType) {
+  if (!turnId || !itemId) return findTurnAssistantIndex(messages, turnId);
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (
+      message.role !== 'assistant'
+      || (message.turnId !== turnId && message.id !== `turn_${turnId}`)
+    ) continue;
+    if ((message.blocks || []).some((block) => (
+      block.type === blockType
+      && (block.id === itemId || block.call_id === itemId)
+    ))) return index;
+  }
+  return findTurnAssistantIndex(messages, turnId);
 }
 
 function ensureTurnAssistant(messages, turnId) {
@@ -749,8 +771,19 @@ export function aggregateItemLifecycle(messages, data) {
   if (!item) return messages;
 
   const turnId = payload.turnId || payload.turn_id || 'unknown';
-  let next = ensureTurnAssistant(messages, turnId);
-  const targetIndex = findTurnAssistantIndex(next, turnId);
+  const itemBlockType = item.type === 'reasoning'
+    ? 'thinking'
+    : item.type === 'agentMessage' || item.type === 'agent_message'
+      ? 'text'
+      : item.type === 'toolCall' || item.type === 'tool_call'
+        ? 'tool'
+        : 'compaction';
+  let targetIndex = findAssistantItemIndex(messages, turnId, item.id, itemBlockType);
+  let next = messages;
+  if (targetIndex === -1) {
+    next = ensureTurnAssistant(messages, turnId);
+    targetIndex = findTurnAssistantIndex(next, turnId);
+  }
   if (data.method === 'item/completed') {
     if (item.type === 'agentMessage' || item.type === 'agent_message') {
       return reconcileCompletedAssistantItem(next, item, targetIndex, 'text');
@@ -1345,8 +1378,22 @@ export function aggregateStreamEvent(messages, data) {
       ];
     }
 
+    const itemId = type === 'assistant_reasoning_delta'
+      ? reasoningIdFromEvent(data)
+      : type === 'assistant_text_delta'
+        ? agentMessageIdFromEvent(data)
+        : type === 'tool_finished'
+          ? evt.call_id || evt.callId || null
+          : null;
+    const itemBlockType = type === 'assistant_reasoning_delta'
+      ? 'thinking'
+      : type === 'assistant_text_delta'
+        ? 'text'
+        : type === 'tool_finished'
+          ? 'tool'
+          : null;
     let targetIndex = data.turnId
-      ? findTurnAssistantIndex(messages, data.turnId)
+      ? findAssistantItemIndex(messages, data.turnId, itemId, itemBlockType)
       : messages.length - 1;
     if (targetIndex === -1 && data.turnId) {
       messages = ensureTurnAssistant(messages, data.turnId);

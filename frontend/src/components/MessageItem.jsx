@@ -57,6 +57,22 @@ const CONTEXT_KIND_LABELS = {
   other: '附加能力',
 };
 
+function steerDeliveryLabel(message) {
+  if (message.steerDeliveryStatus === 'accepted') {
+    return {
+      started: '已提交新运行',
+      steered: '已注入当前运行',
+      queued: '已排队等待运行',
+    }[message.steerRuntimeStatus] || '已注入当前运行';
+  }
+  return {
+    pending: '等待运行时确认',
+    unconfirmed: '结果未确认',
+    rejected: '运行时拒绝，未注入',
+    not_sent: '未发送',
+  }[message.steerDeliveryStatus] || '已注入当前运行';
+}
+
 function formatContextInjectionBytes(bytes) {
   const value = Number(bytes);
   return Number.isSafeInteger(value) && value >= 0
@@ -268,7 +284,7 @@ export default function MessageItem({
               <Navigation size={11} />
               <span>实时纠偏</span>
               <span className="steer-message-label-separator">·</span>
-              <span>已注入当前运行</span>
+              <span>{steerDeliveryLabel(message)}</span>
             </div>
           )}
           {message.isGoal && (

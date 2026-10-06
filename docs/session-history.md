@@ -8,6 +8,15 @@ the refreshed page overlaps the latest page already in memory. If the pages no
 longer overlap, Studio restarts from the newest page because the bounded
 response cannot determine a safe cursor shift.
 
+Opening a Session starts from its canonical history and runtime snapshots. If
+the event replay window has already evicted older events before this page had a
+cursor, Studio reconciles from the snapshot without presenting that as a
+connection gap. After an established stream reconnects, a gap beyond its known
+cursor is reported and reconciled from the latest canonical snapshot. A
+reconnected socket alone does not restore controls: Studio keeps them blocked
+until history, runtime status, pending approvals, and retained events have been
+reconciled.
+
 Recovered checkpoint messages use the same `historyOrder` positions as their
 canonical ThreadItems. This preserves each input's position relative to its
 Turn's reasoning and tool activity, even when the newest page uses negative

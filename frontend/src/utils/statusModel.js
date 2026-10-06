@@ -309,11 +309,13 @@ export function getStatusViewModel({
   }
 
   const lifecycleLabel = STATUS_LIFECYCLE_LABELS[lifecycle] || STATUS_LIFECYCLE_LABELS.idle;
-  const statusLabel = connection === 'reconnecting'
-    ? '正在恢复'
-    : connection === 'offline'
-      ? '连接中断'
-      : lifecycleLabel;
+  const statusLabel = connection === 'connecting'
+    ? '正在连接'
+    : connection === 'reconnecting'
+      ? '正在恢复'
+      : connection === 'offline'
+        ? '连接中断'
+        : lifecycleLabel;
   const settings = getExecutionSettings({
     accessScope,
     policy,
@@ -321,11 +323,13 @@ export function getStatusViewModel({
     goalState,
   });
   const runtimeError = runtimeStatus?.error || lastTurnResult?.error || null;
-  const connectionSummary = connection === 'reconnecting'
-    ? '连接已断开，正在恢复并核对运行状态'
-    : connection === 'offline'
-      ? '连接中断，等待运行状态恢复'
-      : runtimeError || getRuntimeSummary(runtimeStatus, lifecycle);
+  const connectionSummary = connection === 'connecting'
+    ? '正在连接服务并核对会话状态'
+    : connection === 'reconnecting'
+      ? '连接已断开，正在恢复并核对运行状态'
+      : connection === 'offline'
+        ? '连接中断，等待运行状态恢复'
+        : runtimeError || getRuntimeSummary(runtimeStatus, lifecycle);
   const connectionNextAction = connection !== 'online'
     ? '等待状态回放'
     : null;

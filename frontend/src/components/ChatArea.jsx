@@ -216,17 +216,20 @@ export default function ChatArea({
       if (!entry.turnId) return entry;
       const timing = turnTimings.get(`${threadKey}:${entry.turnId}`);
       if (!timing) return entry;
+      const startedAtMs = Number.isFinite(entry.startedAtMs)
+        ? entry.startedAtMs
+        : timing.startedAtMs;
+      const accumulatedMs = Number.isFinite(entry.accumulatedMs)
+        ? entry.accumulatedMs
+        : timing.accumulatedMs;
+      const durationMs = Number.isFinite(entry.durationMs)
+        ? entry.durationMs
+        : timing.durationMs;
       return {
         ...entry,
-        ...(Number.isFinite(timing.startedAtMs) && timing.startedAtMs >= 0
-          ? { startedAtMs: timing.startedAtMs }
-          : {}),
-        ...(Number.isFinite(timing.accumulatedMs) && timing.accumulatedMs >= 0
-          ? { accumulatedMs: timing.accumulatedMs }
-          : {}),
-        ...(Number.isFinite(timing.durationMs) && timing.durationMs >= 0
-          ? { durationMs: timing.durationMs }
-          : {}),
+        ...(Number.isFinite(startedAtMs) && startedAtMs >= 0 ? { startedAtMs } : {}),
+        ...(Number.isFinite(accumulatedMs) && accumulatedMs >= 0 ? { accumulatedMs } : {}),
+        ...(Number.isFinite(durationMs) && durationMs >= 0 ? { durationMs } : {}),
       };
     });
   }, [messages, threadItems, traceScope, statusModel, lastTurnResult, turnTimings]);

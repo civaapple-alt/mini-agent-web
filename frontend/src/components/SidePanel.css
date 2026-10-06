@@ -442,6 +442,7 @@
 .status-detail-badge.approval,
 .status-detail-badge.plan_review,
 .status-detail-badge.goal_paused,
+.status-detail-connection.connecting,
 .status-detail-connection.reconnecting {
   color: var(--status-approval);
   background: var(--status-approval-soft);
@@ -455,6 +456,7 @@
   background: var(--status-failed-soft);
 }
 
+.status-detail-badge.connection-connecting,
 .status-detail-badge.connection-reconnecting,
 .status-detail-badge.connection-offline {
   color: var(--status-approval);

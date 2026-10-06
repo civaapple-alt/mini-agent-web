@@ -251,7 +251,9 @@ export default function StatusDetailsPane({
             ? '已连接'
             : status?.connection === 'reconnecting'
               ? '正在恢复'
-              : '连接中断'}
+              : status?.connection === 'connecting'
+                ? '正在连接'
+                : '连接中断'}
         </span>
       </div>
 

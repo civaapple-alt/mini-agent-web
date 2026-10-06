@@ -101,7 +101,9 @@ export default function StatusRail({
     ? '已连接'
     : status?.connection === 'reconnecting'
       ? '正在恢复连接'
-      : '连接中断';
+      : status?.connection === 'connecting'
+        ? '正在连接'
+        : '连接中断';
   const scopeLabel = `${status?.scope?.projectId || '默认项目'} / ${status?.scope?.threadId || 'default'}`;
 
   const handleAccessChange = (nextScope) => {

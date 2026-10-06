@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   approval and reconciliation controls beside their activities, retain
   fallbacks for unmatched items, and disable submissions while state is
   reconnecting, read-only, or stopping.
+- Keep tool activity pending until the runtime reports its result after a stop
+  request, preserve Session-log duration over local timer estimates after
+  replay, and label the initial WebSocket handshake as connecting.
 - Simplify the context usage popover, fold source estimates by default, keep
   recent-request and session cache-hit rates separately labeled, and show hit
   rates to two decimal places.

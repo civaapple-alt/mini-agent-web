@@ -40,7 +40,7 @@ function getTurnResultStatus(lastTurnResult) {
 }
 
 function getConnectionState(isConnected, connectionState) {
-  if (connectionState === 'reconnecting' || connectionState === 'offline') {
+  if (['connecting', 'reconnecting', 'offline'].includes(connectionState)) {
     return connectionState;
   }
   return isConnected ? 'online' : 'offline';
@@ -119,7 +119,9 @@ function getAttention({
       type: 'sync',
       summary: connection === 'offline'
         ? '连接已中断，重连后核对待处理状态'
-        : '连接恢复中，正在核对待处理状态',
+        : connection === 'connecting'
+          ? '正在连接，连接后核对待处理状态'
+          : '连接恢复中，正在核对待处理状态',
       count: totalCount,
       remainingCount: 0,
       target: null,

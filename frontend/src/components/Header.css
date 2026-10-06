@@ -571,6 +571,17 @@
   color: var(--status-success);
 }
 
+.connection-status.connecting .status-dot,
+.connection-status.reconnecting .status-dot {
+  background-color: var(--status-approval);
+  box-shadow: 0 0 4px var(--status-approval);
+}
+
+.connection-status.connecting .status-label,
+.connection-status.reconnecting .status-label {
+  color: var(--status-approval);
+}
+
 .connection-status.offline .status-dot {
   background-color: var(--status-failed);
   box-shadow: 0 0 4px var(--status-failed);

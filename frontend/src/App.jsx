@@ -172,7 +172,7 @@ export default function App() {
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState('preferences');
   const [isConnected, setIsConnected] = useState(false);
-  const [connectionState, setConnectionState] = useState('offline');
+  const [connectionState, setConnectionState] = useState('connecting');
 
   const wsRef = useRef(null);
   const workflowRevisionsRef = useRef(new Map());
@@ -2493,7 +2493,7 @@ export default function App() {
         prev,
       ));
     }
-    showToast('已发送停止当前轮次请求', 'info', 1800);
+    showToast('停止请求已发送，等待运行时确认结果', 'info', 2500);
     setMessages((prev) => {
       if (prev.length === 0) return prev;
       const copy = [...prev];
@@ -2501,8 +2501,6 @@ export default function App() {
       if (last.blocks) {
         last.blocks = last.blocks.map((b) => {
           if (b.type === 'thinking') return { ...b, isStreaming: false };
-          if (b.type === 'tool' && b.status === 'running')
-            return { ...b, status: 'failed', error: 'User stopped' };
           return b;
         });
       }
@@ -3249,6 +3247,7 @@ export default function App() {
       sessionId={currentThreadMeta.sessionId}
       sessionMeta={currentThreadMeta}
       isConnected={isConnected}
+      connectionState={connectionState}
       onOpenSidePanel={handleOpenSidePanel}
       onOpenSettings={(tab = 'preferences') => {
         setSettingsInitialTab(tab === 'models' ? 'models' : 'preferences');

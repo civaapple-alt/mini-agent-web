@@ -43,6 +43,7 @@ export default function Header({
   threadSummary,
   sessionId,
   isConnected,
+  connectionState,
   onOpenSidePanel,
   onOpenSettings,
   onRenameThread,
@@ -428,9 +429,17 @@ export default function Header({
           <Settings size={14} />
         </button>
 
-        <div className={`connection-status ${isConnected ? 'online' : 'offline'}`}>
+        <div className={`connection-status ${isConnected ? 'online' : connectionState || 'offline'}`}>
           <span className="status-dot"></span>
-          <span className="status-label">{isConnected ? 'ONLINE' : 'OFFLINE'}</span>
+          <span className="status-label">
+            {isConnected
+              ? 'ONLINE'
+              : connectionState === 'connecting'
+                ? 'CONNECTING'
+                : connectionState === 'reconnecting'
+                  ? 'RECONNECTING'
+                  : 'OFFLINE'}
+          </span>
         </div>
       </div>
     </header>

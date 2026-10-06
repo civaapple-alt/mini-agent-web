@@ -62,6 +62,7 @@ export default function AppLayout({
   sessionId,
   sessionMeta,
   isConnected,
+  connectionState,
   onOpenSidePanel,
   onOpenSettings,
   onRenameThread,
@@ -263,6 +264,7 @@ export default function AppLayout({
         threadSummary={threadSummary}
         sessionId={sessionId}
         isConnected={isConnected}
+        connectionState={connectionState}
         onOpenSidePanel={onOpenSidePanel}
         onOpenSettings={() => onOpenSettings?.('preferences')}
         onRenameThread={isNewSessionLanding ? undefined : onRenameCurrentThread}

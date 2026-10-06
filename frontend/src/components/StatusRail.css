@@ -111,6 +111,12 @@
   animation: status-rail-pulse 1.6s ease-in-out infinite;
 }
 
+.connection-connecting .status-rail-dot {
+  background: var(--status-approval);
+  box-shadow: 0 0 0 3px var(--status-approval-soft);
+  animation: status-rail-pulse 1.6s ease-in-out infinite;
+}
+
 .connection-offline .status-rail-dot {
   background: var(--status-failed);
 }
@@ -175,6 +181,7 @@
 }
 
 .status-connection-reconnecting,
+.status-connection-connecting,
 .connection-reconnecting .status-connection {
   color: var(--status-approval);
   border-color: var(--status-approval-border);

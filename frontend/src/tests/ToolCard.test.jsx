@@ -113,6 +113,33 @@ describe('ToolCard Component Rendering & Interaction', () => {
     });
   });
 
+  it('keeps a pending question read-only while the session state is unavailable', () => {
+    const respond = vi.fn();
+    render(
+      <ToolCard
+        tool={{ id: 'call-question-blocked', name: 'ask_user', status: 'running' }}
+        pendingUserQuestion={{
+          interactionId: 'uq-blocked',
+          callId: 'call-question-blocked',
+          currentIndex: 0,
+          answers: [null],
+          questions: [{
+            id: 'q-blocked',
+            prompt: 'Choose an option',
+            options: [{ id: 'option-a', label: 'Option A' }],
+          }],
+        }}
+        approvalActionsDisabled
+        onRespondUserQuestion={respond}
+      />,
+    );
+
+    const option = screen.getByRole('button', { name: /Option A/ });
+    expect(option.disabled).toBe(true);
+    fireEvent.click(option);
+    expect(respond).not.toHaveBeenCalled();
+  });
+
   it('keeps completed ask_user history collapsed until expanded', () => {
     render(
       <ToolCard
@@ -251,7 +278,7 @@ describe('ToolCard Component Rendering & Interaction', () => {
     expect(screen.getByText('未知状态 (server_added_state)')).toBeDefined();
   });
 
-  it('renders awaiting-approval state without a second approval action area', () => {
+  it('renders approval details and actions inside the matching tool activity', () => {
     const tool = {
       id: 'call_99',
       name: 'shell',
@@ -267,18 +294,21 @@ describe('ToolCard Component Rendering & Interaction', () => {
         allowedGrantScopes: ['once', 'project'],
       },
     };
-    render(
+    const onRespondApproval = vi.fn();
+    const { container } = render(
       <ToolCard
         tool={tool}
         pendingApproval={pendingApproval}
+        onRespondApproval={onRespondApproval}
         policy="interactive"
       />
     );
 
     expect(screen.getByText('等待授权')).toBeDefined();
-    expect(screen.queryByText('安全权限审批 (Security Approval)')).toBeNull();
-    expect(screen.queryByText('允许一次 (Allow)')).toBeNull();
-    expect(screen.queryByText('拒绝 (Deny)')).toBeNull();
+    expect(container.querySelector('.tool-card .composer-approval-dock')).toBeTruthy();
+    expect(screen.getByText('删除临时文件')).toBeDefined();
+    fireEvent.click(screen.getByText('允许本次 (Once)'));
+    expect(onRespondApproval).toHaveBeenCalledWith('req_123', 'approve', '', 'once', 'call_99');
   });
 
   it('does not mark another same-name tool as awaiting approval', () => {

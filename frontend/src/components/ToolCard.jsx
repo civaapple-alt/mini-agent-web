@@ -17,6 +17,13 @@ import {
 } from 'lucide-react';
 import './ToolCard.css';
 import UserQuestionCard from './UserQuestionCard';
+import ApprovalDock from './input/ApprovalDock';
+import TurnReconciliationForm from './TurnReconciliationForm';
+import {
+  pendingApprovalCallId,
+  pendingApprovalRequestId,
+  toolCallIdOf,
+} from '../utils/attentionTargets.js';
 
 const KNOWN_OUTCOME_PRESENTATIONS = {
   completed: { label: '已完成', className: 'badge completed', Icon: CheckCircle },
@@ -50,9 +57,17 @@ function stripOpaqueWebResultFields(value) {
 
 export default function ToolCard({
   tool,
-  pendingApproval,
+  pendingApproval = null,
+  pendingApprovals = [],
   pendingUserQuestion = null,
   onRespondUserQuestion = null,
+  onRespondApproval = null,
+  approvalActionsDisabled = false,
+  approvalBlockedMessage = null,
+  isInterrupting = false,
+  reconciliationCalls = [],
+  reconcileExecutionBusy = false,
+  onReconcileExecution = null,
   presentationId = null,
 }) {
   const detailsId = `tool-details-${useId().replace(/:/g, '')}`;
@@ -63,6 +78,7 @@ export default function ToolCard({
   const [copied, setCopied] = useState(false);
 
   const { status, error, id, outcome } = tool;
+  const toolCallId = toolCallIdOf(tool) || (id === undefined || id === null ? null : String(id));
   const name = tool.name || tool.toolName || tool.tool || tool.tool_name || '';
   const args = tool.arguments ?? tool.args;
   const rawOutput = tool.output ?? tool.result ?? tool.content ?? null;
@@ -93,20 +109,24 @@ export default function ToolCard({
   const hasOutput = error != null || output != null;
   const hasDetails = hasArguments || hasOutput;
   const approvalState = tool.approval?.state || null;
-  const pendingCallId = pendingApproval?.data?.callId || pendingApproval?.data?.call_id;
-  const pendingRequestId = pendingApproval?.requestId;
-  const pendingToolName = pendingApproval?.data?.toolName || pendingApproval?.data?.tool_name;
+  const approvalCandidates = [pendingApproval, ...pendingApprovals].filter(Boolean);
+  const matchingApproval = approvalCandidates.find((approval) => {
+    const callId = pendingApprovalCallId(approval);
+    if (callId) return callId === toolCallId;
+    const requestId = pendingApprovalRequestId(approval);
+    return Boolean(requestId && toolCallId && requestId === toolCallId);
+  }) || null;
+  const reconciliationCall = toolCallId
+    ? reconciliationCalls.find((call) => (
+      String(call.tool_call_id || call.toolCallId || '') === toolCallId
+    )) || null
+    : null;
 
   // Check if this tool is currently awaiting human approval
   const isAwaitingApproval =
     isRunning && (
       approvalState === 'pending' || (
-        Boolean(pendingApproval) &&
-        Boolean(
-          (pendingCallId && pendingCallId === id) ||
-            (!pendingCallId && pendingRequestId === id) ||
-            (!pendingCallId && !id && pendingToolName === name)
-        )
+        Boolean(matchingApproval)
       )
     );
 
@@ -213,6 +233,7 @@ export default function ToolCard({
         tool={tool}
         pendingInteraction={pendingUserQuestion}
         onRespond={onRespondUserQuestion}
+        disabled={approvalActionsDisabled || isInterrupting}
       />
     );
   }
@@ -222,6 +243,8 @@ export default function ToolCard({
       className={`tool-card notranslate ${normalizedStatus || 'running'} ${isFailed ? 'has-error' : ''} ${isAwaitingApproval ? 'awaiting-approval' : ''}`}
       translate="no"
       data-block-id={presentationId || undefined}
+      data-tool-call-id={toolCallId || undefined}
+      tabIndex={-1}
     >
       {/* Top Tool Header */}
       <div className="tool-header">
@@ -293,6 +316,27 @@ export default function ToolCard({
           )}
           <span>{approvalResultText}</span>
         </div>
+      )}
+
+      {isAwaitingApproval && matchingApproval && (
+        <ApprovalDock
+          pendingApproval={matchingApproval}
+          isInterrupting={isInterrupting}
+          actionsDisabled={approvalActionsDisabled}
+          blockedMessage={approvalBlockedMessage}
+          placement="tool"
+          onRespondApproval={onRespondApproval}
+        />
+      )}
+
+      {reconciliationCall && (
+        <TurnReconciliationForm
+          call={reconciliationCall}
+          busy={reconcileExecutionBusy}
+          disabled={approvalActionsDisabled}
+          blockedMessage={approvalBlockedMessage}
+          onSubmit={onReconcileExecution}
+        />
       )}
 
       {/* Keep complete tool details available without adding rows until requested. */}

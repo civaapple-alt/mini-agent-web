@@ -246,6 +246,10 @@ export default function InputBar({
   onOpenSettings,
   pendingApproval,
   pendingApprovalCount = 0,
+  approvalDockPendingApproval = pendingApproval,
+  approvalDockCount = pendingApprovalCount,
+  approvalActionsDisabled = false,
+  approvalBlockedMessage = null,
   onRespondApproval,
   onStartPlanTask,
   onStartGoal,
@@ -1075,9 +1079,11 @@ export default function InputBar({
       )}
 
       <ApprovalDock
-        pendingApproval={pendingApproval}
-        pendingApprovalCount={pendingApprovalCount}
+        pendingApproval={approvalDockPendingApproval}
+        pendingApprovalCount={approvalDockCount}
         isInterrupting={isInterrupting}
+        actionsDisabled={approvalActionsDisabled}
+        blockedMessage={approvalBlockedMessage}
         onRespondApproval={onRespondApproval}
       />
 

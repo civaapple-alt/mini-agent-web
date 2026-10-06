@@ -1,4 +1,5 @@
 import { RUNTIME_PHASE_LABELS } from './sessionState.js';
+import { approvalIdentity } from './messageState.js';
 
 export const STATUS_LIFECYCLE_LABELS = {
   idle: '空闲',
@@ -57,6 +58,165 @@ function getRuntimeSummary(runtimeStatus, lifecycle) {
   return STATUS_LIFECYCLE_LABELS[lifecycle] || STATUS_LIFECYCLE_LABELS.idle;
 }
 
+function getRecoveryCalls(lastTurnResult) {
+  const recovery = lastTurnResult?.recovery;
+  if (recovery?.status !== 'needs_reconciliation') return [];
+  return recovery.uncertain_tool_calls || recovery.uncertainToolCalls || [];
+}
+
+function getPendingApprovals(pendingApproval, pendingApprovals) {
+  const approvals = [...(Array.isArray(pendingApprovals) ? pendingApprovals : [])];
+  if (pendingApproval) approvals.unshift(pendingApproval);
+  const seen = new Set();
+  return approvals.filter((approval) => {
+    const data = approval?.data || approval || {};
+    if (!(approval?.requestId || approval?.request_id || data.requestId || data.request_id
+      || data.callId || data.call_id)) return true;
+    const key = approvalIdentity(approval);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function attentionTarget(projectId, threadId, turnId, fields = {}) {
+  return Object.fromEntries(
+    Object.entries({ projectId, threadId, turnId, ...fields })
+      .filter(([, value]) => value !== null && value !== undefined && value !== ''),
+  );
+}
+
+function getAttention({
+  projectId,
+  threadId,
+  connection,
+  lifecycle,
+  sessionReadOnly,
+  pendingApprovals,
+  pendingUserQuestion,
+  recoveryCalls,
+  recoveryStatus,
+  recoveryTurnId,
+  planReviewPending,
+  turnId,
+}) {
+  const questionIndex = pendingUserQuestion?.currentIndex
+    ?? pendingUserQuestion?.current_index
+    ?? 0;
+  const questionCount = pendingUserQuestion
+    && !pendingUserQuestion.isComplete
+    && !pendingUserQuestion.is_complete
+    ? Math.max(0, (pendingUserQuestion.questions?.length || 1) - questionIndex)
+    : 0;
+  const continueCount = recoveryStatus === 'waiting_for_continue' ? 1 : 0;
+  const planCount = planReviewPending ? 1 : 0;
+  const totalCount = recoveryCalls.length + pendingApprovals.length
+    + questionCount + continueCount + planCount;
+
+  if (totalCount === 0) return null;
+  if (connection !== 'online') {
+    return {
+      type: 'sync',
+      summary: connection === 'offline'
+        ? '连接已中断，重连后核对待处理状态'
+        : '连接恢复中，正在核对待处理状态',
+      count: totalCount,
+      remainingCount: 0,
+      target: null,
+      actionLabel: null,
+    };
+  }
+  if (sessionReadOnly) {
+    return {
+      type: 'read_only',
+      summary: `当前会话只读，有 ${totalCount} 项待处理操作无法提交`,
+      count: totalCount,
+      remainingCount: 0,
+      target: null,
+      actionLabel: null,
+    };
+  }
+  if (lifecycle === 'stopping') {
+    return {
+      type: 'stopping',
+      summary: '当前 Turn 正在停止，等待运行时确认',
+      count: totalCount,
+      remainingCount: 0,
+      target: null,
+      actionLabel: null,
+    };
+  }
+
+  let item = null;
+  if (recoveryCalls.length > 0) {
+    const call = recoveryCalls[0];
+    const callId = call.tool_call_id || call.toolCallId || null;
+    item = {
+      type: 'reconciliation',
+      label: '待核对工具结果',
+      count: recoveryCalls.length,
+      target: attentionTarget(projectId, threadId, recoveryTurnId || turnId, { callId }),
+    };
+  } else if (pendingApprovals.length > 0) {
+    const approval = pendingApprovals[0];
+    const data = approval?.data || approval || {};
+    item = {
+      type: 'approval',
+      label: '待审批操作',
+      count: pendingApprovals.length,
+      target: attentionTarget(
+        projectId,
+        threadId,
+        data.turnId || data.turn_id || turnId,
+        {
+          callId: data.callId || data.call_id || null,
+          requestId: approval.requestId || approval.request_id || data.requestId || data.request_id || null,
+        },
+      ),
+    };
+  } else if (pendingUserQuestion) {
+    item = {
+      type: 'question',
+      label: '待回答问题',
+      count: questionCount,
+      target: attentionTarget(
+        projectId,
+        threadId,
+        pendingUserQuestion.turnId || pendingUserQuestion.turn_id || turnId,
+        {
+          callId: pendingUserQuestion.callId || pendingUserQuestion.call_id || null,
+          interactionId: pendingUserQuestion.interactionId
+            || pendingUserQuestion.interaction_id
+            || null,
+        },
+      ),
+    };
+  } else if (continueCount > 0) {
+    item = {
+      type: 'continue',
+      label: '等待继续当前 Turn',
+      count: 1,
+      target: attentionTarget(projectId, threadId, recoveryTurnId || turnId),
+    };
+  } else if (planCount > 0) {
+    item = {
+      type: 'plan_review',
+      label: '计划等待确认',
+      count: 1,
+      target: attentionTarget(projectId, threadId, turnId),
+    };
+  }
+
+  if (!item) return null;
+  const remainingCount = Math.max(0, totalCount - item.count);
+  return {
+    ...item,
+    summary: `${item.label} ${item.count} 项${remainingCount > 0 ? ` · 另有 ${remainingCount} 项待处理` : ''}`,
+    remainingCount,
+    actionLabel: item.type === 'plan_review' ? '打开计划' : '前往下一项',
+  };
+}
+
 export function normalizeTheme(theme) {
   return theme === 'dark' || theme === 'midnight' || theme === 'cyberpunk'
     ? 'dark'
@@ -97,6 +257,8 @@ export function getStatusViewModel({
   isInterrupting = false,
   activeTurnId = null,
   pendingApproval = null,
+  pendingApprovals = [],
+  pendingUserQuestion = null,
   planActive = false,
   planReviewPending = false,
   goalState = null,
@@ -117,7 +279,14 @@ export function getStatusViewModel({
     || null;
   const runtimeStopping = runtimeStatus?.phase === 'stopping';
   const hasActiveTurn = Boolean(isGenerating || activeTurnId || runtimeStatus?.active || runtimeStopping);
-  const hasApproval = Boolean(pendingApproval);
+  const approvals = getPendingApprovals(pendingApproval, pendingApprovals);
+  const hasApproval = approvals.length > 0;
+  const recoveryCalls = getRecoveryCalls(lastTurnResult);
+  const recoveryStatus = lastTurnResult?.recovery?.status || null;
+  const recoveryTurnId = lastTurnResult?.recovery?.turnId
+    || lastTurnResult?.recovery?.turn_id
+    || lastTurnResult?.turnId
+    || null;
   const turnResultStatus = getTurnResultStatus(lastTurnResult);
 
   let lifecycle = 'idle';
@@ -158,6 +327,20 @@ export function getStatusViewModel({
   const connectionNextAction = connection !== 'online'
     ? '等待状态回放'
     : null;
+  const attention = getAttention({
+    projectId,
+    threadId,
+    connection,
+    lifecycle,
+    sessionReadOnly,
+    pendingApprovals: approvals,
+    pendingUserQuestion,
+    recoveryCalls,
+    recoveryStatus,
+    recoveryTurnId,
+    planReviewPending: planActive && planReviewPending && !hasActiveTurn,
+    turnId,
+  });
 
   return {
     scope: { projectId, threadId, turnId },
@@ -166,14 +349,15 @@ export function getStatusViewModel({
     label: statusLabel,
     summary: connectionSummary,
     nextAction: connectionNextAction || (lifecycle === 'approval'
-      ? '请在下方审批操作'
+      ? '在对应工具活动中授权'
       : lifecycle === 'plan_review'
         ? '打开计划详情进行确认'
         : lifecycle === 'failed'
           ? '打开详情查看失败原因'
           : lifecycle === 'stopping'
             ? '等待终止确认'
-            : null),
+      : null),
+    attention,
     phase: runtimeStatus?.phase || 'idle',
     runtime: {
       checkpointSeq: runtimeStatus?.checkpointSeq ?? runtimeStatus?.checkpoint_seq ?? null,
@@ -192,10 +376,10 @@ export function getStatusViewModel({
         }
         : null,
     },
-    approval: pendingApproval
+    approval: approvals[0]
       ? {
-        requestId: pendingApproval.requestId,
-        actionSummary: pendingApproval.data?.actionSummary || null,
+        requestId: approvals[0].requestId,
+        actionSummary: approvals[0].data?.actionSummary || null,
         state: isInterrupting ? 'cancelling' : 'pending',
       }
       : null,

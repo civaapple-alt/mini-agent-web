@@ -155,6 +155,122 @@ describe('ChatArea turn status', () => {
     expect(screen.getByText(/当前工具调用结果可能未知/)).toBeTruthy();
   });
 
+  it('renders a matched reconciliation form in its tool activity only once', () => {
+    const call = { tool_call_id: 'call-inline-reconcile', name: 'shell' };
+    const { container } = render(
+      <ChatArea
+        messages={[{
+          id: 'assistant-reconcile',
+          role: 'assistant',
+          turnId: 'turn-reconcile-inline',
+          blocks: [{
+            type: 'tool',
+            id: call.tool_call_id,
+            name: call.name,
+            status: 'completed',
+            arguments: { command: 'git status --short' },
+          }],
+        }]}
+        statusModel={{ connection: 'online', lifecycle: 'idle', sessionReadOnly: true }}
+        isGenerating={false}
+        pendingApproval={null}
+        lastTurnResult={{
+          status: 'in_progress',
+          turnId: 'turn-reconcile-inline',
+          recovery: {
+            turn_id: 'turn-reconcile-inline',
+            status: 'needs_reconciliation',
+            uncertain_tool_calls: [call],
+          },
+        }}
+      />,
+    );
+
+    const forms = container.querySelectorAll('.turn-reconciliation-card');
+    expect(forms).toHaveLength(1);
+    expect(container.querySelector('.tool-card .turn-reconciliation-card')).toBeTruthy();
+    expect(container.querySelector('.turn-reconciliation-list .turn-reconciliation-card')).toBeNull();
+    expect(screen.queryByRole('button', { name: '查看待核对活动' })).toBeNull();
+    expect(container.querySelector('.turn-reconciliation-choice-group').disabled).toBe(true);
+  });
+
+  it('jumps to and focuses a matching activity outside the virtualized viewport', async () => {
+    const messages = Array.from({ length: 32 }, (_, index) => ({
+      id: `assistant-${index}`,
+      role: 'assistant',
+      turnId: index === 0 || index === 16 ? 'turn-shared' : `turn-${index}`,
+      ...(index === 16
+        ? { blocks: [{ type: 'tool', id: 'call-offscreen', name: 'shell', status: 'running' }] }
+        : { text: `reply ${index}` }),
+    }));
+    const pendingApproval = {
+      requestId: 'approval-offscreen',
+      data: { callId: 'call-offscreen', turnId: 'turn-16' },
+    };
+    const onAttentionRequestHandled = vi.fn();
+    render(
+      <ChatArea
+        messages={messages}
+        isGenerating={false}
+        pendingApproval={pendingApproval}
+        pendingApprovals={[pendingApproval]}
+        statusModel={{
+          connection: 'online',
+          lifecycle: 'approval',
+          scope: { turnId: 'turn-16' },
+          process: { turnActive: true },
+        }}
+        attentionRequest={{
+          id: 4,
+          type: 'approval',
+          target: { callId: 'call-offscreen', turnId: 'turn-shared' },
+        }}
+        onAttentionRequestHandled={onAttentionRequestHandled}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(document.activeElement?.dataset?.toolCallId).toBe('call-offscreen');
+    });
+    expect(onAttentionRequestHandled).toHaveBeenCalledWith(4);
+  });
+
+  it('keeps an unmatched pending question available as a focused fallback card', async () => {
+    const pendingUserQuestion = {
+      interactionId: 'interaction-fallback',
+      callId: 'call-fallback',
+      turnId: 'turn-fallback',
+      currentIndex: 0,
+      answers: [null],
+      questions: [{ id: 'q1', prompt: 'Choose a direction', options: [{ id: 'a', label: 'Option A' }] }],
+    };
+    render(
+      <ChatArea
+        messages={[]}
+        isGenerating
+        pendingApproval={null}
+        pendingUserQuestion={pendingUserQuestion}
+        onRespondUserQuestion={vi.fn()}
+        statusModel={{ connection: 'online', lifecycle: 'running', process: { turnActive: true } }}
+        attentionRequest={{
+          id: 5,
+          type: 'question',
+          target: {
+            threadId: 'thread-fallback',
+            turnId: 'turn-fallback',
+            callId: 'call-fallback',
+            interactionId: 'interaction-fallback',
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText('待回答问题尚未关联到会话活动，仍可在此提交回答。')).toBeTruthy();
+    await waitFor(() => {
+      expect(document.activeElement?.dataset?.toolCallId).toBe('call-fallback');
+    });
+  });
+
   it('submits successful, failed, and confirmed-not-executed tool outcomes', () => {
     const onReconcileExecution = vi.fn();
     render(

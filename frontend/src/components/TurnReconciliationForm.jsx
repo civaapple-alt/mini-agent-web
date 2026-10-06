@@ -13,7 +13,13 @@ function createRequestId() {
   return `web-reconcile-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
-export default function TurnReconciliationForm({ call, busy, onSubmit }) {
+export default function TurnReconciliationForm({
+  call,
+  busy,
+  disabled = false,
+  blockedMessage = null,
+  onSubmit,
+}) {
   const [outcome, setOutcome] = useState('');
   const [evidence, setEvidence] = useState('');
   const [resultContent, setResultContent] = useState('');
@@ -33,7 +39,8 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
       && evidence.trim()
       && evidenceBytes <= EVIDENCE_BYTE_LIMIT
       && (outcome === 'not_executed' || resultBytes <= RESULT_BYTE_LIMIT)
-      && !busy,
+      && !busy
+      && !disabled,
   );
 
   const submit = () => {
@@ -65,14 +72,23 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
   };
 
   return (
-    <section className="turn-reconciliation-card" aria-label={`核对工具 ${name}`}>
+    <section
+      className="turn-reconciliation-card"
+      aria-label={`核对工具 ${name}`}
+      data-reconciliation-call-id={toolCallId || undefined}
+      tabIndex={-1}
+    >
       <strong>{name}</strong>
       <small>调用 ID：{toolCallId}</small>
       <p className="turn-reconciliation-intro">
         这条调用的结果尚未确认。请先检查实际状态，再选择处理方式。保存决定只更新检查点，不会执行工具或继续 Turn。
       </p>
 
-      <fieldset className="turn-reconciliation-choice-group" disabled={busy}>
+      {disabled && blockedMessage && (
+        <p className="turn-reconciliation-blocked" role="status">{blockedMessage}</p>
+      )}
+
+      <fieldset className="turn-reconciliation-choice-group" disabled={busy || disabled}>
         <legend>这条工具调用的实际状态</legend>
         <div className="turn-reconciliation-choices">
           <label className={`turn-reconciliation-choice${outcome === 'completed' ? ' selected' : ''}`}>
@@ -124,7 +140,7 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
                 value={evidence}
                 maxLength={EVIDENCE_BYTE_LIMIT}
                 rows={3}
-                disabled={busy}
+                disabled={busy || disabled}
                 aria-describedby={`${evidenceId}-note ${evidenceId}-help`}
                 placeholder="写明查看了什么，以及确认了什么，例如目标系统状态、文件内容或执行日志。"
                 onChange={(event) => updateEvidence(event.target.value)}
@@ -155,7 +171,7 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
                   value={resultContent}
                   maxLength={RESULT_BYTE_LIMIT}
                   rows={5}
-                  disabled={busy}
+                  disabled={busy || disabled}
                   aria-describedby={`${resultId}-note ${resultId}-help`}
                   placeholder={outcome === 'failed'
                     ? '粘贴这次调用真实产生的错误或失败输出；没有文本输出时留空。'
@@ -190,7 +206,7 @@ export default function TurnReconciliationForm({ call, busy, onSubmit }) {
           <button
             type="button"
             className="turn-recovery-button turn-reconciliation-submit"
-            disabled={!canSubmit}
+            disabled={!canSubmit || disabled}
             onClick={submit}
           >
             {busy

@@ -7,12 +7,16 @@ Agent 等待用户时，界面必须先说明它在等什么，再说明用户�
 | 用户动作 | 当前界面 | 提交后的含义 |
 | --- | --- | --- |
 | 回答 Agent 问题 | 工具活动里的 `UserQuestionCard` | 答案回到原问题，Agent 才能继续这段工作。 |
-| 批准工具操作 | InputBar 上方的 `ApprovalDock` | 用户决定是否允许该操作，并可选择授权范围。 |
+| 批准工具操作 | 对应工具活动中的 `ApprovalDock` | 用户决定是否允许该操作，并可选择授权范围。 |
 | 补充方向或排队 | InputBar 与 `PendingMessageDock` | 运行中的新输入先进入待处理队列；用户可编辑、移除排队项，或将一项作为实时纠偏发送。 |
 | 请求停止 | InputBar 的停止按钮 | 提交协作式停止请求，界面仍需等待运行时结算。 |
-| 核对未知工具结果 | ChatArea 的恢复提示和 `TurnReconciliationForm` | 保存用户观察到的结果；完成核对后还要显式继续原 Turn。 |
+| 核对未知工具结果 | 对应工具活动中的 `TurnReconciliationForm`；未匹配到活动时保留在恢复提示中 | 保存用户观察到的结果；完成核对后还要显式继续原 Turn。 |
 
-对应实现见 [`UserQuestionCard.jsx`](../../../frontend/src/components/UserQuestionCard.jsx)、[`ApprovalDock.jsx`](../../../frontend/src/components/input/ApprovalDock.jsx)、[`PendingMessageDock.jsx`](../../../frontend/src/components/PendingMessageDock.jsx)、[`TurnReconciliationForm.jsx`](../../../frontend/src/components/TurnReconciliationForm.jsx) 和 [`InputBar.jsx`](../../../frontend/src/components/InputBar.jsx)。
+对应实现见 [`UserQuestionCard.jsx`](../../../frontend/src/components/UserQuestionCard.jsx)、[`ToolCard.jsx`](../../../frontend/src/components/ToolCard.jsx)、[`ApprovalDock.jsx`](../../../frontend/src/components/input/ApprovalDock.jsx)、[`PendingMessageDock.jsx`](../../../frontend/src/components/PendingMessageDock.jsx)、[`TurnReconciliationForm.jsx`](../../../frontend/src/components/TurnReconciliationForm.jsx) 和 [`InputBar.jsx`](../../../frontend/src/components/InputBar.jsx)。
+
+StatusRail 只负责摘要和定位。它按连接同步、只读或停止限制、工具核对、审批、问题回答、继续 Turn 或确认计划的顺序选择下一项。审批和核对表单显示在匹配的工具卡中。找不到对应活动时，原有审批 Dock、问题卡或恢复提示仍提供操作入口。
+
+匹配依赖 `callId`、`interactionId` 和 `turnId` 等结构化身份，不依赖工具名称。ChatArea 使用已有虚拟列表跳到离屏活动。状态同步、只读或停止期间，卡片保留上下文，但禁用提交。
 
 ## 以未知工具结果为例
 

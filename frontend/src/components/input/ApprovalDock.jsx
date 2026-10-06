@@ -6,15 +6,20 @@ export default function ApprovalDock({
   pendingApproval,
   pendingApprovalCount = 1,
   isInterrupting,
+  actionsDisabled = false,
+  blockedMessage = null,
+  placement = 'composer',
   onRespondApproval,
 }) {
   const [denyReason, setDenyReason] = useState('');
   const [showDenyInput, setShowDenyInput] = useState(false);
   if (!pendingApproval) return null;
+  const disabled = Boolean(isInterrupting || actionsDisabled);
 
   const observation = getApprovalObservation(pendingApproval);
 
   const handleApprove = (scope = 'once') => {
+    if (disabled) return;
     onRespondApproval?.(
       pendingApproval.requestId,
       'approve',
@@ -27,6 +32,7 @@ export default function ApprovalDock({
   };
 
   const handleDeny = () => {
+    if (disabled) return;
     if (!showDenyInput) {
       setShowDenyInput(true);
       return;
@@ -45,7 +51,13 @@ export default function ApprovalDock({
   const allowedGrantScopes = pendingApproval.data?.allowedGrantScopes || ['once'];
 
   return (
-    <div className={`composer-approval-dock ${isInterrupting ? 'is-cancelling' : ''}`} role="alert" aria-live="polite">
+    <div
+      className={`composer-approval-dock ${placement === 'tool' ? 'tool-approval-inline' : ''} ${isInterrupting ? 'is-cancelling' : ''}`}
+      role="alert"
+      aria-live="polite"
+      data-approval-request-id={pendingApproval.requestId || undefined}
+      tabIndex={-1}
+    >
       <div className="dock-header">
         <div className="dock-title-group">
           <ShieldAlert size={14} className="dock-alert-icon" />
@@ -79,7 +91,7 @@ export default function ApprovalDock({
         )}
       </div>
 
-      {showDenyInput && !isInterrupting && (
+      {showDenyInput && !disabled && (
         <div className="dock-deny-box">
           <input
             type="text"
@@ -88,6 +100,7 @@ export default function ApprovalDock({
             value={denyReason}
             onChange={(event) => setDenyReason(event.target.value)}
             onKeyDown={(event) => event.key === 'Enter' && handleDeny()}
+            disabled={disabled}
             autoFocus
           />
         </div>
@@ -96,7 +109,9 @@ export default function ApprovalDock({
       <div className="dock-actions-row">
         <span className="dock-left-hint">
           {isInterrupting
-            ? '当前轮次正在停止，审批已失效；不会继续执行此工具'
+            ? '当前 Turn 正在停止，等待运行时确认后再处理审批'
+            : disabled
+              ? blockedMessage || '当前会话状态尚未确认，暂时不能提交审批'
             : '该操作需要您的授权方可执行'}
         </span>
 
@@ -105,7 +120,7 @@ export default function ApprovalDock({
             type="button"
             className="btn-dock-approve"
             onClick={() => handleApprove('once')}
-            disabled={isInterrupting}
+            disabled={disabled}
             title="允许执行本次操作"
           >
             <Check size={12} />
@@ -117,7 +132,7 @@ export default function ApprovalDock({
               type="button"
               className="btn-dock-scope"
               onClick={() => handleApprove('session')}
-              disabled={isInterrupting}
+              disabled={disabled}
               title="在当前会话中记住此操作的授权"
             >
               <Check size={12} />
@@ -130,7 +145,7 @@ export default function ApprovalDock({
               type="button"
               className="btn-dock-scope"
               onClick={() => handleApprove('project')}
-              disabled={isInterrupting}
+              disabled={disabled}
               title="在当前项目中记住此操作的授权"
             >
               <Check size={12} />
@@ -142,7 +157,7 @@ export default function ApprovalDock({
             type="button"
             className="btn-dock-deny"
             onClick={handleDeny}
-            disabled={isInterrupting}
+            disabled={disabled}
             title="拒绝执行"
           >
             <X size={12} />

@@ -9,12 +9,14 @@ function parseToolResult(tool) {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
-export default function UserQuestionCard({ tool, pendingInteraction, onRespond }) {
+export default function UserQuestionCard({ tool, pendingInteraction, onRespond, disabled = false }) {
   const [expanded, setExpanded] = useState(false);
   const [freeText, setFreeText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submittingOptionId, setSubmittingOptionId] = useState(null);
   const toolId = tool?.id || tool?.callId || tool?.call_id;
+  const interactionId = pendingInteraction?.interactionId
+    || pendingInteraction?.interaction_id;
   const interaction = pendingInteraction
     && (!toolId || (pendingInteraction.callId || pendingInteraction.call_id) === toolId)
     ? pendingInteraction
@@ -40,7 +42,7 @@ export default function UserQuestionCard({ tool, pendingInteraction, onRespond }
   };
 
   const submit = async (questionId, answer) => {
-    if (!onRespond || !interaction || submitting) return;
+    if (!onRespond || !interaction || submitting || disabled) return;
     setSubmitting(true);
     setSubmittingOptionId(answer.type === 'option' ? answer.optionId : null);
     try {
@@ -54,7 +56,13 @@ export default function UserQuestionCard({ tool, pendingInteraction, onRespond }
 
   if (isActive && current) {
     return (
-      <section className="user-question-card active" aria-label="Agent 提问">
+      <section
+        className="user-question-card active"
+        aria-label="Agent 提问"
+        data-tool-call-id={toolId || undefined}
+        data-interaction-id={interactionId || undefined}
+        tabIndex={-1}
+      >
         <header className="user-question-card-header">
           <CircleHelp size={15} />
           <strong>正在询问问题</strong>
@@ -68,7 +76,7 @@ export default function UserQuestionCard({ tool, pendingInteraction, onRespond }
                 className="user-question-option"
                 key={option.id}
                 type="button"
-                disabled={submitting}
+                disabled={disabled || submitting}
                 aria-busy={submittingOptionId === option.id}
                 onClick={() => submit(current.id, { type: 'option', optionId: option.id })}
               >
@@ -108,16 +116,16 @@ export default function UserQuestionCard({ tool, pendingInteraction, onRespond }
               maxLength={4000}
               onChange={(event) => setFreeText(event.target.value)}
               placeholder="输入自己的回答…"
-              disabled={submitting}
+              disabled={disabled || submitting}
             />
-            <button type="submit" disabled={submitting || !freeText.trim()}>发送</button>
+            <button type="submit" disabled={disabled || submitting || !freeText.trim()}>发送</button>
           </form>
         )}
         {current.allowSkip && (
           <button
             type="button"
             className="user-question-skip"
-            disabled={submitting}
+            disabled={disabled || submitting}
             onClick={() => submit(current.id, { type: 'skipped' })}
           >
             <SkipForward size={13} /> 跳过此题
@@ -128,7 +136,11 @@ export default function UserQuestionCard({ tool, pendingInteraction, onRespond }
   }
 
   return (
-    <section className="user-question-card history">
+    <section
+      className="user-question-card history"
+      data-tool-call-id={toolId || undefined}
+      data-interaction-id={interactionId || undefined}
+    >
       <button
         type="button"
         className="user-question-history-toggle"

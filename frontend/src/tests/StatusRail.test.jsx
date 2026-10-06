@@ -72,6 +72,47 @@ describe('StatusRail', () => {
     expect(screen.getByRole('button', { name: '开始实施' })).toBeDefined();
   });
 
+  it('shows the prioritized pending summary and delegates its jump target', () => {
+    const onFocusAttention = vi.fn();
+    const attention = {
+      type: 'reconciliation',
+      summary: '待核对工具结果 2 项 · 另有 1 项待处理',
+      actionLabel: '前往下一项',
+      target: { threadId: 'thread-1', turnId: 'turn-1', callId: 'call-1' },
+    };
+    render(
+      <StatusRail
+        status={{ ...baseStatus, attention }}
+        onOpenDetails={vi.fn()}
+        onFocusAttention={onFocusAttention}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /待核对工具结果 2 项.*前往下一项/ }));
+    expect(onFocusAttention).toHaveBeenCalledWith(attention);
+  });
+
+  it('does not offer an action while the connection state is being synchronized', () => {
+    render(
+      <StatusRail
+        status={{
+          ...baseStatus,
+          attention: {
+            type: 'sync',
+            summary: '连接恢复中，正在核对待处理状态',
+            actionLabel: null,
+            target: null,
+          },
+        }}
+        onOpenDetails={vi.fn()}
+        onFocusAttention={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('连接恢复中，正在核对待处理状态')).toBeDefined();
+    expect(screen.queryByRole('button', { name: /前往下一项/ })).toBeNull();
+  });
+
   it('explains why settings are locked during a Turn', () => {
     render(
       <StatusRail

@@ -208,6 +208,20 @@
   gap: 12px;
 }
 
+.chat-attention-fallback {
+  margin: 14px 0;
+  padding: 10px;
+  border: 1px dashed var(--border-focus);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.chat-attention-fallback > p {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .turn-duration-label {
   max-width: 860px;
   width: 100%;

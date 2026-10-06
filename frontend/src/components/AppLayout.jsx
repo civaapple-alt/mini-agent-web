@@ -9,6 +9,8 @@ import SettingsModal from './SettingsModal';
 import Toast from './Toast';
 import ErrorBoundary from './ErrorBoundary';
 import useChildTasks from '../hooks/useChildTasks';
+import { getToolCallIds, pendingApprovalCallId } from '../utils/attentionTargets.js';
+import { approvalIdentity } from '../utils/messageState.js';
 
 const SIDE_PANEL_DOCK_BREAKPOINT = 1200;
 const SIDE_PANEL_DOCK_STORAGE_KEY = 'mini-agent-web.side-panel-docked';
@@ -88,6 +90,7 @@ export default function AppLayout({
   isInterrupting,
   pendingApproval,
   pendingApprovalCount = 0,
+  pendingApprovals = [],
   onContinuePlanning,
   onStartImplementation,
   onClosePlan,
@@ -149,6 +152,8 @@ export default function AppLayout({
   onSkillInsertionApplied,
 }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [attentionRequest, setAttentionRequest] = useState(null);
+  const attentionRequestSequenceRef = useRef(0);
   const [sidePanelDockPreference, setSidePanelDockPreference] = useState(readSidePanelDockPreference);
   const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth);
   const [canDockSidePanel, setCanDockSidePanel] = useState(() => (
@@ -157,6 +162,24 @@ export default function AppLayout({
   const sidePanelWidthRef = useRef(sidePanelWidth);
   const sidePanelResizeRef = useRef(null);
   const childTasks = useChildTasks(currentThread, currentThreadProject, sessionActive);
+  const timelineToolCallIds = getToolCallIds(messages || []);
+  const allPendingApprovals = [...pendingApprovals];
+  if (pendingApproval && !allPendingApprovals.some((approval) => (
+    approvalIdentity(approval) === approvalIdentity(pendingApproval)
+  ))) {
+    allPendingApprovals.unshift(pendingApproval);
+  }
+  const timelineApprovals = allPendingApprovals.filter((approval) => {
+    const callId = pendingApprovalCallId(approval);
+    return Boolean(callId && timelineToolCallIds.has(callId));
+  });
+  const fallbackApprovals = allPendingApprovals.filter((approval) => {
+    const callId = pendingApprovalCallId(approval);
+    return !callId || !timelineToolCallIds.has(callId);
+  });
+  const handleAttentionRequestHandled = React.useCallback((requestId) => {
+    setAttentionRequest((current) => current?.id === requestId ? null : current);
+  }, []);
   const sidePanelDocked = sidePanelOpen && sidePanelDockPreference && canDockSidePanel;
   const viewportWidth = typeof window === 'undefined' ? 1440 : window.innerWidth;
   const visibleSidePanelWidth = clampSidePanelWidth(sidePanelWidth, viewportWidth);
@@ -289,6 +312,18 @@ export default function AppLayout({
           {sessionActive && (
             <StatusRail
               status={statusModel}
+              onFocusAttention={(attention) => {
+                if (attention.type === 'plan_review') {
+                  onOpenSidePanel('plan_view');
+                  return;
+                }
+                attentionRequestSequenceRef.current += 1;
+                setAttentionRequest({
+                  id: attentionRequestSequenceRef.current,
+                  type: attention.type,
+                  target: attention.target,
+                });
+              }}
               onOpenDetails={() => onOpenSidePanel('status')}
               onOpenPlanDetails={() => onOpenSidePanel('plan_view')}
               onChangeExecution={onChangeExecution}
@@ -309,9 +344,13 @@ export default function AppLayout({
               onLoadOlderHistory={onLoadOlderHistory}
               statusModel={statusModel}
               isGenerating={isGenerating}
-              pendingApproval={pendingApproval}
+              pendingApproval={timelineApprovals[0] || null}
+              pendingApprovals={timelineApprovals}
               pendingUserQuestion={pendingUserQuestion}
+              onRespondApproval={onRespondApproval}
               onRespondUserQuestion={onRespondUserQuestion}
+              attentionRequest={attentionRequest}
+              onAttentionRequestHandled={handleAttentionRequestHandled}
               lastTurnResult={lastTurnResult}
               turnTimings={turnTimings}
               onResumeExecution={() => {
@@ -360,6 +399,18 @@ export default function AppLayout({
             onOpenSettings={onOpenSettings}
             pendingApproval={pendingApproval}
             pendingApprovalCount={pendingApprovalCount}
+            approvalDockPendingApproval={fallbackApprovals[0] || null}
+            approvalDockCount={fallbackApprovals.length}
+            approvalActionsDisabled={Boolean(
+              statusModel?.connection !== 'online'
+                || statusModel?.sessionReadOnly
+                || statusModel?.lifecycle === 'stopping'
+            )}
+            approvalBlockedMessage={statusModel?.connection !== 'online'
+              ? '连接恢复后才能提交审批'
+              : statusModel?.sessionReadOnly
+                ? '当前会话只读，不能提交审批'
+                : '当前 Turn 正在停止，等待运行时确认'}
             onRespondApproval={onRespondApproval}
             onStartPlanTask={onStartPlanTask}
             onStartGoal={onStartGoal}

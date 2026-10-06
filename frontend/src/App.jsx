@@ -3226,6 +3226,8 @@ export default function App() {
     isInterrupting,
     activeTurnId,
     pendingApproval,
+    pendingApprovals,
+    pendingUserQuestion,
     planActive,
     planReviewPending: planReviewPending && !isGenerating,
     goalState,
@@ -3277,6 +3279,7 @@ export default function App() {
       contextManifestError={contextManifestError}
       isInterrupting={isInterrupting}
       pendingApproval={pendingApproval}
+      pendingApprovals={pendingApprovals}
       pendingUserQuestion={pendingUserQuestion}
       onRespondUserQuestion={handleRespondUserQuestion}
       pendingApprovalCount={pendingApprovals.length}

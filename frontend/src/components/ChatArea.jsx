@@ -1,7 +1,8 @@
-import { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useRef, useEffect, useLayoutEffect, useMemo, useState, useCallback } from 'react';
 import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
 import { Sparkles, Terminal, Compass, TestTube2, ArrowDown, Folder } from 'lucide-react';
 import MessageItem from './MessageItem';
+import ToolCard from './ToolCard';
 import SessionTurnRail from './SessionTurnRail';
 import TurnReconciliationForm from './TurnReconciliationForm';
 import { collectInputMessages, getChildWakeupTurnIds } from '../utils/inputTrace';
@@ -12,6 +13,7 @@ import {
 } from '../utils/turnHistory';
 import { buildTurnChildTaskBatch, getDelegateTaskAssignments } from '../utils/childTasks';
 import { scopedThreadKey } from '../utils/sessionState.js';
+import { findAttentionMessage, getToolCallIds } from '../utils/attentionTargets.js';
 import './ChatArea.css';
 
 function formatProcessedDuration(durationMs) {
@@ -99,11 +101,50 @@ function formatIncompleteTurnHint(turnResult) {
   return '当前回答可能不完整，可以继续发送指令推进下一轮。';
 }
 
+function findAttentionElement(root, attentionRequest, messageId = null) {
+  const target = attentionRequest?.target || {};
+  const scope = root || document;
+  const messageNode = messageId
+    ? [...scope.querySelectorAll('[data-message-id]')].find((node) => (
+      node.dataset.messageId === String(messageId)
+    ))
+    : null;
+  const targetScope = messageNode || scope;
+  if (target.callId) {
+    const nodes = targetScope.querySelectorAll(
+      '[data-tool-call-id], [data-reconciliation-call-id]',
+    );
+    const matchingNode = [...nodes].find((node) => (
+      node.dataset.toolCallId === String(target.callId)
+        || node.dataset.reconciliationCallId === String(target.callId)
+    ));
+    if (matchingNode) return matchingNode;
+  }
+  if (target.interactionId) {
+    const node = [...targetScope.querySelectorAll('[data-interaction-id]')].find((element) => (
+      element.dataset.interactionId === String(target.interactionId)
+    ));
+    if (node) return node;
+  }
+  if (attentionRequest?.type === 'continue') {
+    return scope.querySelector('[data-attention-kind="continue"]');
+  }
+  if (attentionRequest?.type === 'approval' && target.requestId) {
+    const node = [...targetScope.querySelectorAll('[data-approval-request-id]')].find((element) => (
+      element.dataset.approvalRequestId === String(target.requestId)
+    ));
+    if (node) return node;
+  }
+  return null;
+}
+
 export default function ChatArea({
   messages,
   isGenerating,
   pendingApproval,
+  pendingApprovals = [],
   pendingUserQuestion = null,
+  onRespondApproval = null,
   onRespondUserQuestion = null,
   lastTurnResult,
   turnTimings = null,
@@ -111,6 +152,8 @@ export default function ChatArea({
   resumeExecutionBusy = false,
   onReconcileExecution,
   reconcileExecutionBusy = false,
+  attentionRequest = null,
+  onAttentionRequestHandled = null,
   threadItems = [],
   statusModel = null,
   policy = 'interactive',
@@ -144,6 +187,7 @@ export default function ChatArea({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const hasActiveTurn = isGenerating
     || Boolean(pendingApproval)
+    || pendingApprovals.length > 0
     || Boolean(statusModel?.process?.turnActive)
     || ['running', 'approval', 'stopping'].includes(statusModel?.lifecycle);
   const recoveryProgressTime = formatRecoveryProgressTime(
@@ -341,6 +385,43 @@ export default function ChatArea({
   );
   const activeTurnEntry = turnEntries.find((entry) => entry.isCurrent)
     || (hasActiveTurn ? turnEntries.at(-1) : null);
+  const timelineToolCallIds = useMemo(
+    () => getToolCallIds(displayMessages),
+    [displayMessages],
+  );
+  const recoveryCalls = lastTurnResult?.recovery?.status === 'needs_reconciliation'
+    ? (lastTurnResult.recovery.uncertain_tool_calls
+      || lastTurnResult.recovery.uncertainToolCalls
+      || [])
+    : [];
+  const questionTarget = pendingUserQuestion
+    ? {
+      callId: pendingUserQuestion.callId || pendingUserQuestion.call_id || null,
+      interactionId: pendingUserQuestion.interactionId
+        || pendingUserQuestion.interaction_id
+        || null,
+      turnId: pendingUserQuestion.turnId || pendingUserQuestion.turn_id || null,
+    }
+    : null;
+  const hasQuestionMessage = Boolean(
+    questionTarget
+      && (questionTarget.callId || questionTarget.interactionId)
+      && findAttentionMessage(displayMessages, questionTarget),
+  );
+  const attentionActionsDisabled = Boolean(
+    statusModel && (
+      statusModel.connection !== 'online'
+        || statusModel.sessionReadOnly
+        || statusModel.lifecycle === 'stopping'
+    ),
+  );
+  const attentionBlockedMessage = statusModel?.connection !== 'online'
+    ? '连接恢复后才能提交此操作'
+    : statusModel?.sessionReadOnly
+      ? '当前会话只读，不能提交此操作'
+      : statusModel?.lifecycle === 'stopping'
+        ? '当前 Turn 正在停止，等待运行时确认'
+        : null;
   const turnDurationAnchors = useMemo(() => {
     const firstAssistantIndexByTurn = new Map();
     const firstUserIndexByTurn = new Map();
@@ -373,16 +454,20 @@ export default function ChatArea({
     else messageRefs.current.delete(String(messageId));
   };
 
-  const scrollToMessage = (messageId, turnId, block) => {
+  const scrollToMessage = useCallback((messageId, turnId, block) => {
     let node = messageRefs.current.get(String(messageId || ''));
     const reducedMotion = window.matchMedia
       ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
       : false;
     if (!node) {
-      const messageIndex = displayMessages.findIndex((message) => (
+      let messageIndex = displayMessages.findIndex((message) => (
         String(message.id || '') === String(messageId || '')
-        || (turnId && String(message.turnId || '') === String(turnId))
       ));
+      if (messageIndex < 0 && turnId) {
+        messageIndex = displayMessages.findIndex((message) => (
+          String(message.turnId || '') === String(turnId)
+        ));
+      }
       const rowIndex = presentationRows.findIndex((row) => (
         messageIndex >= row.startIndex && messageIndex <= row.endIndex
       ));
@@ -392,7 +477,7 @@ export default function ChatArea({
         align: block === 'center' ? 'center' : 'auto',
         behavior: reducedMotion ? 'auto' : 'smooth',
       });
-      window.requestAnimationFrame(() => {
+      const revealRow = (attempt = 0) => window.requestAnimationFrame(() => {
         node = messageRefs.current.get(String(messageId || ''));
         if (!node && turnId) {
           const fallback = presentationRows[rowIndex]?.message?.id;
@@ -402,8 +487,13 @@ export default function ChatArea({
           behavior: reducedMotion ? 'auto' : 'smooth',
           block,
         });
+        if (!node && attempt < 4) {
+          revealRow(attempt + 1);
+          return;
+        }
         setForcedRowIndex(null);
       });
+      revealRow();
     } else if (typeof node.scrollIntoView === 'function') {
       node.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block });
     } else {
@@ -417,12 +507,77 @@ export default function ChatArea({
       ? window.setTimeout(() => setFocusedTurnId(null), 1400)
       : null;
     return true;
-  };
+  }, [displayMessages, presentationRows, virtualizer]);
 
-  const scrollToEntry = (entry) => {
+  const scrollToEntry = useCallback((entry) => {
     if (!entry) return false;
     return scrollToMessage(entry.messageId, entry.turnId || entry.id, 'center');
-  };
+  }, [scrollToMessage]);
+
+  useEffect(() => {
+    if (!attentionRequest?.id) return;
+    const target = attentionRequest.target || {};
+    const currentProjectId = traceScope?.projectId ? String(traceScope.projectId) : null;
+    const currentThreadId = traceScope?.threadId ? String(traceScope.threadId) : null;
+    if (
+      (target.projectId && currentProjectId && String(target.projectId) !== currentProjectId)
+      || (target.threadId && currentThreadId && String(target.threadId) !== currentThreadId)
+    ) {
+      onAttentionRequestHandled?.(attentionRequest.id);
+      return;
+    }
+    const message = findAttentionMessage(displayMessages, target);
+    let didNavigate = false;
+    if (message?.id) {
+      didNavigate = scrollToMessage(
+        message.id,
+        target.turnId || message.turnId || null,
+        'center',
+      );
+    } else if (target.turnId) {
+      const entry = turnEntries.find((item) => (
+        String(item.turnId || item.id || '') === String(target.turnId)
+      ));
+      didNavigate = scrollToEntry(entry);
+    }
+
+    if (
+      !didNavigate
+      || attentionRequest.type === 'continue'
+      || (!message && ['reconciliation', 'question'].includes(attentionRequest.type))
+    ) {
+      const reducedMotion = window.matchMedia
+        ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        : false;
+      scrollRef.current?.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: reducedMotion ? 'auto' : 'smooth',
+      });
+    }
+
+    const focus = (attempt = 0) => {
+      const node = findAttentionElement(scrollRef.current, attentionRequest, message?.id);
+      if (!node && attempt < 6) {
+        requestFrame(() => focus(attempt + 1));
+        return;
+      }
+      if (!node) return;
+      node.focus?.({ preventScroll: true });
+      node.classList.add('attention-focus-ring');
+      window.setTimeout(() => node.classList.remove('attention-focus-ring'), 1800);
+    };
+    const requestFrame = window.requestAnimationFrame || ((callback) => window.setTimeout(callback, 0));
+    requestFrame(() => requestFrame(() => focus()));
+    onAttentionRequestHandled?.(attentionRequest.id);
+  }, [
+    attentionRequest,
+    displayMessages,
+    onAttentionRequestHandled,
+    scrollToEntry,
+    scrollToMessage,
+    traceScope,
+    turnEntries,
+  ]);
 
   const selectTurn = (entry) => scrollToEntry(entry);
 
@@ -694,8 +849,16 @@ export default function ChatArea({
                     isCurrentTurnSegment={isCurrentTurnSegment}
                     isGenerating={isGenerating}
                     pendingApproval={pendingApproval}
+                    pendingApprovals={pendingApprovals}
                     pendingUserQuestion={pendingUserQuestion}
+                    onRespondApproval={onRespondApproval}
                     onRespondUserQuestion={onRespondUserQuestion}
+                    approvalActionsDisabled={attentionActionsDisabled}
+                    approvalBlockedMessage={attentionBlockedMessage}
+                    isInterrupting={statusModel?.lifecycle === 'stopping'}
+                    reconciliationCalls={recoveryCalls}
+                    reconcileExecutionBusy={reconcileExecutionBusy}
+                    onReconcileExecution={onReconcileExecution}
                     policy={policy}
                     onRetryPrompt={onRetryPrompt}
                     turnEntry={turnEntry}
@@ -721,6 +884,24 @@ export default function ChatArea({
               );
             })}
           </div>
+        </div>
+      )}
+
+      {pendingUserQuestion && !hasQuestionMessage && (
+        <div className="chat-attention-fallback">
+          <p>{attentionActionsDisabled
+            ? `${attentionBlockedMessage || '当前会话状态尚未确认'}。问题详情同步后再提交回答。`
+            : '待回答问题尚未关联到会话活动，仍可在此提交回答。'}</p>
+          <ToolCard
+            tool={{
+              id: questionTarget?.callId || undefined,
+              name: 'ask_user',
+              status: 'running',
+            }}
+            pendingUserQuestion={pendingUserQuestion}
+            onRespondUserQuestion={onRespondUserQuestion}
+            approvalActionsDisabled={attentionActionsDisabled}
+          />
         </div>
       )}
 
@@ -767,7 +948,8 @@ export default function ChatArea({
             <button
               type="button"
               className="turn-recovery-button"
-              disabled={resumeExecutionBusy}
+              data-attention-kind="continue"
+              disabled={resumeExecutionBusy || attentionActionsDisabled}
               onClick={onResumeExecution}
             >
               {resumeExecutionBusy ? '正在继续…' : '继续当前 Turn'}
@@ -775,20 +957,28 @@ export default function ChatArea({
           )}
           {lastTurnResult.recovery?.status === 'needs_reconciliation' && (
             <div className="turn-reconciliation-list">
-              {(lastTurnResult.recovery?.uncertain_tool_calls
-                || lastTurnResult.recovery?.uncertainToolCalls
-                || []).map((call) => {
+              {recoveryCalls
+                .filter((call) => {
+                  const callId = call.tool_call_id || call.toolCallId || '';
+                  return !callId || !timelineToolCallIds.has(String(callId));
+                })
+                .map((call) => {
                 const toolCallId = call.tool_call_id || call.toolCallId || '';
                 return (
                   <TurnReconciliationForm
                     key={toolCallId}
                     call={call}
                     busy={reconcileExecutionBusy}
+                    disabled={attentionActionsDisabled}
+                    blockedMessage={attentionBlockedMessage}
                     onSubmit={onReconcileExecution}
                   />
                 );
               })}
-              <button
+              {recoveryCalls.some((call) => {
+                const callId = call.tool_call_id || call.toolCallId || '';
+                return !callId || !timelineToolCallIds.has(String(callId));
+              }) && <button
                 type="button"
                 className="turn-recovery-button"
                 onClick={() => {
@@ -800,9 +990,9 @@ export default function ChatArea({
                   ));
                   if (!scrollToEntry(entry)) scrollToCurrentTurn();
                 }}
-              >
+                >
                 查看待核对活动
-              </button>
+              </button>}
             </div>
           )}
         </div>

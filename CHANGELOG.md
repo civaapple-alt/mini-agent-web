@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
+- Add a prioritized pending-action summary to StatusRail and jump to the exact
+  question, approval, or uncertain tool call in the virtualized timeline. Keep
+  approval and reconciliation controls beside their activities, retain
+  fallbacks for unmatched items, and disable submissions while state is
+  reconnecting, read-only, or stopping.
 - Simplify the context usage popover, fold source estimates by default, keep
   recent-request and session cache-hit rates separately labeled, and show hit
   rates to two decimal places.

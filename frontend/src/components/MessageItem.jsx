@@ -71,8 +71,16 @@ export default function MessageItem({
   isCurrentTurnSegment = null,
   isGenerating,
   pendingApproval,
+  pendingApprovals = [],
   pendingUserQuestion = null,
+  onRespondApproval = null,
   onRespondUserQuestion = null,
+  approvalActionsDisabled = false,
+  approvalBlockedMessage = null,
+  isInterrupting = false,
+  reconciliationCalls = [],
+  reconcileExecutionBusy = false,
+  onReconcileExecution = null,
   policy = 'interactive',
   onRetryPrompt,
   turnEntry = null,
@@ -448,8 +456,16 @@ export default function MessageItem({
                           <ToolCard
                             tool={item}
                             pendingApproval={null}
+                            pendingApprovals={pendingApprovals}
                             pendingUserQuestion={pendingUserQuestion}
                             onRespondUserQuestion={onRespondUserQuestion}
+                            onRespondApproval={onRespondApproval}
+                            approvalActionsDisabled={approvalActionsDisabled}
+                            approvalBlockedMessage={approvalBlockedMessage}
+                            isInterrupting={isInterrupting}
+                            reconciliationCalls={reconciliationCalls}
+                            reconcileExecutionBusy={reconcileExecutionBusy}
+                            onReconcileExecution={onReconcileExecution}
                             presentationId={`${turnScope}:tool:${blockId}`}
                           />
                         </ErrorBoundary>
@@ -486,8 +502,16 @@ export default function MessageItem({
                   <ToolCard
                     tool={block}
                     pendingApproval={isCurrentAssistantSegment ? pendingApproval : null}
+                    pendingApprovals={isCurrentAssistantSegment ? pendingApprovals : []}
                     pendingUserQuestion={isCurrentAssistantSegment ? pendingUserQuestion : null}
                     onRespondUserQuestion={onRespondUserQuestion}
+                    onRespondApproval={onRespondApproval}
+                    approvalActionsDisabled={approvalActionsDisabled}
+                    approvalBlockedMessage={approvalBlockedMessage}
+                    isInterrupting={isInterrupting}
+                    reconciliationCalls={reconciliationCalls}
+                    reconcileExecutionBusy={reconcileExecutionBusy}
+                    onReconcileExecution={onReconcileExecution}
                     policy={policy}
                     presentationId={`${turnScope}:tool:${block.id || idx}`}
                   />
@@ -625,8 +649,16 @@ export default function MessageItem({
                       <ToolCard
                         tool={t}
                         pendingApproval={isCurrentAssistantSegment ? pendingApproval : null}
+                        pendingApprovals={isCurrentAssistantSegment ? pendingApprovals : []}
                         pendingUserQuestion={isCurrentAssistantSegment ? pendingUserQuestion : null}
                         onRespondUserQuestion={onRespondUserQuestion}
+                        onRespondApproval={onRespondApproval}
+                        approvalActionsDisabled={approvalActionsDisabled}
+                        approvalBlockedMessage={approvalBlockedMessage}
+                        isInterrupting={isInterrupting}
+                        reconciliationCalls={reconciliationCalls}
+                        reconcileExecutionBusy={reconcileExecutionBusy}
+                        onReconcileExecution={onReconcileExecution}
                         policy={policy}
                       />
                     </ErrorBoundary>

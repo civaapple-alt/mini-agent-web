@@ -104,6 +104,100 @@ test('connection loss takes priority over a cached completed result', () => {
   assert.equal(status.nextAction, '等待状态回放');
 });
 
+test('attention projection prioritizes reconciliation and reports remaining work', () => {
+  const approval = {
+    requestId: 'req-1',
+    data: { callId: 'call-approval', turnId: 'turn-1' },
+  };
+  const status = getStatusViewModel({
+    isConnected: true,
+    pendingApproval: approval,
+    pendingApprovals: [approval],
+    pendingUserQuestion: {
+      interactionId: 'interaction-1',
+      callId: 'call-question',
+      turnId: 'turn-1',
+      questions: [{ id: 'q1' }, { id: 'q2' }],
+      currentIndex: 0,
+    },
+    planActive: true,
+    planReviewPending: true,
+    lastTurnResult: {
+      turnId: 'turn-1',
+      recovery: {
+        turn_id: 'turn-1',
+        status: 'needs_reconciliation',
+        uncertain_tool_calls: [
+          { tool_call_id: 'call-reconcile-1' },
+          { tool_call_id: 'call-reconcile-2' },
+        ],
+      },
+    },
+  });
+
+  assert.equal(status.attention.type, 'reconciliation');
+  assert.equal(status.attention.count, 2);
+  assert.equal(status.attention.remainingCount, 4);
+  assert.equal(status.attention.summary, '待核对工具结果 2 项 · 另有 4 项待处理');
+  assert.equal(status.attention.target.callId, 'call-reconcile-1');
+  assert.equal(status.attention.target.turnId, 'turn-1');
+});
+
+test('attention blockers hide stale actions during reconnect, read-only, and stop', () => {
+  const base = {
+    isConnected: true,
+    pendingApproval: {
+      requestId: 'req-1',
+      data: { callId: 'call-1', turnId: 'turn-1' },
+    },
+  };
+
+  const reconnecting = getStatusViewModel({
+    ...base,
+    connectionState: 'reconnecting',
+  });
+  assert.equal(reconnecting.attention.type, 'sync');
+  assert.equal(reconnecting.attention.actionLabel, null);
+
+  const offline = getStatusViewModel({ ...base, connectionState: 'offline' });
+  assert.equal(offline.attention.summary, '连接已中断，重连后核对待处理状态');
+
+  const readOnly = getStatusViewModel({ ...base, sessionReadOnly: true });
+  assert.equal(readOnly.attention.type, 'read_only');
+  assert.equal(readOnly.attention.actionLabel, null);
+
+  const stopping = getStatusViewModel({ ...base, isInterrupting: true });
+  assert.equal(stopping.attention.type, 'stopping');
+  assert.equal(stopping.attention.actionLabel, null);
+});
+
+test('same transport request id does not collapse separate tool approvals', () => {
+  const status = getStatusViewModel({
+    isConnected: true,
+    pendingApprovals: [
+      { requestId: 'provider-request', data: { callId: 'call-a', turnId: 'turn-1' } },
+      { requestId: 'provider-request', data: { callId: 'call-b', turnId: 'turn-1' } },
+    ],
+  });
+
+  assert.equal(status.attention.count, 2);
+  assert.equal(status.attention.target.callId, 'call-a');
+});
+
+test('waiting to continue targets the saved Turn checkpoint', () => {
+  const status = getStatusViewModel({
+    isConnected: true,
+    lastTurnResult: {
+      turnId: 'turn-resume',
+      recovery: { status: 'waiting_for_continue', turn_id: 'turn-resume' },
+    },
+  });
+
+  assert.equal(status.attention.type, 'continue');
+  assert.equal(status.attention.target.turnId, 'turn-resume');
+  assert.equal(status.attention.actionLabel, '前往下一项');
+});
+
 test('legacy themes normalize to the two supported themes', () => {
   assert.equal(normalizeTheme('midnight'), 'dark');
   assert.equal(normalizeTheme('cyberpunk'), 'dark');

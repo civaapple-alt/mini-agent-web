@@ -62,6 +62,7 @@ export default function StatusRail({
   onContinuePlanning,
   onStartImplementation,
   onClosePlan,
+  onFocusAttention,
 }) {
   const [showSettings, setShowSettings] = useState(false);
   const [showFullAccessConfirm, setShowFullAccessConfirm] = useState(false);
@@ -154,6 +155,22 @@ export default function StatusRail({
         <span className="status-rail-summary" title={status.summary}>{status.summary}</span>
         {status.nextAction && <span className="status-rail-next">· {status.nextAction}</span>}
       </div>
+
+      {status.attention && (
+        <div className={`status-rail-attention status-rail-attention-${status.attention.type}`}>
+          <span className="status-rail-attention-summary">{status.attention.summary}</span>
+          {status.attention.actionLabel && (
+            <button
+              type="button"
+              className="status-rail-attention-action"
+              aria-label={`${status.attention.summary}，${status.attention.actionLabel}`}
+              onClick={() => onFocusAttention?.(status.attention)}
+            >
+              {status.attention.actionLabel}
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="status-rail-meta">
         <span className="status-scope" title={`Project / Session: ${scopeLabel}`}>

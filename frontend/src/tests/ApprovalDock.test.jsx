@@ -23,7 +23,7 @@ describe('ApprovalDock', () => {
 
     expect(screen.getByText('审批已锁定')).toBeDefined();
     expect(
-      screen.getByText('当前轮次正在停止，审批已失效；不会继续执行此工具'),
+      screen.getByText('当前 Turn 正在停止，等待运行时确认后再处理审批'),
     ).toBeDefined();
 
     const buttons = screen.getAllByRole('button');
@@ -60,6 +60,28 @@ describe('ApprovalDock', () => {
       'once',
       'call-second',
     );
+  });
+
+  it('keeps approval controls disabled until the connection state is confirmed', () => {
+    const onRespondApproval = vi.fn();
+
+    render(
+      <ApprovalDock
+        pendingApproval={{
+          requestId: 'approval-offline',
+          data: { callId: 'call-offline', actionSummary: '写入文件', allowedGrantScopes: ['once'] },
+        }}
+        actionsDisabled
+        blockedMessage="连接恢复后才能提交审批"
+        onRespondApproval={onRespondApproval}
+      />,
+    );
+
+    expect(screen.getByText('连接恢复后才能提交审批')).toBeDefined();
+    const approve = screen.getByRole('button', { name: '允许本次 (Once)' });
+    expect(approve.disabled).toBe(true);
+    fireEvent.click(approve);
+    expect(onRespondApproval).not.toHaveBeenCalled();
   });
 
   it('shows the patch change kind and target files before approval', () => {

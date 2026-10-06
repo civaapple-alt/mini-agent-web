@@ -27,6 +27,17 @@
   color: var(--text-secondary);
 }
 
+.turn-reconciliation-blocked {
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--status-approval-border);
+  border-radius: 6px;
+  background: var(--status-approval-soft);
+  color: var(--status-approval);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .turn-reconciliation-choice-group {
   min-width: 0;
   margin: 0;

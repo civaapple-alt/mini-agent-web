@@ -69,6 +69,7 @@ available on the next send without a runtime restart.
       "aliases": ["pstack-plugin:architect", "architect"],
       "description": "Design types, interfaces, and module boundaries.",
       "source": "builtin",
+      "origin": "builtin_group",
       "group": "pstack",
       "enabled": true
     }
@@ -79,15 +80,25 @@ available on the next send without a runtime restart.
 The endpoint returns at most 64 skills and does not expose physical paths or
 skill bodies. The Gateway and browser do not scan skill directories.
 
+`origin` is an optional source category, independent of the legacy `source`
+and `group` fields. Current values are `builtin_group`, `user_agents`,
+`user_mini_agent`, `project`, and `plugin`. Older App Server responses can omit
+it; the panel then uses known legacy source values and labels an unclassified
+user Skill as “个人目录技能 · 来源未细分” without guessing which personal
+directory it came from.
+
 ## Skill panel
 
 The WebStudio Skill tab renders the complete bounded catalog returned by the
-runtime. It does not maintain a second group or Skill list. Builtin groups have
-their own status and activation labels. User-directory and project Skills are
-shown under source headings; their `enabled` catalog field controls whether
-they can be selected, and they do not inherit a builtin-group toggle.
+runtime. It does not maintain a second group or Skill list. Search covers the
+name, qualified name, aliases, and description; source filters show counts and
+group the matching cards by origin. Each card names its source. Builtin group
+controls appear in a collapsed section when the builtin filter is selected.
+User-directory, project, and plugin Skills use their own `enabled` catalog
+field and do not inherit builtin-group status. A group toggle applies only when
+the catalog entry has a real association to a listed builtin group.
 
-The panel distinguishes the two entry points for every enabled group:
+The panel distinguishes direct Skill selection from group-level activation:
 
 | Panel label | Meaning | Body loading |
 | --- | --- | --- |
@@ -98,7 +109,8 @@ Enabled builtin groups can use both entry points. `+ <group>` is not a shortcut
 for loading every body, and `$<group>:skill` is not a request to activate the
 whole group. Ungrouped user and project Skills use their canonical `$skill-name`
 token directly. The panel's `$` insertion always uses the canonical qualified
-name; compatibility aliases remain visible when provided by the manifest.
+name. Compatibility aliases remain searchable but are not expanded on each
+card.
 
 If a group is enabled but the catalog contains no Skill entry for it, the panel
 shows a runtime-catalog warning. Reloading the panel refreshes discovery; if a

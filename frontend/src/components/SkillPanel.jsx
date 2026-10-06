@@ -1,11 +1,46 @@
 import React, { useMemo, useState } from 'react';
 import { Search, Sparkles, X } from 'lucide-react';
 
-const SOURCE_LABELS = {
-  user: '用户目录技能',
-  project: '项目技能',
-  plugin: '插件技能',
+const ORIGIN_FILTERS = [
+  { id: 'builtin_group', label: '内置' },
+  { id: 'user_agents', label: '~/.agents' },
+  { id: 'user_mini_agent', label: '~/.mini-agent' },
+  { id: 'project', label: '项目' },
+  { id: 'plugin', label: '插件' },
+  { id: 'user_unknown', label: '个人来源未细分' },
+  { id: 'unknown', label: '其他来源' },
+];
+
+const ORIGIN_LABELS = {
+  builtin_group: '内置技能组',
+  user_agents: '个人技能 · ~/.agents/skills',
+  user_mini_agent: '个人技能 · ~/.mini-agent/skills',
+  project: '项目技能 · .agents/skills',
+  plugin: '插件技能 · .agents/plugins',
+  user_unknown: '个人目录技能 · 来源未细分',
+  unknown: '来源未细分',
 };
+
+function getSkillOrigin(skill) {
+  const knownOrigin = ORIGIN_FILTERS.some(({ id }) => id === skill.origin);
+  if (knownOrigin) return skill.origin;
+  if (skill.source === 'builtin' && skill.group) return 'builtin_group';
+  if (skill.source === 'project' || skill.source === 'plugin') return skill.source;
+  if (skill.source === 'user') return 'user_unknown';
+  return 'unknown';
+}
+
+function isBuiltinGroupSkill(skill, groupsById) {
+  if (!skill.group || !groupsById.has(String(skill.group))) return false;
+  if (skill.origin) return skill.origin === 'builtin_group';
+  return skill.source === 'builtin';
+}
+
+function isSkillEnabled(skill, groupsById) {
+  if (skill.enabled === false) return false;
+  if (!isBuiltinGroupSkill(skill, groupsById)) return true;
+  return groupsById.get(String(skill.group)).enabled !== false;
+}
 
 export default function SkillPanel({
   skills = [],
@@ -16,32 +51,52 @@ export default function SkillPanel({
   onInsertSkill,
 }) {
   const [query, setQuery] = useState('');
+  const [selectedOrigin, setSelectedOrigin] = useState('all');
   const normalizedQuery = query.trim().toLowerCase();
   const groupsById = useMemo(
     () => new Map(groups.map((group) => [String(group.id), group])),
     [groups],
   );
-  const visibleSkills = useMemo(() => skills.filter((skill) => (
-    !normalizedQuery
-      || skill.name?.toLowerCase().includes(normalizedQuery)
-      || skill.qualifiedName?.toLowerCase().includes(normalizedQuery)
-      || skill.aliases?.some((alias) => alias.toLowerCase().includes(normalizedQuery))
-      || skill.description?.toLowerCase().includes(normalizedQuery)
-  )), [skills, normalizedQuery]);
-  const groupedSkills = useMemo(() => {
-    const skillsByGroup = new Map();
-    for (const skill of visibleSkills) {
-      const id = skill.group || skill.source || 'other';
-      if (!skillsByGroup.has(id)) skillsByGroup.set(id, []);
-      skillsByGroup.get(id).push(skill);
+  const originCounts = useMemo(() => {
+    const counts = new Map();
+    for (const skill of skills) {
+      const origin = getSkillOrigin(skill);
+      counts.set(origin, (counts.get(origin) || 0) + 1);
     }
-    const orderedIds = [
-      ...groups.map((group) => String(group.id)),
-      ...[...skillsByGroup.keys()].filter((id) => !groupsById.has(id)),
-    ];
-    return orderedIds.map((id) => [id, skillsByGroup.get(id) || []]);
-  }, [groups, groupsById, visibleSkills]);
-  const enabledCount = skills.filter((skill) => skill.enabled !== false).length;
+    return counts;
+  }, [skills]);
+  const visibleOrigins = useMemo(
+    () => ORIGIN_FILTERS.filter(({ id }) => (
+      originCounts.has(id) || (id === 'builtin_group' && groups.length > 0)
+    )),
+    [groups.length, originCounts],
+  );
+  const visibleSkills = useMemo(() => skills.filter((skill) => {
+    const origin = getSkillOrigin(skill);
+    const matchesOrigin = selectedOrigin === 'all' || origin === selectedOrigin;
+    const aliases = Array.isArray(skill.aliases) ? skill.aliases : [];
+    const searchableText = [
+      skill.name,
+      skill.qualifiedName,
+      skill.description,
+      ...aliases,
+    ].filter((value) => typeof value === 'string').join('\n').toLowerCase();
+    return matchesOrigin && (!normalizedQuery || searchableText.includes(normalizedQuery));
+  }), [skills, normalizedQuery, selectedOrigin]);
+  const groupedSkills = useMemo(() => {
+    const byOrigin = new Map();
+    for (const skill of visibleSkills) {
+      const origin = getSkillOrigin(skill);
+      if (!byOrigin.has(origin)) byOrigin.set(origin, []);
+      byOrigin.get(origin).push(skill);
+    }
+    const order = ORIGIN_FILTERS.map(({ id }) => id);
+    const originIds = [...byOrigin.keys()].sort((left, right) => (
+      order.indexOf(left) - order.indexOf(right)
+    ));
+    return originIds.map((origin) => [origin, byOrigin.get(origin)]);
+  }, [visibleSkills]);
+  const enabledCount = skills.filter((skill) => isSkillEnabled(skill, groupsById)).length;
 
   return (
     <div className="tab-pane skill-panel">
@@ -50,59 +105,12 @@ export default function SkillPanel({
         <span className="skill-panel-count font-mono">{enabledCount}/{skills.length} 已启用</span>
       </div>
       <div className="skill-panel-intro">
-        <span>技能只在提交当前 Turn 时加载，不会改变全局提示词。</span>
-        <span className="font-mono">输入 $ 开始搜索</span>
+        <span>按名称或来源查找；点击技能可插入调用名。</span>
+        <span className="font-mono">别名也可搜索</span>
       </div>
-      <div className="skill-panel-guide">
-        <div className="skill-panel-guide-title">
-          <strong>两种调用方式</strong>
-          <span>技能组来自当前 Project 的运行时 Catalog，不会自动加载所有正文。</span>
-        </div>
-        <div className="skill-activation-row">
-          <code>+ {'<group>'}</code>
-          <span>组级工作流：当前 Turn 开启整组，由模型根据技能简介按需挑选和读取。</span>
-          <span className="skill-capability-badge auto">按需</span>
-        </div>
-        <div className="skill-activation-row">
-          <code>${'<group>:<skill>'}</code>
-          <span>Skill 级调用：当前 Turn 直接加载指定技能正文，也支持面板点击插入。</span>
-          <span className="skill-capability-badge explicit">直接</span>
-        </div>
-      </div>
-      {groups.map((group) => {
-        const groupId = String(group.id);
-        const groupSkills = skills.filter((skill) => skill.group === groupId);
-        const enabled = group.enabled !== false;
-        return (
-          <div className="skill-group-toggle" key={groupId}>
-            <div className="skill-group-identity">
-              <div className="skill-group-name">
-                <Sparkles size={13} className="text-purple" />
-                <strong>{group.label || groupId}</strong>
-                <span className={`skill-group-status ${enabled ? 'enabled' : 'disabled'}`}>
-                  {enabled ? '已启用' : '已关闭'}
-                </span>
-              </div>
-              <span>v{group.version || '未知'} · {groupSkills.length} 项组内技能 · {enabled ? '可用于 + 和 $' : '已从当前项目目录禁用'}</span>
-              <div className="skill-group-capabilities">
-                <span className="skill-capability-badge auto">+ {groupId} · 组内按需</span>
-                <span className={`skill-capability-badge explicit ${enabled ? '' : 'disabled'}`}>${groupId}:skill · 直接调用</span>
-              </div>
-            </div>
-            <button
-              type="button"
-              className={`btn-toggle-switch ${enabled ? 'on' : 'off'}`}
-              onClick={() => onToggleGroup?.(groupId, !enabled)}
-              aria-pressed={enabled}
-            >
-              {enabled ? '关闭' : '启用'}
-            </button>
-          </div>
-        );
-      })}
       <div className="skill-panel-toolbar">
         <label className="skill-search">
-          <Search size={13} />
+          <Search size={13} aria-hidden="true" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -121,16 +129,81 @@ export default function SkillPanel({
             </button>
           )}
         </label>
-        <div className="skill-panel-summary">
-          <span>{normalizedQuery ? `匹配 ${visibleSkills.length} 项` : `共 ${skills.length} 项`}</span>
-          <span className="font-mono">点击技能插入 $skill</span>
-        </div>
+        <span className="skill-panel-summary">
+          {normalizedQuery ? `匹配 ${visibleSkills.length} 项` : `共 ${skills.length} 项`}
+        </span>
       </div>
+      <div className="skill-origin-filters" role="group" aria-label="筛选技能来源">
+        <button
+          type="button"
+          className={`skill-origin-filter ${selectedOrigin === 'all' ? 'active' : ''}`}
+          onClick={() => setSelectedOrigin('all')}
+          aria-pressed={selectedOrigin === 'all'}
+        >
+          全部 <span>{skills.length}</span>
+        </button>
+        {visibleOrigins.map(({ id, label }) => (
+          <button
+            type="button"
+            key={id}
+            className={`skill-origin-filter ${selectedOrigin === id ? 'active' : ''}`}
+            onClick={() => setSelectedOrigin(id)}
+            aria-pressed={selectedOrigin === id}
+          >
+            {label} <span>{originCounts.get(id) ?? 0}</span>
+          </button>
+        ))}
+      </div>
+      <div className="skill-panel-call-hint">
+        点卡片插入 <code>$skill</code>；带内置组标记的技能也可用 <code>+ group</code> 按需调用。
+      </div>
+      {selectedOrigin === 'builtin_group' && groups.length > 0 && (
+        <details className="skill-group-settings">
+          <summary>
+            <span>内置技能组</span>
+            <span>{groups.length} 组 · 展开管理启用状态</span>
+          </summary>
+          <div className="skill-group-settings-list">
+            {groups.map((group) => {
+              const groupId = String(group.id);
+              const groupSkills = skills.filter((skill) => (
+                isBuiltinGroupSkill(skill, groupsById) && String(skill.group) === groupId
+              ));
+              const enabled = group.enabled !== false;
+              return (
+                <div className="skill-group-toggle" key={groupId}>
+                  <div className="skill-group-identity">
+                    <div className="skill-group-name">
+                      <Sparkles size={13} className="text-purple" />
+                      <strong>{group.label || groupId}</strong>
+                      <span className={`skill-group-status ${enabled ? 'enabled' : 'disabled'}`}>
+                        {enabled ? '已启用' : '已关闭'}
+                      </span>
+                    </div>
+                    <span>{group.version ? `v${group.version} · ` : ''}{groupSkills.length} 项组内技能</span>
+                  </div>
+                  <button
+                    type="button"
+                    className={`btn-toggle-switch ${enabled ? 'on' : 'off'}`}
+                    onClick={() => onToggleGroup?.(groupId, !enabled)}
+                    aria-pressed={enabled}
+                    aria-label={`${enabled ? '关闭' : '启用'}技能组 ${group.label || groupId}`}
+                  >
+                    {enabled ? '关闭' : '启用'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
       {loading && <div className="loading-placeholder font-mono">技能目录加载中...</div>}
-      {error && <div className="skill-panel-error">{error}</div>}
+      {error && <div className="skill-panel-error" role="alert">{error}</div>}
       {!loading && !error && groups.some((group) => (
-        group.enabled !== false && !skills.some((skill) => skill.group === group.id)
-      )) && (
+        group.enabled !== false && !skills.some((skill) => (
+          isBuiltinGroupSkill(skill, groupsById) && String(skill.group) === String(group.id)
+        ))
+      )) && selectedOrigin === 'builtin_group' && (
         <div className="skill-panel-warning" role="alert">
           <strong>部分技能组的明细暂不可用</strong>
           <span>runtime 只返回了组状态，没有返回对应 Skill catalog。请刷新或重启当前项目 runtime。</span>
@@ -138,52 +211,52 @@ export default function SkillPanel({
       )}
       {!loading && !error && (
         <div className="skill-list">
-          {groupedSkills.map(([groupId, groupSkills]) => (
-            <section key={groupId} className="skill-group-section">
+          {groupedSkills.map(([origin, originSkills]) => (
+            <section key={origin} className="skill-origin-section">
               <div className="skill-group-heading">
-                <span className="skill-group-heading-label"><Sparkles size={11} /> {groupsById.get(groupId)?.label || SOURCE_LABELS[groupId] || `${groupId} · 内置技能组`}</span>
-                <span className="skill-group-heading-count">{groupSkills.length} 项</span>
+                <span className="skill-group-heading-label"><Sparkles size={11} /> {ORIGIN_LABELS[origin]}</span>
+                <span className="skill-group-heading-count">{originSkills.length} 项</span>
               </div>
-              <div className="skill-group-section-guide">
-                {groupsById.has(groupId)
-                  ? <>下面每项都可以用 <code>${groupId}:技能名</code> 直接调用，也可能在 <code>+ {groupId}</code> 中被模型按需选中；点击卡片插入规范名。</>
-                  : <>这些技能可以用 <code>$skill-name</code> 直接调用；点击卡片插入规范名。</>}
+              <div className="skill-origin-section-list">
+                {originSkills.map((skill, index) => {
+                  const builtinGroupSkill = isBuiltinGroupSkill(skill, groupsById);
+                  const groupId = String(skill.group || '');
+                  const enabled = isSkillEnabled(skill, groupsById);
+                  const originLabel = builtinGroupSkill
+                    ? `内置技能组 · ${groupsById.get(groupId).label || groupId}`
+                    : ORIGIN_LABELS[origin];
+                  const qualifiedName = skill.qualifiedName || skill.name;
+                  return (
+                    <button
+                      type="button"
+                      key={`${origin}-${skill.source}-${qualifiedName}-${index}`}
+                      className={`skill-card ${enabled ? '' : 'disabled'}`}
+                      disabled={!enabled}
+                      onClick={() => onInsertSkill?.(qualifiedName)}
+                      title={!enabled ? '技能组已关闭或技能不可用' : `插入 $${qualifiedName}`}
+                    >
+                      <div className="skill-card-title">
+                        <span className="skill-card-name font-mono">${qualifiedName}</span>
+                        <span className="skill-card-source">{originLabel}</span>
+                      </div>
+                      <div className="skill-card-description">{skill.description || '暂无技能简介'}</div>
+                      <div className="skill-card-capabilities">
+                        <span className={`skill-capability-badge explicit ${enabled ? '' : 'disabled'}`}>$ 直接调用</span>
+                        {builtinGroupSkill && (
+                          <span className={`skill-capability-badge auto ${enabled ? '' : 'disabled'}`}>+ {groupId} 按需</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-              {groupSkills.map((skill) => {
-                const groupEnabled = !groupsById.has(groupId) || groupsById.get(groupId).enabled !== false;
-                const enabled = skill.enabled !== false && groupEnabled;
-                return (
-                <button
-                  type="button"
-                  key={`${skill.source}-${skill.name}`}
-                  className={`skill-card ${enabled ? '' : 'disabled'}`}
-                  disabled={!enabled}
-                  onClick={() => onInsertSkill?.(skill.qualifiedName || skill.name)}
-                  title={!enabled ? '技能组已关闭或技能不可用' : `插入 $${skill.qualifiedName || skill.name}`}
-                >
-                  <div className="skill-card-title">
-                    <span className="skill-card-name font-mono">${skill.qualifiedName || skill.name}</span>
-                    <span className="skill-card-source">{skill.source}</span>
-                  </div>
-                  <div className="skill-card-description">{skill.description || '暂无技能简介'}</div>
-                  <div className="skill-card-capabilities">
-                    <span className={`skill-capability-badge explicit ${enabled ? '' : 'disabled'}`}>$ 直接调用</span>
-                    {groupsById.has(groupId) && (
-                      <span className={`skill-capability-badge auto ${enabled ? '' : 'disabled'}`}>+ {groupId} 按需</span>
-                    )}
-                  </div>
-                  {Array.isArray(skill.aliases) && skill.aliases.length > 0 && (
-                    <div className="skill-card-aliases">
-                      <span>兼容别名</span>
-                      {skill.aliases.map((alias) => <span key={alias} className="font-mono">${alias}</span>)}
-                    </div>
-                  )}
-                </button>
-                );
-              })}
             </section>
           ))}
-          {visibleSkills.length === 0 && <div className="loading-placeholder">没有匹配的技能</div>}
+          {visibleSkills.length === 0 && (
+            <div className="loading-placeholder">
+              {normalizedQuery || selectedOrigin !== 'all' ? '没有匹配的技能' : '当前没有可用技能'}
+            </div>
+          )}
         </div>
       )}
     </div>

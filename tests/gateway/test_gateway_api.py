@@ -217,6 +217,7 @@ async def test_gateway_skill_catalog_is_bounded_and_skill_toggle_rejects_active_
                     "name": "architect",
                     "description": "Design types.",
                     "source": "builtin",
+                    "origin": "builtin_group",
                     "group": "pstack",
                     "enabled": True,
                 }
@@ -228,6 +229,7 @@ async def test_gateway_skill_catalog_is_bounded_and_skill_toggle_rejects_active_
                     "name": "architect",
                     "description": "Design types.",
                     "source": "builtin",
+                    "origin": "builtin_group",
                     "group": "pstack",
                     "enabled": True,
                 }

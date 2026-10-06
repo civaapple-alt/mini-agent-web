@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Search, Sparkles, X } from 'lucide-react';
+import { isSkillModelInvocable } from '../utils/skillTokens.js';
 
 const ORIGIN_FILTERS = [
   { id: 'builtin_group', label: '内置' },
@@ -155,7 +156,7 @@ export default function SkillPanel({
         ))}
       </div>
       <div className="skill-panel-call-hint">
-        点卡片插入 <code>$skill</code>；带内置组标记的技能也可用 <code>+ group</code> 按需调用。
+        点卡片插入 <code>$skill</code>；标记为可主动选择的内置技能也可通过 <code>+ group</code> 按需调用。
       </div>
       {selectedOrigin === 'builtin_group' && groups.length > 0 && (
         <details className="skill-group-settings">
@@ -222,6 +223,7 @@ export default function SkillPanel({
                   const builtinGroupSkill = isBuiltinGroupSkill(skill, groupsById);
                   const groupId = String(skill.group || '');
                   const enabled = isSkillEnabled(skill, groupsById);
+                  const modelInvocable = isSkillModelInvocable(skill);
                   const originLabel = builtinGroupSkill
                     ? `内置技能组 · ${groupsById.get(groupId).label || groupId}`
                     : ORIGIN_LABELS[origin];
@@ -242,7 +244,10 @@ export default function SkillPanel({
                       <div className="skill-card-description">{skill.description || '暂无技能简介'}</div>
                       <div className="skill-card-capabilities">
                         <span className={`skill-capability-badge explicit ${enabled ? '' : 'disabled'}`}>$ 直接调用</span>
-                        {builtinGroupSkill && (
+                        <span className={`skill-capability-badge ${modelInvocable ? 'auto' : 'manual'}`}>
+                          {modelInvocable ? '模型可主动选择' : '仅手动调用'}
+                        </span>
+                        {builtinGroupSkill && modelInvocable && (
                           <span className={`skill-capability-badge auto ${enabled ? '' : 'disabled'}`}>+ {groupId} 按需</span>
                         )}
                       </div>

@@ -104,6 +104,39 @@ describe('InputBar composer popups', () => {
     }));
   });
 
+  it('shows manual-only Skills in autocomplete and keeps explicit loading available', () => {
+    const onSendMessage = vi.fn();
+    render(
+      <InputBar
+        {...props}
+        onSendMessage={onSendMessage}
+        availableSkills={[
+          ...props.availableSkills,
+          {
+            name: 'bro',
+            qualifiedName: 'pstack:bro',
+            description: 'Restate the request in plain language.',
+            source: 'builtin',
+            group: 'pstack',
+            enabled: true,
+            modelInvocable: false,
+          },
+        ]}
+      />,
+    );
+    const textbox = screen.getByRole('textbox');
+
+    fireEvent.change(textbox, { target: { value: '请按 $pstack:bro' } });
+    expect(screen.getByText('仅手动')).toBeDefined();
+    fireEvent.click(screen.getByText('$pstack:bro', { selector: '.skill-name' }));
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+
+    expect(onSendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: '请按',
+      selectedSkills: ['pstack:bro'],
+    }));
+  });
+
   it('closes the plugin popup when clicking outside it', () => {
     render(<InputBar {...props} />);
 

@@ -25,6 +25,7 @@ import { getSlashCommandDraft, parseAndExecuteSlashCommand } from '../utils/slas
 import {
   filterSkills,
   findSkillTrigger,
+  isSkillModelInvocable,
   parseSkillPrompt,
   parseWorkflowPrompt,
   skillDisplayName,
@@ -1125,7 +1126,12 @@ export default function InputBar({
               onClick={() => handleSelectSkill(skill)}
             >
               <Sparkles size={13} />
-              <span className="skill-name font-mono">${skillDisplayName(skill)}</span>
+              <span className="skill-name-row">
+                <span className="skill-name font-mono">${skillDisplayName(skill)}</span>
+                {!isSkillModelInvocable(skill) && (
+                  <span className="skill-item-mode-badge">仅手动</span>
+                )}
+              </span>
               <span className="skill-desc">{skill.description}</span>
             </div>
           ))}

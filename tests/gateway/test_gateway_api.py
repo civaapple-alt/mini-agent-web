@@ -220,6 +220,7 @@ async def test_gateway_skill_catalog_is_bounded_and_skill_toggle_rejects_active_
                     "origin": "builtin_group",
                     "group": "pstack",
                     "enabled": True,
+                    "modelInvocable": False,
                 }
             ],
         },
@@ -232,6 +233,7 @@ async def test_gateway_skill_catalog_is_bounded_and_skill_toggle_rejects_active_
                     "origin": "builtin_group",
                     "group": "pstack",
                     "enabled": True,
+                    "modelInvocable": False,
                 }
             ]
         ),
@@ -256,6 +258,7 @@ async def test_gateway_skill_catalog_is_bounded_and_skill_toggle_rejects_active_
     assert (
         catalog.json()["skills"] == client_mock.capability_manifest["availableSkills"]
     )
+    assert catalog.json()["skills"][0]["modelInvocable"] is False
     client_mock.list_skills.assert_awaited_once_with("thread-42")
     assert conflict.status_code == 409
 
@@ -271,7 +274,17 @@ async def test_gateway_skill_catalog_lists_available_groups_without_pstack_speci
             ],
             "availableSkills": [],
         },
-        list_skills=AsyncMock(return_value=[]),
+        list_skills=AsyncMock(
+            return_value=[
+                {
+                    "name": "legacy",
+                    "qualifiedName": "legacy",
+                    "description": "An older runtime skill.",
+                    "source": "project",
+                    "enabled": True,
+                }
+            ]
+        ),
     )
     monkeypatch.setattr(
         session_manager, "get_client_for_project", AsyncMock(return_value=client_mock)
@@ -282,6 +295,8 @@ async def test_gateway_skill_catalog_lists_available_groups_without_pstack_speci
         response = await client.get("/api/skills", params={"project_id": "project-1"})
 
     assert response.status_code == 200
+    assert response.json()["skills"][0]["name"] == "legacy"
+    assert "modelInvocable" not in response.json()["skills"][0]
     groups = {group["id"]: group for group in response.json()["builtinSkillGroups"]}
     assert groups["knowledge-work"]["enabled"] is True
     assert groups["pstack"] == {

@@ -5,6 +5,10 @@ function enabledSkills(availableSkills = []) {
   return availableSkills.filter((skill) => skill?.enabled !== false && skill?.name);
 }
 
+export function isSkillModelInvocable(skill) {
+  return skill?.modelInvocable !== false;
+}
+
 function skillReference(skill) {
   return skill?.qualifiedName || skill?.qualified_name || skill?.name;
 }

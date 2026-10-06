@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   filterSkills,
   findSkillTrigger,
+  isSkillModelInvocable,
   parseSkillPrompt,
   parseWorkflowPrompt,
 } from '../utils/skillTokens.js';
@@ -47,6 +48,24 @@ test('skill completion only exposes enabled prefix matches', () => {
   assert.deepEqual(filterSkills(skills, 'arc').map((skill) => skill.name), ['architect']);
   assert.deepEqual(findSkillTrigger('重构 $arc', 9), { start: 3, query: 'arc' });
   assert.equal(findSkillTrigger('文本 \\$arc', 9), null);
+});
+
+test('manual-only Skills remain selectable and legacy catalog entries default to model-invocable', () => {
+  const manualSkill = {
+    name: 'bro',
+    qualifiedName: 'pstack:bro',
+    enabled: true,
+    modelInvocable: false,
+  };
+
+  assert.deepEqual(filterSkills([manualSkill], 'bro'), [manualSkill]);
+  assert.deepEqual(parseSkillPrompt('$pstack:bro', [manualSkill]), {
+    prompt: '',
+    selectedSkills: ['pstack:bro'],
+    unknownSkills: [],
+  });
+  assert.equal(isSkillModelInvocable(manualSkill), false);
+  assert.equal(isSkillModelInvocable({ name: 'legacy', enabled: true }), true);
 });
 
 test('supports pstack qualified names and the plus workflow shorthand', () => {

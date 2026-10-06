@@ -139,6 +139,34 @@ describe('SkillPanel', () => {
 
     expect(screen.getAllByText('个人目录技能 · 来源未细分')).toHaveLength(2);
     expect(screen.getByRole('button', { name: /个人来源未细分 1/ })).toBeDefined();
+    expect(screen.getByText('模型可主动选择')).toBeDefined();
+  });
+
+  it('marks manual-only skills without removing explicit selection or group state', () => {
+    const onInsertSkill = vi.fn();
+    render(
+      <SkillPanel
+        skills={[{
+          name: 'bro',
+          qualifiedName: 'pstack:bro',
+          description: 'Restate the request in plain language.',
+          source: 'builtin',
+          origin: 'builtin_group',
+          group: 'pstack',
+          enabled: true,
+          modelInvocable: false,
+        }]}
+        groups={[{ id: 'pstack', version: '0.2.0', enabled: true }]}
+        onInsertSkill={onInsertSkill}
+      />,
+    );
+
+    expect(screen.getByText('仅手动调用')).toBeDefined();
+    expect(screen.queryByText('+ pstack 按需')).toBeNull();
+    const skill = screen.getByRole('button', { name: /\$pstack:bro/ });
+    expect(skill.disabled).toBe(false);
+    fireEvent.click(skill);
+    expect(onInsertSkill).toHaveBeenCalledWith('pstack:bro');
   });
 
   it('does not treat user or project labels as groups, even when they have a group-like value', () => {

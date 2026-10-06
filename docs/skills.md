@@ -71,7 +71,8 @@ available on the next send without a runtime restart.
       "source": "builtin",
       "origin": "builtin_group",
       "group": "pstack",
-      "enabled": true
+      "enabled": true,
+      "modelInvocable": true
     }
   ]
 }
@@ -97,20 +98,29 @@ controls appear in a collapsed section when the builtin filter is selected.
 User-directory, project, and plugin Skills use their own `enabled` catalog
 field and do not inherit builtin-group status. A group toggle applies only when
 the catalog entry has a real association to a listed builtin group.
+Each Skill also has a `modelInvocable` flag. Older responses that omit the flag
+mean `true`.
 
 The panel distinguishes direct Skill selection from group-level activation:
 
 | Panel label | Meaning | Body loading |
 | --- | --- | --- |
-| `+ <group> · 组内按需` | Turn-level workflow activation; the selected group becomes the candidate group and the model selects relevant Skills from metadata. | No bulk preload; relevant bodies are read on demand. |
+| `模型可主动选择` | The model may select this Skill when its task matches. | The model reads its body on demand. |
+| `仅手动调用` | The model does not see this Skill in its automatic metadata directory. The user can still select it with `$skill`. | Host loads the selected body before model execution. |
+| `+ <group> · 组内按需` | Turn-level workflow activation; the model selects relevant, model-invocable Skills from the group metadata. | No bulk preload; relevant bodies are read on demand. |
 | `$ 直接调用` | Skill-level activation; the user names one Skill such as `$knowledge-work:data`. | Host loads the selected body before model execution. |
 
-Enabled builtin groups can use both entry points. `+ <group>` is not a shortcut
-for loading every body, and `$<group>:skill` is not a request to activate the
-whole group. Ungrouped user and project Skills use their canonical `$skill-name`
-token directly. The panel's `$` insertion always uses the canonical qualified
-name. Compatibility aliases remain searchable but are not expanded on each
-card.
+The `disable-model-invocation: true` frontmatter field sets
+`modelInvocable` to `false`. If the field is absent, the model may select the
+Skill. This flag controls automatic selection only. It does not change whether
+the Skill is enabled or whether Host can read it after explicit selection.
+Bundled pstack `principle-*` Skills allow model selection. `bro` and
+`technical-writing` remain manual-only.
+`+ <group>` is not a shortcut for loading every body, and `$<group>:skill` is
+not a request to activate the whole group. Ungrouped user and project Skills
+use their canonical `$skill-name` token directly. The panel's `$` insertion
+always uses the canonical qualified name. Compatibility aliases remain
+searchable but are not expanded on each card.
 
 If a group is enabled but the catalog contains no Skill entry for it, the panel
 shows a runtime-catalog warning. Reloading the panel refreshes discovery; if a
@@ -197,8 +207,8 @@ event replay path retains them. Web Studio renders a successful event as
 `已加载技能：architect` and a failed event as a compact error block.
 
 Normal metadata-first discovery does not preload or emit an event. When the
-model first reads an enabled Skill's `SKILL.md`, the App Server emits
-`skills_loaded(phase: "started", activation: "on_demand")` before the read and
+model first reads an enabled, model-invocable Skill's `SKILL.md`, the App Server
+emits `skills_loaded(phase: "started", activation: "on_demand")` before the read and
 `skills_loaded(phase: "loaded")` after success. With `+ <group>`,
 `skill_group_activated` is emitted before execution and the same on-demand
 events identify the concrete Skills selected by the model. Reads of

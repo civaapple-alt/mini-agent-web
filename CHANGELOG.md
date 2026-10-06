@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   move Skill search and counted source filters above the results, keep builtin
   group controls folded under the builtin filter, and search aliases without
   expanding them on every card.
+- Let models select matching pstack principle Skills from bounded metadata,
+  announce the chosen Skill, and read its instructions on demand. Keep `bro`
+  and `technical-writing` manual-only, with that status shown in Skill search
+  and the Skill panel.
 - Allow Skill roots inside configured write roots to follow normal write and
   approval policy while keeping external Skill roots read-only.
 - Add a prioritized pending-action summary to StatusRail and jump to the exact

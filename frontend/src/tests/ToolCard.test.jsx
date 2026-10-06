@@ -21,9 +21,11 @@ describe('ToolCard Component Rendering & Interaction', () => {
     expect(screen.getByText('已完成')).toBeDefined();
     expect(screen.queryByText('执行输出')).toBeNull();
 
-    // Expand output
-    const toggleBtn = screen.getByText('查看输出');
+    // Expand parameters and output.
+    const toggleBtn = screen.getByText('查看详情');
     fireEvent.click(toggleBtn);
+    expect(screen.getByText('工具参数')).toBeDefined();
+    expect(screen.getByText('执行输出')).toBeDefined();
     expect(screen.getByText(/On branch main/)).toBeDefined();
   });
 
@@ -48,7 +50,7 @@ describe('ToolCard Component Rendering & Interaction', () => {
 
     expect(screen.getByText('继续读取网页正文')).toBeDefined();
     expect(screen.queryByText(/opaque-result-handle|8192|16384/)).toBeNull();
-    fireEvent.click(screen.getByText('查看输出'));
+    fireEvent.click(screen.getByText('查看详情'));
     expect(screen.getByText(/continued page text/)).toBeDefined();
     expect(screen.queryByText(/opaque-result-handle|8192|16384/)).toBeNull();
   });
@@ -66,7 +68,9 @@ describe('ToolCard Component Rendering & Interaction', () => {
     expect(screen.getByText('read_file')).toBeDefined();
     expect(screen.getByText('src/App.jsx')).toBeDefined();
     expect(screen.getByText('运行中')).toBeDefined();
-    expect(screen.queryByText('查看输出')).toBeNull();
+    expect(screen.getByText('查看详情')).toBeDefined();
+    fireEvent.click(screen.getByText('查看详情'));
+    expect(screen.getByText('等待工具执行结果...')).toBeDefined();
   });
 
   it('shows a recommended ask_user option and submits only after the user selects it', async () => {
@@ -171,14 +175,14 @@ describe('ToolCard Component Rendering & Interaction', () => {
     expect(screen.queryByText(/41: page content/)).toBeNull();
     expect(screen.queryByText(/next_offset=52/)).toBeNull();
 
-    fireEvent.click(screen.getByText('查看输出'));
+    fireEvent.click(screen.getByText('查看详情'));
     expect(screen.getByText(/41: page content/)).toBeDefined();
     expect(screen.getByText(/next_offset=52/)).toBeDefined();
   });
 
-  it('shows the complete long command in an overflow-safe hover preview', () => {
+  it('opens complete tool parameters and output on demand instead of on hover', () => {
     const command = 'Add-Type -AssemblyName System.Drawing\n$source = \'D:/workspace/assets/reference-image.jpg\'\n$image = [System.Drawing.Image]::FromFile($source)';
-    render(
+    const { container } = render(
       <ToolCard
         tool={{
           id: 'long-command',
@@ -190,19 +194,16 @@ describe('ToolCard Component Rendering & Interaction', () => {
       />,
     );
 
-    const trigger = document.querySelector('.command-preview-trigger');
-    expect(trigger).not.toBeNull();
-    expect(trigger.getAttribute('title')).toBeNull();
-    expect(screen.queryByRole('tooltip')).toBeNull();
+    const snippet = container.querySelector('.tool-args-snippet');
+    expect(snippet).not.toBeNull();
+    fireEvent.mouseEnter(snippet);
+    expect(container.querySelector('.tool-details-panel')).toBeNull();
 
-    fireEvent.mouseEnter(trigger);
-
-    const preview = screen.getByRole('tooltip');
-    expect(preview.textContent).toBe(command);
-    expect(preview.querySelector('pre')?.textContent).toBe(command);
-
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('tooltip')).toBeNull();
+    fireEvent.click(screen.getByText('查看详情'));
+    expect(
+      container.querySelector('.tool-detail-section[aria-label="工具参数"] pre')?.textContent,
+    ).toBe(JSON.stringify({ command }, null, 2));
+    expect(screen.getByText('执行输出')).toBeDefined();
   });
 
   it('renders failed tool state with error message', () => {
@@ -218,8 +219,8 @@ describe('ToolCard Component Rendering & Interaction', () => {
 
     expect(screen.getByText('失败')).toBeDefined();
 
-    // Expand output
-    const toggleBtn = screen.getByText('查看输出');
+    // Expand parameters and output.
+    const toggleBtn = screen.getByText('查看详情');
     fireEvent.click(toggleBtn);
     expect(screen.getByText('Command failed with exit code 1')).toBeDefined();
   });

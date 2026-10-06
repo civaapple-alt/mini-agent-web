@@ -1,13 +1,5 @@
-import React, {
-  useCallback,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react';
+import React, { useId, useState } from 'react';
 import { getManualExpansion, setManualExpansion } from '../utils/activityPresentationState';
-import { createPortal } from 'react-dom';
 import {
   Terminal,
   FileText,
@@ -49,143 +41,11 @@ function outcomePresentation(outcome) {
   };
 }
 
-function CommandPreview({ value }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [position, setPosition] = useState(null);
-  const triggerRef = useRef(null);
-  const popupRef = useRef(null);
-  const closeTimerRef = useRef(null);
-  const tooltipId = `command-preview-${useId().replace(/:/g, '')}`;
-
-  const cancelClose = useCallback(() => {
-    if (closeTimerRef.current) {
-      clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-    }
-  }, []);
-
-  const openPreview = useCallback(() => {
-    cancelClose();
-    setIsOpen(true);
-  }, [cancelClose]);
-
-  const closePreview = useCallback(() => {
-    cancelClose();
-    setIsOpen(false);
-  }, [cancelClose]);
-
-  const scheduleClose = useCallback(() => {
-    cancelClose();
-    closeTimerRef.current = setTimeout(() => {
-      closeTimerRef.current = null;
-      setIsOpen(false);
-    }, 120);
-  }, [cancelClose]);
-
-  useEffect(() => () => cancelClose(), [cancelClose]);
-
-  useEffect(() => {
-    if (!isOpen) return undefined;
-    const handleEscape = (event) => {
-      if (event.key === 'Escape') closePreview();
-    };
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [closePreview, isOpen]);
-
-  useLayoutEffect(() => {
-    if (!isOpen) {
-      setPosition(null);
-      return undefined;
-    }
-
-    const updatePosition = () => {
-      const trigger = triggerRef.current;
-      if (!trigger) return;
-      const rect = trigger.getBoundingClientRect();
-      const viewportWidth = window.innerWidth || 1024;
-      const viewportHeight = window.innerHeight || 768;
-      const padding = 12;
-      const panelRect = trigger.closest('.sidepanel-container')?.getBoundingClientRect();
-      const bounds = {
-        left: Math.max(padding, panelRect?.left ?? 0),
-        right: Math.min(viewportWidth - padding, panelRect?.right ?? viewportWidth),
-        top: Math.max(padding, panelRect?.top ?? 0),
-        bottom: Math.min(viewportHeight - padding, panelRect?.bottom ?? viewportHeight),
-      };
-      const width = Math.min(720, Math.max(0, bounds.right - bounds.left - padding * 2));
-      const belowSpace = bounds.bottom - rect.bottom - padding;
-      const aboveSpace = rect.top - bounds.top - padding;
-      const showAbove = belowSpace < 180 && aboveSpace > belowSpace;
-      const availableBoundsHeight = Math.max(0, bounds.bottom - bounds.top - padding * 2);
-      const maxHeight = Math.min(
-        360,
-        availableBoundsHeight,
-        Math.max(80, showAbove ? aboveSpace : belowSpace),
-      );
-      const left = Math.min(
-        Math.max(bounds.left + padding, rect.left),
-        Math.max(bounds.left + padding, bounds.right - width - padding),
-      );
-      const top = showAbove
-        ? Math.max(bounds.top + padding, rect.top - maxHeight - 8)
-        : Math.min(bounds.bottom - maxHeight - padding, rect.bottom + 8);
-      setPosition({ left, top, width, maxHeight });
-    };
-
-    updatePosition();
-    window.addEventListener('resize', updatePosition);
-    window.addEventListener('scroll', updatePosition, true);
-    return () => {
-      window.removeEventListener('resize', updatePosition);
-      window.removeEventListener('scroll', updatePosition, true);
-    };
-  }, [isOpen]);
-
-  const handleBlur = (event) => {
-    if (!popupRef.current?.contains(event.relatedTarget)) scheduleClose();
-  };
-
-  const popup = isOpen && position && typeof document !== 'undefined'
-    ? createPortal(
-      <div
-        ref={popupRef}
-        id={tooltipId}
-        className="command-preview-popover custom-scrollbar"
-        role="tooltip"
-        aria-label="完整命令"
-        style={{
-          left: `${position.left}px`,
-          top: `${position.top}px`,
-          width: `${position.width}px`,
-          maxHeight: `${position.maxHeight}px`,
-        }}
-        onMouseEnter={cancelClose}
-        onMouseLeave={scheduleClose}
-      >
-        <pre>{value}</pre>
-      </div>,
-      document.body,
-    )
-    : null;
-
-  return (
-    <>
-      <span
-        ref={triggerRef}
-        className="tool-args-snippet font-mono command-preview-trigger"
-        tabIndex={0}
-        aria-describedby={isOpen ? tooltipId : undefined}
-        onMouseEnter={openPreview}
-        onMouseLeave={scheduleClose}
-        onFocus={openPreview}
-        onBlur={handleBlur}
-      >
-        {value}
-      </span>
-      {popup}
-    </>
-  );
+function stripOpaqueWebResultFields(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const visible = { ...value };
+  ['handle', 'cursor', 'nextCursor', 'next_cursor'].forEach((field) => delete visible[field]);
+  return visible;
 }
 
 export default function ToolCard({
@@ -195,8 +55,9 @@ export default function ToolCard({
   onRespondUserQuestion = null,
   presentationId = null,
 }) {
-  const expansionId = presentationId ? `tool-output:${presentationId}` : null;
-  const [showOutput, setShowOutput] = useState(
+  const detailsId = `tool-details-${useId().replace(/:/g, '')}`;
+  const expansionId = presentationId ? `tool-details:${presentationId}` : null;
+  const [showDetails, setShowDetails] = useState(
     () => getManualExpansion(expansionId) ?? false,
   );
   const [copied, setCopied] = useState(false);
@@ -205,15 +66,14 @@ export default function ToolCard({
   const name = tool.name || tool.toolName || tool.tool || tool.tool_name || '';
   const args = tool.arguments ?? tool.args;
   const rawOutput = tool.output ?? tool.result ?? tool.content ?? null;
+  const hasArguments = args !== null && args !== undefined;
   let output = rawOutput;
-  if (['web_search', 'web_fetch'].includes(name.toLowerCase())) {
+  const isWebResultTool = ['web_search', 'web_fetch'].includes(name.toLowerCase());
+  if (isWebResultTool) {
     try {
       const value = typeof rawOutput === 'string' ? JSON.parse(rawOutput) : rawOutput;
       if (value && typeof value === 'object' && !Array.isArray(value)) {
-        const visible = { ...value };
-        delete visible.handle;
-        delete visible.cursor;
-        delete visible.nextCursor;
+        const visible = stripOpaqueWebResultFields(value);
         output = typeof rawOutput === 'string' ? JSON.stringify(visible, null, 2) : visible;
       }
     } catch {
@@ -231,6 +91,7 @@ export default function ToolCard({
   const settledOutcome = !isRunning ? outcomePresentation(outcome) : null;
   const isReadFile = name.toLowerCase() === 'read_file';
   const hasOutput = error != null || output != null;
+  const hasDetails = hasArguments || hasOutput;
   const approvalState = tool.approval?.state || null;
   const pendingCallId = pendingApproval?.data?.callId || pendingApproval?.data?.call_id;
   const pendingRequestId = pendingApproval?.requestId;
@@ -321,6 +182,18 @@ export default function ToolCard({
     displayOutput = '(空输出)';
   }
 
+  const displayArguments = showDetails
+    ? !hasArguments
+      ? '(无参数)'
+      : typeof args === 'string'
+        ? args
+        : JSON.stringify(
+          isWebResultTool ? stripOpaqueWebResultFields(args) : args,
+          null,
+          2,
+        ) || String(args)
+    : null;
+
   const handleCopyOutput = (e) => {
     e.stopPropagation();
     navigator.clipboard.writeText(displayOutput);
@@ -328,10 +201,10 @@ export default function ToolCard({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const toggleOutput = () => {
-    const nextShowOutput = !showOutput;
-    setShowOutput(nextShowOutput);
-    setManualExpansion(expansionId, nextShowOutput);
+  const toggleDetails = () => {
+    const nextShowDetails = !showDetails;
+    setShowDetails(nextShowDetails);
+    setManualExpansion(expansionId, nextShowDetails);
   };
 
   if (name === 'ask_user') {
@@ -356,20 +229,21 @@ export default function ToolCard({
           {getToolIcon(name)}
           <span className="tool-tag font-mono">{name || 'tool'}</span>
           {argsSummary && (
-            <CommandPreview value={argsSummary} />
+            <span className="tool-args-snippet font-mono">{argsSummary}</span>
           )}
         </div>
 
         <div className="tool-right-actions">
-          {hasOutput && (
+          {hasDetails && (
             <button
-              className="toggle-output-btn font-mono"
-              onClick={toggleOutput}
-              aria-expanded={showOutput}
+              className="toggle-details-btn font-mono"
+              onClick={toggleDetails}
+              aria-expanded={showDetails}
+              aria-controls={showDetails ? detailsId : undefined}
             >
               <Terminal size={11} />
-              <span>{showOutput ? '收起输出' : '查看输出'}</span>
-              {showOutput ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+              <span>{showDetails ? '收起详情' : '查看详情'}</span>
+              {showDetails ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
             </button>
           )}
 
@@ -421,25 +295,38 @@ export default function ToolCard({
         </div>
       )}
 
-      {/* Full output stays available without taking a row until requested. */}
-      {showOutput && (
-        <div className="tool-output-section">
-          <div className="output-bar">
-            <span className="output-label font-mono">执行输出</span>
+      {/* Keep complete tool details available without adding rows until requested. */}
+      {showDetails && (
+        <div id={detailsId} className="tool-details-panel">
+          <section className="tool-detail-section" aria-label="工具参数">
+            <div className="output-bar">
+              <span className="output-label font-mono">工具参数</span>
+            </div>
+            <div className="tool-output-box font-mono custom-scrollbar">
+              <pre>{displayArguments}</pre>
+            </div>
+          </section>
 
-            <button
-              className="btn-copy-output"
-              onClick={handleCopyOutput}
-              title="复制输出结果"
-            >
-              {copied ? <Check size={11} className="text-green" /> : <Copy size={11} />}
-              <span>{copied ? '已复制' : '复制'}</span>
-            </button>
-          </div>
+          <section className="tool-detail-section" aria-label="执行输出">
+            <div className="output-bar">
+              <span className="output-label font-mono">执行输出</span>
 
-          <div className="tool-output-box font-mono custom-scrollbar">
-            <pre className={isFailed ? 'text-rose-400' : ''}>{displayOutput}</pre>
-          </div>
+              {hasOutput && (
+                <button
+                  className="btn-copy-output"
+                  onClick={handleCopyOutput}
+                  title="复制输出结果"
+                >
+                  {copied ? <Check size={11} className="text-green" /> : <Copy size={11} />}
+                  <span>{copied ? '已复制' : '复制'}</span>
+                </button>
+              )}
+            </div>
+
+            <div className="tool-output-box font-mono custom-scrollbar">
+              <pre className={isFailed ? 'text-rose-400' : ''}>{displayOutput}</pre>
+            </div>
+          </section>
         </div>
       )}
     </div>

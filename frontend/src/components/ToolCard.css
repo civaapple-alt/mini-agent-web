@@ -67,6 +67,7 @@
 }
 
 .tool-args-snippet {
+  min-width: 0;
   font-size: 11px;
   color: var(--text-secondary);
   background-color: var(--bg-app);
@@ -77,37 +78,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 480px;
-}
-
-.command-preview-trigger {
-  cursor: help;
-  outline: none;
-}
-
-.command-preview-trigger:focus-visible {
-  box-shadow: var(--focus-ring);
-}
-
-.command-preview-popover {
-  position: fixed;
-  z-index: 2000;
-  padding: 9px 10px;
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  box-shadow: var(--shadow-popover);
-  font-size: 11px;
-  line-height: 1.45;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.command-preview-popover pre {
-  margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 
 .tool-right-actions {
@@ -187,10 +157,14 @@
   50% { opacity: 0.7; }
 }
 
-/* Output Section */
-.tool-output-section {
+/* Tool details */
+.tool-details-panel {
   padding: 5px 8px 8px;
   border-top: 1px solid var(--border-subtle);
+}
+
+.tool-detail-section + .tool-detail-section {
+  margin-top: 8px;
 }
 
 .output-bar {
@@ -199,7 +173,7 @@
   justify-content: space-between;
 }
 
-.toggle-output-btn {
+.toggle-details-btn {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -212,7 +186,7 @@
   transition: color 0.15s ease;
 }
 
-.toggle-output-btn:hover {
+.toggle-details-btn:hover {
   color: var(--text-secondary);
   background-color: var(--bg-card-hover);
   border-radius: 4px;

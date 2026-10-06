@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for that endpoint, and map Kimi reasoning levels to `reasoning.effort`.
 - Show TTFT and response latency below the matching user prompt, and add space
   between the processed-duration label and the following execution block.
+- Remove automatic hover popovers for tool arguments; open a tool's full
+  parameters and output together through “查看详情”.
 - Keep the project sidebar's medium-width icon rail compact, and restore the
   full navigation when it opens as a mobile drawer.
 - Guide tool recovery by asking for the verified execution state first, showing

@@ -19,6 +19,7 @@
 - [状态栏定位下一项待处理工作](implemented/feature/2026-10-06-prioritized-next-action-navigation.zh.md)
 - [会话流实时、重放与恢复的一致性](implemented/feature/2026-10-06-session-stream-replay-and-recovery.zh.md)
 - [上下文用量与命中率显示](implemented/process/2026-10-06-context-usage-display.zh.md)
+- [会话流上下文注入来源的折叠展示](implemented/feature/2026-10-06-context-injection-transcript-disclosure.zh.md)
 - [Responses 供应商预设与地址纠正](implemented/feature/2026-10-06-responses-provider-setup.zh.md)
 - [空 Thread 的运行设置读取](implemented/bug-fix/2026-10-06-empty-thread-runtime-settings.zh.md)
 - [工具核对结果与恢复状态回读](implemented/bug-fix/2026-10-05-tool-reconciliation-outcomes-and-refresh.zh.md)

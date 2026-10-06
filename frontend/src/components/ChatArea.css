@@ -469,128 +469,97 @@
   color: var(--accent-rose);
 }
 
-.context-injection-card {
+.context-injection-disclosure {
   width: 100%;
   max-width: 760px;
-  margin: 2px 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border-color);
-  border-left: 2px solid var(--accent-sky);
-  border-radius: 6px;
-  background: var(--bg-surface);
+  margin: 1px 0;
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.5;
 }
 
-.context-injection-heading,
-.context-injection-title {
+.context-injection-summary {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 2px 3px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
 }
 
-.context-injection-heading {
-  justify-content: space-between;
+.context-injection-summary::-webkit-details-marker {
+  display: none;
 }
 
-.context-injection-title {
-  min-width: 0;
-  color: var(--text-primary);
+.context-injection-summary::marker {
+  content: '';
 }
 
-.context-injection-title svg {
+.context-injection-summary:focus-visible {
+  outline: 2px solid var(--accent-sky);
+  outline-offset: 2px;
+}
+
+.context-injection-summary svg {
   flex: 0 0 auto;
-  color: var(--accent-sky);
+  color: var(--text-muted);
 }
 
-.context-injection-title strong {
-  font-weight: 600;
-}
-
-.context-injection-host-label,
 .context-injection-count {
   color: var(--text-muted);
-  font-size: 11px;
 }
 
-.context-injection-summary {
-  margin: 4px 0 0;
+.context-injection-chevron {
+  flex: 0 0 auto;
   color: var(--text-muted);
-  font-size: 11px;
+  transition: transform 120ms ease;
+}
+
+.context-injection-disclosure[open] .context-injection-chevron {
+  transform: rotate(180deg);
 }
 
 .context-injection-list {
   display: grid;
-  gap: 0;
-  margin: 7px 0 0;
-  padding: 0;
+  gap: 3px;
+  margin: 2px 0 4px 9px;
+  padding: 3px 0 3px 12px;
+  border-left: 1px solid var(--border-color);
   list-style: none;
 }
 
 .context-injection-list li {
   min-width: 0;
-  padding: 7px 0;
-  border-top: 1px solid var(--border-color);
-}
-
-.context-injection-list li > strong,
-.context-injection-metadata li > * {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 7px;
   overflow-wrap: anywhere;
 }
 
 .context-injection-list li > strong {
-  color: var(--text-primary);
+  color: var(--text-secondary);
   font-weight: 600;
 }
 
-.context-injection-list li > p {
-  margin: 2px 0 0;
-  color: var(--text-secondary);
-}
-
-.context-injection-origin {
-  display: block;
-  margin-top: 2px;
+.context-injection-kind {
   color: var(--text-muted);
   font-size: 11px;
 }
 
-.context-injection-metadata {
-  padding-top: 6px;
-  border-top: 1px solid var(--border-color);
+.context-injection-list code {
+  max-width: 100%;
   color: var(--text-muted);
-  font-size: 11px;
-}
-
-.context-injection-metadata summary {
-  width: fit-content;
-  cursor: pointer;
-}
-
-.context-injection-metadata ul {
-  display: grid;
-  gap: 4px;
-  margin: 7px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.context-injection-metadata li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  padding: 5px 7px;
-  border-radius: 4px;
-  background: var(--bg-card);
-}
-
-.context-injection-metadata li > strong {
-  color: var(--text-secondary);
+  font: inherit;
+  overflow-wrap: anywhere;
 }
 
 .context-injection-empty {
-  margin: 7px 0 0;
   color: var(--text-muted);
 }
 

@@ -50,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simplify the context usage popover, fold source estimates by default, keep
   recent-request and session cache-hit rates separately labeled, and show hit
   rates to two decimal places.
+- Replace the conversation stream's context injection card with a compact
+  disclosure that lists injected source names and available paths when opened.
 - Preserve assistant segment boundaries and intermediate narration after history replay; fold
   thinking and tool activity within each segment instead of merging an entire Turn.
 - Restore processed time from the Session journal's Turn start/settled timestamps, and omit

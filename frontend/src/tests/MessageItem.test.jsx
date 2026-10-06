@@ -77,10 +77,10 @@ describe('MessageItem resend action', () => {
       />,
     );
 
-    expect(screen.getByText('Host 注入')).toBeDefined();
-    const injectionCard = document.querySelector('.context-injection-card');
-    expect(injectionCard).toBeTruthy();
-    expect(within(injectionCard).getAllByText('AGENTS.md')).toHaveLength(2);
+    const injectionDisclosure = document.querySelector('.context-injection-disclosure');
+    expect(injectionDisclosure).toBeTruthy();
+    expect(within(injectionDisclosure).getByText('上下文已注入')).toBeDefined();
+    expect(within(injectionDisclosure).getAllByText('AGENTS.md')).toHaveLength(1);
     expect(document.querySelector('.tool-card')).toBeTruthy();
     expect(screen.queryByText('must not appear in the metadata card')).toBeNull();
   });

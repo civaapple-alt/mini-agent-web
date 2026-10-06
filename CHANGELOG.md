@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep tool activity pending until the runtime reports its result after a stop
   request, preserve Session-log duration over local timer estimates after
   replay, and label the initial WebSocket handshake as connecting.
+- Keep a bounded recent event window in memory per Thread so opening a child
+  Session viewer mid-Turn shows activity the page already received.
 - Avoid reporting an event replay gap on a fresh Session open when no previous
   event cursor exists; reconcile from canonical history and keep warnings for
   gaps after an established stream reconnects.

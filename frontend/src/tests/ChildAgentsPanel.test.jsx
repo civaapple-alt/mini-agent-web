@@ -5,6 +5,7 @@ import SidePanel from '../components/SidePanel';
 import ChildSessionViewer from '../components/ChildSessionViewer';
 import { api } from '../api';
 import { threadApi } from '../api/threads.js';
+import { publishChildRuntimeEvent } from '../utils/childRuntimeEvents.js';
 
 vi.mock('../api', () => ({
   api: {
@@ -249,6 +250,57 @@ describe('child agents drawer tab', () => {
     await waitFor(() => expect(screen.getByText('子代理正在执行')).toBeTruthy());
     expect(screen.getByText('已完成资料采集，正在核对来源')).toBeTruthy();
     expect(screen.queryByText('最终回复')).toBeNull();
+  });
+
+  it('shows buffered child runtime events when opening an active Turn', async () => {
+    const childThreadId = 'child-buffered-live';
+    api.readThread.mockResolvedValue({
+      turn_active: true,
+      active_turn_id: 'child-turn-live',
+      messages: [],
+    });
+    api.listThreadItems.mockResolvedValue({
+      data: [{
+        threadId: childThreadId,
+        turnId: 'child-turn-live',
+        historyOrder: 0,
+        item: { type: 'userMessage', id: 'child-input-live', text: 'inspect the project' },
+      }],
+      next_cursor: null,
+    });
+    publishChildRuntimeEvent({
+      type: 'event',
+      sequence: 41,
+      threadId: childThreadId,
+      projectId: 'project-a',
+      turnId: 'child-turn-live',
+      event: { type: 'turn_started', prompt: 'inspect the project' },
+    });
+    publishChildRuntimeEvent({
+      type: 'event',
+      sequence: 42,
+      threadId: childThreadId,
+      projectId: 'project-a',
+      turnId: 'child-turn-live',
+      event: { type: 'assistant_reasoning_delta', delta: '正在分析项目结构' },
+    });
+
+    const { container } = render(
+      <ChildSessionViewer
+        child={{
+          ...child,
+          child_thread_id: childThreadId,
+          status: 'running',
+          current_turn_id: 'child-turn-live',
+        }}
+        projectId="project-a"
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText('正在分析项目结构')).toBeTruthy();
+    expect(container.querySelector('.child-session-turn')?.getAttribute('data-turn-id'))
+      .toBe('child-turn-live');
   });
 
   it('resumes a child from its saved execution checkpoint with a stable request id', async () => {

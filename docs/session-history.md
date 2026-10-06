@@ -44,6 +44,15 @@ execution journal; it does not change the canonical ThreadItem page or its
 cursor. Settled Turns continue to come from `thread/items/list`. The event
 replay file remains metadata-only and cannot restore message bodies on its own.
 
+While the page is open, Web Studio keeps a bounded recent event window per
+Thread. Opening a child Session viewer mid-Turn can therefore show stream
+activity the page already received before the viewer subscribed. Sequence
+identity deduplicates buffered events against the live child event subscription.
+This in-memory window does not survive a page reload; after reload, persisted
+ThreadItems and the execution checkpoint remain the sources for message bodies.
+`turn/events` supplies metadata for cursor recovery and cannot restore streamed
+reasoning or text by itself.
+
 Steer messages use the same Turn and assistant activity segments. The Gateway
 passes the browser's stable `clientRequestId` through the SDK to
 `turn/steer.requestId`. After restart, `turn/read` restores the bounded steer

@@ -106,6 +106,7 @@ export default function AppLayout({
   turnTimings,
   onResumeExecution,
   resumeExecutionBusy = false,
+  onLoadReconciliationToolArguments,
   onReconcileExecution,
   reconcileExecutionBusy = false,
   policy,
@@ -362,6 +363,7 @@ export default function AppLayout({
                 return onResumeExecution?.();
               }}
               resumeExecutionBusy={resumeExecutionBusy}
+              onLoadReconciliationToolArguments={onLoadReconciliationToolArguments}
               onReconcileExecution={onReconcileExecution}
               reconcileExecutionBusy={reconcileExecutionBusy}
               policy={policy}

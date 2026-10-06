@@ -29,6 +29,21 @@ and joins tool results by call ID. Complete ThreadItem activity remains the
 preferred projection, so the fallback does not duplicate recorded execution
 items.
 
+If a recovered tool call has no ThreadItem in the timeline, its reconciliation
+form stays in the checkpoint card. "查看待核对活动" scrolls to and focuses that
+form by call ID, then reads the selected call's bounded, redacted arguments so
+the user can inspect its command before recording an outcome. The request does
+not load arguments for other uncertain calls.
+
+After an App Server restart during an unsettled Turn, Studio reads the bounded
+activity projection from `turn/read` and merges it into the visible timeline.
+The App Server rebuilds at most 256 items from the latest execution checkpoint
+and pending tool batch: the current Turn's input, reasoning, messages, completed
+tool results, and unresolved calls. This is a display projection of the
+execution journal; it does not change the canonical ThreadItem page or its
+cursor. Settled Turns continue to come from `thread/items/list`. The event
+replay file remains metadata-only and cannot restore message bodies on its own.
+
 Clicking a user message image opens a viewport-level preview above the virtualized
 conversation. The image scales to the available screen width and height. Click
 the image, backdrop, or minimize control, or press Escape to return to the

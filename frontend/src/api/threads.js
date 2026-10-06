@@ -297,8 +297,11 @@ export const threadApi = {
   },
 
   async readTurn(threadId, turnId, options = {}) {
+    const params = new URLSearchParams();
+    if (options.toolCallId) params.set('tool_call_id', options.toolCallId);
+    const query = params.toString();
     const res = await request(
-      `/api/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(turnId)}`,
+      `/api/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(turnId)}${query ? `?${query}` : ''}`,
       requestSignal(options),
       options.projectId,
     );

@@ -213,6 +213,7 @@ export default function App() {
   const pendingUserMessageIdRef = useRef(null);
   const turnStartedAtMsRef = useRef(new Map());
   const historyEntriesRef = useRef([]);
+  const recoveryTimelineEntriesRef = useRef([]);
   const historyCursorRef = useRef(null);
   const latestHistoryItemKeysRef = useRef(null);
   const olderHistoryRequestRef = useRef(false);
@@ -430,6 +431,7 @@ export default function App() {
     setMessages([]);
     setThreadItems([]);
     historyEntriesRef.current = [];
+    recoveryTimelineEntriesRef.current = [];
     historyCursorRef.current = null;
     latestHistoryItemKeysRef.current = null;
     olderHistoryRequestRef.current = false;
@@ -1082,6 +1084,30 @@ export default function App() {
         }),
       });
       if (!isCurrentSessionRequest(requestContext)) return;
+      let executionRecovery = cp.execution_recovery || cp.executionRecovery || null;
+      const recoveryTurnId = executionRecovery?.turn_id
+        || executionRecovery?.turnId
+        || cp.active_turn_id
+        || cp.session?.active_turn_id
+        || null;
+      let recoveryItems = [];
+      if (executionRecovery && executionRecovery.status !== 'settled' && recoveryTurnId) {
+        try {
+          const turn = await api.readTurn(threadId, recoveryTurnId, {
+            projectId,
+            signal: requestContext.signal,
+          });
+          if (!isCurrentSessionRequest(requestContext)) return;
+          if (turn.recovery) executionRecovery = turn.recovery;
+          else if (turn.status !== 'in_progress') executionRecovery = null;
+          if (executionRecovery && executionRecovery.status !== 'settled') {
+            recoveryItems = Array.isArray(turn.items) ? turn.items : [];
+          }
+        } catch (error) {
+          if (isAbortError(error)) return;
+          console.warn(`Failed to load recovery timeline for Turn ${recoveryTurnId}:`, error);
+        }
+      }
       const newestPage = normalizeDescendingHistoryPage(itemsPage);
       const newestKeys = new Set(newestPage.entries.map(historyItemKey));
       const newItemCount = countNewItemsOnRefresh(
@@ -1097,6 +1123,32 @@ export default function App() {
           newestPage.entries,
         )
         : newestPage.entries;
+      const existingItemKeys = new Set(itemEntries.map(historyItemKey));
+      const recoveryHistoryOrder = itemEntries.reduce((latest, entry) => (
+        Number.isFinite(entry.historyOrder) ? Math.max(latest, entry.historyOrder) : latest
+      ), -1) + 1;
+      const recoveryTimelineEntries = [];
+      for (const [index, item] of recoveryItems.entries()) {
+        if (
+          item
+          && typeof item.id === 'string'
+          && item.id
+          && ['userMessage', 'agentMessage', 'reasoning', 'toolCall', 'contextCompaction']
+            .includes(item.type)
+        ) {
+          const entry = {
+            turnId: recoveryTurnId,
+            historyOrder: recoveryHistoryOrder + index,
+            item,
+          };
+          const key = historyItemKey(entry);
+          if (existingItemKeys.has(key)) continue;
+          existingItemKeys.add(key);
+          recoveryTimelineEntries.push(entry);
+        }
+      }
+      recoveryTimelineEntriesRef.current = recoveryTimelineEntries;
+      const timelineEntries = [...itemEntries, ...recoveryTimelineEntries];
       const nextHistoryCursor = retainLoadedHistory
         ? shiftHistoryCursor(historyCursorRef.current, newItemCount)
         : newestPage.nextCursor;
@@ -1107,7 +1159,7 @@ export default function App() {
       setPendingUserQuestion(
         cp.pending_user_question || cp.pendingUserQuestion || null,
       );
-      setThreadItems(itemEntries);
+      setThreadItems(timelineEntries);
       const sessionSnapshot = cp.session || {};
       setCurrentThreadMeta((previous) => ({
         title: cp.metadata?.title || previous.title || threadId,
@@ -1137,7 +1189,6 @@ export default function App() {
       activeTurnIdRef.current = restoredTurnId;
       setActiveTurnId(restoredTurnId);
       const persistedTurn = cp.last_turn_status || cp.session?.last_turn_status;
-      const executionRecovery = cp.execution_recovery || cp.executionRecovery || null;
       if (executionRecovery && executionRecovery.status !== 'settled') {
         setLastTurnResult(projectRecoverableTurnResult(cp, executionRecovery));
       } else if (!turnActive && isIncompleteTurnStatus(persistedTurn)) {
@@ -1151,7 +1202,7 @@ export default function App() {
       } else {
         setLastTurnResult(null);
       }
-      const itemTurnIds = new Set(itemEntries
+      const itemTurnIds = new Set(timelineEntries
         .map((entry) => entry.turnId || entry.turn_id)
         .filter(Boolean)
         .map(String));
@@ -1164,7 +1215,7 @@ export default function App() {
         'contextCompaction',
         'context_compaction',
       ]);
-      const activityTurnIds = new Set(itemEntries
+      const activityTurnIds = new Set(timelineEntries
         .filter((entry) => activityItemTypes.has(entry?.item?.type))
         .map((entry) => entry.turnId || entry.turn_id)
         .filter(Boolean)
@@ -1173,8 +1224,8 @@ export default function App() {
         [...itemTurnIds].filter((turnId) => !activityTurnIds.has(turnId)),
       );
       const rawMessages = filterUnmatchedCheckpointInputs(
-        assignCheckpointTurnIds(cp.messages || [], itemEntries),
-        itemEntries,
+        assignCheckpointTurnIds(cp.messages || [], timelineEntries),
+        timelineEntries,
       ).filter((message) => {
         if (itemTurnIds.size === 0) return true;
         const turnId = String(message.turnId || '');
@@ -1278,7 +1329,7 @@ export default function App() {
             ? m.toolCalls
             : [];
         const isUserMessage = m.role === 'user';
-        const useCheckpointToolResults = itemEntries.length === 0
+        const useCheckpointToolResults = timelineEntries.length === 0
           || checkpointFallbackTurnIds.has(String(m.turnId || ''));
         const checkpointTools = !isUserMessage && useCheckpointToolResults
           ? toolCalls.map((call, callIndex) => {
@@ -1371,11 +1422,40 @@ export default function App() {
       if (historyGoalObjective && !goalMessageAdded) {
         formatted.push(createGoalMessage(historyGoalObjective, `goal_hist_${threadId}`));
       }
+      for (const entry of recoveryTimelineEntries) {
+        if (entry.item.type !== 'userMessage') continue;
+        const text = cleanInputText(entry.item.text || '');
+        if (formatted.some((message) => (
+          message.role === 'user'
+          && String(message.turnId || '') === String(entry.turnId)
+          && cleanInputText(message.text || '') === text
+        ))) continue;
+        const textAttachments = extractTextAttachmentReferences(entry.item.text || '');
+        formatted.push({
+          id: entry.item.id,
+          role: 'user',
+          turnId: entry.turnId,
+          historyOrder: entry.historyOrder,
+          inputItemId: entry.item.id,
+          text,
+          ...(textAttachments.length > 0 ? { textAttachments } : {}),
+          inputTrace: createInputTrace({
+            threadId,
+            projectId,
+            turnId: entry.turnId,
+            source: 'user',
+            textAttachments,
+            attachmentText: entry.item.text || '',
+            historical: true,
+            attachmentsKnown: false,
+          }),
+        });
+      }
       setMessages(
         filterEmptyMessages(
           restorePersistedTurnPresentation(
             formatted,
-            itemEntries,
+            timelineEntries,
             presentations.filter((presentation) => loadedTurnIds.has(String(presentation?.turnId || ''))),
           ),
         ),
@@ -1416,7 +1496,7 @@ export default function App() {
       historyEntriesRef.current = mergedItems;
       historyCursorRef.current = olderPage.nextCursor;
       setOlderHistoryCursor(olderPage.nextCursor);
-      setThreadItems(mergedItems);
+      setThreadItems([...mergedItems, ...recoveryTimelineEntriesRef.current]);
       setMessages((previous) => filterEmptyMessages(
         orderMessagesByTurnHistory(
           aggregateThreadItems(previous, olderPage.entries),
@@ -2689,6 +2769,32 @@ export default function App() {
     }
   };
 
+  async function loadReconciliationToolArguments(toolCallId, turnId) {
+    if (!currentThread || !turnId || !toolCallId) {
+      throw new Error('无法识别待核对工具调用');
+    }
+    const threadId = currentThread;
+    const projectId = currentThreadProject;
+    const requestContext = currentSessionRequest();
+    const latest = await api.readTurn(threadId, turnId, {
+      projectId,
+      signal: requestContext.signal,
+      toolCallId,
+    });
+    if (!isCurrentSessionRequest(requestContext)) {
+      throw new Error('会话已切换，请重新选择待核对项');
+    }
+    const recovery = latest.recovery || {};
+    const calls = recovery.uncertain_tool_calls || recovery.uncertainToolCalls || [];
+    const call = calls.find((item) => (
+      String(item.tool_call_id || item.toolCallId || '') === String(toolCallId)
+    ));
+    if (!call || !Object.prototype.hasOwnProperty.call(call, 'arguments')) {
+      throw new Error('运行时没有返回这条调用的参数，恢复状态可能已变化');
+    }
+    return { arguments: call.arguments };
+  }
+
   const handleReconcileExecution = async (
     toolCallId,
     outcome,
@@ -3392,6 +3498,7 @@ export default function App() {
       turnTimings={turnTimings}
       onResumeExecution={handleResumeExecution}
       resumeExecutionBusy={resumeExecutionBusy}
+      onLoadReconciliationToolArguments={loadReconciliationToolArguments}
       onReconcileExecution={handleReconcileExecution}
       reconcileExecutionBusy={reconcileExecutionBusy}
       policy={policy}

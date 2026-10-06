@@ -18,6 +18,10 @@ export default function TurnReconciliationForm({
   busy,
   disabled = false,
   blockedMessage = null,
+  toolArguments,
+  toolArgumentsLoaded = false,
+  toolArgumentsLoading = false,
+  toolArgumentsError = null,
   onSubmit,
 }) {
   const [outcome, setOutcome] = useState('');
@@ -42,6 +46,12 @@ export default function TurnReconciliationForm({
       && !busy
       && !disabled,
   );
+  const argumentText = typeof toolArguments === 'string'
+    ? toolArguments
+    : JSON.stringify(toolArguments, null, 2) ?? String(toolArguments);
+  const argumentTitle = ['shell', 'bash', 'exec', 'run_command'].includes(name.toLowerCase())
+    ? 'Shell 命令与参数'
+    : '工具调用参数';
 
   const submit = () => {
     if (!canSubmit) return;
@@ -83,6 +93,20 @@ export default function TurnReconciliationForm({
       <p className="turn-reconciliation-intro">
         这条调用的结果尚未确认。请先检查实际状态，再选择处理方式。保存决定只更新检查点，不会执行工具或继续 Turn。
       </p>
+
+      {(toolArgumentsLoading || toolArgumentsError || toolArgumentsLoaded) && (
+        <section className="turn-reconciliation-arguments" aria-label={argumentTitle}>
+          <div className="turn-reconciliation-arguments-heading">
+            <strong>{argumentTitle}</strong>
+            <small>敏感字段已脱敏，内容有长度限制</small>
+          </div>
+          {toolArgumentsLoading && <p role="status">正在读取工具命令与参数…</p>}
+          {toolArgumentsError && <p className="turn-reconciliation-arguments-error" role="alert">
+            {toolArgumentsError}
+          </p>}
+          {toolArgumentsLoaded && <pre>{argumentText}</pre>}
+        </section>
+      )}
 
       {disabled && blockedMessage && (
         <p className="turn-reconciliation-blocked" role="status">{blockedMessage}</p>

@@ -15,7 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   question, approval, or uncertain tool call in the virtualized timeline. Keep
   approval and reconciliation controls beside their activities, retain
   fallbacks for unmatched items, and disable submissions while state is
-  reconnecting, read-only, or stopping.
+  reconnecting, read-only, or stopping. When a recovered call has no timeline
+  item, the recovery link focuses its matching form and loads that call's
+  bounded, redacted arguments so the user can inspect the command. Restore
+  bounded reasoning, messages, and tool results from an unsettled Turn's
+  execution checkpoint into the conversation timeline after restart.
 - Keep tool activity pending until the runtime reports its result after a stop
   request, preserve Session-log duration over local timer estimates after
   replay, and label the initial WebSocket handshake as connecting.

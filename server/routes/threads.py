@@ -1202,15 +1202,17 @@ async def read_turn_recovery(
     thread_id: str,
     turn_id: str,
     project_id: str | None = Query(default=None),
+    tool_call_id: str | None = Query(default=None, min_length=1, max_length=256),
 ) -> dict[str, Any]:
-    """Read bounded Turn status and execution-recovery metadata."""
+    """Read bounded Turn status and optional details for one uncertain tool call."""
     try:
         client = await session_manager.get_client_for_thread(thread_id, project_id)
-        turn = await client.read_turn(turn_id)
+        turn = await client.read_turn(turn_id, tool_call_id=tool_call_id)
         return {
             "thread_id": thread_id,
             "turn_id": turn.turn_id,
             "status": turn.status,
+            "items": to_json_serializable(turn.items),
             "error": turn.error,
             "recovery": turn.recovery.to_dict() if turn.recovery else None,
         }

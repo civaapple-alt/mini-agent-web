@@ -49,6 +49,10 @@ function formatRecoveryProgressTime(value) {
   });
 }
 
+function reconciliationDetailKey(scopeKey, callId) {
+  return `${scopeKey}:${callId}`;
+}
+
 function formatReconciliationMessage(recovery) {
   const uncertainCalls = recovery?.uncertain_tool_calls
     || recovery?.uncertainToolCalls
@@ -154,6 +158,7 @@ export default function ChatArea({
   reconcileExecutionBusy = false,
   attentionRequest = null,
   onAttentionRequestHandled = null,
+  onLoadReconciliationToolArguments = null,
   threadItems = [],
   statusModel = null,
   policy = 'interactive',
@@ -185,6 +190,13 @@ export default function ChatArea({
   const [focusedTurnId, setFocusedTurnId] = useState(null);
   const [forcedRowIndex, setForcedRowIndex] = useState(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [reconciliationDetailsByCall, setReconciliationDetailsByCall] = useState({});
+  const reconciliationDetailsRef = useRef({});
+  const reconciliationLoadsInFlightRef = useRef(new Set());
+  const reconciliationScopeKey = scopedThreadKey(
+    traceScope?.threadId,
+    traceScope?.projectId,
+  );
   const hasActiveTurn = isGenerating
     || Boolean(pendingApproval)
     || pendingApprovals.length > 0
@@ -397,6 +409,10 @@ export default function ChatArea({
       || lastTurnResult.recovery.uncertainToolCalls
       || [])
     : [];
+  const unrepresentedRecoveryCalls = recoveryCalls.filter((call) => {
+    const callId = call.tool_call_id || call.toolCallId || '';
+    return !callId || !timelineToolCallIds.has(String(callId));
+  });
   const questionTarget = pendingUserQuestion
     ? {
       callId: pendingUserQuestion.callId || pendingUserQuestion.call_id || null,
@@ -516,6 +532,57 @@ export default function ChatArea({
     if (!entry) return false;
     return scrollToMessage(entry.messageId, entry.turnId || entry.id, 'center');
   }, [scrollToMessage]);
+
+  const focusReconciliationCall = useCallback((callId) => {
+    if (!callId || !scrollRef.current) return false;
+    const target = [...scrollRef.current.querySelectorAll('[data-reconciliation-call-id]')]
+      .find((node) => node.dataset.reconciliationCallId === String(callId));
+    if (!target) return false;
+
+    const reducedMotion = window.matchMedia
+      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      : false;
+    target.scrollIntoView?.({
+      behavior: reducedMotion ? 'auto' : 'smooth',
+      block: 'center',
+    });
+    target.focus?.({ preventScroll: true });
+    target.classList.add('attention-focus-ring');
+    window.setTimeout(() => target.classList.remove('attention-focus-ring'), 1800);
+    return true;
+  }, []);
+
+  const loadReconciliationCallDetails = useCallback(async (callId, turnId) => {
+    if (!callId || !turnId || !onLoadReconciliationToolArguments) return;
+    const key = reconciliationDetailKey(reconciliationScopeKey, callId);
+    const cached = reconciliationDetailsRef.current[key];
+    if (cached?.status === 'loaded' || reconciliationLoadsInFlightRef.current.has(key)) return;
+
+    reconciliationLoadsInFlightRef.current.add(key);
+    reconciliationDetailsRef.current[key] = { status: 'loading' };
+    setReconciliationDetailsByCall((previous) => ({
+      ...previous,
+      [key]: { status: 'loading' },
+    }));
+    try {
+      const details = await onLoadReconciliationToolArguments(callId, turnId);
+      if (!Object.prototype.hasOwnProperty.call(details || {}, 'arguments')) {
+        throw new Error('运行时没有返回这条调用的参数');
+      }
+      const loaded = { status: 'loaded', arguments: details.arguments };
+      reconciliationDetailsRef.current[key] = loaded;
+      setReconciliationDetailsByCall((previous) => ({ ...previous, [key]: loaded }));
+    } catch (error) {
+      const failed = {
+        status: 'error',
+        error: error?.message || '读取工具参数失败，请重试。',
+      };
+      reconciliationDetailsRef.current[key] = failed;
+      setReconciliationDetailsByCall((previous) => ({ ...previous, [key]: failed }));
+    } finally {
+      reconciliationLoadsInFlightRef.current.delete(key);
+    }
+  }, [onLoadReconciliationToolArguments, reconciliationScopeKey]);
 
   useEffect(() => {
     if (!attentionRequest?.id) return;
@@ -960,13 +1027,11 @@ export default function ChatArea({
           )}
           {lastTurnResult.recovery?.status === 'needs_reconciliation' && (
             <div className="turn-reconciliation-list">
-              {recoveryCalls
-                .filter((call) => {
-                  const callId = call.tool_call_id || call.toolCallId || '';
-                  return !callId || !timelineToolCallIds.has(String(callId));
-                })
-                .map((call) => {
+              {unrepresentedRecoveryCalls.map((call) => {
                 const toolCallId = call.tool_call_id || call.toolCallId || '';
+                const toolArguments = reconciliationDetailsByCall[
+                  reconciliationDetailKey(reconciliationScopeKey, toolCallId)
+                ];
                 return (
                   <TurnReconciliationForm
                     key={toolCallId}
@@ -974,20 +1039,26 @@ export default function ChatArea({
                     busy={reconcileExecutionBusy}
                     disabled={attentionActionsDisabled}
                     blockedMessage={attentionBlockedMessage}
+                    toolArguments={toolArguments?.arguments}
+                    toolArgumentsLoaded={toolArguments?.status === 'loaded'}
+                    toolArgumentsLoading={toolArguments?.status === 'loading'}
+                    toolArgumentsError={toolArguments?.status === 'error' ? toolArguments.error : null}
                     onSubmit={onReconcileExecution}
                   />
                 );
               })}
-              {recoveryCalls.some((call) => {
-                const callId = call.tool_call_id || call.toolCallId || '';
-                return !callId || !timelineToolCallIds.has(String(callId));
-              }) && <button
+              {unrepresentedRecoveryCalls.length > 0 && <button
                 type="button"
                 className="turn-recovery-button"
                 onClick={() => {
+                  const firstCall = unrepresentedRecoveryCalls[0];
+                  const callId = firstCall.tool_call_id || firstCall.toolCallId || '';
                   const turnId = lastTurnResult.recovery?.turn_id
                     || lastTurnResult.recovery?.turnId
                     || lastTurnResult.turnId;
+                  void loadReconciliationCallDetails(callId, turnId);
+                  if (focusReconciliationCall(callId)) return;
+
                   const entry = turnEntries.find((item) => (
                     String(item.turnId || item.id || '') === String(turnId || '')
                   ));

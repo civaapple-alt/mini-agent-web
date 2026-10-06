@@ -9,6 +9,7 @@ authors = [{ name = "Mini Agent Team" }]
 keywords = ["mini-agent", "ai-agents", "llm-harness", "jsonrpc", "web-studio"]
 dependencies = [
     "mini-agent",
+    "psutil>=5.9.0",
 ]
 
 [project.urls]

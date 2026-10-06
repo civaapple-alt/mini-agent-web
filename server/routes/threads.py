@@ -514,6 +514,19 @@ async def attach_thread(
         raise HTTPException(status_code=404, detail=str(err)) from err
 
 
+@router.post("/{thread_id}/park", summary="Safely park an idle App Server")
+async def park_thread(
+    thread_id: str, project_id: str | None = Query(default=None)
+) -> dict[str, Any]:
+    """Gracefully stop a verified-idle App Server while preserving its Session."""
+    try:
+        return await session_manager.park_thread(thread_id, project_id)
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except RuntimeError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+
+
 @router.post("", summary="Start or attach to a thread")
 async def start_thread(req: StartThreadRequest) -> dict[str, Any]:
     """Start or attach to a conversation thread."""

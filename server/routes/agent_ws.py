@@ -396,14 +396,25 @@ async def websocket_agent_endpoint(websocket: WebSocket) -> None:
 
             elif action == "ping":
                 ping_project_id = project_for_message(data)
+                ping_thread_id = data.get("thread_id") or data.get("threadId")
+                visible = data.get("visible", True) is True
                 websocket_project_id = ping_project_id
                 session_manager.set_ws_project(websocket, ping_project_id)
+                session_manager.update_thread_viewer(
+                    websocket,
+                    ping_project_id,
+                    str(ping_thread_id) if ping_thread_id else None,
+                    visible,
+                )
                 await websocket.send_json(
                     {
                         "type": "pong",
                         "projectId": ping_project_id,
                     }
                 )
+
+            elif action == "viewer_release":
+                session_manager.update_thread_viewer(websocket, None, None, False)
 
     except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
         pass

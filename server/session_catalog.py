@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,7 @@ MAX_OPERATION_LIFECYCLE_ENTRIES = 32
 MAX_NOTEBOOK_ENTRIES = 64
 MAX_NOTEBOOK_CONTENT_BYTES = 4096
 MAX_NOTEBOOK_ENTRY_BYTES = MAX_NOTEBOOK_CONTENT_BYTES
+MAX_SESSION_SUMMARY_CACHE_ENTRIES = 512
 THREAD_INDEX_FILE_NAME = "thread_index.json"
 THREAD_SETTINGS_FILE_NAME = "thread_settings.json"
 
@@ -843,8 +845,100 @@ def _read_session_records(path: Path) -> tuple[list[dict[str, Any]], bool] | Non
     return records, skipped_oversized_records
 
 
+def _read_session_record_delta(
+    path: Path, offset: int, pending_offset: int | None = None
+) -> tuple[list[dict[str, Any]], bool, int, int | None, bool] | None:
+    """Read only complete JSONL records appended after a cached byte offset."""
+    session_path = path / "session.jsonl"
+    records: list[dict[str, Any]] = []
+    skipped_oversized_records = False
+    try:
+        if session_path.stat().st_size > MAX_SESSION_BYTES:
+            return None
+        with session_path.open("rb") as session_file:
+            complete_offset = offset
+            if pending_offset is not None:
+                session_file.seek(pending_offset)
+                while True:
+                    continuation = session_file.readline(64 * 1024)
+                    if not continuation:
+                        return (
+                            records,
+                            True,
+                            complete_offset,
+                            session_file.tell(),
+                            False,
+                        )
+                    if continuation.endswith(b"\n"):
+                        complete_offset = session_file.tell()
+                        break
+            else:
+                session_file.seek(offset)
+            while True:
+                line = session_file.readline(MAX_SESSION_RECORD_BYTES + 2)
+                if not line:
+                    break
+                if not line.endswith(b"\n"):
+                    if len(line) <= MAX_SESSION_RECORD_BYTES + 1:
+                        # Defer the record. If the file changes, rebuild once
+                        # so the completed line is parsed without retaining its
+                        # potentially large body in the summary cache.
+                        return (
+                            records,
+                            skipped_oversized_records,
+                            complete_offset,
+                            None,
+                            True,
+                        )
+                    skipped_oversized_records = True
+                    while True:
+                        remainder = session_file.readline(64 * 1024)
+                        if not remainder:
+                            return (
+                                records,
+                                skipped_oversized_records,
+                                complete_offset,
+                                session_file.tell(),
+                                False,
+                            )
+                        if remainder.endswith(b"\n"):
+                            complete_offset = session_file.tell()
+                            break
+                    continue
+                complete_offset = session_file.tell()
+                record_size = len(line) - 1
+                if record_size > MAX_SESSION_RECORD_BYTES:
+                    skipped_oversized_records = True
+                    continue
+                line = line[:-1]
+                if record_size > MAX_RECORD_PROJECTION_BYTES:
+                    skipped_oversized_records = True
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(record, dict):
+                    continue
+                if record_size > MAX_RECORD_PROJECTION_BYTES:
+                    if record.get("kind") == "checkpoint":
+                        record = _checkpoint_projection(record)
+                    elif record.get("kind") == "item":
+                        record = _item_record_projection(record)
+                        if record is None:
+                            continue
+                    else:
+                        continue
+                records.append(record)
+        return records, skipped_oversized_records, complete_offset, None, False
+    except OSError:
+        return None
+
+
 class SessionCatalog:
     """Bounded, read-only SessionStore listing and history reader."""
+
+    def __init__(self) -> None:
+        self._summary_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
     @staticmethod
     def _valid_session_path(base: Path, session_id: str) -> Path | None:
@@ -953,7 +1047,7 @@ class SessionCatalog:
         if base.is_dir():
             for path in base.iterdir():
                 if path.is_dir() and (path / "session.jsonl").is_file():
-                    entry = self._read_session(path, project_id, include_history=False)
+                    entry = self._read_session_summary_cached(path, project_id)
                     if entry:
                         entries.append(entry)
         entries.sort(
@@ -983,7 +1077,7 @@ class SessionCatalog:
             for path in base.iterdir():
                 if not path.is_dir() or not (path / "session.jsonl").is_file():
                     continue
-                entry = self._read_session(path, project_id, include_history=False)
+                entry = self._read_session_summary_cached(path, project_id)
                 if not entry or entry.get("is_child_task") is not True:
                     continue
                 if (
@@ -1001,6 +1095,100 @@ class SessionCatalog:
             reverse=True,
         )
         return entries
+
+    def _read_session_summary_cached(
+        self, path: Path, project_id: str
+    ) -> dict[str, Any] | None:
+        """Project list summaries from an append-aware, bounded in-memory cache."""
+        session_path = path / "session.jsonl"
+        try:
+            stat = session_path.stat()
+        except OSError:
+            self._summary_cache.pop(str(path), None)
+            return None
+        if stat.st_size > MAX_SESSION_BYTES:
+            self._summary_cache.pop(str(path), None)
+            return None
+
+        key = str(path.resolve())
+        signature = (stat.st_dev, stat.st_ino)
+        cached = self._summary_cache.get(key)
+        can_append = bool(
+            cached
+            and cached["identity"] == signature
+            and stat.st_size >= cached["read_size"]
+            and (
+                stat.st_size > cached["read_size"]
+                or stat.st_mtime_ns == cached["mtime_ns"]
+            )
+        )
+        if (
+            can_append
+            and cached.get("pending_rebuild")
+            and stat.st_size > cached["read_size"]
+        ):
+            can_append = False
+        if can_append:
+            offset = cached["offset"]
+            if cached.get("pending_rebuild"):
+                records, skipped, complete_offset, pending_offset, pending_rebuild = (
+                    [],
+                    False,
+                    offset,
+                    None,
+                    True,
+                )
+            else:
+                loaded = _read_session_record_delta(
+                    path, offset, cached.get("pending_offset")
+                )
+                if loaded is None:
+                    self._summary_cache.pop(key, None)
+                    return None
+                records, skipped, complete_offset, pending_offset, pending_rebuild = (
+                    loaded
+                )
+            state = cached["state"]
+            entry = self._read_session(
+                path,
+                project_id,
+                include_history=False,
+                records_override=records,
+                skipped_override=skipped,
+                summary_state=state,
+            )
+        else:
+            loaded = _read_session_record_delta(path, 0)
+            if loaded is None:
+                self._summary_cache.pop(key, None)
+                return None
+            records, skipped, complete_offset, pending_offset, pending_rebuild = loaded
+            state: dict[str, Any] = {}
+            entry = self._read_session(
+                path,
+                project_id,
+                include_history=False,
+                records_override=records,
+                skipped_override=skipped,
+                summary_state=state,
+            )
+
+        if not entry:
+            self._summary_cache.pop(key, None)
+            return None
+        self._summary_cache[key] = {
+            "identity": signature,
+            "offset": complete_offset,
+            "pending_offset": pending_offset,
+            "pending_rebuild": pending_rebuild,
+            "read_size": stat.st_size,
+            "mtime_ns": stat.st_mtime_ns,
+            "state": state,
+        }
+        self._summary_cache.move_to_end(key)
+        while len(self._summary_cache) > MAX_SESSION_SUMMARY_CACHE_ENTRIES:
+            self._summary_cache.popitem(last=False)
+        return entry
 
     def find_by_thread(
         self, workspace: Path, project_id: str, thread_id: str
@@ -1325,37 +1513,54 @@ class SessionCatalog:
         }
 
     def _read_session(
-        self, path: Path, project_id: str, include_history: bool
+        self,
+        path: Path,
+        project_id: str,
+        include_history: bool,
+        *,
+        records_override: list[dict[str, Any]] | None = None,
+        skipped_override: bool = False,
+        summary_state: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
-        loaded = _read_session_records(path)
-        if loaded is None:
-            return None
-        records, skipped_oversized_records = loaded
-        if not records:
+        if records_override is None:
+            loaded = _read_session_records(path)
+            if loaded is None:
+                return None
+            records, skipped_oversized_records = loaded
+        else:
+            records = records_override
+            skipped_oversized_records = skipped_override
+        previous = summary_state or {}
+        if not records and not previous.get("thread_id"):
             return None
 
-        thread_id = ""
-        latest_checkpoint: dict[str, Any] | None = None
-        latest_turn_id = None
-        latest_turn_status: str | None = None
-        latest_stop_reason: str | None = None
-        latest_turn_error: str | None = None
-        latest_turn_steps = 0
-        latest_turn_settled = False
-        latest_turn_timestamp = 0
-        latest_turn_started_at = 0
-        latest_turn_prompt: str | None = None
-        turn_count = 0
-        forked_from: dict[str, Any] | None = None
-        latest_operation: dict[str, Any] | None = None
-        child_task_operation: dict[str, Any] | None = None
-        pending_user_question_turn_id: str | None = None
-        pending_user_question_call_id: str | None = None
-        child_task_lifecycle: list[dict[str, int | str | None]] = []
-        child_task_reports: list[dict[str, int | str]] = []
-        child_task_follow_up: dict[str, Any] | None = None
-        child_task_control: dict[str, Any] | None = None
-        first_user_prompt = _first_user_prompt(records)
+        thread_id = previous.get("thread_id", "")
+        latest_checkpoint = previous.get("latest_checkpoint")
+        latest_turn_id = previous.get("latest_turn_id")
+        latest_turn_status = previous.get("latest_turn_status")
+        latest_stop_reason = previous.get("latest_stop_reason")
+        latest_turn_error = previous.get("latest_turn_error")
+        latest_turn_steps = previous.get("latest_turn_steps", 0)
+        latest_turn_settled = previous.get("latest_turn_settled", False)
+        latest_turn_timestamp = previous.get("latest_turn_timestamp", 0)
+        latest_turn_started_at = previous.get("latest_turn_started_at", 0)
+        latest_turn_prompt = previous.get("latest_turn_prompt")
+        turn_count = previous.get("turn_count", 0)
+        forked_from = previous.get("forked_from")
+        latest_operation = previous.get("latest_operation")
+        child_task_operation = previous.get("child_task_operation")
+        pending_user_question_turn_id = previous.get("pending_user_question_turn_id")
+        pending_user_question_call_id = previous.get("pending_user_question_call_id")
+        child_task_lifecycle = previous.get("child_task_lifecycle", [])
+        child_task_reports = previous.get("child_task_reports", [])
+        child_task_follow_up = previous.get("child_task_follow_up")
+        child_task_control = previous.get("child_task_control")
+        first_user_prompt = previous.get("first_user_prompt")
+        if first_user_prompt is None:
+            first_user_prompt = _first_user_prompt(records)
+        skipped_oversized_records = bool(
+            skipped_oversized_records or previous.get("skipped_oversized_records")
+        )
         for record in records:
             kind = record.get("kind")
             if kind == "session_created":
@@ -1913,6 +2118,40 @@ class SessionCatalog:
                     child_task_state["status"] = "cancelling"
         if not thread_id:
             return None
+
+        if summary_state is not None and not include_history:
+            summary_state.clear()
+            summary_state.update(
+                {
+                    "thread_id": thread_id,
+                    "latest_checkpoint": (
+                        {"seq": latest_checkpoint.get("seq")}
+                        if isinstance(latest_checkpoint, dict)
+                        else None
+                    ),
+                    "latest_turn_id": latest_turn_id,
+                    "latest_turn_status": latest_turn_status,
+                    "latest_stop_reason": latest_stop_reason,
+                    "latest_turn_error": latest_turn_error,
+                    "latest_turn_steps": latest_turn_steps,
+                    "latest_turn_settled": latest_turn_settled,
+                    "latest_turn_timestamp": latest_turn_timestamp,
+                    "latest_turn_started_at": latest_turn_started_at,
+                    "latest_turn_prompt": latest_turn_prompt,
+                    "turn_count": turn_count,
+                    "forked_from": forked_from,
+                    "latest_operation": latest_operation,
+                    "child_task_operation": child_task_operation,
+                    "pending_user_question_turn_id": pending_user_question_turn_id,
+                    "pending_user_question_call_id": pending_user_question_call_id,
+                    "child_task_lifecycle": child_task_lifecycle,
+                    "child_task_reports": child_task_reports,
+                    "child_task_follow_up": child_task_follow_up,
+                    "child_task_control": child_task_control,
+                    "first_user_prompt": first_user_prompt,
+                    "skipped_oversized_records": skipped_oversized_records,
+                }
+            )
 
         summary = _read_json(path / "summary.json")
         goal = _read_json(path / "goal" / "state.json")

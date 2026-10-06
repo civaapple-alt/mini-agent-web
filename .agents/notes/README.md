@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [Web Studio 运行时资源管理与 Session 驻留](implemented/architecture/2026-10-07-web-studio-runtime-resource-manager.zh.md)
 - [技能目录来源、主动选择与显式调用](implemented/feature/2026-10-06-skill-catalog-and-proactive-invocation.zh.md)
 - [运行详情中的环境能力展示](implemented/feature/2026-10-06-runtime-environment-capabilities.zh.md)
 - [状态栏定位下一项待处理工作](implemented/feature/2026-10-06-prioritized-next-action-navigation.zh.md)

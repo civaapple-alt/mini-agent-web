@@ -24,6 +24,7 @@ from mini_agent.errors import MiniAgentError
 from server.control.approval_bridge import ApprovalBridge
 from server.control.client_pool import ClientPool
 from server.control.project_registry import ProjectRegistry
+from server.control.runtime_resources import RuntimeResourceManager
 from server.control.thread_registry import ThreadRegistry
 from server.control.turn_registry import TurnRegistry
 from server.control.ws_broker import WebSocketBroker
@@ -148,6 +149,7 @@ class SessionManager:
         self._thread_metadata_by_project: dict[tuple[str, str], dict[str, Any]] = {}
         self._thread_registry = ThreadRegistry(self)
         self._client_pool = ClientPool(self)
+        self._runtime_resources = RuntimeResourceManager(self)
 
         # Active turn & task tracking for responsive interrupts
         self._active_turns: dict[str, str] = {}
@@ -2954,6 +2956,27 @@ class SessionManager:
     ) -> dict[str, Any]:
         return await self._client_pool.attach_thread(thread_id, project_id)
 
+    async def resource_snapshot(self) -> dict[str, Any]:
+        return await self._runtime_resources.snapshot()
+
+    async def resource_history(self, process_key: str) -> dict[str, Any]:
+        return await self._runtime_resources.history(process_key)
+
+    async def park_thread(
+        self, thread_id: str, project_id: str | None = None
+    ) -> dict[str, Any]:
+        resolved_project = self.resolve_thread_project(thread_id, project_id)
+        return await self._runtime_resources.park_thread(resolved_project, thread_id)
+
+    def update_thread_viewer(
+        self,
+        websocket: WebSocket,
+        project_id: str | None,
+        thread_id: str | None,
+        visible: bool,
+    ) -> None:
+        self._runtime_resources.update_viewer(websocket, project_id, thread_id, visible)
+
     async def start(self) -> None:
         """Start and initialize the background MiniAgentClient."""
         async with self._lock:
@@ -2966,33 +2989,34 @@ class SessionManager:
                 )
                 self._initialized = True
                 self._schedule_child_reconciliation(current_project_id)
-                return
-            self._client = None
-            canonical = self.read_project_thread("default")
-            session = canonical.get("session") if canonical else None
-            if session and session.get("session_status") == "locked":
-                # A process restart must not create a fresh default Session just
-                # because the previous gateway process still owns the lock. Keep
-                # the catalog available in read-only mode and let an explicit
-                # attach retry once the external process exits.
-                self._active_thread_projects["default"] = self._current_project_id
-                self._initialized = True
-                logger.info(
-                    "Default Session is locked by another process; starting Gateway in read-only mode"
-                )
-                return
-            reusable_session = session
-            self._client = await self._create_client(
-                "default",
-                self._projects_registry[self._current_project_id],
-                "resume" if reusable_session else "new",
-                session.get("session_id") if reusable_session else None,
-            )
-            self._activate_thread_client(
-                "default", self._current_project_id, self._client
-            )
-            self._initialized = True
-            self._schedule_child_reconciliation(current_project_id)
+            else:
+                self._client = None
+                canonical = self.read_project_thread("default")
+                session = canonical.get("session") if canonical else None
+                if session and session.get("session_status") == "locked":
+                    # A process restart must not create a fresh default Session just
+                    # because the previous gateway process still owns the lock. Keep
+                    # the catalog available in read-only mode and let an explicit
+                    # attach retry once the external process exits.
+                    self._active_thread_projects["default"] = self._current_project_id
+                    self._initialized = True
+                    logger.info(
+                        "Default Session is locked by another process; starting Gateway in read-only mode"
+                    )
+                else:
+                    reusable_session = session
+                    self._client = await self._create_client(
+                        "default",
+                        self._projects_registry[self._current_project_id],
+                        "resume" if reusable_session else "new",
+                        session.get("session_id") if reusable_session else None,
+                    )
+                    self._activate_thread_client(
+                        "default", self._current_project_id, self._client
+                    )
+                    self._initialized = True
+                    self._schedule_child_reconciliation(current_project_id)
+        await self._runtime_resources.start()
 
     async def restart_for_current_project(self) -> None:
         """Restart the current Project runtime without touching other Projects."""
@@ -3088,6 +3112,7 @@ class SessionManager:
 
     async def stop(self) -> None:
         """Stop the background MiniAgentClient and close WebSocket connections."""
+        await self._runtime_resources.stop()
         async with self._lock:
             # 1. Gracefully close active WebSocket connections
             for ws in list(self._active_connections):
@@ -5921,6 +5946,7 @@ class SessionManager:
         self._ws_broker.set_project(websocket, project_id)
 
     def disconnect_ws(self, websocket: WebSocket) -> None:
+        self._runtime_resources.release_viewer(websocket)
         self._ws_broker.disconnect(websocket)
 
     async def broadcast_ws(self, message: dict[str, Any]) -> None:

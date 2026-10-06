@@ -482,6 +482,8 @@ export default function App() {
         wsRef.current?.send({
           action: 'ping',
           project_id: currentThreadProjectRef.current,
+          thread_id: hasActiveThreadRef.current ? currentThreadRef.current : null,
+          visible: document.visibilityState === 'visible',
         });
         // A reconnect may follow an App Server restart, whose in-memory
         // revision sequence starts over. Re-read the canonical projection to
@@ -535,9 +537,33 @@ export default function App() {
       wsRef.current.send({
         action: 'ping',
         project_id: currentThreadProject || null,
+        thread_id: hasActiveThread ? currentThread : null,
+        visible: document.visibilityState === 'visible',
       });
     }
-  }, [currentThreadProject]);
+  }, [currentThread, currentThreadProject, hasActiveThread]);
+
+  useEffect(() => {
+    const sendViewerLease = () => {
+      if (!wsRef.current?.isOpen()) return;
+      wsRef.current.send({
+        action: 'ping',
+        project_id: currentThreadProject || null,
+        thread_id: hasActiveThread ? currentThread : null,
+        visible: document.visibilityState === 'visible',
+      });
+    };
+    const intervalId = window.setInterval(sendViewerLease, 15_000);
+    document.addEventListener('visibilitychange', sendViewerLease);
+    sendViewerLease();
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', sendViewerLease);
+      if (wsRef.current?.isOpen()) {
+        wsRef.current.send({ action: 'viewer_release' });
+      }
+    };
+  }, [currentThread, currentThreadProject, hasActiveThread]);
 
   useEffect(() => {
     const controller = new AbortController();

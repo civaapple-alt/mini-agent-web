@@ -26,6 +26,7 @@ class ClientPool:
         self, thread_id: str, project_id: str, client: MiniAgentClient
     ) -> None:
         owner = self.owner
+        previous = owner._project_clients.get((project_id, thread_id))
         owner._project_clients[(project_id, thread_id)] = client
         # The unqualified compatibility maps cannot represent two projects'
         # same-named default Threads. Keep them pointed at the current Project;
@@ -36,6 +37,8 @@ class ClientPool:
             owner._active_thread_projects[thread_id] = project_id
         if thread_id == "default" and project_id == owner._current_project_id:
             owner._client = client
+        if previous is not client:
+            owner._runtime_resources.on_client_activated(project_id, thread_id)
 
     def all_clients(self) -> list[MiniAgentClient]:
         """Return all pooled clients once, including inactive project bindings."""
@@ -212,6 +215,8 @@ class ClientPool:
         project = owner._project_for_thread(target, project_id)
         resolved_project_id = str(project.get("id") or owner._current_project_id)
         binding_key = (resolved_project_id, target)
+        if owner._runtime_resources.is_parking(*binding_key):
+            raise RuntimeError("Session is being parked; retry after it settles")
         existing = owner._project_clients.get(binding_key)
         if existing is None:
             legacy = owner._clients.get(target)

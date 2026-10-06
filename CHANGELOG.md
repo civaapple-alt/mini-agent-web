@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
+- Add a standalone Resource Manager for Gateway and managed App Server CPU,
+  memory, JSON-RPC traffic, and bounded sample history. Track visible Thread
+  viewers, report Park blockers, and preserve the Session when an idle process
+  is parked and later attached again. Cache Session summaries by JSONL identity
+  and parse only appended records.
 - Show detected `PATH` commands separately from application CLI capabilities in
   World State, including Blender when found in its standard macOS app bundle.
 - Classify Skills by builtin group, personal root, project, or plugin origin;

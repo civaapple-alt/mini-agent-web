@@ -123,6 +123,7 @@
   cursor: pointer;
   color: var(--text-secondary);
   transition: all 0.15s ease;
+  text-decoration: none;
 }
 
 .nav-action-row:hover {

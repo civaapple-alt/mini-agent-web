@@ -8112,3 +8112,117 @@ async def test_frozen_parent_does_not_dispatch_queued_children(
 
     assert should_retry is False
     list_children.assert_not_awaited()
+
+
+def test_session_catalog_cache_reads_only_appended_session_records(
+    tmp_path, monkeypatch
+):
+    """Unchanged thread polling reads no old JSONL bytes and appends incrementally."""
+    import server.session_catalog as catalog_module
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    session_dir = session_base / "session-1"
+    session_dir.mkdir(parents=True)
+    session_path = session_dir / "session.jsonl"
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    session_path.write_text(
+        json.dumps({"kind": "session_created", "session_id": "session-1"})
+        + "\n"
+        + json.dumps({"kind": "thread_started", "thread_id": "thread-1"})
+        + "\n",
+        encoding="utf-8",
+    )
+    original_read_delta = catalog_module._read_session_record_delta
+    read_offsets = []
+
+    def track_read(path, offset, pending_offset=None):
+        read_offsets.append((offset, pending_offset))
+        return original_read_delta(path, offset, pending_offset)
+
+    monkeypatch.setattr(catalog_module, "_read_session_record_delta", track_read)
+    catalog = SessionCatalog()
+
+    first = catalog.list_sessions(workspace, "project")
+    file_size = session_path.stat().st_size
+    second = catalog.list_sessions(workspace, "project")
+
+    assert first["data"][0]["thread_id"] == "thread-1"
+    assert second["data"][0]["thread_id"] == "thread-1"
+    assert read_offsets == [(0, None), (file_size, None)]
+
+    with session_path.open("a", encoding="utf-8") as session_file:
+        session_file.write(
+            json.dumps(
+                {
+                    "kind": "turn_started",
+                    "turn_id": "turn-1",
+                    "timestamp_ms": 10,
+                }
+            )
+            + "\n"
+        )
+    appended = catalog.list_sessions(workspace, "project")
+
+    assert read_offsets[-1] == (file_size, None)
+    assert appended["data"][0]["turn_count"] == 1
+    assert appended["data"][0]["last_turn_status"] == "in_progress"
+
+
+def test_session_summary_cache_skips_an_oversized_partial_record_tail(
+    tmp_path, monkeypatch
+):
+    """An oversized in-flight JSONL line resumes at its previous EOF offset."""
+    import server.session_catalog as catalog_module
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session_base = tmp_path / "sessions"
+    session_dir = session_base / "session-1"
+    session_dir.mkdir(parents=True)
+    session_path = session_dir / "session.jsonl"
+    monkeypatch.setattr(
+        "server.session_catalog._session_base", lambda _workspace: session_base
+    )
+    monkeypatch.setattr(catalog_module, "MAX_SESSION_RECORD_BYTES", 64)
+    prefix = (
+        json.dumps({"kind": "thread_started", "thread_id": "thread-1"}) + "\n"
+    ).encode()
+    session_path.write_bytes(prefix + b"x" * 100)
+    original_read_delta = catalog_module._read_session_record_delta
+    read_positions = []
+
+    def track_read(path, offset, pending_offset=None):
+        read_positions.append((offset, pending_offset))
+        return original_read_delta(path, offset, pending_offset)
+
+    monkeypatch.setattr(catalog_module, "_read_session_record_delta", track_read)
+    catalog = SessionCatalog()
+    catalog.list_sessions(workspace, "project")
+    partial_size = session_path.stat().st_size
+    catalog.list_sessions(workspace, "project")
+
+    assert read_positions[1] == (len(prefix), partial_size)
+
+    monkeypatch.setattr(catalog_module, "MAX_SESSION_RECORD_BYTES", 1024)
+    with session_path.open("ab") as session_file:
+        session_file.write(
+            b"\n"
+            + (
+                json.dumps(
+                    {
+                        "kind": "turn_started",
+                        "turn_id": "turn-1",
+                        "timestamp_ms": 10,
+                    }
+                )
+                + "\n"
+            ).encode()
+        )
+    appended = catalog.list_sessions(workspace, "project")
+
+    assert appended["data"][0]["turn_count"] == 1
+    assert appended["data"][0]["history_truncated"] is True

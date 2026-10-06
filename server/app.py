@@ -17,6 +17,7 @@ from server.builtin_skills import sync_builtin_skills
 from server.config import settings
 from server.routes import agent, threads, world
 from server.routes import models as models_route
+from server.routes import resources as resources_route
 from server.routes import settings as settings_route
 from server.routes import web_search as web_search_route
 from server.session_manager import session_manager
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
     app.include_router(threads.router)
     app.include_router(world.router)
     app.include_router(settings_route.router)
+    app.include_router(resources_route.router)
     app.include_router(models_route.router)
     app.include_router(web_search_route.router)
 
@@ -102,6 +104,11 @@ def create_app() -> FastAPI:
     @app.get("/threads/{thread_id:path}", tags=["UI"], include_in_schema=False)
     async def serve_thread_route(thread_id: str):
         """Serve the SPA for a project-scoped Thread URL."""
+        return await serve_index()
+
+    @app.get("/resources", tags=["UI"], include_in_schema=False)
+    async def serve_resources_route():
+        """Serve the standalone resource manager page."""
         return await serve_index()
 
     return app

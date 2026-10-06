@@ -71,19 +71,24 @@ function timingForTurn({ message, messages, threadItems, turnId, lastTurnResult 
     normalizedTurnId(candidate?.turnId) === turnId
   ));
   const entryTimes = matchingEntries.map(timestampForThreadItem).filter(Number.isFinite);
-  const messageTimes = matchingMessages
-    .map((candidate) => timestampMilliseconds(candidate?.capturedAt || candidate?.inputTrace?.capturedAt))
-    .filter(Number.isFinite);
   const persistedInputTimes = matchingEntries
     .filter((entry) => ['userMessage', 'user_message'].includes(String(entry?.item?.type || '').toLowerCase()))
     .map(timestampForThreadItem)
     .filter(Number.isFinite);
   const inputMessageTime = timestampMilliseconds(message?.inputTrace?.capturedAt || message?.capturedAt);
-  const startedAtMs = persistedInputTimes.length > 0
-    ? Math.min(...persistedInputTimes)
-    : inputMessageTime ?? (entryTimes.length > 0 ? Math.min(...entryTimes) : null);
-  const activityTimes = [...entryTimes, ...messageTimes].filter(Number.isFinite);
-  const latestActivityAtMs = activityTimes.length > 0 ? Math.max(...activityTimes) : null;
+  const presentationStartedAtMs = matchingMessages
+    .map((candidate) => candidate.turnStartedAtMs)
+    .find((value) => Number.isSafeInteger(value) && value >= 0);
+  const presentationDurationMs = matchingMessages
+    .map((candidate) => candidate.turnDurationMs)
+    .find((value) => Number.isSafeInteger(value) && value >= 0);
+  const presentationAccumulatedMs = matchingMessages
+    .map((candidate) => candidate.turnAccumulatedMs)
+    .find((value) => Number.isSafeInteger(value) && value >= 0);
+  const startedAtMs = presentationStartedAtMs
+    ?? (persistedInputTimes.length > 0
+      ? Math.min(...persistedInputTimes)
+      : inputMessageTime ?? (entryTimes.length > 0 ? Math.min(...entryTimes) : null));
   const resultTurnId = normalizedTurnId(lastTurnResult?.turnId || lastTurnResult?.turn_id);
   const rawResultDurationMs = lastTurnResult?.durationMs;
   const resultDurationMs = resultTurnId === turnId
@@ -93,10 +98,12 @@ function timingForTurn({ message, messages, threadItems, turnId, lastTurnResult 
     : NaN;
   const durationMs = Number.isFinite(resultDurationMs) && resultDurationMs >= 0
     ? resultDurationMs
-    : Number.isFinite(startedAtMs) && Number.isFinite(latestActivityAtMs) && latestActivityAtMs >= startedAtMs
-      ? latestActivityAtMs - startedAtMs
-      : null;
-  return { startedAtMs, durationMs };
+    : presentationDurationMs ?? null;
+  return {
+    startedAtMs,
+    durationMs,
+    accumulatedMs: presentationAccumulatedMs ?? null,
+  };
 }
 
 function statusFromValue(value) {
@@ -293,6 +300,7 @@ export function buildTurnHistoryEntries({
       isCurrent,
       startedAtMs: timing.startedAtMs,
       durationMs: timing.durationMs,
+      accumulatedMs: timing.accumulatedMs,
       responseSummary: boundedResponseSummary(messages, turnId),
       metrics: metricsForTurn(messages, turnId, lastTurnResult),
       actionHint: actionHint(state, statusModel, isCurrent),

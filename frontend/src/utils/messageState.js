@@ -1083,8 +1083,18 @@ export function restorePersistedTurnPresentation(messages = [], entries = [], pr
   const messagesWithAssistantAnchors = (messages || []).map((message) => {
     if (message?.role !== 'assistant' || !message.turnId) return message;
     const presentation = presentationByTurn.get(String(message.turnId));
+    const startedAtMs = normalizeSafeMilliseconds(
+      presentation?.startedAtMs ?? presentation?.started_at_ms,
+    );
+    const durationMs = normalizeSafeMilliseconds(
+      presentation?.durationMs ?? presentation?.duration_ms,
+    );
     return {
       ...message,
+      ...(startedAtMs === null ? {} : { turnStartedAtMs: startedAtMs }),
+      ...(durationMs === null
+        ? {}
+        : { turnDurationMs: durationMs, turnAccumulatedMs: durationMs }),
       modelTiming: normalizeModelTiming(
         presentation?.modelTiming || presentation?.model_timing || message.modelTiming,
       ),
@@ -1198,6 +1208,10 @@ function normalizeModelTiming(value) {
     ttftMs: bounded(value.ttftMs ?? value.ttft_ms),
     responseMs: bounded(value.responseMs ?? value.response_ms),
   };
+}
+
+function normalizeSafeMilliseconds(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
 /**

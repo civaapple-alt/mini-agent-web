@@ -461,14 +461,46 @@ def _item_projections(record: dict[str, Any]) -> list[dict[str, Any]]:
     return projections
 
 
-def _turn_presentation_projection(record: dict[str, Any]) -> dict[str, Any] | None:
-    """Project bounded, Host-owned workflow activity from a Turn record."""
+def _turn_durations_ms(records: list[dict[str, Any]]) -> dict[str, int]:
+    """Sum settled execution intervals from authoritative Turn journal times."""
+    started_at_by_turn: dict[str, int] = {}
+    durations_by_turn: dict[str, int] = {}
+    for record in records:
+        turn_id = _bounded_text(record.get("turn_id"), 128)
+        timestamp_ms = _optional_bounded_int(record.get("timestamp_ms"))
+        if not turn_id or timestamp_ms is None:
+            continue
+        if record.get("kind") == "turn_started":
+            started_at_by_turn[turn_id] = timestamp_ms
+        elif record.get("kind") == "turn_settled":
+            started_at_ms = started_at_by_turn.pop(turn_id, None)
+            if started_at_ms is None or timestamp_ms < started_at_ms:
+                continue
+            duration_ms = (
+                durations_by_turn.get(turn_id, 0) + timestamp_ms - started_at_ms
+            )
+            durations_by_turn[turn_id] = min(duration_ms, MAX_JS_SAFE_INTEGER)
+    return durations_by_turn
+
+
+def _turn_presentation_projection(
+    record: dict[str, Any], duration_ms: int | None = None
+) -> dict[str, Any] | None:
+    """Project bounded Turn timing and Host-owned workflow activity."""
     presentation = record.get("presentation")
     turn_id = _bounded_text(record.get("turn_id"), 128)
-    if not isinstance(presentation, dict) or not turn_id:
+    if not turn_id or (not isinstance(presentation, dict) and duration_ms is None):
         return None
 
     projected: dict[str, Any] = {"turnId": turn_id, "activities": []}
+    started_at_ms = _optional_bounded_int(record.get("timestamp_ms"))
+    if started_at_ms is not None:
+        projected["startedAtMs"] = started_at_ms
+    if duration_ms is not None:
+        projected["durationMs"] = min(duration_ms, MAX_JS_SAFE_INTEGER)
+    if not isinstance(presentation, dict):
+        return projected
+
     model_timing = presentation.get("modelTiming", presentation.get("model_timing"))
     if isinstance(model_timing, dict):
         projected["modelTiming"] = {
@@ -2016,11 +2048,17 @@ class SessionCatalog:
                 if record.get("kind") == "item"
                 for projected in _item_projections(record)
             ][-256:]
+            turn_durations_ms = _turn_durations_ms(records)
             entry["presentations"] = [
                 projection
                 for record in records
                 if record.get("kind") == "turn_started"
-                for projection in [_turn_presentation_projection(record)]
+                for projection in [
+                    _turn_presentation_projection(
+                        record,
+                        turn_durations_ms.get(str(record.get("turn_id") or "")),
+                    )
+                ]
                 if projection is not None
             ][-MAX_TURN_PRESENTATIONS:]
         return entry

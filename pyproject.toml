@@ -8,7 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Mini Agent Team" }]
 keywords = ["mini-agent", "ai-agents", "llm-harness", "jsonrpc", "web-studio"]
 dependencies = [
-    "mini-agent",
+    "mini-agent>=1.1.0,<2.0.0",
     "psutil>=5.9.0",
 ]
 

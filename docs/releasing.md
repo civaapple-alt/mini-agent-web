@@ -6,9 +6,10 @@ Web 发布版本由本仓维护；Python SDK 由 `mini-agent-harness` 维护并�
 ## 版本规则
 
 - `pyproject.toml`、Gateway、前端和 Web 锁文件中的 `mini-agent-web` 版本保持一致。
-- Web 通过 `pyproject.toml` 和 `uv.lock` 固定一个兼容的 Harness SDK wheel。SDK
-  版本可以与 Web 版本不同；运行 `uv run python scripts/check_version_sync.py`
-  检查本仓版本及 SDK pin。
+- Web 在 `pyproject.toml` 声明最低兼容 SDK 版本；开发环境通过 sibling
+  Harness checkout 的 editable source 运行。准备 Web Release 时，应先发布兼容
+  SDK，再把已发布 wheel 固定到 `uv.lock`。SDK 版本可以与 Web 版本不同；运行
+  `uv run python scripts/check_version_sync.py` 检查本仓版本及 SDK source。
 - App Server 协商 `protocolVersion: 2`，请求 envelope 使用 JSON-RPC 2.0。协议
   V1 客户端和 V1 Session journal 不兼容；升级前按 Harness 的
   [App Server 迁移说明](https://github.com/civaapple-alt/mini-agent-harness/blob/main/docs/app-server.md)
@@ -16,9 +17,10 @@ Web 发布版本由本仓维护；Python SDK 由 `mini-agent-harness` 维护并�
 - 测试和静态检查不调用外部模型 Provider，也不消耗 Provider Token。
 - 不要提交 `dist/`、`logs/`、密钥或本地产生的 Session 数据。
 
-当前 Web v1.0.0 继续使用本仓历史 v1.0.0 Release 中的 SDK wheel。Harness 后续
-Release 会提供 SDK wheel/sdist 和 App Server 可执行文件；Web 只有在升级 SDK 时
-才需要更新 wheel URL、`uv.lock` 和兼容性验证。
+已发布的 Web v1.0.0 继续使用本仓历史 v1.0.0 Release 中的 SDK wheel。当前未发布
+源码要求 Harness SDK 1.1.0 或更高的兼容 1.x 版本，并通过 sibling checkout 的
+editable source 开发。只有在 Harness 1.1.0 SDK wheel 发布后，Web 才能基于这组 API
+准备下一个 Release；届时应把开发用 editable source 换成该 wheel 并更新 `uv.lock`。
 
 ## 发布前检查
 

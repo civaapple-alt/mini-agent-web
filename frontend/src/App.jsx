@@ -3799,7 +3799,7 @@ export default function App() {
       connectionState={connectionState}
       onOpenSidePanel={handleOpenSidePanel}
       onOpenSettings={(tab = 'preferences') => {
-        setSettingsInitialTab(tab === 'models' ? 'models' : 'preferences');
+        setSettingsInitialTab(['models', 'resources'].includes(tab) ? tab : 'preferences');
         setSettingsModalOpen(true);
       }}
       onRenameThread={handleRenameThread}

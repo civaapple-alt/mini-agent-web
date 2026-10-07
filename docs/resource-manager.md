@@ -1,6 +1,8 @@
 # 资源管理器
 
-在 Web Studio 中打开 **资源管理器**，或直接访问 `/resources`。页面展示当前 Gateway 进程，以及 Gateway 管理的 App Server 和对应 Session。
+在设置面板左侧的 **运行管理** 下打开 **资源管理**，或直接访问 `/resources`。页面展示当前 Gateway 进程，以及 Gateway 管理的 App Server 和对应 Session。
+
+资源页用一行指标和精简列表显示进程状态、内存、CPU 和 JSON-RPC 流量。选择一行后，页面才会展开该进程的 PID、运行时长、历史趋势和 RPC 方法统计。
 
 ## 进程采样
 

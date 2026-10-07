@@ -12,7 +12,6 @@ import {
   Settings,
   SquarePen,
   RefreshCw,
-  Activity,
 } from 'lucide-react';
 import { api } from '../api';
 import ThreadRow from './sidebar/ThreadRow';
@@ -615,16 +614,6 @@ export default function Sidebar({
             <Plus size={13} />
           </button>
         </div>
-        <a
-          className="nav-action-row nav-resource-row"
-          href="/resources"
-          title="查看 Gateway 和 App Server 资源"
-        >
-          <div className="nav-row-left">
-            <Activity size={14} className="nav-row-icon" />
-            <span className="nav-row-label">资源管理器</span>
-          </div>
-        </a>
       </div>
 
       {/* 3. Projects Section */}

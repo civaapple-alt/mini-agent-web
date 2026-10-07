@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Boxes,
   Check,
+  Activity,
   Palette,
   RotateCcw,
   Search,
@@ -14,6 +15,7 @@ import { api } from '../api';
 import { normalizeTheme } from '../utils/statusModel.js';
 import ModelSettingsPanel from './ModelSettingsPanel';
 import WebSearchSettingsPanel from './WebSearchSettingsPanel';
+import ResourceManager from './ResourceManager';
 import './SettingsModal.css';
 
 const SETTINGS_GROUPS = [
@@ -48,6 +50,17 @@ const SETTINGS_GROUPS = [
         label: '联网搜索',
         description: '搜索服务与 API 密钥',
         icon: Search,
+      },
+    ],
+  },
+  {
+    label: '运行管理',
+    items: [
+      {
+        id: 'resources',
+        label: '资源管理',
+        description: 'Gateway 与会话资源',
+        icon: Activity,
       },
     ],
   },
@@ -120,7 +133,9 @@ export default function SettingsModal({
   }, [isOpen, projectId]);
 
   useEffect(() => {
-    if (isOpen) setActiveSection(initialTab === 'models' ? 'models' : 'security');
+    if (isOpen) {
+      setActiveSection(['models', 'resources'].includes(initialTab) ? initialTab : 'security');
+    }
   }, [initialTab, isOpen]);
 
   const isCurrentRequest = (context) => (
@@ -225,7 +240,7 @@ export default function SettingsModal({
             <Settings size={17} className="text-emerald" />
             <div>
               <h3>设置</h3>
-              <span>偏好设置、模型与联网搜索</span>
+              <span>偏好设置、Agent 能力与运行管理</span>
             </div>
           </div>
           <button type="button" className="modal-close-btn" onClick={requestClose} aria-label="关闭设置">
@@ -273,7 +288,10 @@ export default function SettingsModal({
                   onDraftChange={setWebSearchDraftDirty}
                 />
               </div>
-              {activeSection !== 'models' && activeSection !== 'web-search' && (
+              {activeSection === 'resources' && <ResourceManager embedded />}
+              {activeSection !== 'models'
+                && activeSection !== 'web-search'
+                && activeSection !== 'resources' && (
                 <>
                   <div className="settings-detail-heading">
                     <div>
@@ -367,7 +385,7 @@ export default function SettingsModal({
               )}
             </div>
 
-            {activeSection !== 'models' && (
+            {activeSection !== 'models' && activeSection !== 'resources' && (
               <footer className="settings-modal-footer">
                 <button type="button" className="btn-reset" onClick={handleReset} title="恢复默认设置">
                   <RotateCcw size={14} />

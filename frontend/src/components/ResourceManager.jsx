@@ -8,7 +8,6 @@ import {
   RefreshCw,
   Search,
   Server,
-  Waypoints,
 } from 'lucide-react';
 import { api } from '../api.js';
 import './ResourceManager.css';
@@ -112,7 +111,7 @@ function ResourceChart({ data }) {
   );
 }
 
-export default function ResourceManager() {
+export default function ResourceManager({ embedded = false }) {
   const [snapshot, setSnapshot] = useState(null);
   const [history, setHistory] = useState([]);
   const [selectedKey, setSelectedKey] = useState(null);
@@ -140,10 +139,7 @@ export default function ResourceManager() {
         setError(null);
         const nextProcesses = next.processes || [];
         setSelectedKey((current) => (
-          current && nextProcesses.some((row) => selectionKey(row) === current)
-            ? current
-            : selectionKey(nextProcesses.find((row) => row.process_type === 'app_server')
-              || nextProcesses[0] || {}) || null
+          current && nextProcesses.some((row) => selectionKey(row) === current) ? current : null
         ));
       } catch (cause) {
         if (cause?.name !== 'AbortError' && active) setError(cause.message || '资源采集失败');
@@ -256,16 +252,18 @@ export default function ResourceManager() {
   };
 
   return (
-    <main className="resource-manager-page">
+    <main className={`resource-manager-page${embedded ? ' embedded' : ''}`}>
       <header className="resource-manager-header">
-        <a className="resource-back-button" href="/" aria-label="返回 Web Studio">
-          <ArrowLeft size={18} />
-        </a>
+        {!embedded && (
+          <a className="resource-back-button" href="/" aria-label="返回 Web Studio">
+            <ArrowLeft size={18} />
+          </a>
+        )}
         <div className="resource-manager-title">
-          <Activity size={21} />
+          {!embedded && <Activity size={21} />}
           <div>
             <h1>资源管理器</h1>
-            <p>Gateway 与它管理的 App Server</p>
+            <p>Gateway 与会话资源</p>
           </div>
         </div>
         <div className="resource-header-meta">
@@ -283,23 +281,20 @@ export default function ResourceManager() {
       )}
       {error && <div className="resource-error" role="alert">{error}</div>}
 
-      <section className="resource-summary-cards" aria-label="资源概览">
-        <article className="resource-summary-card">
-          <span className="resource-summary-icon"><Server size={17} /></span>
-          <div><small>管理中的 App Server</small><strong>{runningCount} <em>/ {appServers.length}</em></strong></div>
-        </article>
-        <article className="resource-summary-card">
-          <span className="resource-summary-icon"><MemoryStick size={17} /></span>
-          <div><small>进程 RSS 合计</small><strong>{formatBytes(totalRss)}</strong></div>
-        </article>
-        <article className="resource-summary-card">
-          <span className="resource-summary-icon"><Cpu size={17} /></span>
-          <div><small>Gateway CPU</small><strong>{formatCpu(processes.find((row) => row.process_type === 'gateway')?.cpu_percent)}</strong></div>
-        </article>
-        <article className="resource-summary-card">
-          <span className="resource-summary-icon"><Waypoints size={17} /></span>
-          <div><small>采样 / 历史窗口</small><strong>2 秒 <em>/ 10 分钟</em></strong></div>
-        </article>
+      <section className="resource-overview" aria-label="资源概览">
+        <div className="resource-overview-stat">
+          <Server size={16} aria-hidden="true" />
+          <span><strong>{runningCount}<small> / {appServers.length}</small></strong><label>App Server（运行中 / 全部）</label></span>
+        </div>
+        <div className="resource-overview-stat">
+          <MemoryStick size={16} aria-hidden="true" />
+          <span><strong>{formatBytes(totalRss)}</strong><label>进程 RSS</label></span>
+        </div>
+        <div className="resource-overview-stat">
+          <Cpu size={16} aria-hidden="true" />
+          <span><strong>{formatCpu(processes.find((row) => row.process_type === 'gateway')?.cpu_percent)}</strong><label>Gateway CPU</label></span>
+        </div>
+        <span className="resource-overview-note">2 秒采样 · 保留 10 分钟趋势</span>
       </section>
 
       <div className="resource-toolbar">
@@ -319,13 +314,11 @@ export default function ResourceManager() {
         <table className="resource-table">
           <thead>
             <tr>
-              <th>进程</th>
+              <th>会话</th>
               <th>状态</th>
               <th><button type="button" onClick={() => changeSort('rss_bytes')}>内存 <ArrowDownUp size={13} /></button></th>
               <th><button type="button" onClick={() => changeSort('cpu_percent')}>CPU <ArrowDownUp size={13} /></button></th>
               <th>JSON-RPC 流量</th>
-              <th>PID</th>
-              <th>运行时间</th>
               <th>操作</th>
             </tr>
           </thead>
@@ -346,10 +339,19 @@ export default function ResourceManager() {
                 <tr
                   key={row.process_key}
                   className={isSelected ? 'selected' : ''}
-                  onClick={() => setSelectedKey(selectionKey(row))}
+                  aria-selected={isSelected}
+                  onClick={() => setSelectedKey((current) => (
+                    current === selectionKey(row) ? null : selectionKey(row)
+                  ))}
                   tabIndex={0}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') setSelectedKey(selectionKey(row));
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setSelectedKey((current) => (
+                        current === selectionKey(row) ? null : selectionKey(row)
+                      ));
+                    }
                   }}
                 >
                   <td>
@@ -366,8 +368,13 @@ export default function ResourceManager() {
                   <td>
                     <div className="resource-state-cell">
                       <span className={`resource-state-dot ${row.execution_state === 'running' || row.execution_state === 'waiting_approval' ? 'active' : ''}`} />
-                      <span>{residencyLabel(row.residency_state)}</span>
-                      <small>{executionLabel(row.execution_state)}</small>
+                      <strong>{residencyLabel(row.residency_state)}</strong>
+                      <small>
+                        {executionLabel(row.execution_state)}
+                        {row.process_type === 'app_server' && Number.isInteger(row.viewer_count)
+                          ? ` · ${row.viewer_count} 查看者`
+                          : ''}
+                      </small>
                       {row.blockers?.length > 0 && (
                         <small className="resource-row-blocker">{row.blockers.join('、')}</small>
                       )}
@@ -380,8 +387,6 @@ export default function ResourceManager() {
                       ? '—'
                       : <><strong>{formatRate(row.bytes_per_second)}</strong><small>{(row.rpc_totals?.requests || 0).toLocaleString()} 次请求</small></>}
                   </td>
-                  <td className="resource-mono">{row.pid ?? '—'}</td>
-                  <td>{formatDuration(row.uptime_seconds)}</td>
                   <td>
                     {canPark && (
                       <button
@@ -407,15 +412,12 @@ export default function ResourceManager() {
                         }}
                       >唤醒</button>
                     )}
-                    {row.process_type === 'app_server' && Number.isInteger(row.viewer_count) && (
-                      <span className="resource-viewer-count">{row.viewer_count} 个查看者</span>
-                    )}
                   </td>
                 </tr>
               );
             })}
             {!visibleProcesses.length && (
-              <tr><td className="resource-empty" colSpan="8">{error ? '暂时无法读取进程信息' : '没有匹配的进程或会话'}</td></tr>
+              <tr><td className="resource-empty" colSpan="6">{error ? '暂时无法读取进程信息' : '没有匹配的进程或会话'}</td></tr>
             )}
           </tbody>
         </table>
@@ -426,7 +428,9 @@ export default function ResourceManager() {
           <div className="resource-detail-heading">
             <div>
               <h2>{selected.process_type === 'gateway' ? 'Gateway' : selected.title || selected.thread_id}</h2>
-              <p>{selected.process_type === 'gateway' ? '共享进程资源趋势' : `${selected.project_id} · ${selected.thread_id} · PID ${selected.pid ?? '未加载'}`}</p>
+              <p>{selected.process_type === 'gateway'
+                ? `PID ${selected.pid ?? '—'} · 运行 ${formatDuration(selected.uptime_seconds)}`
+                : `${selected.project_id} · ${selected.thread_id} · PID ${selected.pid ?? '未加载'} · 运行 ${formatDuration(selected.uptime_seconds)}`}</p>
             </div>
             {selected.process_type === 'app_server' && selected.blockers?.length > 0 && (
               <span className="resource-blocker-label">{selected.blockers.join('、')}</span>

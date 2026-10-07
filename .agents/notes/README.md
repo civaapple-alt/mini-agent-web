@@ -14,6 +14,7 @@
 
 ## 已落地
 
+- [资源管理入口与页面简化](implemented/feature/2026-10-07-resource-manager-settings-entry.zh.md)
 - [资源管理器评审问题修复](implemented/bug-fix/2026-10-07-resource-manager-review-hardening.zh.md)
 - [Web Studio 运行时资源管理与 Session 驻留](implemented/architecture/2026-10-07-web-studio-runtime-resource-manager.zh.md)
 - [技能目录来源、主动选择与显式调用](implemented/feature/2026-10-06-skill-catalog-and-proactive-invocation.zh.md)

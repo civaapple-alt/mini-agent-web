@@ -3,7 +3,7 @@
 `mini-agent-web` 是 Mini Agent 运行系统的用户侧控制平面适配层，包含 FastAPI 网关
 和 Web Studio，并保留实验性 TUI。Web Studio 面向项目和
 长时间运行的 Session，负责把 App Server 的执行状态、审批、恢复、Child Session、
-Notebook 和运行事件变成可操作、可观察的工作台。当前发布版本为 `1.0.0`，协商
+Notebook 和运行事件变成可操作、可观察的工作台。当前发布版本为 `1.1.0`，协商
 App Server protocol version `2`，请求使用 JSON-RPC 2.0 envelope。升级兼容性见
 [`Harness App Server 文档`](https://github.com/civaapple-alt/mini-agent-harness/blob/main/docs/app-server.md)。
 
@@ -60,9 +60,8 @@ work/
 
 需要 Python 3.10+、`uv`、Node.js 和 npm，以及可执行的
 `mini-agent-app-server`。如果二进制不在 `PATH`，设置
-`MINI_AGENT_APP_SERVER_PATH`。本分支之后的 Harness Release 会提供包含 CLI 和 App
-Server 的平台归档；已发布的 Harness v1.0.0 归档早于此变更，不含 App Server，可从
-Harness 仓库源码构建。
+`MINI_AGENT_APP_SERVER_PATH`。Harness v1.1.0 Release 提供各平台的 App Server 归档；
+v1.0.0 归档只包含交互式 CLI，不含 App Server。需要 CLI 时仍可从 Harness 源码构建。
 
 ```bash
 uv sync

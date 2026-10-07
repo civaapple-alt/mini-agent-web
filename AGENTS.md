@@ -50,7 +50,7 @@ Do not add a README section merely to link to a document outside its directory.
   `server/app.py`, `frontend/package.json`, `frontend/package-lock.json`, and
   `uv.lock` together. Update the current Web release version in `README.md` and
   `CHANGELOG.md` too.
-- The current release is `1.0.0`; the App Server protocol negotiates version
+- The current release is `1.1.0`; the App Server protocol negotiates version
   `2` inside a JSON-RPC 2.0 envelope. Version 1 clients and Session journals
   are incompatible; see the Harness
   [App Server migration guide](https://github.com/civaapple-alt/mini-agent-harness/blob/main/docs/app-server.md)

@@ -28,7 +28,11 @@ logger = logging.getLogger("mini_agent.server")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application startup and shutdown lifecycle."""
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s:%(name)s:%(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S%z",
+    )
     logger.info(
         "Starting Mini Agent Web Gateway on %s:%d...", settings.host, settings.port
     )

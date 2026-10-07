@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
+- Add local-time timestamps with UTC offsets to Gateway console and HTTP access logs.
 - Add a standalone Resource Manager for Gateway and managed App Server CPU,
   memory, JSON-RPC traffic, and bounded sample history. Track visible Thread
   viewers, report Park blockers, and preserve the Session when an idle process

@@ -6,10 +6,31 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from copy import deepcopy
 
 import uvicorn
+from uvicorn.config import LOGGING_CONFIG
 
 from server.config import settings
+
+_LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S%z"
+
+
+def _gateway_logging_config() -> dict:
+    """Add local timestamps with UTC offsets to Uvicorn console logs."""
+    config = deepcopy(LOGGING_CONFIG)
+    config["formatters"]["default"].update(
+        fmt="%(asctime)s %(levelprefix)s %(message)s",
+        datefmt=_LOG_DATE_FORMAT,
+    )
+    config["formatters"]["access"].update(
+        fmt=(
+            "%(asctime)s %(levelprefix)s %(client_addr)s - "
+            '"%(request_line)s" %(status_code)s'
+        ),
+        datefmt=_LOG_DATE_FORMAT,
+    )
+    return config
 
 
 def proactor_loop_factory(*, use_subprocess: bool = False) -> asyncio.AbstractEventLoop:
@@ -46,6 +67,7 @@ def run_server() -> None:
         host=settings.host,
         port=settings.port,
         reload=False,
+        log_config=_gateway_logging_config(),
         timeout_graceful_shutdown=1.0,
     )
 
@@ -62,6 +84,7 @@ def run_server_dev() -> None:
         port=settings.port,
         reload=True,
         loop="server.main:proactor_loop_factory",
+        log_config=_gateway_logging_config(),
         timeout_graceful_shutdown=1.0,
     )
 

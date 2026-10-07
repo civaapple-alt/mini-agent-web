@@ -25,6 +25,8 @@ uv run mini-agent-server-dev
 参考；`GET /health` 返回 Gateway 健康状态。`GET /` 和
 `GET /threads/{thread_id}` 提供当前 `frontend/dist/` 中的文件。
 `mini-agent-server-dev` 只会自动重载 Python Gateway，不会构建或重载前端。
+Gateway 控制台和 HTTP access log 都包含本机时间及 UTC 偏移量，便于将请求与其他运行
+日志对齐。
 
 若要把监听端口暴露给本机外的网络，请设置明确的 bind host，并在 Gateway 前配置
 身份验证与网络访问控制。CORS 不限制网络访问。

@@ -18,8 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and parse only appended records. Cache the resource-page Session catalog for
   15 seconds with a 512-row history cap, serialize HTTP/SSE/WebSocket Turn
   admission, and keep restart/Park gates closed until process exit is confirmed.
-- Move the Resource Manager entry into Settings and condense its process list.
-  Show history and JSON-RPC method details only after you select a row.
+- Move the Resource Manager entry into Settings, remove its standalone `/resources`
+  route, and show ten compact rows per page. Combine PID and uptime in one column
+  and place selected process details above the list.
 - Show detected `PATH` commands separately from application CLI capabilities in
   World State, including Blender when found in its standard macOS app bundle.
 - Classify Skills by builtin group, personal root, project, or plugin origin;

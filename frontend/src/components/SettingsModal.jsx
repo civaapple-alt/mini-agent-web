@@ -288,7 +288,7 @@ export default function SettingsModal({
                   onDraftChange={setWebSearchDraftDirty}
                 />
               </div>
-              {activeSection === 'resources' && <ResourceManager embedded />}
+              {activeSection === 'resources' && <ResourceManager />}
               {activeSection !== 'models'
                 && activeSection !== 'web-search'
                 && activeSection !== 'resources' && (

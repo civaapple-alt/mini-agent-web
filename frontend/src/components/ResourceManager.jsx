@@ -1,19 +1,22 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   ArrowDownUp,
-  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   Cpu,
   MemoryStick,
   RefreshCw,
   Search,
   Server,
+  X,
 } from 'lucide-react';
 import { api } from '../api.js';
 import './ResourceManager.css';
 
 const POLL_MS = 2000;
 const HISTORY_POLL_MS = 10_000;
+const PAGE_SIZE = 10;
 
 function formatBytes(value) {
   if (!Number.isFinite(value) || value < 0) return '—';
@@ -111,18 +114,29 @@ function ResourceChart({ data }) {
   );
 }
 
-export default function ResourceManager({ embedded = false }) {
+export default function ResourceManager() {
   const [snapshot, setSnapshot] = useState(null);
   const [history, setHistory] = useState([]);
   const [selectedKey, setSelectedKey] = useState(null);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
   const [sort, setSort] = useState({ field: 'rss_bytes', direction: 'desc' });
   const [error, setError] = useState(null);
   const [actionBusy, setActionBusy] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const detailRef = useRef(null);
   const processes = snapshot?.processes || [];
   const selected = processes.find((row) => selectionKey(row) === selectedKey) || null;
   const selectedHistoryKey = selected?.process_key || null;
+
+  useEffect(() => {
+    if (!selectedKey || typeof detailRef.current?.scrollIntoView !== 'function') return;
+    const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    detailRef.current.scrollIntoView({
+      block: 'start',
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+    });
+  }, [selectedKey]);
 
   useEffect(() => {
     let active = true;
@@ -161,6 +175,7 @@ export default function ResourceManager({ embedded = false }) {
 
   useEffect(() => {
     if (!selectedHistoryKey) return undefined;
+    setHistory([]);
     let active = true;
     let controller = null;
     const pollHistory = async () => {
@@ -195,11 +210,18 @@ export default function ResourceManager({ embedded = false }) {
       return (a - b) * direction;
     });
   }, [processes, search, sort]);
+  const pageCount = Math.max(1, Math.ceil(visibleProcesses.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageProcesses = visibleProcesses.slice(
+    currentPage * PAGE_SIZE,
+    (currentPage + 1) * PAGE_SIZE,
+  );
   const appServers = processes.filter((row) => row.process_type === 'app_server');
   const runningCount = appServers.filter((row) => Number.isInteger(row.pid)).length;
   const totalRss = processes.reduce((total, row) => total + (row.rss_bytes || 0), 0);
 
   const changeSort = (field) => {
+    setPage(0);
     setSort((current) => ({
       field,
       direction: current.field === field && current.direction === 'desc' ? 'asc' : 'desc',
@@ -252,15 +274,10 @@ export default function ResourceManager({ embedded = false }) {
   };
 
   return (
-    <main className={`resource-manager-page${embedded ? ' embedded' : ''}`}>
+    <main className="resource-manager-page">
       <header className="resource-manager-header">
-        {!embedded && (
-          <a className="resource-back-button" href="/" aria-label="返回 Web Studio">
-            <ArrowLeft size={18} />
-          </a>
-        )}
         <div className="resource-manager-title">
-          {!embedded && <Activity size={21} />}
+          <Activity size={20} aria-hidden="true" />
           <div>
             <h1>资源管理器</h1>
             <p>Gateway 与会话资源</p>
@@ -302,7 +319,10 @@ export default function ResourceManager({ embedded = false }) {
           <Search size={16} />
           <input
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setPage(0);
+              setSearch(event.target.value);
+            }}
             placeholder="搜索项目、Thread 或 PID"
             aria-label="搜索资源"
           />
@@ -310,12 +330,55 @@ export default function ResourceManager({ embedded = false }) {
         <span className="resource-row-count">{visibleProcesses.length} 个进程或会话</span>
       </div>
 
+      {selected && (
+        <section className="resource-detail-panel" ref={detailRef} aria-label="所选进程详情">
+          <div className="resource-detail-heading">
+            <div>
+              <h2>{selected.process_type === 'gateway' ? 'Gateway' : selected.title || selected.thread_id}</h2>
+              <p>{selected.process_type === 'gateway'
+                ? '共享服务进程'
+                : `${selected.project_id} · ${selected.thread_id}`}</p>
+            </div>
+            {selected.process_type === 'app_server' && selected.blockers?.length > 0 && (
+              <span className="resource-blocker-label">{selected.blockers.join('、')}</span>
+            )}
+            <button
+              type="button"
+              className="resource-detail-close"
+              onClick={() => setSelectedKey(null)}
+              aria-label="收起详情"
+              title="收起详情"
+            >
+              <X size={15} />
+            </button>
+          </div>
+          <ResourceChart data={history} />
+          {selected.rpc?.methods && Object.keys(selected.rpc.methods).length > 0 && (
+            <div className="resource-rpc-methods">
+              <h3>JSON-RPC 方法统计</h3>
+              <div className="resource-rpc-list">
+                {Object.entries(selected.rpc.methods).slice(0, 10).map(([method, metrics]) => (
+                  <div className="resource-rpc-method" key={method}>
+                    <code>{method}</code>
+                    <span>{(metrics.requests || 0).toLocaleString()} 次</span>
+                    <span>{formatBytes((metrics.request_bytes || 0) + (metrics.response_bytes || 0))}</span>
+                    <span>P95 {metrics.latency_p95_ms == null ? '—' : `${metrics.latency_p95_ms} ms`}</span>
+                    <span>{metrics.errors || 0} 错误</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
       <section className="resource-table-wrap">
         <table className="resource-table">
           <thead>
             <tr>
               <th>会话</th>
               <th>状态</th>
+              <th>PID / 运行时间</th>
               <th><button type="button" onClick={() => changeSort('rss_bytes')}>内存 <ArrowDownUp size={13} /></button></th>
               <th><button type="button" onClick={() => changeSort('cpu_percent')}>CPU <ArrowDownUp size={13} /></button></th>
               <th>JSON-RPC 流量</th>
@@ -323,7 +386,7 @@ export default function ResourceManager({ embedded = false }) {
             </tr>
           </thead>
           <tbody>
-            {visibleProcesses.map((row) => {
+            {pageProcesses.map((row) => {
               const isSelected = selectionKey(row) === selectedKey;
               const canPark = row.process_type === 'app_server'
                 && Number.isInteger(row.pid)
@@ -357,7 +420,7 @@ export default function ResourceManager({ embedded = false }) {
                   <td>
                     <div className="resource-process-name">
                       <span className={`resource-process-icon ${row.process_type}`}>
-                        {row.process_type === 'gateway' ? <Activity size={16} /> : <Server size={16} />}
+                        {row.process_type === 'gateway' ? <Activity size={14} /> : <Server size={14} />}
                       </span>
                       <span>
                         <strong>{row.process_type === 'gateway' ? 'Gateway' : row.title || row.thread_id}</strong>
@@ -379,6 +442,10 @@ export default function ResourceManager({ embedded = false }) {
                         <small className="resource-row-blocker">{row.blockers.join('、')}</small>
                       )}
                     </div>
+                  </td>
+                  <td className="resource-process-meta">
+                    <strong>PID {row.pid ?? '—'}</strong>
+                    <small>运行 {formatDuration(row.uptime_seconds)}</small>
                   </td>
                   <td className="resource-number">{formatBytes(row.rss_bytes)}</td>
                   <td className="resource-number">{formatCpu(row.cpu_percent)}</td>
@@ -417,44 +484,38 @@ export default function ResourceManager({ embedded = false }) {
               );
             })}
             {!visibleProcesses.length && (
-              <tr><td className="resource-empty" colSpan="6">{error ? '暂时无法读取进程信息' : '没有匹配的进程或会话'}</td></tr>
+              <tr><td className="resource-empty" colSpan="7">{error ? '暂时无法读取进程信息' : '没有匹配的进程或会话'}</td></tr>
             )}
           </tbody>
         </table>
       </section>
 
-      {selected && (
-        <section className="resource-detail-panel">
-          <div className="resource-detail-heading">
-            <div>
-              <h2>{selected.process_type === 'gateway' ? 'Gateway' : selected.title || selected.thread_id}</h2>
-              <p>{selected.process_type === 'gateway'
-                ? `PID ${selected.pid ?? '—'} · 运行 ${formatDuration(selected.uptime_seconds)}`
-                : `${selected.project_id} · ${selected.thread_id} · PID ${selected.pid ?? '未加载'} · 运行 ${formatDuration(selected.uptime_seconds)}`}</p>
-            </div>
-            {selected.process_type === 'app_server' && selected.blockers?.length > 0 && (
-              <span className="resource-blocker-label">{selected.blockers.join('、')}</span>
-            )}
-          </div>
-          <ResourceChart data={history} />
-          {selected.rpc?.methods && Object.keys(selected.rpc.methods).length > 0 && (
-            <div className="resource-rpc-methods">
-              <h3>JSON-RPC 方法统计</h3>
-              <div className="resource-rpc-list">
-                {Object.entries(selected.rpc.methods).slice(0, 10).map(([method, metrics]) => (
-                  <div className="resource-rpc-method" key={method}>
-                    <code>{method}</code>
-                    <span>{(metrics.requests || 0).toLocaleString()} 次</span>
-                    <span>{formatBytes((metrics.request_bytes || 0) + (metrics.response_bytes || 0))}</span>
-                    <span>P95 {metrics.latency_p95_ms == null ? '—' : `${metrics.latency_p95_ms} ms`}</span>
-                    <span>{metrics.errors || 0} 错误</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </section>
-      )}
+      <nav className="resource-pagination" aria-label="资源列表分页">
+        <span>
+          {visibleProcesses.length
+            ? `${currentPage * PAGE_SIZE + 1}–${Math.min((currentPage + 1) * PAGE_SIZE, visibleProcesses.length)} / ${visibleProcesses.length} 项`
+            : '0 项'}
+        </span>
+        <div>
+          <button
+            type="button"
+            onClick={() => setPage(Math.max(0, currentPage - 1))}
+            disabled={currentPage === 0}
+            aria-label="上一页"
+          >
+            <ChevronLeft size={15} />
+          </button>
+          <span>{currentPage + 1} / {pageCount}</span>
+          <button
+            type="button"
+            onClick={() => setPage(Math.min(pageCount - 1, currentPage + 1))}
+            disabled={currentPage >= pageCount - 1}
+            aria-label="下一页"
+          >
+            <ChevronRight size={15} />
+          </button>
+        </div>
+      </nav>
     </main>
   );
 }

@@ -83,6 +83,24 @@ describe('web activity summary', () => {
     expect(screen.getByText('浏览失败')).toBeDefined();
   });
 
+  it('labels cancelled web calls without presenting them as failures or results', () => {
+    render(
+      <AssistantActivityGroup
+        id="web-cancelled"
+        items={[
+          tool('web_search', 'search-cancelled', 'failed', null, { query: 'long request' }, { outcome: 'cancelled' }),
+          tool('web_fetch', 'fetch-cancelled', 'failed', null, { url: 'https://example.com' }, { outcome: 'cancelled' }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('搜索已取消')).toBeDefined();
+    expect(screen.getByText('浏览已取消')).toBeDefined();
+    expect(screen.queryByText('搜索失败')).toBeNull();
+    expect(screen.queryByText('浏览失败')).toBeNull();
+    expect(screen.queryByRole('link')).toBeNull();
+  });
+
   it('can suppress aggregate web summaries when a parent groups nested calls', () => {
     render(
       <AssistantActivityGroup

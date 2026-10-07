@@ -76,6 +76,14 @@ or remains unreadable past the bounded wait, Studio says “结果未确认” a
 offers a status refresh. A refresh that still finds an active or stopping Turn
 does not clear the stop state or resend any operation.
 
+The Core drops its pending local model future when cancellation reaches the run
+loop; this does not guarantee that a remote provider stops computing. During a
+cancelled tool batch, calls that never started receive a `cancelled` result for
+their `callId`, while started calls keep their real result or uncertain-side-
+effect reconciliation state. Recovery reads the persisted Session and Turn
+checkpoint; event replay supplements lifecycle clues and never starts the Turn
+again automatically.
+
 Clicking a user message image opens a viewport-level preview above the virtualized
 conversation. The image scales to the available screen width and height. Click
 the image, backdrop, or minimize control, or press Escape to return to the

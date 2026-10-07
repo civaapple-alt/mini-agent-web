@@ -350,6 +350,7 @@ export function blocksCanBeGrouped(blocks) {
       || ['completed', 'success', 'failed', 'error', 'retryable'].includes(outcome);
     const isSettled = ['completed', 'success', 'failed', 'error'].includes(status);
     return isSettled
+      && outcome !== 'cancelled'
       && name !== 'delegate_task'
       && !block.isStreaming
       && (isFailure || hasKnownOutcome)

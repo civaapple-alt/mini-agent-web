@@ -258,6 +258,7 @@ describe('ToolCard Component Rendering & Interaction', () => {
     ['needs_approval', '等待授权'],
     ['deferred', '暂缓执行'],
     ['retryable', '可重试'],
+    ['cancelled', '已取消（未执行）'],
   ])('renders structured %s outcome', (outcome, label) => {
     render(
       <ToolCard

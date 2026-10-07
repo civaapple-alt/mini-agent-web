@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
+- On Gateway shutdown, reject new Turns and interrupt active parent/child Turns
+  before waiting for a shared 10-second settlement window. Keep stream observers
+  through authoritative status reads, then close SDK/App Server processes within
+  a bounded cleanup phase; show cancelled, never-started tool calls distinctly
+  from execution failures.
 - Add local-time timestamps with UTC offsets to Gateway console and HTTP access logs.
 - Add a standalone Resource Manager for Gateway and managed App Server CPU,
   memory, JSON-RPC traffic, and bounded sample history. Track visible Thread

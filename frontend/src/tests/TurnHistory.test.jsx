@@ -115,6 +115,7 @@ describe('Turn history projection', () => {
       { type: 'tool', id: 'tool-unknown', name: 'shell', status: 'completed', outcome: 'server_added_state' },
       { type: 'tool', id: 'tool-failed', name: 'shell', status: 'completed', outcome: 'failed' },
       { type: 'tool', id: 'tool-approval', name: 'shell', status: 'completed', outcome: 'needs_approval' },
+      { type: 'tool', id: 'tool-cancelled', name: 'shell', status: 'failed', outcome: 'cancelled' },
       { type: 'tool', id: 'tool-denied', name: 'shell', status: 'completed', approval: { state: 'denied' } },
       { type: 'tool', id: 'tool-no-outcome', name: 'shell', status: 'completed' },
     ]);
@@ -124,6 +125,7 @@ describe('Turn history projection', () => {
       'tool-unknown',
       'activity_tool-failed',
       'tool-approval',
+      'tool-cancelled',
       'tool-denied',
       'activity_tool-no-outcome',
     ]);

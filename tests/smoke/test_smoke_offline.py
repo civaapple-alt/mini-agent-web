@@ -184,7 +184,9 @@ def test_smoke_offline_full_duplex_turn_streaming(smoke_test_app):
 def test_smoke_offline_interactive_control_and_items(smoke_test_app):
     """Tier 1 Smoke: Validate WebSocket interactive steering, interrupt, and ThreadItems retrieval."""
     mock_client = AsyncMock()
-    mock_client.steer_turn = AsyncMock(return_value={"actionId": "steer-smoke-1"})
+    mock_client.steer_turn = AsyncMock(
+        return_value={"status": "steered", "actionId": "steer-smoke-1"}
+    )
     mock_client.interrupt_turn = AsyncMock(return_value={})
 
     # Mock thread items projection

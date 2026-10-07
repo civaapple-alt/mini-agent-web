@@ -50,6 +50,9 @@ MAX_CHILD_WAKE_OVERFLOW_SAMPLE = 8
 MAX_DELEGATION_FAILURES_PER_PARENT = 32
 MAX_NOTEBOOK_ENTRIES = 64
 MAX_NOTEBOOK_ENTRY_BYTES = 4096
+SHUTDOWN_TURN_SETTLEMENT_SECONDS = 10.0
+SHUTDOWN_APP_SERVER_GRACE_SECONDS = 1.25
+SHUTDOWN_APP_SERVER_FORCE_SECONDS = 0.75
 ACTIVE_CHILD_RUNTIME_PHASES = frozenset(
     {
         "starting_turn",
@@ -130,6 +133,7 @@ class SessionManager:
         self._lock = asyncio.Lock()
         self._initialized = False
         self._runtime_generation = 0
+        self._shutting_down = False
 
         # Web owns only this derived project/UI manifest. Session history,
         # checkpoints, and approval grants belong to the App Server SessionStore.
@@ -590,50 +594,62 @@ class SessionManager:
         """Resume one matching durable execution checkpoint and track its Turn."""
         target = thread_id or "default"
         resolved_project = self.resolve_thread_project(target, project_id)
-        runtime = client or await self.get_client_for_thread(target, resolved_project)
-        checkpoint = await runtime.read_thread(target)
-        recovery = self._execution_recovery(checkpoint)
-        if not recovery:
-            raise ValueError("no recoverable execution checkpoint is available")
-        recovery_turn_id = str(recovery.get("turn_id") or recovery.get("turnId") or "")
-        recovery_checkpoint_seq = _nonnegative_int(
-            recovery.get("checkpoint_seq") or recovery.get("checkpointSeq")
-        )
-        if recovery_turn_id != turn_id or recovery_checkpoint_seq != checkpoint_seq:
-            raise ValueError("execution checkpoint changed; refresh before continuing")
-        status = str(recovery.get("status") or "")
-        if status == "needs_reconciliation":
-            reason = str(recovery.get("reason") or "工具执行结果需要核对")
-            raise ValueError(f"execution requires reconciliation: {reason}")
-        if status != "waiting_for_continue":
-            raise ValueError(f"execution checkpoint is {status or 'unavailable'}")
-        stable_request_id = self._execution_resume_request_id(
-            request_id, target, turn_id, checkpoint_seq
-        )
-        submission = await runtime.resume_turn(
-            turn_id,
-            checkpoint_seq,
-            stable_request_id,
-            thread_id=target,
-        )
-        submitted_turn_id = str(submission.turn_id or "")
-        if submission.status != "started" or submitted_turn_id != turn_id:
-            raise RuntimeError(
-                submission.reason or "App Server did not accept execution recovery"
+        start_lock = self.get_turn_start_lock(target, resolved_project)
+        await start_lock.acquire()
+        try:
+            self._assert_turn_start_allowed(resolved_project, target)
+            runtime = client or await self.get_client_for_thread(
+                target, resolved_project
             )
-        self._track_resumed_execution(
-            runtime,
-            target,
-            resolved_project,
-            turn_id,
-            parent_thread_id,
-        )
-        return {
-            "thread_id": target,
-            "turn_id": turn_id,
-            "status": submission.status,
-            "request_id": stable_request_id,
-        }
+            checkpoint = await runtime.read_thread(target)
+            recovery = self._execution_recovery(checkpoint)
+            if not recovery:
+                raise ValueError("no recoverable execution checkpoint is available")
+            recovery_turn_id = str(
+                recovery.get("turn_id") or recovery.get("turnId") or ""
+            )
+            recovery_checkpoint_seq = _nonnegative_int(
+                recovery.get("checkpoint_seq") or recovery.get("checkpointSeq")
+            )
+            if recovery_turn_id != turn_id or recovery_checkpoint_seq != checkpoint_seq:
+                raise ValueError(
+                    "execution checkpoint changed; refresh before continuing"
+                )
+            status = str(recovery.get("status") or "")
+            if status == "needs_reconciliation":
+                reason = str(recovery.get("reason") or "工具执行结果需要核对")
+                raise ValueError(f"execution requires reconciliation: {reason}")
+            if status != "waiting_for_continue":
+                raise ValueError(f"execution checkpoint is {status or 'unavailable'}")
+            stable_request_id = self._execution_resume_request_id(
+                request_id, target, turn_id, checkpoint_seq
+            )
+            submission = await runtime.resume_turn(
+                turn_id,
+                checkpoint_seq,
+                stable_request_id,
+                thread_id=target,
+            )
+            submitted_turn_id = str(submission.turn_id or "")
+            if submission.status != "started" or submitted_turn_id != turn_id:
+                raise RuntimeError(
+                    submission.reason or "App Server did not accept execution recovery"
+                )
+            self._track_resumed_execution(
+                runtime,
+                target,
+                resolved_project,
+                turn_id,
+                parent_thread_id,
+            )
+            return {
+                "thread_id": target,
+                "turn_id": turn_id,
+                "status": submission.status,
+                "request_id": stable_request_id,
+            }
+        finally:
+            start_lock.release()
 
     async def reconcile_execution_turn(
         self,
@@ -1283,7 +1299,10 @@ class SessionManager:
                 "execution_recovery": resumed.get("recovery"),
                 "child_reconciliation_required": reconciliation_required,
             }
-        submission = await client.start_turn(
+        submission = await self.start_turn_with_admission(
+            client,
+            thread_id,
+            project_id,
             prompt=(
                 "Continue the interrupted parent Session from its last settled point. "
                 "First inspect task_list and relevant task_read pages. Preserve reports "
@@ -1456,6 +1475,7 @@ class SessionManager:
             )
 
         resolved_project_id = self.resolve_thread_project(source_thread_id, project_id)
+        self._assert_turn_start_allowed(resolved_project_id, new_thread_id)
         subagent = self.get_settings(resolved_project_id).get("subagent") or {}
         try:
             max_children = int(
@@ -1693,7 +1713,12 @@ class SessionManager:
                         "group_sequence": sequence,
                     }
                 )
-            submission = await child_client.start_turn(**turn_kwargs)
+            submission = await self.start_turn_with_admission(
+                child_client,
+                new_thread_id,
+                resolved_project_id,
+                **turn_kwargs,
+            )
             turn_id = str(getattr(submission, "turn_id", None) or "")
             result: dict[str, Any] = {
                 "parent_thread_id": source_thread_id,
@@ -1898,6 +1923,8 @@ class SessionManager:
         self, source_thread_id: str, project_id: str
     ) -> bool:
         """Drain queued work once; return whether a transient start should retry."""
+        if self._shutting_down:
+            return False
         async with self._child_task_lock:
             parent = self._canonical_thread(source_thread_id, project_id)
             if not parent:
@@ -2031,7 +2058,10 @@ class SessionManager:
                     client = await self.get_client_for_thread(
                         child_thread_id, project_id
                     )
-                    submission = await client.start_turn(
+                    submission = await self.start_turn_with_admission(
+                        client,
+                        child_thread_id,
+                        project_id,
                         prompt=prompt,
                         mode="start",
                         thread_id=child_thread_id,
@@ -3015,6 +3045,7 @@ class SessionManager:
     async def start(self, *, _restart_project_id: str | None = None) -> None:
         """Start and initialize the background MiniAgentClient."""
         async with self._lock:
+            self._shutting_down = False
             current_project_id = self._current_project_id
             if (
                 current_project_id in self._restarting_projects
@@ -3221,76 +3252,399 @@ class SessionManager:
                 self._restarting_projects.discard(project_id)
 
     async def stop(self) -> None:
-        """Stop the background MiniAgentClient and close WebSocket connections."""
-        await self._runtime_resources.stop()
-        async with self._lock:
-            # 1. Gracefully close active WebSocket connections
-            for ws in list(self._active_connections):
-                try:
-                    await ws.close(code=1001, reason="Server shutting down")
-                except Exception:  # noqa: BLE001, S110
-                    pass
-                self._ws_broker.disconnect(ws)
+        """Cancel active Turns, observe settlement, then stop App Server processes."""
+        # Close admission synchronously so shutdown cannot queue behind a
+        # manager lock holder that is awaiting a slow App Server request.
+        self._shutting_down = True
+        admission_locks = list(self._turn_start_locks.values())
+        loop = asyncio.get_running_loop()
+        settlement_deadline = loop.time() + SHUTDOWN_TURN_SETTLEMENT_SECONDS
 
-            # 2. Cancel any pending approval futures
-            for fut in self._pending_approvals.values():
-                if not fut.done():
-                    fut.cancel()
-            self._pending_approvals.clear()
-            self._pending_approval_details.clear()
+        async def cancel_and_wait_bounded(
+            tasks: set[asyncio.Task[Any]] | list[asyncio.Task[Any]],
+            *,
+            timeout: float,
+            label: str,
+        ) -> None:
+            pending = {task for task in tasks if not task.done()}
+            for task in pending:
+                task.cancel()
+            if not pending:
+                return
+            done, still_pending = await asyncio.wait(pending, timeout=timeout)
+            if done:
+                await asyncio.gather(*done, return_exceptions=True)
+            if still_pending:
+                for task in still_pending:
+                    task.add_done_callback(consume_task_result)
+                logger.warning(
+                    "%s did not stop within %.1f seconds",
+                    label,
+                    timeout,
+                )
 
-            # 3. Stop Gateway-owned stream tasks before terminating clients.
-            tasks: list[asyncio.Task[Any]] = []
+        def consume_task_result(task: asyncio.Task[Any]) -> None:
+            try:
+                task.result()
+            except BaseException:  # noqa: BLE001, S110
+                pass
+
+        def snapshot_shutdown_state() -> tuple[
+            list[MiniAgentClient],
+            list[tuple[MiniAgentClient, str, str, str]],
+            list[asyncio.Task[Any]],
+            list[WebSocket],
+        ]:
+            clients = list(set(self._all_clients()))
+            active_turns: list[tuple[MiniAgentClient, str, str, str]] = []
+            seen_turns: set[tuple[int, str, str, str]] = set()
+
+            def remember_turn(
+                client: MiniAgentClient | None,
+                project_id: str,
+                thread_id: str,
+                turn_id: str,
+            ) -> None:
+                if client is None or not turn_id:
+                    return
+                identity = (id(client), project_id, thread_id, turn_id)
+                if identity in seen_turns:
+                    return
+                seen_turns.add(identity)
+                active_turns.append((client, project_id, thread_id, turn_id))
+
+            for (
+                project_id,
+                thread_id,
+            ), turn_id in self._active_turns_by_project.items():
+                remember_turn(
+                    self._project_clients.get((project_id, thread_id))
+                    or self._clients.get(thread_id),
+                    project_id,
+                    thread_id,
+                    turn_id,
+                )
+            for thread_id, turn_id in self._active_turns.items():
+                project_id = self._client_projects.get(
+                    thread_id, self._current_project_id
+                )
+                remember_turn(
+                    self._clients.get(thread_id), project_id, thread_id, turn_id
+                )
+
+            stream_tasks: list[asyncio.Task[Any]] = []
             seen_tasks: set[int] = set()
             for task in [
                 *self._active_tasks.values(),
                 *self._active_tasks_by_project.values(),
                 *self._child_wake_jobs.values(),
                 *self._child_queue_retry_jobs.values(),
+                *self._session_control_jobs.values(),
+                *self._session_resume_jobs.values(),
             ]:
-                if id(task) in seen_tasks:
-                    continue
-                seen_tasks.add(id(task))
-                tasks.append(task)
-                if not task.done():
-                    task.cancel()
+                if id(task) not in seen_tasks:
+                    seen_tasks.add(id(task))
+                    stream_tasks.append(task)
+            return (
+                clients,
+                active_turns,
+                stream_tasks,
+                list(self._active_connections),
+            )
 
-            # 4. Terminate all per-session App Server processes
-            clients = self._all_clients()
-            self._clients.clear()
-            self._client_projects.clear()
-            self._project_clients.clear()
-            self._active_thread_projects.clear()
-            self._active_tasks.clear()
-            self._active_turns.clear()
-            self._active_tasks_by_project.clear()
-            self._active_turns_by_project.clear()
-            self._child_wake_jobs.clear()
-            self._child_wake_pending.clear()
-            self._child_wake_deferred.clear()
-            self._child_queue_retry_jobs.clear()
-            self._client = None
-            self._initialized = False
+        (
+            clients,
+            active_turns,
+            stream_tasks,
+            connections,
+        ) = snapshot_shutdown_state()
 
-        async def stop_client(client: MiniAgentClient) -> None:
+        # Issue cancellation before waiting for any admission lock. A submission
+        # already across the boundary is added to the second snapshot below.
+
+        async def interrupt_turn(
+            client: MiniAgentClient, project_id: str, thread_id: str, turn_id: str
+        ) -> tuple[str, str, bool]:
             try:
-                await asyncio.wait_for(client.stop(), timeout=3.0)
-            except asyncio.TimeoutError:
-                logger.warning("Timed out stopping an App Server client")
-            except Exception:
-                logger.exception("Failed to stop an App Server client")
-
-        await asyncio.gather(*(stop_client(client) for client in set(clients)))
-        logger.info("MiniAgentClient processes terminated cleanly.")
-        for task in tasks:
-            try:
-                await asyncio.wait_for(asyncio.shield(task), timeout=0.5)
+                await client.interrupt_turn(turn_id, thread_id)
+                return thread_id, turn_id, True
             except asyncio.CancelledError:
-                pass
+                raise
+            except Exception:
+                logger.warning(
+                    "Could not confirm interrupt admission for Turn %s in %s/%s",
+                    turn_id,
+                    project_id,
+                    thread_id,
+                    exc_info=True,
+                )
+                return thread_id, turn_id, False
+
+        interrupt_tasks = {
+            asyncio.create_task(interrupt_turn(*turn)): turn for turn in active_turns
+        }
+        acknowledged_turns: set[tuple[int, str, str, str]] = set()
+        runtime_stop_task = asyncio.create_task(self._runtime_resources.stop())
+
+        async def drain_admissions() -> None:
+            for start_lock in admission_locks:
+                remaining = settlement_deadline - loop.time()
+                if remaining <= 0:
+                    raise asyncio.TimeoutError
+                await asyncio.wait_for(start_lock.acquire(), timeout=remaining)
+                start_lock.release()
+
+        drain_task = asyncio.create_task(drain_admissions())
+        approval_task = asyncio.create_task(
+            self.cancel_pending_approvals(
+                reason="Gateway is shutting down; pending approval was cancelled"
+            )
+        )
+
+        async def settle_turn(
+            client: MiniAgentClient,
+            project_id: str,
+            thread_id: str,
+            turn_id: str,
+            timeout: float,
+        ) -> tuple[str, str, bool]:
+            try:
+                result = await client.wait_for_turn(
+                    turn_id,
+                    timeout=timeout,
+                    poll_interval=0.1,
+                )
+                status = str(getattr(result, "status", "settled"))
+                logger.info(
+                    "Turn %s in %s/%s reached authoritative status %s",
+                    turn_id,
+                    project_id,
+                    thread_id,
+                    status,
+                )
+                return thread_id, turn_id, True
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.warning(
+                    "Turn %s in %s/%s did not reach a confirmed terminal state",
+                    turn_id,
+                    project_id,
+                    thread_id,
+                    exc_info=True,
+                )
+                return thread_id, turn_id, False
+
+        settlement_remaining = max(0.0, settlement_deadline - loop.time())
+        settle_tasks = [
+            asyncio.create_task(settle_turn(*turn, settlement_remaining))
+            for turn in active_turns
+        ]
+
+        # Admission drains, interrupt acknowledgements, and authoritative reads
+        # share one settlement deadline that begins as cancellation is issued.
+        pending_control_tasks: set[asyncio.Task[Any]] = set(interrupt_tasks)
+        pending_control_tasks.update((drain_task, approval_task, runtime_stop_task))
+        control_done, control_pending = await asyncio.wait(
+            pending_control_tasks,
+            timeout=max(0.0, settlement_deadline - loop.time()),
+        )
+        for task in control_done:
+            try:
+                result = task.result()
+                turn = interrupt_tasks.get(task)
+                if turn is not None and result[2]:
+                    client, project_id, thread_id, turn_id = turn
+                    acknowledged_turns.add((id(client), project_id, thread_id, turn_id))
             except asyncio.TimeoutError:
-                pass
+                logger.warning("Timed out draining a Turn admission during shutdown")
+            except Exception:
+                logger.exception("Shutdown control request failed")
+        if control_pending:
+            await cancel_and_wait_bounded(
+                control_pending,
+                timeout=0.1,
+                label="Shutdown control requests",
+            )
+
+        (
+            clients_after_admission,
+            turns_after_admission,
+            later_tasks,
+            later_connections,
+        ) = snapshot_shutdown_state()
+        clients = list(dict.fromkeys([*clients, *clients_after_admission]))
+        stream_tasks = list(dict.fromkeys([*stream_tasks, *later_tasks]))
+        connections = list(dict.fromkeys([*connections, *later_connections]))
+        late_turns = []
+        for turn in turns_after_admission:
+            identity = (id(turn[0]), turn[1], turn[2], turn[3])
+            if identity in acknowledged_turns:
+                continue
+            acknowledged_turns.add(identity)
+            late_turns.append(turn)
+
+        late_interrupt_tasks = [
+            asyncio.create_task(interrupt_turn(*turn)) for turn in late_turns
+        ]
+        known_settle_turns = {
+            (id(turn[0]), turn[1], turn[2], turn[3]) for turn in active_turns
+        }
+        settlement_remaining = max(0.0, settlement_deadline - loop.time())
+        settle_tasks.extend(
+            asyncio.create_task(settle_turn(*turn, settlement_remaining))
+            for turn in late_turns
+            if (id(turn[0]), turn[1], turn[2], turn[3]) not in known_settle_turns
+        )
+        settlement_remaining = max(0.0, settlement_deadline - loop.time())
+        settlement_tasks = [*settle_tasks, *late_interrupt_tasks]
+        if settlement_tasks:
+            done, pending = await asyncio.wait(
+                settlement_tasks, timeout=settlement_remaining
+            )
+            pending_settlements = pending.intersection(settle_tasks)
+            unconfirmed_count = len(pending_settlements)
+            for task in done:
+                result = task.result()
+                if task in settle_tasks and not result[2]:
+                    unconfirmed_count += 1
+            if unconfirmed_count:
+                logger.error(
+                    "Shutdown settlement window expired with %s Turn(s) unconfirmed; preserving recovery state",
+                    unconfirmed_count,
+                )
+            if pending:
+                await cancel_and_wait_bounded(
+                    pending,
+                    timeout=0.1,
+                    label="Turn settlement reads",
+                )
+
+        # Streams stay alive through the authoritative read above. Close browser
+        # sockets only after settlement or after the bounded unknown-state window.
+        async def close_connection(ws: WebSocket) -> None:
+            try:
+                await ws.close(code=1001, reason="Server shutting down")
             except Exception:  # noqa: BLE001, S110
                 pass
+            self._ws_broker.disconnect(ws)
+
+        if connections:
+            close_tasks = {
+                asyncio.create_task(close_connection(ws)) for ws in connections
+            }
+            close_done, close_pending = await asyncio.wait(close_tasks, timeout=0.2)
+            if close_done:
+                await asyncio.gather(*close_done, return_exceptions=True)
+            if close_pending:
+                logger.warning("WebSocket shutdown exceeded 0.2 seconds")
+                await cancel_and_wait_bounded(
+                    close_pending,
+                    timeout=0.1,
+                    label="WebSocket close tasks",
+                )
+                for ws in connections:
+                    self._ws_broker.disconnect(ws)
+
+        if stream_tasks:
+            await cancel_and_wait_bounded(
+                stream_tasks,
+                timeout=0.2,
+                label="Gateway stream tasks",
+            )
+
+        async def stop_client_gracefully(client: MiniAgentClient) -> bool:
+            try:
+                return await client.stop(
+                    force=False, timeout=SHUTDOWN_APP_SERVER_GRACE_SECONDS
+                )
+            except Exception:
+                logger.exception("Graceful App Server shutdown failed")
+                return False
+
+        graceful_tasks = {
+            asyncio.create_task(stop_client_gracefully(client)): client
+            for client in clients
+        }
+        graceful_done, graceful_pending = await asyncio.wait(
+            graceful_tasks, timeout=SHUTDOWN_APP_SERVER_GRACE_SECONDS + 0.2
+        )
+        graceful_confirmed = {
+            graceful_tasks[task] for task in graceful_done if task.result() is True
+        }
+        if graceful_pending:
+            await cancel_and_wait_bounded(
+                graceful_pending,
+                timeout=0.1,
+                label="Graceful App Server stops",
+            )
+
+        force_clients = [
+            client for client in clients if client not in graceful_confirmed
+        ]
+
+        async def stop_client_forcefully(client: MiniAgentClient) -> bool:
+            try:
+                return await client.stop(
+                    force=True, timeout=SHUTDOWN_APP_SERVER_FORCE_SECONDS
+                )
+            except Exception:
+                logger.exception("Forced App Server process-group cleanup failed")
+                return False
+
+        force_tasks = [
+            asyncio.create_task(stop_client_forcefully(client))
+            for client in force_clients
+        ]
+        force_confirmed: set[MiniAgentClient] = set()
+        if force_tasks:
+            force_task_clients = dict(zip(force_tasks, force_clients, strict=True))
+            done, pending = await asyncio.wait(force_tasks, timeout=2.4)
+            for task in done:
+                if task.result() is True:
+                    force_confirmed.add(force_task_clients[task])
+            if pending:
+                await cancel_and_wait_bounded(
+                    pending,
+                    timeout=0.1,
+                    label="Forced App Server stops",
+                )
+
+        unconfirmed_clients = set(clients) - graceful_confirmed - force_confirmed
+        if unconfirmed_clients:
+            logger.error(
+                "App Server process exit is unconfirmed for %s client(s)",
+                len(unconfirmed_clients),
+            )
+        else:
+            logger.info("All MiniAgentClient App Server processes exited cleanly")
+
+        try:
+            await asyncio.wait_for(self._lock.acquire(), timeout=0.1)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Could not acquire Gateway state lock to clear shutdown bindings"
+            )
+        else:
+            try:
+                self._clients.clear()
+                self._client_projects.clear()
+                self._project_clients.clear()
+                self._active_thread_projects.clear()
+                self._active_tasks.clear()
+                self._active_turns.clear()
+                self._active_tasks_by_project.clear()
+                self._active_turns_by_project.clear()
+                self._child_wake_jobs.clear()
+                self._child_wake_pending.clear()
+                self._child_wake_deferred.clear()
+                self._child_queue_retry_jobs.clear()
+                self._session_control_jobs.clear()
+                self._session_resume_jobs.clear()
+                self._client = None
+                self._initialized = False
+            finally:
+                self._lock.release()
 
     # -------------------------------------------------------------------------
     # Thread Metadata Management
@@ -5287,6 +5641,10 @@ class SessionManager:
         return lock
 
     def _assert_turn_start_allowed(self, project_id: str, thread_id: str) -> None:
+        if self._shutting_down:
+            raise SessionParkingError(
+                "Gateway is shutting down; new Turns are not accepted"
+            )
         if project_id in self._restarting_projects:
             raise SessionParkingError("Project is restarting; retry after it settles")
         if self._runtime_resources.is_parking(project_id, thread_id):
@@ -5303,14 +5661,26 @@ class SessionManager:
         start_lock = self.get_turn_start_lock(target_thread_id, project_id)
         await start_lock.acquire()
         try:
-            self._assert_turn_start_allowed(project_id, target_thread_id)
-            submission = await client.start_turn(**start_kwargs)
-            turn_id = str(getattr(submission, "turn_id", "") or "")
-            if turn_id:
-                self.set_active_turn(target_thread_id, turn_id, project_id=project_id)
-            return submission
+            return await self._start_turn_with_admission_locked(
+                client, target_thread_id, project_id, **start_kwargs
+            )
         finally:
             start_lock.release()
+
+    async def _start_turn_with_admission_locked(
+        self,
+        client: MiniAgentClient,
+        target_thread_id: str,
+        project_id: str,
+        **start_kwargs: Any,
+    ) -> Any:
+        """Submit and register while the caller holds this Thread's admission lock."""
+        self._assert_turn_start_allowed(project_id, target_thread_id)
+        submission = await client.start_turn(**start_kwargs)
+        turn_id = str(getattr(submission, "turn_id", "") or "")
+        if turn_id:
+            self.set_active_turn(target_thread_id, turn_id, project_id=project_id)
+        return submission
 
     @staticmethod
     def stream_turn_id(item: Any) -> str | None:
@@ -5343,6 +5713,8 @@ class SessionManager:
             turn_id = self.stream_turn_id(first_item)
             if turn_id:
                 self.set_active_turn(target_thread_id, turn_id, project_id=project_id)
+                if self._shutting_down:
+                    await client.interrupt_turn(turn_id, target_thread_id)
             return stream, first_item, turn_id
         finally:
             start_lock.release()
@@ -5702,7 +6074,10 @@ class SessionManager:
                 "Then decide whether to wait, steer, cancel, retry, or delegate more work."
             )
             prompt = " ".join(prompt_parts)
-            submission = await client.start_turn(
+            submission = await self._start_turn_with_admission_locked(
+                client,
+                parent_thread_id,
+                project_id,
                 prompt=prompt,
                 mode="start_if_idle",
                 thread_id=parent_thread_id,

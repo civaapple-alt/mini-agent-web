@@ -266,6 +266,8 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     orig_cur_path = session_manager._current_project_path
     orig_settings = dict(session_manager._settings)
     orig_builtin_tools = dict(getattr(session_manager, "_thread_builtin_tools", {}))
+    orig_shutting_down = session_manager._shutting_down
+    orig_turn_start_locks = session_manager._turn_start_locks
 
     # Point to isolated test state
     monkeypatch.setenv("MINI_AGENT_WEB_STATE_DIR", str(test_state_dir))
@@ -275,6 +277,8 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     session_manager._thread_builtin_tools = {}
     session_manager._client_projects = {}
     session_manager._project_clients = {}
+    session_manager._shutting_down = False
+    session_manager._turn_start_locks = type(orig_turn_start_locks)()
     session_manager._active_thread_projects = {}
     session_manager._thread_metadata_by_project = {}
     session_manager._active_turns_by_project = {}
@@ -339,3 +343,5 @@ async def isolate_test_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     session_manager._current_project_id = orig_cur_id
     session_manager._current_project_path = orig_cur_path
     session_manager._settings = orig_settings
+    session_manager._shutting_down = orig_shutting_down
+    session_manager._turn_start_locks = orig_turn_start_locks

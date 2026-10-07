@@ -68,7 +68,7 @@ def run_server() -> None:
         port=settings.port,
         reload=False,
         log_config=_gateway_logging_config(),
-        timeout_graceful_shutdown=1.0,
+        timeout_graceful_shutdown=15.0,
     )
 
 
@@ -85,7 +85,7 @@ def run_server_dev() -> None:
         reload=True,
         loop="server.main:proactor_loop_factory",
         log_config=_gateway_logging_config(),
-        timeout_graceful_shutdown=1.0,
+        timeout_graceful_shutdown=15.0,
     )
 
 

@@ -26,7 +26,12 @@ function safeUrl(value) {
   }
 }
 
+function isCancelled(item) {
+  return String(item.outcome || '').toLowerCase() === 'cancelled';
+}
+
 function isFailed(item) {
+  if (isCancelled(item)) return false;
   return Boolean(item.error)
     || ['failed', 'retryable'].includes(String(item.outcome || '').toLowerCase())
     || (item.status === 'failed' && !['needs_approval', 'deferred'].includes(String(item.outcome || '').toLowerCase()));
@@ -61,6 +66,7 @@ export default function WebActivitySummary({ items }) {
     const results = Array.isArray(result?.results) ? result.results : [];
     const count = Number.isInteger(result?.resultCount) ? result.resultCount : results.length;
     const failed = isFailed(item);
+    const cancelled = isCancelled(item);
     const pendingApproval = item.approval?.state === 'pending';
     const running = isRunning(item);
     const label = failed
@@ -69,14 +75,16 @@ export default function WebActivitySummary({ items }) {
         ? '等待授权'
         : running
           ? `正在搜索${item.arguments?.query ? `「${item.arguments.query}」` : ''}`
-          : `搜索到 ${count} 个网页`;
+          : cancelled
+            ? '搜索已取消'
+            : `搜索到 ${count} 个网页`;
     rows.push(
       <div className={`web-activity-row ${failed ? 'failed' : ''}`} key={`search:${item.id || rows.length}`}>
         <div className="web-activity-title">
           {pendingApproval ? <ShieldAlert size={13} /> : running ? <Loader2 size={13} className="spin" /> : <Search size={13} />}
           <span>{label}</span>
         </div>
-        {!failed && !running && <ResultLinks results={results} />}
+        {!failed && !running && !cancelled && <ResultLinks results={results} />}
       </div>,
     );
   }
@@ -86,10 +94,11 @@ export default function WebActivitySummary({ items }) {
     const result = outputValue(item);
     const url = safeUrl(result?.url || item.arguments?.url);
     if (!url) continue;
-    const current = pages.get(url) || { url, title: '', running: false, failed: false, pendingApproval: false, sourceTruncated: false };
+    const current = pages.get(url) || { url, title: '', running: false, failed: false, cancelled: false, pendingApproval: false, sourceTruncated: false };
     current.title = result?.title || current.title;
     current.running = current.running || isRunning(item);
     current.failed = current.failed || isFailed(item);
+    current.cancelled = current.cancelled || isCancelled(item);
     current.pendingApproval = current.pendingApproval || item.approval?.state === 'pending';
     current.sourceTruncated = current.sourceTruncated || result?.sourceTruncated === true;
     pages.set(url, current);
@@ -98,6 +107,7 @@ export default function WebActivitySummary({ items }) {
     const pageList = [...pages.values()];
     const failedCount = fetches.filter(isFailed).length;
     const allFailed = failedCount === fetches.length;
+    const allCancelled = fetches.every(isCancelled);
     rows.push(
       <div className="web-activity-row" key="web-fetch">
         <div className="web-activity-title">
@@ -108,23 +118,27 @@ export default function WebActivitySummary({ items }) {
               : <FileText size={13} />}
           <span>{allFailed || (pageList.length > 0 && pageList.every((page) => page.failed))
             ? '浏览失败'
+            : allCancelled
+              ? '浏览已取消'
             : pageList.some((page) => page.pendingApproval)
             ? '等待授权'
             : pageList.some((page) => page.running)
               ? `正在浏览 ${pageList.length || fetches.length} 个页面`
               : `浏览 ${pageList.length || fetches.length} 个页面`}</span>
         </div>
-        <div className="web-activity-links">
-          {pageList.slice(0, 4).map((page) => (
-            <a key={page.url} href={page.url} target="_blank" rel="noopener noreferrer" title={page.title || page.url}>
-              <span>{page.title || new URL(page.url).hostname}</span>
-              <ExternalLink size={10} aria-hidden="true" />
-            </a>
-          ))}
-          {pageList.length > 4 && <span className="web-activity-more">+{pageList.length - 4}</span>}
-          {failedCount > 0 && !allFailed && <span className="web-activity-failed">部分页面失败</span>}
-          {pageList.some((page) => page.sourceTruncated) && <span className="web-activity-more">正文已截断</span>}
-        </div>
+        {!allCancelled && (
+          <div className="web-activity-links">
+            {pageList.slice(0, 4).map((page) => (
+              <a key={page.url} href={page.url} target="_blank" rel="noopener noreferrer" title={page.title || page.url}>
+                <span>{page.title || new URL(page.url).hostname}</span>
+                <ExternalLink size={10} aria-hidden="true" />
+              </a>
+            ))}
+            {pageList.length > 4 && <span className="web-activity-more">+{pageList.length - 4}</span>}
+            {failedCount > 0 && !allFailed && <span className="web-activity-failed">部分页面失败</span>}
+            {pageList.some((page) => page.sourceTruncated) && <span className="web-activity-more">正文已截断</span>}
+          </div>
+        )}
       </div>,
     );
   }

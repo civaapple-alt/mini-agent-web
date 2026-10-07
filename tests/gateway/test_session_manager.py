@@ -56,6 +56,164 @@ def mock_session_manager(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_shutdown_interrupts_and_confirms_active_turn_before_stopping_client(
+    mock_session_manager,
+):
+    client = AsyncMock(spec=MiniAgentClient)
+    order = []
+
+    async def interrupt(_turn_id, _thread_id):
+        order.append("interrupt")
+
+    async def wait_for_turn(_turn_id, *, timeout, poll_interval):
+        assert timeout > 0
+        assert poll_interval == 0.1
+        order.append("settled")
+        return SimpleNamespace(status="cancelled")
+
+    async def stop_client(*, force, timeout):
+        order.append("force" if force else "graceful")
+        return not force
+
+    client.interrupt_turn.side_effect = interrupt
+    client.wait_for_turn.side_effect = wait_for_turn
+    client.stop.side_effect = stop_client
+    mock_session_manager._activate_thread_client("thread-1", "default", client)
+    mock_session_manager.set_active_turn(
+        "thread-1", "turn-active", project_id="default"
+    )
+
+    await mock_session_manager.stop()
+
+    assert order.index("interrupt") < order.index("settled")
+    assert order.index("settled") < order.index("graceful")
+    client.interrupt_turn.assert_awaited_once_with("turn-active", "thread-1")
+    client.wait_for_turn.assert_awaited_once()
+    client.stop.assert_awaited_once_with(force=False, timeout=1.25)
+
+
+@pytest.mark.asyncio
+async def test_shutdown_dispatches_interrupt_before_waiting_for_manager_lock(
+    mock_session_manager,
+):
+    client = AsyncMock(spec=MiniAgentClient)
+    interrupted = asyncio.Event()
+
+    async def interrupt(*_args):
+        interrupted.set()
+
+    client.interrupt_turn.side_effect = interrupt
+    client.wait_for_turn.return_value = SimpleNamespace(status="cancelled")
+    client.stop.return_value = True
+    mock_session_manager._activate_thread_client("thread-1", "default", client)
+    mock_session_manager.set_active_turn(
+        "thread-1", "turn-active", project_id="default"
+    )
+    await mock_session_manager._lock.acquire()
+
+    shutdown = asyncio.create_task(mock_session_manager.stop())
+    try:
+        await asyncio.wait_for(interrupted.wait(), timeout=0.5)
+        assert mock_session_manager._shutting_down is True
+        await asyncio.wait_for(shutdown, timeout=1)
+    finally:
+        if mock_session_manager._lock.locked():
+            mock_session_manager._lock.release()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_retries_an_interrupt_that_was_not_acknowledged(
+    mock_session_manager,
+):
+    client = AsyncMock(spec=MiniAgentClient)
+    client.interrupt_turn.side_effect = [ConnectionError("connection reset"), None]
+    client.wait_for_turn.side_effect = RuntimeError("status read unavailable")
+    client.stop.return_value = True
+    mock_session_manager._activate_thread_client("thread-1", "default", client)
+    mock_session_manager.set_active_turn(
+        "thread-1", "turn-unconfirmed", project_id="default"
+    )
+
+    await mock_session_manager.stop()
+
+    assert client.interrupt_turn.await_count == 2
+    assert client.interrupt_turn.await_args_list[0].args == (
+        "turn-unconfirmed",
+        "thread-1",
+    )
+    assert client.interrupt_turn.await_args_list[1].args == (
+        "turn-unconfirmed",
+        "thread-1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_shutdown_escalates_when_turn_settlement_is_unconfirmed(
+    mock_session_manager, monkeypatch
+):
+    monkeypatch.setattr(
+        session_manager_module, "SHUTDOWN_TURN_SETTLEMENT_SECONDS", 0.02
+    )
+    client = AsyncMock(spec=MiniAgentClient)
+    client.interrupt_turn = AsyncMock()
+    never_settled = asyncio.Event()
+
+    async def wait_forever(*_args, **_kwargs):
+        await never_settled.wait()
+
+    async def stop_client(*, force, timeout):
+        return force
+
+    client.wait_for_turn.side_effect = wait_forever
+    client.stop.side_effect = stop_client
+    mock_session_manager._activate_thread_client("thread-1", "default", client)
+    mock_session_manager.set_active_turn(
+        "thread-1", "turn-unknown", project_id="default"
+    )
+
+    await asyncio.wait_for(mock_session_manager.stop(), timeout=3)
+
+    client.interrupt_turn.assert_awaited_once_with("turn-unknown", "thread-1")
+    assert [call.kwargs["force"] for call in client.stop.await_args_list] == [
+        False,
+        True,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_shutdown_bounds_cleanup_when_status_reader_ignores_cancellation(
+    mock_session_manager, monkeypatch
+):
+    monkeypatch.setattr(
+        session_manager_module, "SHUTDOWN_TURN_SETTLEMENT_SECONDS", 0.02
+    )
+    client = AsyncMock(spec=MiniAgentClient)
+    release_reader = asyncio.Event()
+    reader_cancelled = asyncio.Event()
+
+    async def ignore_reader_cancellation(*_args, **_kwargs):
+        try:
+            await release_reader.wait()
+        except asyncio.CancelledError:
+            reader_cancelled.set()
+            await release_reader.wait()
+        return SimpleNamespace(status="in_progress")
+
+    client.wait_for_turn.side_effect = ignore_reader_cancellation
+    client.stop.return_value = True
+    mock_session_manager._activate_thread_client("thread-1", "default", client)
+    mock_session_manager.set_active_turn(
+        "thread-1", "turn-slow-reader", project_id="default"
+    )
+
+    await asyncio.wait_for(mock_session_manager.stop(), timeout=1)
+    assert reader_cancelled.is_set()
+
+    release_reader.set()
+    await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
 async def test_gateway_restart_reattaches_canonical_session_without_new_turn(
     mock_session_manager, monkeypatch
 ):

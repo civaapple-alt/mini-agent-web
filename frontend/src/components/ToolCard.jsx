@@ -31,6 +31,7 @@ const KNOWN_OUTCOME_PRESENTATIONS = {
   needs_approval: { label: '等待授权', className: 'badge-approval-pending', Icon: ShieldAlert },
   deferred: { label: '暂缓执行', className: 'badge running', Icon: AlertTriangle },
   retryable: { label: '可重试', className: 'badge failed', Icon: AlertTriangle },
+  cancelled: { label: '已取消（未执行）', className: 'badge running', Icon: AlertTriangle },
 };
 
 function outcomePresentation(outcome) {
@@ -96,14 +97,17 @@ export default function ToolCard({
       // Keep non-JSON output visible for provider and validation errors.
     }
   }
-  const normalizedStatus = status === 'inProgress' ? 'running' : status;
-  const isRunning = normalizedStatus === 'running';
   const normalizedOutcome = typeof outcome === 'string' ? outcome.toLowerCase() : null;
+  const normalizedStatus = normalizedOutcome === 'cancelled'
+    ? 'completed'
+    : status === 'inProgress' ? 'running' : status;
+  const isRunning = normalizedStatus === 'running';
   const isPolicyOutcome = normalizedOutcome === 'needs_approval' || normalizedOutcome === 'deferred';
-  const isFailed = !!error
+  const isCancelled = normalizedOutcome === 'cancelled';
+  const isFailed = !isCancelled && (!!error
     || normalizedOutcome === 'failed'
     || normalizedOutcome === 'retryable'
-    || (normalizedStatus === 'failed' && !isPolicyOutcome);
+    || (normalizedStatus === 'failed' && !isPolicyOutcome));
   const settledOutcome = !isRunning ? outcomePresentation(outcome) : null;
   const isReadFile = name.toLowerCase() === 'read_file';
   const hasOutput = error != null || output != null;
